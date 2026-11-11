@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-132 cas réussis sur 132.
+142 cas réussis sur 142.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -136,3 +136,13 @@
 | LB02 | Projets | Chaque modèle (trap, house, lo-fi, vide) donne un projet jouable, propre et dans sa gamme | OK |
 | LB03 | Projets | Dupliquer et supprimer un projet ; la bibliothèque survit au rechargement de la page | OK |
 | LB04 | Projets | Ouvrir un fichier .khm crée un nouveau projet sans écraser celui en cours | OK |
+| CH01 | Découpage | Découper une boucle en 16 tranches : pads chargés, motif qui rejoue la boucle, piste d'origine en muet | OK |
+| CH02 | Découpage | Découper selon les attaques : une tranche par coup, placée sur son temps | OK |
+| CH03 | Découpage | Un son trop court est refusé ; 8 tranches égales fonctionne | OK |
+| FX01 | Effets Live | Écho et réverb à la volée : le son se prolonge tant que le bouton est maintenu | OK |
+| FX02 | Effets Live | Bégaiement : le dernier instant tourne en boucle, même transport arrêté, puis le son reprend normalement | OK |
+| FX03 | Effets Live | Couper une piste d'un geste depuis la grille ; les effets se jouent aussi au clavier | OK |
+| ML01 | Assignation MIDI | Relier un bouton de contrôleur à un réglage, le piloter, retrouver l'assignation après rechargement, l'effacer | OK |
+| MP01 | Export | Exporter en MP3 : fichier valide, de la bonne durée, relisible et audible | OK |
+| CC01 | Arrangement | Copier un clip et le coller à la tête de lecture, sur la même piste ou une autre du même type | OK |
+| SP01 | Mixeur | L'analyseur de spectre s'anime pendant la lecture et retombe à l'arrêt | OK |

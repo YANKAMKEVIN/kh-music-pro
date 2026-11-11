@@ -45,6 +45,8 @@ class Engine {
   // ---------- Transport ----------
   private async start(preroll: number) {
     await this.ctx.resume();
+    // Le bégaiement garde en mémoire les derniers instants joués : il doit écouter dès le début de la lecture.
+    this.mix.initStutter().catch(() => { });
     this.mix.autoOn = this.mode === 'arr';
     this.sync();
     this.playing = true;
@@ -268,6 +270,31 @@ class Engine {
     cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)));
   }
 
+  // ---------- Effets de performance ----------
+  /** Effet momentané sur le général : 'echo', 'reverb', 'stut8' (croche) ou 'stut16' (double-croche). */
+  async fx(name: string, on: boolean) {
+    const m = this.mix, now = this.ctx.currentTime;
+    this.ctx.resume();
+    if (name === 'echo' && m.fxEcho && m.fxDelay) { m.fxDelay.delayTime.setTargetAtTime(Math.min(1.9, 3 * stepDur(S.project.bpm)), now, 0.01); m.fxEcho.gain.setTargetAtTime(on ? 0.9 : 0, now, 0.01); }
+    else if (name === 'reverb' && m.fxRev) m.fxRev.gain.setTargetAtTime(on ? 0.8 : 0, now, 0.02);
+    else if (name.startsWith('stut')) {
+      await m.initStutter();
+      m.stutter?.port.postMessage({ len: on ? Math.round(stepDur(S.project.bpm) * (name === 'stut8' ? 2 : 1) * this.ctx.sampleRate) : 0 });
+    }
+    if (on) this.fxOn.add(name); else this.fxOn.delete(name);
+  }
+  fxOn = new Set<string>();
+
+  /** Spectre du général (amplitudes 0..255 par bande de fréquence). */
+  spectrum(): Uint8Array | null {
+    const a = this.mix.analyser;
+    if (!a) return null;
+    this.spec ??= new Uint8Array(a.frequencyBinCount);
+    a.getByteFrequencyData(this.spec as Uint8Array<ArrayBuffer>);
+    return this.spec;
+  }
+  private spec?: Uint8Array;
+
   // ---------- Vumètres ----------
   level(id: string): number {
     const a = id === 'master' ? this.mix.analyser : id === 'input' ? this.inp?.analyser : this.mix.tracks.get(id)?.analyser;
@@ -314,6 +341,19 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
 export async function analyze(p: Project): Promise<{ lufs: number; peakDb: number }> {
   const b = await renderOffline(p);
   return { lufs: lufs(b), peakDb: 20 * Math.log10(Math.max(1e-9, peakOf(b))) };
+}
+
+/** Encode en MP3 (192 kbit/s). L'encodeur n'est chargé qu'à la première utilisation. */
+export async function encodeMp3(b: AudioBuffer): Promise<Blob> {
+  const { Mp3Encoder } = await import('@breezystack/lamejs');
+  const ch = Math.min(2, b.numberOfChannels), enc = new Mp3Encoder(ch, b.sampleRate, 192), parts: BlobPart[] = [], BLK = 1152 * 20;
+  const pcm = Array.from({ length: ch }, (_, c) => { const d = b.getChannelData(c), o = new Int16Array(d.length); for (let i = 0; i < d.length; i++) { const x = Math.max(-1, Math.min(1, d[i])); o[i] = x < 0 ? x * 0x8000 : x * 0x7fff; } return o; });
+  for (let i = 0; i < b.length; i += BLK) {
+    const out = enc.encodeBuffer(pcm[0].subarray(i, i + BLK), ch > 1 ? pcm[1].subarray(i, i + BLK) : undefined);
+    if (out.length) parts.push(new Uint8Array(out) as BlobPart);
+  }
+  const end = enc.flush(); if (end.length) parts.push(new Uint8Array(end) as BlobPart);
+  return new Blob(parts, { type: 'audio/mpeg' });
 }
 
 export function encodeWav(b: AudioBuffer): Blob {

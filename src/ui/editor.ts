@@ -1,4 +1,4 @@
-import { audioFiles, chooseInput, deleteClip, duplicateClip, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
+import { audioFiles, chopClip, chooseInput, deleteClip, duplicateClip, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
@@ -405,6 +405,7 @@ function audioEditor(tr: Track, c: Clip) {
   });
   const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
   const act = (key: string, icon: string, fn: () => void) => h('button', { title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
+  const chopMode = h('select', { 'aria-label': t('chop.mode'), title: t('chop.mode'), data: { role: 'chopmode' } }, ...[[16, t('chop.n', 16)], [8, t('chop.n', 8)], [0, t('chop.auto')]].map(([v, l]) => h('option', { value: String(v) }, String(l))));
   if (S.stretch.clip !== c.id) S.stretch = { clip: c.id, pct: 100, semis: 0 };
   const st = S.stretch;
   const bpm = h('input', { type: 'number', min: '40', max: '240', placeholder: '—', 'aria-label': t('st.bpm'), title: t('st.bpmTip'), data: { role: 'srcbpm' } });
@@ -419,7 +420,9 @@ function audioEditor(tr: Track, c: Clip) {
       slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true),
       h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
       slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true),
-      act('stretch', '⏱', () => stretchClip(st.pct, st.semis))),
+      act('stretch', '⏱', () => stretchClip(st.pct, st.semis)),
+      h('span', { class: 'sect' }, t('chop.title')), chopMode,
+      act('chop', '🔪', () => chopClip(+chopMode.value))),
     inputPanel(), cv, h('p', { class: 'tip pad-x' }, t('hint.audioClip')));
 }
 

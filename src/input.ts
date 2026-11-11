@@ -142,8 +142,34 @@ export async function connectMidi(): Promise<number> {
   return midi.inputs;
 }
 
+// ---------- Assignation des boutons d'un contrôleur (messages CC) ----------
+/** cible = « index de piste:paramètre » ou « m:paramètre » pour le général. */
+export const RANGES: Record<string, [number, number]> = { vol: [0, 1.25], pan: [-1, 1], filter: [-1, 1], drive: [0, 1], rev: [0, 1], dly: [0, 1], duck: [0, 1], master: [0, 1.25] };
+export const learn = { on: false, target: '', map: {} as Record<string, string>, onChange: () => { } };
+try { learn.map = JSON.parse(localStorage.getItem('kh-midimap') || '{}'); } catch { /* stockage désactivé */ }
+const saveMap = () => { try { localStorage.setItem('kh-midimap', JSON.stringify(learn.map)); } catch { /* stockage désactivé */ } };
+export function clearMidiMap() { learn.map = {}; learn.target = ''; saveMap(); learn.onChange(); }
+export const ccOf = (target: string) => Object.keys(learn.map).find(cc => learn.map[cc] === target);
+
+let ccTimer = 0;
+function applyCC(target: string, v: number) {
+  const [who, prm] = target.split(':'), [lo, hi] = RANGES[prm] ?? [0, 1], val = Math.round((lo + (hi - lo) * v) * 100) / 100, p = S.project;
+  if (who === 'm') { if (prm === 'master') p.master = val; else p.filter = Math.abs(val) < 0.04 ? 0 : val; }
+  else { const tr = p.tracks[+who]; if (!tr) return; (tr as unknown as Record<string, number>)[prm] = (prm === 'pan' || prm === 'filter') && Math.abs(val) < 0.04 ? 0 : val; }
+  engine.sync();
+  clearTimeout(ccTimer); ccTimer = window.setTimeout(emit, 120); // l'affichage suit, sans ralentir le geste
+}
+
 export function onMidi(d: Uint8Array | number[]) {
   const cmd = d[0] & 0xf0;
+  if (cmd === 0xb0) {
+    const cc = String(d[1]);
+    if (learn.on && learn.target) {
+      for (const k of Object.keys(learn.map)) if (learn.map[k] === learn.target) delete learn.map[k];
+      learn.map[cc] = learn.target; learn.target = ''; saveMap(); learn.onChange();
+    } else if (learn.map[cc]) applyCC(learn.map[cc], d[2] / 127);
+    return;
+  }
   if (cmd === 0x90 && d[2] > 0) noteOn(d[1], d[2] / 127);
   else if (cmd === 0x80 || cmd === 0x90) noteOff(d[1]);
 }

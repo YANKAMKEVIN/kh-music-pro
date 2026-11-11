@@ -1,4 +1,4 @@
-import { addMarker, exportMidiFile, exportStems, exportWav, filesPicked, importMidiFile, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
+import { addMarker, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -41,7 +41,7 @@ export function buildTop(onLang: () => void) {
     item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bOpen', t('top.open'), () => $('fProj').click()),
     item('bSave', t('top.save'), saveFile), item('bImport', t('top.import'), () => pickAudio()),
     item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()), h('hr', {}),
-    item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile)));
+    item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile)));
 
   $('top').replaceChildren(
     h('div', { class: 'brand', 'aria-label': 'KH Music Pro' }, h('span', { class: 'logo' }, 'KH'), h('span', { class: 'bname' }, 'MUSIC PRO')),

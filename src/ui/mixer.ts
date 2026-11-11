@@ -1,7 +1,8 @@
 import { analyzeMix } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
-import { S, commit, select } from '../store';
+import { clearMidiMap, ccOf, learn } from '../input';
+import { S, commit, emit, select } from '../store';
 import { Track } from '../types';
 import { ICON } from './arr';
 import { db, h, pct, slider } from './dom';
@@ -15,9 +16,18 @@ function fader(label: string, value: number, set: (v: number) => void) {
   return { inp, out };
 }
 
+/** Marque un réglage comme assignable à un contrôleur MIDI et affiche le bouton qui lui est relié. */
+function tag<T extends HTMLElement>(el: T, target: string): T {
+  el.dataset.map = target;
+  const cc = ccOf(target);
+  if (cc !== undefined) el.dataset.cc = 'CC ' + cc;
+  if (learn.target === target) el.classList.add('armed');
+  return el;
+}
+
 export const filterFmt = (v: number) => Math.abs(v) < 0.02 ? '—' : (v < 0 ? 'LP ' : 'HP ') + Math.round(Math.abs(v) * 100);
 
-function strip(tr: Track) {
+function strip(tr: Track, i: number) {
   const f = fader(`${t('mix.volume')} – ${tr.name}`, tr.vol, v => tr.vol = v);
   const tog = (key: 'mute' | 'solo' | 'comp', txt: string) => h('button', {
     class: `mini ${key} ${tr[key] ? 'on' : ''}`, title: t('mix.' + key), 'aria-pressed': String(tr[key]), data: { tog: key }, onclick: () => { tr[key] = !tr[key]; commit(); },
@@ -32,15 +42,15 @@ function strip(tr: Track) {
         slider(t('mix.mid'), -15, 15, 0.5, tr.eqMid, v => tr.eqMid = v, db),
         slider(t('mix.low'), -15, 15, 0.5, tr.eqLow, v => tr.eqLow = v, db),
         h('span', { class: 'sect' }, t('mix.fx')),
-        slider(t('mix.filter'), -1, 1, 0.01, tr.filter, v => tr.filter = Math.abs(v) < 0.03 ? 0 : v, filterFmt),
-        slider(t('mix.drive'), 0, 1, 0.01, tr.drive, v => tr.drive = v, pct),
-        slider(t('mix.reverb'), 0, 1, 0.01, tr.rev, v => tr.rev = v, pct),
-        slider(t('mix.echo'), 0, 1, 0.01, tr.dly, v => tr.dly = v, pct),
-        slider(t('mix.duck'), 0, 1, 0.01, tr.duck, v => tr.duck = v, pct),
-        slider(t('mix.pan'), -1, 1, 0.01, tr.pan, v => tr.pan = v, panFmt),
+        tag(slider(t('mix.filter'), -1, 1, 0.01, tr.filter, v => tr.filter = Math.abs(v) < 0.03 ? 0 : v, filterFmt), `${i}:filter`),
+        tag(slider(t('mix.drive'), 0, 1, 0.01, tr.drive, v => tr.drive = v, pct), `${i}:drive`),
+        tag(slider(t('mix.reverb'), 0, 1, 0.01, tr.rev, v => tr.rev = v, pct), `${i}:rev`),
+        tag(slider(t('mix.echo'), 0, 1, 0.01, tr.dly, v => tr.dly = v, pct), `${i}:dly`),
+        tag(slider(t('mix.duck'), 0, 1, 0.01, tr.duck, v => tr.duck = v, pct), `${i}:duck`),
+        tag(slider(t('mix.pan'), -1, 1, 0.01, tr.pan, v => tr.pan = v, panFmt), `${i}:pan`),
         tog('comp', t('mix.comp'))),
       h('div', { class: 'fcol' },
-        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: tr.id } })), f.inp),
+        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: tr.id } })), tag(f.inp, `${i}:vol`)),
         f.out,
         h('div', { class: 'srow' }, tog('mute', 'M'), tog('solo', 'S')))));
 }
@@ -53,7 +63,12 @@ export function renderMixer(): HTMLElement {
   target.onchange = () => { p.target = +target.value; commit(); };
   const result = h('span', { class: 'lufs', role: 'status' }, lastResult);
   const m = fader(t('mix.master'), p.master, v => p.master = v);
-  return h('div', { class: 'mixer' },
+  const root = h('div', { class: 'mixer' + (learn.on ? ' learning' : '') },
+    h('div', { class: 'mtools' },
+      h('button', { class: 'pill' + (learn.on ? ' on' : ''), data: { act: 'learn' }, 'aria-pressed': String(learn.on), title: t('learn.tip'), onclick: () => { learn.on = !learn.on; learn.target = ''; emit(); } }, '🎛 ' + t('learn.title')),
+      learn.on && h('p', { class: 'tip' }, t(learn.target ? 'learn.move' : 'learn.pick')),
+      Object.keys(learn.map).length > 0 && h('button', { class: 'pill', data: { act: 'learnclear' }, onclick: clearMidiMap }, t('learn.clear')),
+      h('canvas', { class: 'spec', width: 150, height: 70, role: 'img', 'aria-label': t('mix.spectrum'), title: t('mix.spectrum') })),
     ...p.tracks.map(strip),
     h('div', { class: 'strip master', style: '--c:#fff' },
       h('div', { class: 'sname' }, '🔊 ' + t('mix.master')),
@@ -72,11 +87,36 @@ export function renderMixer(): HTMLElement {
           h('span', { class: 'sect' }, t('mix.export')), target,
           h('button', { class: 'mini', data: { act: 'analyze' }, title: t('mix.analyzeTip'), onclick: async () => { lastResult = await analyzeMix(); result.textContent = lastResult; } }, '📊 ' + t('mix.analyze')), result),
         h('div', { class: 'fcol' },
-        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: 'master' } })), m.inp),
+        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: 'master' } })), tag(m.inp, 'm:master')),
         m.out, h('p', { class: 'tip' }, t('mix.limiter'))))));
+  // En mode assignation, un clic sur un réglage le désigne au lieu de le modifier.
+  root.addEventListener('pointerdown', e => {
+    if (!learn.on) return;
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-map]');
+    if (!el) return;
+    e.preventDefault(); e.stopPropagation(); learn.target = el.dataset.map!; emit();
+  }, true);
+  return root;
+}
+
+learn.onChange = emit;
+
+function drawSpectrum() {
+  const cv = document.querySelector<HTMLCanvasElement>('.spec'), sp = cv && engine.spectrum();
+  if (!cv || !sp) return;
+  const g = cv.getContext('2d')!, W = cv.width, H = cv.height, N = 30;
+  g.clearRect(0, 0, W, H);
+  // Bandes réparties de façon logarithmique, comme l'oreille.
+  for (let b = 0; b < N; b++) {
+    const i0 = Math.floor(Math.pow(sp.length, b / N)), i1 = Math.max(i0 + 1, Math.floor(Math.pow(sp.length, (b + 1) / N)));
+    let m = 0; for (let i = i0; i < i1 && i < sp.length; i++) m = Math.max(m, sp[i]);
+    const hh = (m / 255) * H;
+    g.fillStyle = `hsl(${190 + b * 4}, 85%, 62%)`; g.fillRect(b * W / N + 1, H - hh, W / N - 2, hh);
+  }
 }
 
 export function updateMeters() {
+  drawSpectrum();
   document.querySelectorAll<HTMLElement>('.mfill').forEach(el => {
     el.style.transform = `scaleY(${engine.level(el.dataset.id!).toFixed(3)})`;
   });

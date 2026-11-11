@@ -1,10 +1,10 @@
-import { analyze, encodeWav, engine, renderOffline } from './audio/engine';
+import { analyze, encodeMp3, encodeWav, engine, renderOffline } from './audio/engine';
 import { t } from './i18n';
 import { allNotesOff } from './input';
 import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, Track, TrackType, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, NPADS, Track, TrackType, emptyDrums, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -89,6 +89,74 @@ export function stretchClip(pct: number, semis: number) {
   clip.fadeIn = Math.round((clip.fadeIn ?? 0) * r); clip.fadeOut = Math.round((clip.fadeOut ?? 0) * r);
   S.stretch = { clip: '', pct: 100, semis: 0 };
   commit(); toast(t('toast.stretched'));
+}
+
+/**
+ * Découpe le son du clip en tranches, les charge sur les pads d'une nouvelle piste batterie
+ * et écrit le motif qui rejoue la boucle d'origine. `mode` : nombre de tranches égales, ou 0 pour suivre les attaques.
+ */
+export function chopClip(mode: number) {
+  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
+  if (!f || !buf) return;
+  const clip = f.clip, sr = buf.sampleRate, dur = stepDur(S.project.bpm);
+  const a = Math.floor(clip.offset * sr), b = Math.min(buf.length, Math.floor((clip.offset + clip.len * dur) * sr)), n = b - a;
+  if (n < sr * 0.05) return toast(t('toast.tooShort'), 'error');
+  let cuts: number[];
+  if (mode > 0) cuts = Array.from({ length: mode }, (_, i) => Math.round(i * n / mode));
+  else {
+    // Attaques : hausses brusques d'énergie, au moins 60 ms entre deux, les plus fortes d'abord.
+    const hop = 256, d = buf.getChannelData(0), env: number[] = [];
+    for (let i = a; i + hop <= b; i += hop) { let e = 0; for (let j = 0; j < hop; j++) e += d[i + j] * d[i + j]; env.push(Math.sqrt(e / hop)); }
+    const max = Math.max(...env, 1e-9), cand: { i: number; r: number }[] = [];
+    for (let i = 2; i < env.length; i++) { const r = env[i] - Math.max(env[i - 1], env[i - 2]); if (r > max * 0.12) cand.push({ i, r }); }
+    cand.sort((x, y) => y.r - x.r);
+    const gap = Math.ceil(0.06 * sr / hop), picked: number[] = [0];
+    for (const c of cand) { if (picked.length >= NPADS) break; if (picked.every(p => Math.abs(p - c.i) >= gap)) picked.push(c.i); }
+    cuts = picked.sort((x, y) => x - y).map(i => Math.max(0, i * hop - 64));
+  }
+  const tr = newTrack('drums', S.project.tracks.filter(x => x.type === 'drums').length + 1);
+  tr.name = (clip.name + ' ' + t('chop.suffix')).slice(0, 40);
+  const patLen = Math.max(1, Math.min(128, clip.len)), pat: Clip = { id: uid(), name: clip.name, start: clip.start, len: clip.len, offset: 0, patLen, drums: emptyDrums(patLen) };
+  cuts.forEach((c0, i) => {
+    const c1 = cuts[i + 1] ?? n, len = Math.max(1, c1 - c0), id = uid(), fade = Math.min(96, len >> 1);
+    const out = new AudioBuffer({ length: len, numberOfChannels: buf.numberOfChannels, sampleRate: sr });
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const o = out.getChannelData(ch); o.set(buf.getChannelData(ch).subarray(a + c0, a + c0 + len));
+      for (let k = 0; k < fade; k++) { o[k] *= k / fade; o[len - 1 - k] *= k / fade; }
+    }
+    addBuffer(id, out); tr.pads![i] = { bufferId: id, name: `${t('chop.slice')} ${i + 1}` };
+    const step = Math.min(patLen - 1, Math.round(c0 / sr / dur));
+    if (!pat.drums![i][step]) pat.drums![i][step] = 1;
+  });
+  tr.clips.push(pat); S.project.tracks.push(tr); f.track.mute = true;
+  S.selTrack = tr.id; S.selClip = pat.id; S.drumView = 'pads';
+  commit(); toast(t('toast.chopped', cuts.length));
+}
+
+// Copier / coller de clips dans l'arrangement
+let clipCopy: { clip: Clip; type: TrackType } | null = null;
+export function copyClip(): boolean {
+  const f = findClip(S.selClip);
+  if (!f) return false;
+  clipCopy = { clip: JSON.parse(JSON.stringify(f.clip)), type: f.track.type }; toast(t('toast.clipCopied'));
+  return true;
+}
+export function pasteClip(): boolean {
+  if (!clipCopy) return false;
+  const sel = findTrack(S.selTrack), tr = sel?.type === clipCopy.type ? sel : S.project.tracks.find(x => x.type === clipCopy!.type);
+  if (!tr) { toast(t('toast.noTrackFor'), 'error'); return true; }
+  const c: Clip = JSON.parse(JSON.stringify(clipCopy.clip));
+  c.id = uid(); c.start = Math.round(engine.currentStep() / S.snap) * S.snap;
+  tr.clips.push(c); S.selTrack = tr.id; S.selClip = c.id; commit();
+  return true;
+}
+
+export async function exportMp3() {
+  try {
+    toast(t('toast.rendering'));
+    download(await encodeMp3(await renderOffline(S.project)), safeName() + '.mp3');
+    toast(t('toast.mp3Exported'));
+  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : t('toast.exportFail'), 'error'); }
 }
 
 export function addMarker() {

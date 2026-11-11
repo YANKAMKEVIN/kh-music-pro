@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.5)
+## Fonctions (v0.6)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,10 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Découpage sur les pads** : un son devient 8 ou 16 tranches (égales ou selon les attaques) jouables et réarrangeables.
+- **Effets de performance** en mode Live : écho et réverb à la volée, bégaiement, coupure de piste d'un geste.
+- **Assignation MIDI** : boutons et curseurs d'un contrôleur reliés aux réglages du mixeur.
+- **Export MP3** (192 kbit/s), copier/coller de clips, analyseur de spectre sur le général.
 - **Clavier à l'écran** : jouable au doigt (plusieurs touches, glissé) ou à la souris.
 - **Sélection de notes** : rectangle de sélection, déplacement en groupe, copier/coller, flèches du clavier.
 - **Répétition de notes** sur les pads (roulements), enregistrable.
@@ -41,7 +45,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 132 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 142 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -61,6 +65,11 @@ Les tests utilisent Playwright (`npm i -D playwright` puis `npx playwright insta
 
 Le fichier `.github/workflows/deploy.yml` publie l'application sur GitHub Pages à chaque mise à jour de `main`.
 À activer une fois : dans le dépôt, *Settings > Pages > Source : GitHub Actions*.
+
+## Dépendance
+
+L'export MP3 utilise [`@breezystack/lamejs`](https://www.npmjs.com/package/@breezystack/lamejs) (licence LGPL), chargé seulement au moment d'exporter.
+Tout le reste de l'application est sans dépendance d'exécution.
 
 ## Structure
 

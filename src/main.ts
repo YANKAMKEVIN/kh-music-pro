@@ -1,11 +1,11 @@
 import './style.css';
-import { deleteClip, duplicateClip, saveFile, splitClip, toggleRecord } from './actions';
+import { copyClip, deleteClip, duplicateClip, pasteClip, saveFile, splitClip, toggleRecord } from './actions';
 import { engine, renderOffline } from './audio/engine';
 import { lufs } from './audio/loudness';
 import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
-import { allNotesOff, kb, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
+import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, redo, resetHistory, undo } from './store';
 import { BAR, demoProject, stepDur, templateProject } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
@@ -59,6 +59,8 @@ addEventListener('keydown', e => {
   if (mod) {
     const fn = ({ z: e.shiftKey ? redo : undo, y: redo, d: duplicateClip, e: splitClip, s: saveFile } as Record<string, () => void>)[k];
     if (fn) { e.preventDefault(); fn(); }
+    else if (k === 'c' && !getSelection()?.toString()) { if (copyClip()) e.preventDefault(); }
+    else if (k === 'v') { if (pasteClip()) e.preventDefault(); }
     return;
   }
   if (e.altKey) return;
@@ -122,7 +124,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, showLibrary, createFromTemplate, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

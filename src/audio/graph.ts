@@ -25,6 +25,8 @@ export class Mix {
   revBus: GainNode; dlyBus: GainNode; delay: DelayNode; noise: AudioBuffer;
   conv: ConvolverNode; fb: GainNode; revSize = 0;
   meq: BiquadFilterNode[]; wDirect: GainNode[]; wCross: GainNode[];
+  /** Effets de performance (temps réel) : envois momentanés du général vers un écho et une réverb, bégaiement. */
+  fxEcho?: GainNode; fxRev?: GainNode; fxDelay?: DelayNode; stutter?: AudioWorkletNode; private out: AudioNode;
   /** Vrai pendant la lecture de l'arrangement : les paramètres automatisés ne sont plus pilotés par `sync`. */
   autoOn = false;
   active = new Set<AudioScheduledSourceNode>();
@@ -45,6 +47,15 @@ export class Mix {
     this.master.connect(this.mlp).connect(this.mhp).connect(this.meq[0]).connect(this.meq[1]).connect(this.meq[2]).connect(stereo).connect(split);
     for (const c of [0, 1]) { split.connect(this.wDirect[c], c).connect(merge, 0, c); split.connect(this.wCross[c], c).connect(merge, 0, 1 - c); }
     merge.connect(this.limiter).connect(ctx.destination);
+    this.out = merge;
+    if (live) {
+      this.fxEcho = ctx.createGain(); this.fxEcho.gain.value = 0;
+      const d = this.fxDelay = ctx.createDelay(2), dfb = ctx.createGain(), dlp = ctx.createBiquadFilter(); dfb.gain.value = 0.55; dlp.type = 'lowpass'; dlp.frequency.value = 4000;
+      this.master.connect(this.fxEcho).connect(d).connect(dlp); dlp.connect(dfb).connect(d); dlp.connect(this.limiter);
+      this.fxRev = ctx.createGain(); this.fxRev.gain.value = 0;
+      const wash = ctx.createConvolver(); wash.buffer = this.impulse(4.5);
+      this.master.connect(this.fxRev).connect(wash).connect(this.limiter);
+    }
     if (live) { this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 512; this.limiter.connect(this.analyser); }
 
     this.revBus = ctx.createGain();
@@ -60,6 +71,17 @@ export class Mix {
     this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const n = this.noise.getChannelData(0);
     for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
+  }
+
+  /** Insère le bégaiement (boucle des derniers instants) juste avant le limiteur. */
+  async initStutter() {
+    if (this.stutter || !this.live) return;
+    const code = `class KhStut extends AudioWorkletProcessor{constructor(){super();this.n=sampleRate*4|0;this.b=[new Float32Array(this.n),new Float32Array(this.n)];this.w=0;this.len=0;this.s=0;this.p=0;this.port.onmessage=e=>{this.len=Math.min(this.n-1,e.data.len|0);this.s=(this.w-this.len+this.n)%this.n;this.p=0}}
+process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.len>0){const j=(this.s+this.p)%this.n,e=Math.min(1,this.p/48,(this.len-this.p)/48);for(let c=0;c<out.length;c++)out[c][k]=this.b[c%2][j]*e;this.p=(this.p+1)%this.len}else{for(let c=0;c<out.length;c++){const v=a[c]?a[c][k]:(a[0]?a[0][k]:0);this.b[c%2][this.w]=v;out[c][k]=v}this.w=(this.w+1)%this.n}}return true}}registerProcessor('kh-stut',KhStut)`;
+    await (this.ctx as AudioContext).audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    if (this.stutter) return;
+    const node = this.stutter = new AudioWorkletNode(this.ctx, 'kh-stut', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+    this.out.disconnect(this.limiter); this.out.connect(node).connect(this.limiter);
   }
 
   private impulse(sec: number) {

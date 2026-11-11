@@ -387,3 +387,18 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
 .lopen small { text-transform: none; letter-spacing: 0; font-size: 11px; flex: none; }
 .mini:disabled { opacity: .35; cursor: not-allowed; }
 @media (max-width: 760px) { .okb-keys { height: 96px; } .padside .tip { display: none; } }
+
+/* ================= V6 ================= */
+.fxgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pill.fx { height: 52px; font-weight: 700; touch-action: none; }
+.pill.fx.on { background: var(--a3); color: #1a0612; border-color: var(--a3); box-shadow: 0 0 20px var(--a3); }
+.lhead { justify-content: space-between; gap: 6px; height: 34px; }
+.lhead span { overflow: hidden; text-overflow: ellipsis; }
+.lhead .mini { height: 24px; min-width: 26px; padding: 0 6px; flex: none; }
+.mtools { width: 170px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.mtools .tip { margin: 0; line-height: 1.4; color: var(--a3); }
+.spec { width: 150px; height: 70px; margin-top: auto; background: rgba(0, 0, 0, .4); border: 1px solid var(--line); border-radius: 10px; }
+.mixer.learning [data-map] { outline: 1px dashed var(--a3); outline-offset: 2px; cursor: pointer; border-radius: 4px; }
+.mixer.learning [data-map].armed { outline: 2px solid var(--a3); box-shadow: 0 0 12px var(--a3); }
+.sl[data-cc]::after { content: attr(data-cc); grid-column: 1 / -1; font-size: 9px; color: var(--a3); line-height: 1; }
+.perf > .pill, .perf > .fxgrid, .perf > .sl { flex: none; }
