@@ -1,5 +1,6 @@
 import { audioFiles, chopClip, chooseInput, deleteClip, duplicateClip, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
+import { noteOf } from '../audio/pitch';
 import { lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack } from '../store';
@@ -390,6 +391,7 @@ function inputPanel() {
   return h('div', { class: 'ebar inbar' }, h('span', { class: 'sect' }, t('in.title')), h('label', { class: 'fld' }, t('in.device'), dev),
     h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, '🎤 ' + t(on ? 'in.on' : 'in.open')),
     h('div', { class: 'meter', title: t('in.level') }, h('div', { class: 'mfill', data: { id: 'input' } })),
+    on && h('div', { class: 'tuner', role: 'status', title: t('tuner.tip'), 'aria-label': t('tuner.title') }, h('span', { class: 'tnote' }, '—'), h('span', { class: 'tbar' }, h('i', {})), h('span', { class: 'tcents' }, '')),
     slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true),
     h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, '🎧 ' + t('in.monitor')));
 }
@@ -442,6 +444,21 @@ export function renderEditor(): HTMLElement {
   if (!f) return emptyState(findTrack(S.selTrack));
   const { track, clip } = f;
   return track.type === 'drums' ? drumEditor(track, clip) : track.type === 'synth' ? pianoRoll(track, clip) : audioEditor(track, clip);
+}
+
+/** Accordeur : affiche la note reçue et son écart (lissé pour rester lisible). */
+let tunerHz = 0, tunerMiss = 0;
+export function updateTuner() {
+  const el = document.querySelector<HTMLElement>('.tuner');
+  if (!el) return;
+  const hz = engine.inputPitch();
+  if (hz) { tunerHz = tunerHz && Math.abs(Math.log2(hz / tunerHz)) < 0.03 ? tunerHz * 0.7 + hz * 0.3 : hz; tunerMiss = 0; }
+  else if (++tunerMiss > 30) tunerHz = 0;
+  const [note, bar, cents] = el.children as unknown as HTMLElement[];
+  if (!tunerHz) { note.textContent = '—'; cents.textContent = ''; el.classList.remove('ok'); (bar.firstChild as HTMLElement).style.left = '50%'; return; }
+  const n = noteOf(tunerHz);
+  note.textContent = noteName(n.midi); cents.textContent = (n.cents > 0 ? '+' : '') + n.cents;
+  el.classList.toggle('ok', Math.abs(n.cents) <= 5); (bar.firstChild as HTMLElement).style.left = 50 + n.cents + '%';
 }
 
 /** Tête de lecture dans l'éditeur de motif. */

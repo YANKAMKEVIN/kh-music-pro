@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.6)
+## Fonctions (v0.7)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,9 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Effets de modulation** par piste : chorus, trémolo calé sur le tempo, lo-fi.
+- **Accordeur** sur l'entrée audio.
+- **Visite guidée** interactive, depuis l'aide.
 - **Découpage sur les pads** : un son devient 8 ou 16 tranches (égales ou selon les attaques) jouables et réarrangeables.
 - **Effets de performance** en mode Live : écho et réverb à la volée, bégaiement, coupure de piste d'un geste.
 - **Assignation MIDI** : boutons et curseurs d'un contrôleur reliés aux réglages du mixeur.
@@ -45,7 +48,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 142 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 148 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -61,6 +64,20 @@ npm run qa
 Le rapport est écrit dans `qa/REPORT.md`. Un seul domaine : `npm run qa -- L` (Live), `npm run qa -- AU,F` (automation et clips audio).
 Les tests utilisent Playwright (`npm i -D playwright` puis `npx playwright install chromium` si besoin) ; le cas E04 utilise `python3` pour vérifier l'archive ZIP.
 
+## Version bureau
+
+```bash
+npm run desktop
+```
+
+ouvre l'application dans une fenêtre de bureau (Electron). `npm run desktop:build` produit l'installateur de votre système dans `release/`.
+Sur GitHub, l'action **Version bureau** construit les installateurs Windows, macOS et Linux ; ils se téléchargent dans les *Artifacts* de l'exécution.
+Ils ne sont pas signés : Windows et macOS afficheront un avertissement au premier lancement.
+
+## QA automatique
+
+L'action **QA** relance toute la campagne à chaque mise à jour du dépôt et joint le rapport à l'exécution.
+
 ## Mise en ligne
 
 Le fichier `.github/workflows/deploy.yml` publie l'application sur GitHub Pages à chaque mise à jour de `main`.
@@ -69,7 +86,7 @@ Le fichier `.github/workflows/deploy.yml` publie l'application sur GitHub Pages 
 ## Dépendance
 
 L'export MP3 utilise [`@breezystack/lamejs`](https://www.npmjs.com/package/@breezystack/lamejs) (licence LGPL), chargé seulement au moment d'exporter.
-Tout le reste de l'application est sans dépendance d'exécution.
+Tout le reste de l'application est sans dépendance d'exécution. Electron et electron-builder ne servent qu'à la version bureau.
 
 ## Structure
 

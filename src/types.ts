@@ -58,6 +58,7 @@ export interface Track {
   drive: number;   // saturation 0..1
   filter: number;  // -1..0 passe-bas, 0..1 passe-haut
   duck: number;    // sidechain : atténuation à chaque coup de kick, 0..1
+  chorus: number; trem: number; crush: number; // modulation : chorus, trémolo (à la croche), lo-fi, 0..1
   auto?: Partial<Record<AutoParam, Pt[]>>;
   autoShow?: AutoParam | '';
   synth?: SynthParams;
@@ -156,7 +157,7 @@ export function newTrack(type: TrackType, index: number, preset = 'lead'): Track
   return {
     id: uid(), name: `${t('type.' + type)} ${index}`, type,
     color: COLORS[(index - 1 + (type === 'drums' ? 0 : type === 'synth' ? 1 : 3)) % COLORS.length],
-    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0,
+    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0,
     synth: type === 'synth' ? makeSynth(preset) : undefined,
     kit: type === 'drums' ? 'electro' : undefined,
     pads: type === 'drums' ? new Array(NPADS).fill(null) : undefined,
@@ -190,7 +191,7 @@ export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
   p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0;
   for (const tr of p.tracks) {
-    tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0;
+    tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0;
     if (tr.type === 'drums') {
       tr.kit ??= 'electro'; tr.pads ??= new Array(NPADS).fill(null);
       for (const c of tr.clips) while (c.drums && c.drums.length < NPADS) c.drums.push(new Array(c.patLen!).fill(0));

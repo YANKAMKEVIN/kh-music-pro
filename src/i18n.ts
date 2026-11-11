@@ -369,4 +369,19 @@ const D: Record<string, [string, string, string]> = {
   'learn.clear': ['Effacer les assignations', 'Clear assignments', 'Borrar asignaciones'],
   'mix.spectrum': ['Spectre du général', 'Master spectrum', 'Espectro del máster'],
   'help.k.clips': ['Copier / coller un clip', 'Copy / paste a clip', 'Copiar / pegar un clip'],
+
+  // ===== V7 =====
+  'mix.chorus': ['Chorus', 'Chorus', 'Chorus'], 'mix.trem': ['Trémolo', 'Tremolo', 'Trémolo'], 'mix.crush': ['Lo-fi', 'Lo-fi', 'Lo-fi'],
+  'tuner.title': ['Accordeur', 'Tuner', 'Afinador'],
+  'tuner.tip': ['Accordeur : note reçue et écart en centièmes de demi-ton (vert quand c\'est juste)', 'Tuner: incoming note and offset in cents (green when in tune)', 'Afinador: nota recibida y desviación en cents (verde cuando está afinada)'],
+  'tour.start': ['Visite guidée', 'Guided tour', 'Visita guiada'],
+  'tour.next': ['Suivant', 'Next', 'Siguiente'], 'tour.prev': ['Précédent', 'Back', 'Anterior'], 'tour.done': ['Terminer', 'Finish', 'Terminar'], 'tour.skip': ['Quitter la visite', 'Leave the tour', 'Salir de la visita'],
+  'tour.1': ['<b>Transport.</b> Lecture, arrêt et enregistrement. La barre d\'espace lance et arrête la lecture.', '<b>Transport.</b> Play, stop and record. The space bar starts and stops playback.', '<b>Transporte.</b> Reproducir, detener y grabar. La barra espaciadora inicia y detiene la reproducción.'],
+  'tour.2': ['<b>Pistes.</b> Ajoutez ici une batterie, un instrument ou une piste audio pour votre micro.', '<b>Tracks.</b> Add drums, an instrument or an audio track for your microphone here.', '<b>Pistas.</b> Añade aquí una batería, un instrumento o una pista de audio para tu micrófono.'],
+  'tour.3': ['<b>Arrangement.</b> Chaque bloc coloré est un clip : glissez-le pour le déplacer, double-cliquez dans le vide pour en créer un.', '<b>Arrangement.</b> Each coloured block is a clip: drag it to move it, double-click empty space to create one.', '<b>Arreglo.</b> Cada bloque de color es un clip: arrástralo para moverlo, haz doble clic en el vacío para crear uno.'],
+  'tour.4': ['<b>Éditeur.</b> Le clip sélectionné s\'ouvre ici : séquenceur et pads pour la batterie, piano roll pour les notes, forme d\'onde pour l\'audio.', '<b>Editor.</b> The selected clip opens here: sequencer and pads for drums, piano roll for notes, waveform for audio.', '<b>Editor.</b> El clip seleccionado se abre aquí: secuenciador y pads para la batería, piano roll para las notas, forma de onda para el audio.'],
+  'tour.5': ['<b>Mixeur et Live.</b> Le mixeur règle volumes et effets ; le mode Live lance clips et scènes pour jouer en direct.', '<b>Mixer and Live.</b> The mixer sets levels and effects; Live mode launches clips and scenes to perform.', '<b>Mezclador y Live.</b> El mezclador ajusta volúmenes y efectos; el modo Live lanza clips y escenas para tocar en directo.'],
+  'tour.6': ['<b>Boucle et tempo.</b> Réglez le tempo, activez le métronome et faites tourner un passage en boucle.', '<b>Loop and tempo.</b> Set the tempo, turn on the metronome and loop a section.', '<b>Bucle y tempo.</b> Ajusta el tempo, activa el metrónomo y repite un pasaje en bucle.'],
+  'tour.7': ['<b>Projet.</b> Vos projets et modèles, l\'import de sons et les exports (MP3, MIDI, pistes séparées).', '<b>Project.</b> Your projects and templates, audio import and exports (MP3, MIDI, separate tracks).', '<b>Proyecto.</b> Tus proyectos y plantillas, la importación de sonidos y las exportaciones (MP3, MIDI, pistas separadas).'],
+  'tour.8': ['<b>Aide.</b> Les raccourcis et cette visite restent disponibles ici à tout moment.', '<b>Help.</b> The shortcuts and this tour stay available here at any time.', '<b>Ayuda.</b> Los atajos y esta visita siguen disponibles aquí en cualquier momento.'],
 };

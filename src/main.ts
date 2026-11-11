@@ -10,7 +10,9 @@ import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, 
 import { BAR, demoProject, stepDur, templateProject } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, toast } from './ui/dom';
-import { flashPad, notesKey, renderEditor, updateEditorPlayhead } from './ui/editor';
+import { detectPitch } from './audio/pitch';
+import { flashPad, notesKey, renderEditor, updateEditorPlayhead, updateTuner } from './ui/editor';
+import { startTour } from './ui/tour';
 import { createFromTemplate, showLibrary } from './ui/library';
 import { refreshLive, renderLive } from './ui/live';
 import { renderMixer, updateMeters } from './ui/mixer';
@@ -52,7 +54,7 @@ const down = new Map<string, number>();
 
 addEventListener('keydown', e => {
   const el = e.target as HTMLElement;
-  if (document.querySelector('dialog[open]')) return;
+  if (document.querySelector('dialog[open], .tour')) return;
   if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type !== 'range')) return;
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (el.tagName !== 'INPUT' && notesKey(e)) { e.preventDefault(); return; }
@@ -103,7 +105,7 @@ function frame() {
     const arr = $('arr'), x = step * S.px, view = arr.clientWidth - 256;
     if (x > arr.scrollLeft + view - 40 || x < arr.scrollLeft) arr.scrollLeft = Math.max(0, x - 80);
   }
-  updateEditorPlayhead(step);
+  updateEditorPlayhead(step); updateTuner();
   updateMeters();
   requestAnimationFrame(frame);
 }
@@ -124,7 +126,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -17,6 +17,7 @@ function wavFile(name, freq = 440, sec = 1) {
   const f = path.join(TMP, name); fs.writeFileSync(f, b); return f;
 }
 const TONE = wavFile('qa-tone.wav');
+const MIC = wavFile('qa-mic.wav', 440, 2); // son reçu par le micro simulé : un la à 440 Hz
 
 // Outils injectés dans la page (analyse audio par rendu hors-ligne).
 const PAGE_HELPERS = () => {
@@ -66,7 +67,7 @@ async function reset() {
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
     Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
-    document.querySelectorAll('dialog[open]').forEach(d => d.close());
+    document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
     k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
@@ -565,11 +566,12 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'sampler'); text += await page.innerText('#panel');
     await page.selectOption('[data-role=preset]', 'epiano'); await page.click('[data-act=okb]'); text += await page.innerText('#panel');
     await tab('mixer'); text += await page.innerText('#panel'); await tab('live'); text += await page.innerText('#panel');
-    await page.click('#bHelp'); text += await page.innerText('#help'); await page.keyboard.press('Escape');
+    await page.click('#bHelp'); text += await page.innerText('#help'); await page.click('#bTour');
+    for (let i = 0; i < 8; i++) { await sleep(60); text += await page.innerText('.tbub'); await page.click('[data-act=tournext]'); }
     await menu('bLib'); text += await page.innerText('#lib'); await page.keyboard.press('Escape');
     await page.click('#menu summary'); text += await page.innerText('#top'); await page.click('#menu summary');
     const titles = await page.$$eval('[title], [aria-label]', els => els.map(e => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' | '));
-    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn)\.[a-zA-Z0-9.]+/g);
+    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour)\.[a-zA-Z0-9.]+/g);
     expect(!raw, `clés non traduites : ${raw && [...new Set(raw)].join(', ')}`);
     const miss = errors.slice(n0).filter(e => e.includes('i18n')); expect(!miss.length, miss.join(' ; '));
     if (code !== 'fr') expect(!/Éditeur|Supprimer|Enregistrer|Longueur/.test(text), 'du français subsiste');
@@ -871,9 +873,9 @@ test('E04', 'Passerelles', 'Exporter les pistes séparées : une archive ZIP val
 
 // ============ V3 : projet, robustesse, application installable ============
 test('P06', 'Projet', 'Un projet de la V2 s\'ouvre dans la V3 avec les nouveaux réglages par défaut', async () => {
-  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers']) delete p[k]; p.tracks.forEach(t => { delete t.duck; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers']) delete p[k]; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
   const f = path.join(TMP, 'v2.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(400);
-  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0) && Array.isArray(p.markers), 'valeurs par défaut absentes');
+  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0) && Array.isArray(p.markers), 'valeurs par défaut absentes');
   const a = await S(() => window.qa.stats(window.kh.S.project)), b = await S(() => window.qa.stats(window.kh.demoProject())); near(a.rms / b.rms, 1, 0.08, 'le projet doit sonner comme avant'); // la réverb est tirée au hasard à chaque rendu
 });
 test('X10', 'Robustesse', 'Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud', async () => {
@@ -1004,7 +1006,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-    await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button');
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
     const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
     expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top < 80 && lay.topScroll > lay.iw, `barre supérieure non compacte (${lay.top} px)`);
     expect(lay.panel > 250 && lay.arr > 180 && lay.lane < 140, `zones mal réparties (${JSON.stringify(lay)})`);
@@ -1023,7 +1025,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
 test('MB02', 'Téléphone', 'Au doigt : déplacer un clip et dessiner une courbe d\'automation', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
     const cdp = await ctx2.newCDPSession(pg);
     const swipe = async (x, y, dx, dy) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 5, y: y + dy * i / 5 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150); };
     await pg.evaluate(() => { const k = window.kh; k.S.project.tracks[1].clips[0].len = 16; k.S.project.tracks[1].autoShow = 'vol'; k.commit(); });
@@ -1050,7 +1052,7 @@ test('OK01', 'Clavier à l\'écran', 'Afficher le clavier, jouer une touche à l
 test('OK02', 'Clavier à l\'écran', 'Sur écran tactile : clavier affiché d\'office, accord à deux doigts', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
     await pg.tap('.head >> nth=1 >> .ticon'); expect(await pg.$('.okb'), 'clavier absent sur écran tactile');
     const a = await (await pg.$('.wk[data-m="48"]')).boundingBox(), b = await (await pg.$('.wk[data-m="55"]')).boundingBox(), cdp = await ctx2.newCDPSession(pg);
     const pt = (r, id) => ({ x: r.x + r.width / 2, y: r.y + r.height - 12, id });
@@ -1285,8 +1287,82 @@ test('SP01', 'Mixeur', 'L\'analyseur de spectre s\'anime pendant la lecture et r
   expect(on > 800, `spectre vide en lecture (${on} px)`); expect(off < on / 4, `le spectre ne retombe pas (${off} px)`);
 });
 
+// ============ V7 : effets de modulation ============
+test('MOD01', 'Mixage', 'Chorus, trémolo et lo-fi : réglables et audibles au rendu', async () => {
+  const r = await S(async () => {
+    const wins = Array.from({ length: 32 }, (_, i) => [1 + i / 32, 1 + (i + 1) / 32]);
+    const one = async f => { const p = window.qa.only(2, (p, t) => { p.bpm = 120; t.rev = 0; f(t); }), w = await window.qa.wins(p, wins), st = await window.qa.stats(p), l = w.map(x => x.l); return { swing: Math.max(...l) / Math.min(...l), rms: st.rms, hf: st.hf, bad: st.bad, peak: st.peak }; };
+    return { base: await one(() => { }), trem: await one(t => { t.trem = 1; }), crush: await one(t => { t.crush = 0.9; }), chorus: await one(t => { t.chorus = 1; }) };
+  });
+  expect(r.trem.swing > r.base.swing * 3 && r.trem.swing > 4, `le trémolo ne module pas le niveau (${r.trem.swing.toFixed(1)} contre ${r.base.swing.toFixed(1)})`);
+  expect(r.crush.hf > r.base.hf * 1.5, `le lo-fi n'ajoute pas de grain (${r.crush.hf.toFixed(4)} / ${r.base.hf.toFixed(4)})`);
+  expect(Math.abs(r.chorus.rms / r.base.rms - 1) > 0.08, `le chorus n'agit pas (${(r.chorus.rms / r.base.rms).toFixed(3)})`);
+  for (const k of Object.keys(r)) expect(r[k].bad === 0 && r[k].peak <= 0.97, `${k} : signal invalide`);
+  await tab('mixer'); await setSlider('.strip >> nth=2', 'Chorus', 0.4); await setSlider('.strip >> nth=2', 'Trémolo', 0.6); await setSlider('.strip >> nth=2', 'Lo-fi', 0.3);
+  const t = (await proj()).tracks[2]; expect(t.chorus === 0.4 && t.trem === 0.6 && t.crush === 0.3, 'réglages non enregistrés');
+  await page.keyboard.press('Space'); await sleep(500); await S(() => { window.kh.S.project.bpm = 90; window.kh.commit(); }); await sleep(200);
+  near(await S(() => window.kh.engine.mix.tracks.get(window.kh.S.project.tracks[2].id).tremLfo.frequency.value), 3, 0.05, 'le trémolo suit le tempo (croche à 90 BPM)');
+});
+
+// ============ V7 : accordeur ============
+test('TU01', 'Accordeur', 'La détection de hauteur est juste : sinus, son riche en harmoniques, silence et bruit', async () => {
+  const r = await S(() => {
+    const k = window.kh, sr = 48000, mk = f => { const b = new Float32Array(2048); for (let i = 0; i < b.length; i++) b[i] = f(i / sr); return k.detectPitch(b, sr); };
+    const saw = hz => t => { let v = 0; for (let h = 1; h <= 8; h++) v += Math.sin(2 * Math.PI * hz * h * t) / h; return v * 0.3; };
+    return { a110: mk(t => 0.5 * Math.sin(2 * Math.PI * 110 * t)), e329: mk(t => 0.5 * Math.sin(2 * Math.PI * 329.63 * t)), a880: mk(t => 0.2 * Math.sin(2 * Math.PI * 880 * t)), saw196: mk(saw(196)), saw82: mk(saw(82.41)), silence: mk(() => 0), noise: mk(() => Math.random() - 0.5) };
+  });
+  for (const [k, hz] of [['a110', 110], ['e329', 329.63], ['a880', 880], ['saw196', 196], ['saw82', 82.41]]) near(1200 * Math.log2(r[k] / hz), 0, 3, `${k} : écart en cents`);
+  expect(r.silence === 0 && r.noise === 0, `fausse note détectée (silence ${r.silence}, bruit ${r.noise})`);
+});
+test('TU02', 'Accordeur', 'Avec l\'entrée active, l\'accordeur affiche la note reçue ; il disparaît à la fermeture', async () => {
+  await page.click(await headSel(4)); expect(!(await page.$('.tuner')), 'accordeur visible sans entrée'); await page.click('[data-act=inopen]'); await sleep(300);
+  expect(await page.$('.tuner'), 'accordeur absent');
+  const note = await page.waitForFunction(() => { const t = document.querySelector('.tnote'); return t && t.textContent !== '—' ? t.textContent + '|' + document.querySelector('.tcents').textContent : false; }, null, { timeout: 6000, polling: 30 }).then(h => h.jsonValue()).catch(() => '');
+  expect(/^La4\|[+-]?\d$/.test(note), `le la à 440 Hz du micro simulé n'est pas reconnu (« ${note} »)`);
+  await page.click('[data-act=inopen]'); await sleep(150); expect(!(await page.$('.tuner')), 'accordeur resté affiché');
+});
+
+// ============ V7 : visite guidée ============
+const tourState = pg => pg.evaluate(() => { const s = document.querySelector('.tspot'), b = document.querySelector('.tbub'); if (!s || !b) return null; const r = s.getBoundingClientRect(), q = b.getBoundingClientRect(); return { n: b.querySelector('small').textContent, spot: [r.left, r.top, r.right, r.bottom], inView: q.left >= 0 && q.top >= 0 && q.right <= innerWidth + 1 && q.bottom <= innerHeight + 1 && r.width > 20 && r.height > 20, overlap: !(q.right < r.left || q.left > r.right || q.bottom < r.top || q.top > r.bottom), text: b.querySelector('p').textContent.length }; });
+test('TR01', 'Visite guidée', 'La visite se lance depuis l\'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis', async () => {
+  await page.click('#bHelp'); await page.click('#bTour'); await sleep(200);
+  expect(!(await page.$eval('#help', d => d.open)) && await page.$('.tour'), 'visite non lancée');
+  let st = await tourState(page); expect(st.n === '1 / 8', `étape ${st.n}`);
+  const tr = await box('.transport'); expect(st.spot[0] <= tr.x && st.spot[2] >= tr.x + tr.width, 'la zone éclairée ne couvre pas le transport');
+  await page.keyboard.press('r'); await page.keyboard.press('l'); await page.keyboard.press('Enter').catch(() => { }); await sleep(150);
+  expect(await S(() => !window.kh.engine.playing && !window.kh.engine.recording && window.kh.S.project.loop), 'les raccourcis ne sont pas bloqués pendant la visite');
+  st = await tourState(page); const first = +st.n[0];
+  for (let i = first + 1; i <= 8; i++) {
+    if (i % 2) await page.keyboard.press('ArrowRight'); else await page.click('[data-act=tournext]'); await sleep(260);
+    st = await tourState(page); expect(st && st.n === `${i} / 8`, `étape ${i} : ${st && st.n}`); expect(st.inView && st.text > 30, `étape ${i} : bulle hors écran ou vide`); expect(!st.overlap, `étape ${i} : la bulle masque la zone montrée`);
+  }
+  await page.click('[data-act=tourprev]'); expect((await tourState(page)).n === '7 / 8', 'retour en arrière'); await page.keyboard.press('ArrowRight');
+  expect((await page.textContent('[data-act=tournext]')) === 'Terminer', 'dernier bouton'); await page.click('[data-act=tournext]'); expect(!(await page.$('.tour')), 'visite non terminée');
+  await page.click('#bHelp'); await page.click('#bTour'); await sleep(150); await page.keyboard.press('Escape'); expect(!(await page.$('.tour')), 'Échap ne quitte pas la visite');
+  await page.keyboard.press('Space'); await sleep(200); expect(await S(() => window.kh.engine.playing), 'après la visite, les raccourcis doivent reprendre');
+});
+test('TR02', 'Visite guidée', 'Sur téléphone, chaque bulle de la visite tient à l\'écran', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#bTour'); else await pg.evaluate(() => window.kh.startTour());
+    await pg.waitForSelector('.tour');
+    for (let i = 1; i <= 8; i++) { await pg.waitForTimeout(260); const st = await tourState(pg); expect(st && st.n === `${i} / 8` && st.inView, `étape ${i} : ${JSON.stringify(st)}`); await pg.tap('[data-act=tournext]'); }
+    expect(!(await pg.$('.tour')), 'visite non terminée');
+  } finally { await ctx2.close(); }
+});
+
+// ============ V7 : version bureau ============
+test('DK01', 'Version bureau', 'L\'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page', async () => {
+  const cp = require('child_process'), root = path.join(__dirname, '..');
+  cp.execSync('npx vite build', { cwd: root, stdio: 'ignore' });
+  let out = '';
+  try { out = cp.execFileSync('xvfb-run', ['-a', 'node', 'qa/desktop-smoke.cjs'], { cwd: root, timeout: 120000, env: { ...process.env, NODE_PATH: process.env.NODE_PATH || '' } }).toString(); }
+  catch (e) { out = String(e.stdout || '') + String(e.stderr || '') + String(e.message || ''); }
+  expect(out.includes('Version bureau : OK'), `échec : ${out.trim().split('\n').slice(-2).join(' / ').slice(0, 300)}`);
+});
+
 (async () => {
-  browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
+  browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
   page = await ctx.newPage();
   page.on('pageerror', e => errors.push('PAGE ' + e.message));
@@ -1294,7 +1370,7 @@ test('SP01', 'Mixeur', 'L\'analyseur de spectre s\'anime pendant la lecture et r
   page.on('dialog', d => d.accept(dialogText));
   await page.addInitScript(PAGE_HELPERS);
   await page.goto(BASE); await page.waitForSelector('.clip');
-  if (await page.$eval('#help', d => d.open)) await page.click('#help button');
+  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
 
   const only = process.argv[2];
   for (const c of cases) {

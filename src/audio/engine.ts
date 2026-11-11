@@ -1,4 +1,5 @@
 import { gainLimit, lufs, peakOf } from './loudness';
+import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
 import { S, buffers } from '../store';
 import { BAR, Project, Track, contentEnd, stepDur } from '../types';
@@ -32,7 +33,7 @@ class Engine {
   private marks: { t: number; s: number }[] = [];
   private timer = 0;
   private levels = new Map<string, number>();
-  private scratch = new Float32Array(512);
+  private scratch = new Float32Array(2048);
   private voices = new Map<string, Voice>();
   private liveSrc = new Map<string, AudioBufferSourceNode[]>();
   private workletReady?: Promise<void>;
@@ -216,7 +217,7 @@ class Engine {
     });
     await this.ctx.resume();
     const src = this.ctx.createMediaStreamSource(stream), gain = this.ctx.createGain(), mon = this.ctx.createGain(), analyser = this.ctx.createAnalyser();
-    gain.gain.value = gainVal; mon.gain.value = monVal; analyser.fftSize = 512;
+    gain.gain.value = gainVal; mon.gain.value = monVal; analyser.fftSize = 2048;
     src.connect(gain); gain.connect(analyser); gain.connect(mon).connect(this.mix.master);
     this.inp = { stream, src, gain, mon, analyser, device };
   }
@@ -284,6 +285,15 @@ class Engine {
     if (on) this.fxOn.add(name); else this.fxOn.delete(name);
   }
   fxOn = new Set<string>();
+
+  /** Accordeur : hauteur de la note reçue sur l'entrée audio (Hz), 0 s'il n'y en a pas. */
+  inputPitch(): number {
+    const a = this.inp?.analyser;
+    if (!a) return 0;
+    const buf = this.scratch.subarray(0, a.fftSize);
+    a.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>);
+    return detectPitch(buf, this.ctx.sampleRate);
+  }
 
   /** Spectre du général (amplitudes 0..255 par bande de fréquence). */
   spectrum(): Uint8Array | null {

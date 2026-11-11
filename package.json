@@ -1,20 +1,52 @@
 {
   "name": "kh-music-pro",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "qa": "node qa/run.cjs",
-    "qa:all": "bash qa/all.sh"
+    "qa:all": "bash qa/all.sh",
+    "desktop": "npm run build && electron .",
+    "desktop:build": "npm run build && electron-builder --publish never"
   },
   "devDependencies": {
+    "electron": "^45.3.0",
+    "electron-builder": "^26.18.0",
+    "playwright": "1.63.0",
     "typescript": "^5.6.0",
     "vite": "^5.4.0"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7"
+  },
+  "description": "Studio de musique : beatmaking, enregistrement, mixage et live.",
+  "author": "KH Music Pro",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "pro.khmusic.app",
+    "productName": "KH Music Pro",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "linux": {
+      "category": "AudioVideo"
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "KH Music Pro utilise le micro pour enregistrer vos prises."
+      }
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

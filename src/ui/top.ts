@@ -6,6 +6,7 @@ import { S, commit, emit, redo, undo } from '../store';
 import { clamp, h, toast } from './dom';
 import { keyLabel } from './editor';
 import { showLibrary } from './library';
+import { startTour } from './tour';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -103,7 +104,8 @@ function buildHelp() {
       <div><h3>${t('help.start')}</h3><ol>${[1, 11, 2, 3, 4, 5, 10, 6, 7, 9, 8].map(i => `<li>${t('help.s' + i)}</li>`).join('')}</ol></div>
       <div><h3>${t('help.keys')}</h3><table>${rows.map(([a, key]) => `<tr><td>${a}</td><td>${t('help.k.' + key)}</td></tr>`).join('')}</table></div>
     </div>
-    <form method="dialog"><button class="pill accent" autofocus>${t('help.go')}</button></form>`;
+    <form method="dialog"><button class="pill" id="bTour" value="tour">🧭 ${t('tour.start')}</button><button class="pill accent" autofocus>${t('help.go')}</button></form>`;
+  $('bTour').onclick = () => setTimeout(startTour, 50);
 }
 
 export function initFileInputs() {

@@ -5,12 +5,20 @@ export interface TrackNodes {
   low: BiquadFilterNode; mid: BiquadFilterNode; high: BiquadFilterNode;
   comp: DynamicsCompressorNode; makeup: GainNode; fader: GainNode; auto: GainNode; duck: GainNode; pan: StereoPannerNode;
   revSend: GainNode; dlySend: GainNode; analyser?: AnalyserNode; compOn?: boolean; driveVal?: number; duckAmt: number;
+  crush: WaveShaperNode; crushIn: GainNode; crushOut: GainNode; crushVal?: number; chWet: GainNode; trem: GainNode; tremDepth: GainNode; tremLfo: OscillatorNode;
 }
 export interface Voice { release(at: number): void }
 type Buffers = Map<string, AudioBuffer>;
 
 /** Filtre « DJ » bipolaire : négatif = passe-bas, positif = passe-haut. */
 const djFreqs = (v: number): [number, number] => [v < 0 ? 20000 * Math.pow(2, v * 8) : 20000, v > 0 ? 20 * Math.pow(2, v * 9.5) : 20];
+
+/** Lo-fi : réduit le nombre de niveaux du signal (de 32 à 3 paliers par demi-onde). */
+function crushCurve(amount: number) {
+  const L = 3 + 29 * Math.pow(1 - amount, 2), n = 4096, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) c[i] = Math.round((i / (n - 1) * 2 - 1) * L) / L;
+  return c;
+}
 
 function driveCurve(amount: number) {
   const k = 1 + amount * 24, n = 1024, c = new Float32Array(n), norm = Math.tanh(k);
@@ -104,6 +112,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       low: c.createBiquadFilter(), mid: c.createBiquadFilter(), high: c.createBiquadFilter(),
       comp: c.createDynamicsCompressor(), makeup: c.createGain(), fader: c.createGain(), auto: c.createGain(), duck: c.createGain(), pan: c.createStereoPanner(),
       revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0,
+      crush: c.createWaveShaper(), crushIn: c.createGain(), crushOut: c.createGain(), chWet: c.createGain(), trem: c.createGain(), tremDepth: c.createGain(), tremLfo: c.createOscillator(),
     };
     n.lp.type = 'lowpass'; n.lp.frequency.value = 20000; n.hp.type = 'highpass'; n.hp.frequency.value = 20;
     n.shaper.oversample = '2x';
@@ -112,7 +121,18 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     n.high.type = 'highshelf'; n.high.frequency.value = 5000;
     n.comp.threshold.value = -24; n.comp.ratio.value = 4; n.comp.attack.value = 0.005; n.comp.release.value = 0.2;
     n.makeup.gain.value = 1.5; n.fader.gain.value = 0; n.revSend.gain.value = 0; n.dlySend.gain.value = 0;
-    n.input.connect(n.lp).connect(n.hp).connect(n.shaper).connect(n.low).connect(n.mid).connect(n.high);
+    // Modulation : lo-fi, puis chorus (deux voix retardées qui ondulent), puis trémolo.
+    n.input.connect(n.lp).connect(n.hp).connect(n.shaper).connect(n.crushIn).connect(n.crush).connect(n.crushOut).connect(n.trem);
+    n.chWet.gain.value = 0;
+    for (const [ms, hz] of [[17, 0.7], [26, 1.1]]) {
+      const d = c.createDelay(0.1), lfo = c.createOscillator(), depth = c.createGain();
+      d.delayTime.value = ms / 1000; lfo.frequency.value = hz; depth.gain.value = 0.0035;
+      lfo.connect(depth).connect(d.delayTime); lfo.start();
+      n.crushOut.connect(d).connect(n.chWet);
+    }
+    n.chWet.connect(n.trem);
+    n.tremDepth.gain.value = 0; n.tremLfo.connect(n.tremDepth).connect(n.trem.gain); n.tremLfo.start();
+    n.trem.connect(n.low).connect(n.mid).connect(n.high);
     n.comp.connect(n.makeup).connect(n.fader);
     n.fader.connect(n.auto).connect(n.duck).connect(n.pan).connect(this.master);
     n.pan.connect(n.revSend).connect(this.revBus);
@@ -138,6 +158,10 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       const au = this.autoOn ? t.auto : undefined;
       if (!au?.filter?.length) { const [lp, hp] = djFreqs(t.filter); this.set(n.lp.frequency, lp); this.set(n.hp.frequency, hp); }
       n.duckAmt = t.duck;
+      // Le signal est amplifié avant la réduction puis ramené à son niveau : l'effet reste audible sur un son faible.
+      if (n.crushVal !== t.crush) { n.crush.curve = t.crush > 0 ? crushCurve(t.crush) : null; n.crushIn.gain.value = t.crush > 0 ? 3 : 1; n.crushOut.gain.value = t.crush > 0 ? 1 / 3 : 1; n.crushVal = t.crush; }
+      this.set(n.chWet.gain, t.chorus * 0.8);
+      this.set(n.trem.gain, 1 - t.trem / 2); this.set(n.tremDepth.gain, t.trem / 2); this.set(n.tremLfo.frequency, p.bpm / 30);
       if (n.driveVal !== t.drive) { n.shaper.curve = t.drive > 0 ? driveCurve(t.drive) : null; n.driveVal = t.drive; }
       if (n.compOn !== t.comp) { n.high.disconnect(); n.high.connect(t.comp ? n.comp : n.fader); n.compOn = t.comp; }
       const audible = !t.mute && (!anySolo || t.solo);

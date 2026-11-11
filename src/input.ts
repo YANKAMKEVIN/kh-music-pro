@@ -144,7 +144,7 @@ export async function connectMidi(): Promise<number> {
 
 // ---------- Assignation des boutons d'un contrôleur (messages CC) ----------
 /** cible = « index de piste:paramètre » ou « m:paramètre » pour le général. */
-export const RANGES: Record<string, [number, number]> = { vol: [0, 1.25], pan: [-1, 1], filter: [-1, 1], drive: [0, 1], rev: [0, 1], dly: [0, 1], duck: [0, 1], master: [0, 1.25] };
+export const RANGES: Record<string, [number, number]> = { vol: [0, 1.25], pan: [-1, 1], filter: [-1, 1], drive: [0, 1], rev: [0, 1], dly: [0, 1], duck: [0, 1], chorus: [0, 1], trem: [0, 1], crush: [0, 1], master: [0, 1.25] };
 export const learn = { on: false, target: '', map: {} as Record<string, string>, onChange: () => { } };
 try { learn.map = JSON.parse(localStorage.getItem('kh-midimap') || '{}'); } catch { /* stockage désactivé */ }
 const saveMap = () => { try { localStorage.setItem('kh-midimap', JSON.stringify(learn.map)); } catch { /* stockage désactivé */ } };

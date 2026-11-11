@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-142 cas réussis sur 142.
+148 cas réussis sur 148.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -146,3 +146,9 @@
 | MP01 | Export | Exporter en MP3 : fichier valide, de la bonne durée, relisible et audible | OK |
 | CC01 | Arrangement | Copier un clip et le coller à la tête de lecture, sur la même piste ou une autre du même type | OK |
 | SP01 | Mixeur | L'analyseur de spectre s'anime pendant la lecture et retombe à l'arrêt | OK |
+| MOD01 | Mixage | Chorus, trémolo et lo-fi : réglables et audibles au rendu | OK |
+| TU01 | Accordeur | La détection de hauteur est juste : sinus, son riche en harmoniques, silence et bruit | OK |
+| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
+| TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
+| TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
