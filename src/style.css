@@ -355,7 +355,7 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
   .ebar > *, .synth > * { flex: none; } .tools { flex-wrap: nowrap; }
   .ebar .tip, .synth .tip { display: none; }
   .escroll { padding: 8px 10px; }
-  .pact { top: 2px; right: 2px; } .pact button { width: 20px; height: 20px; font-size: 10px; }
+  .pact { display: none; } /* au doigt, les réglages d'un pad passent par la liste à côté des pads */
 }
 
 /* ================= V5 ================= */
@@ -417,3 +417,14 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
 .tbub .trow { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .tbub .pill { height: 34px; }
 dialog form { gap: 8px; }
+
+/* ================= V8 ================= */
+.grip.gripl { right: auto; left: 0; width: 8px; background: linear-gradient(270deg, transparent, rgba(0, 0, 0, .25)); }
+.clip.sel2 { border-style: dashed; }
+.pad.editing { outline: 2px solid var(--a3); } .pad.tuned kbd { border-color: var(--a3); color: var(--a3); }
+.padfx { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--a3); border-radius: 12px; background: rgba(244, 114, 182, .08); }
+.padfx .sl { width: 100%; }
+.shead { display: flex; align-items: center; gap: 8px; } .shead .sname { flex: 1; min-width: 0; }
+.mpreset { height: 28px; width: 118px; font-size: 12px; padding: 0 6px; }
+#notes { width: min(640px, 94vw); }
+#notesText { width: 100%; height: min(50vh, 420px); resize: vertical; background: rgba(0, 0, 0, .35); color: var(--txt); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font: 14px/1.6 system-ui, sans-serif; user-select: text; }

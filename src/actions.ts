@@ -4,7 +4,7 @@ import { allNotesOff } from './input';
 import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, NPADS, Track, TrackType, emptyDrums, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -159,6 +159,12 @@ export async function exportMp3() {
   } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : t('toast.exportFail'), 'error'); }
 }
 
+export function applyMixPreset(tr: Track, key: string) {
+  const p = MIX_PRESETS[key];
+  if (!p) return;
+  Object.assign(tr, p); commit(); toast(t('toast.presetApplied', t('mp.' + key), tr.name));
+}
+
 export function addMarker() {
   const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
   if (p.markers.some(m => m.s === s)) return toast(t('toast.markerExists'));
@@ -190,19 +196,47 @@ export function transposeClip(semis: number) {
   commit();
 }
 
+/** Clips sélectionnés : le clip courant et ceux ajoutés par Maj+clic. */
+export function selectedClips(): { track: Track; clip: Clip }[] {
+  const ids = new Set([S.selClip, ...S.selMore]);
+  return S.project.tracks.flatMap(track => track.clips.filter(c => ids.has(c.id)).map(clip => ({ track, clip })));
+}
+
 export function deleteClip() {
-  const f = findClip(S.selClip);
-  if (!f) return;
-  f.track.clips = f.track.clips.filter(c => c !== f.clip);
-  S.selClip = ''; commit();
+  const sel = selectedClips();
+  if (!sel.length) return;
+  for (const { track, clip } of sel) track.clips = track.clips.filter(c => c !== clip);
+  S.selClip = ''; S.selMore.clear(); commit();
 }
 
 export function duplicateClip() {
-  const f = findClip(S.selClip);
-  if (!f) return;
-  const c: Clip = JSON.parse(JSON.stringify(f.clip));
-  c.id = uid(); c.start = f.clip.start + f.clip.len;
-  f.track.clips.push(c); S.selClip = c.id; commit();
+  const sel = selectedClips();
+  if (!sel.length) return;
+  // Les copies se placent juste après la fin du groupe sélectionné.
+  const shift = Math.max(...sel.map(x => x.clip.start + x.clip.len)) - Math.min(...sel.map(x => x.clip.start));
+  S.selMore.clear();
+  for (const { track, clip } of sel) {
+    const c: Clip = JSON.parse(JSON.stringify(clip));
+    c.id = uid(); c.start = clip.start + shift; track.clips.push(c);
+    if (clip.id === S.selClip) S.selClip = c.id; else S.selMore.add(c.id);
+  }
+  commit();
+}
+
+/** Décale le motif de batterie d'un pas (il boucle sur lui-même). */
+export function shiftPattern(d: -1 | 1) {
+  const c = findClip(S.selClip)?.clip;
+  if (!c?.drums) return;
+  const n = c.patLen!;
+  c.drums = c.drums.map(row => row.map((_, i) => row[((i - d) % n + n) % n])); commit();
+}
+/** Double la longueur du motif en le recopiant, pour pouvoir varier la seconde moitié. */
+export function doublePattern() {
+  const c = findClip(S.selClip)?.clip;
+  if (!c?.drums) return;
+  if (c.patLen! * 2 > 128) return toast(t('toast.patMax'), 'error');
+  c.drums = c.drums.map(row => [...row, ...row]); c.patLen = c.patLen! * 2; c.len = Math.max(c.len, c.patLen);
+  commit();
 }
 
 export function splitClip() {

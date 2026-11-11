@@ -6,6 +6,8 @@ export const S = {
   kbShow: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches, // clavier à l'écran
   selTrack: '',
   selClip: '',
+  selMore: new Set<string>(), // clips ajoutés à la sélection par Maj+clic
+  padEdit: -1,                // pad dont les réglages sont affichés
   tab: 'editor' as 'editor' | 'mixer' | 'live',
   drumView: 'seq' as 'seq' | 'pads',
   inputDevice: '', inputGain: 1, inputMonitor: false, // entrée audio
@@ -26,7 +28,8 @@ export const emit = () => subs.forEach(f => f());
 const selSubs: Fn[] = [];
 export const onSelect = (f: Fn) => { selSubs.push(f); };
 export function select(track: string, clip: string) {
-  if (S.selTrack === track && S.selClip === clip) return;
+  if (S.selTrack === track && S.selClip === clip && !S.selMore.size) return;
+  S.selMore.clear();
   S.selTrack = track; S.selClip = clip; selSubs.forEach(f => f());
 }
 

@@ -49,6 +49,8 @@ export interface SynthParams {
 }
 
 export interface Pad { bufferId: string; name: string }
+/** Réglages d'un pad : volume (1 = normal), hauteur en demi-tons, panoramique. */
+export interface PadFx { vol: number; tune: number; pan: number }
 
 export interface Track {
   id: string; name: string; type: TrackType; color: string;
@@ -64,6 +66,7 @@ export interface Track {
   synth?: SynthParams;
   kit?: string;
   pads?: (Pad | null)[];
+  padFx?: Record<number, PadFx>;
   clips: Clip[];
 }
 
@@ -79,6 +82,7 @@ export interface Project {
   mLow: number; mMid: number; mHigh: number; // égaliseur du général (dB)
   width: number;                             // largeur stéréo : 0 mono, 1 normale, 2 élargie
   target: number;                            // niveau d'export en LUFS, 0 = simple protection des crêtes
+  notes: string;                             // bloc-notes du projet (paroles, idées)
   tracks: Track[];
 }
 
@@ -179,7 +183,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0,
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '',
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -189,7 +193,7 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0;
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= '';
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0;
     if (tr.type === 'drums') {
@@ -287,3 +291,13 @@ export function templateProject(tpl: Template): Project {
   p.tracks = [dr, ...tracks, au];
   return p;
 }
+
+/** Préréglages de mixage : un point de départ par type de source. */
+export const MIX_PRESETS: Record<string, Partial<Track>> = {
+  neutral: { eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, drive: 0, filter: 0, rev: 0, dly: 0, chorus: 0, trem: 0, crush: 0 },
+  vocal: { eqLow: -4, eqMid: 1.5, eqHigh: 3, comp: true, drive: 0, filter: 0, rev: 0.22, dly: 0.08, chorus: 0, trem: 0, crush: 0 },
+  bass: { eqLow: 3, eqMid: -2, eqHigh: -3, comp: true, drive: 0.15, filter: 0, rev: 0, dly: 0, chorus: 0, trem: 0, crush: 0 },
+  drums: { eqLow: 2.5, eqMid: -1, eqHigh: 2, comp: true, drive: 0.1, filter: 0, rev: 0.05, dly: 0, chorus: 0, trem: 0, crush: 0 },
+  pad: { eqLow: -3, eqMid: 0, eqHigh: 1.5, comp: false, drive: 0, filter: 0, rev: 0.4, dly: 0.1, chorus: 0.5, trem: 0, crush: 0 },
+  lofi: { eqLow: 1, eqMid: 0, eqHigh: -4, comp: true, drive: 0.2, filter: -0.35, rev: 0.12, dly: 0, chorus: 0.15, trem: 0, crush: 0.35 },
+};

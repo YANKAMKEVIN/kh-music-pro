@@ -1,4 +1,4 @@
-import { audioFiles, chopClip, chooseInput, deleteClip, duplicateClip, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
+import { audioFiles, chopClip, chooseInput, deleteClip, doublePattern, duplicateClip, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { lang, t } from '../i18n';
@@ -56,6 +56,10 @@ function drumBar(tr: Track, c: Clip | null) {
     h('label', { class: 'fld' }, t('drum.kit'), kit),
     slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct),
     c && h('button', { title: t('tip.clear'), data: { act: 'clear' }, onclick: () => { c.drums = emptyDrums(c.patLen!); commit(); } }, t('act.clear')),
+    c && h('div', { class: 'segs', role: 'group', 'aria-label': t('pat.tools') },
+      h('button', { class: 'seg', data: { act: 'patleft' }, title: t('pat.left'), 'aria-label': t('pat.left'), onclick: () => shiftPattern(-1) }, '◀'),
+      h('button', { class: 'seg', data: { act: 'patright' }, title: t('pat.right'), 'aria-label': t('pat.right'), onclick: () => shiftPattern(1) }, '▶'),
+      h('button', { class: 'seg', data: { act: 'patdouble' }, title: t('pat.double'), 'aria-label': t('pat.double'), onclick: doublePattern }, '×2')),
     c && S.drumView === 'seq' && h('span', { class: 'tip' }, t('hint.accent')));
 }
 
@@ -64,11 +68,12 @@ function padsView(tr: Track) {
   for (let r = 0; r < NPADS; r++) {
     const custom = tr.pads?.[r];
     const setSample = async (f: File) => { const s = await loadSample(f); if (s) { tr.pads![r] = { bufferId: s.id, name: s.name }; commit(); engine.pad(tr, r); } };
-    const pad = h('div', { class: 'pad' + (custom ? ' custom' : ''), data: { pad: String(r) }, role: 'button', tabIndex: 0, 'aria-label': padName(tr, r) },
+    const pad = h('div', { class: 'pad' + (custom ? ' custom' : '') + (S.padEdit === r ? ' editing' : '') + (tr.padFx?.[r] ? ' tuned' : ''), data: { pad: String(r) }, role: 'button', tabIndex: 0, 'aria-label': padName(tr, r) },
       h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', { class: 'pad-name' }, padName(tr, r)),
       h('span', { class: 'pact' },
+        h('button', { title: t('pad.settings'), 'aria-label': `${t('pad.settings')} – ${padName(tr, r)}`, data: { act: 'padfx' }, onclick: (e: Event) => { e.stopPropagation(); S.padEdit = S.padEdit === r ? -1 : r; emit(); } }, '⚙'),
         h('button', { title: t('pad.load'), 'aria-label': t('pad.load'), data: { act: 'padload' }, onclick: (e: Event) => { e.stopPropagation(); pickFiles(fs => setSample(fs[0])); } }, '📂'),
-        custom && h('button', { title: t('pad.reset'), 'aria-label': t('pad.reset'), onclick: (e: Event) => { e.stopPropagation(); tr.pads![r] = null; commit(); } }, '↺')));
+        custom && h('button', { title: t('pad.reset'), 'aria-label': t('pad.reset'), data: { act: 'padreset' }, onclick: (e: Event) => { e.stopPropagation(); tr.pads![r] = null; commit(); } }, '↺')));
     pad.onpointerdown = e => {
       if ((e.target as HTMLElement).closest('.pact')) return;
       e.preventDefault(); padHit(r, 1, tr); flashPad(r);
@@ -83,7 +88,24 @@ function padsView(tr: Track) {
   }
   const rep = h('select', { 'aria-label': t('pad.repeat'), title: t('pad.repeatTip'), data: { role: 'repeat' } }, ...[[0, t('chord.1')], [1, '1/16'], [2, '1/8'], [4, '1/4']].map(([v, l]) => h('option', { value: String(v), selected: kb.repeat === v }, String(l))));
   rep.onchange = () => { kb.repeat = +rep.value; rep.blur(); };
-  return h('div', { class: 'escroll padwrap' }, grid, h('div', { class: 'padside' }, h('label', { class: 'fld' }, t('pad.repeat'), rep), h('p', { class: 'tip' }, t('pad.help'))));
+  // Réglages du pad choisi avec ⚙ : volume, hauteur, panoramique.
+  let fxBox: HTMLElement | false = false;
+  if (S.padEdit >= 0 && S.padEdit < NPADS) {
+    const r = S.padEdit, cur = tr.padFx?.[r] ?? { vol: 1, tune: 0, pan: 0 };
+    const set = (k: 'vol' | 'tune' | 'pan', v: number) => { tr.padFx ??= {}; const f = tr.padFx[r] ??= { vol: 1, tune: 0, pan: 0 }; f[k] = v; if (f.vol === 1 && !f.tune && !f.pan) delete tr.padFx[r]; };
+    fxBox = h('div', { class: 'padfx' }, h('strong', {}, `⚙ ${padName(tr, r)}`),
+      slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct),
+      slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st'),
+      slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100))),
+      h('div', { class: 'tools' },
+        h('button', { class: 'pill', data: { act: 'padtest' }, onclick: () => { padHit(r, 1, tr); flashPad(r); } }, '▶ ' + t('pad.test')),
+        h('button', { class: 'pill', data: { act: 'padfxload' }, onclick: () => pickFiles(async fs => { const smp = await loadSample(fs[0]); if (smp) { tr.pads![r] = { bufferId: smp.id, name: smp.name }; commit(); } }) }, '📂 ' + t('smp.load')),
+        h('button', { class: 'pill', data: { act: 'padfxreset' }, onclick: () => { if (tr.padFx) delete tr.padFx[r]; commit(); } }, '↺ ' + t('pad.fxReset'))));
+  }
+  // Choix du pad à régler par une liste : indispensable au doigt, où les petits boutons des pads sont masqués.
+  const pick = h('select', { 'aria-label': t('pad.settings'), title: t('pad.settings'), data: { role: 'padpick' } }, h('option', { value: '-1' }, '—'), ...Array.from({ length: NPADS }, (_, r) => h('option', { value: String(r), selected: S.padEdit === r }, `${r + 1} · ${padName(tr, r)}`)));
+  pick.onchange = () => { S.padEdit = +pick.value; emit(); };
+  return h('div', { class: 'escroll padwrap' }, grid, h('div', { class: 'padside' }, h('label', { class: 'fld' }, t('pad.settings'), pick), fxBox, h('label', { class: 'fld' }, t('pad.repeat'), rep), h('p', { class: 'tip' }, t('pad.help'))));
 }
 
 export function flashPad(r: number) {

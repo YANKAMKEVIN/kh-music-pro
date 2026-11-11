@@ -1,9 +1,9 @@
-import { analyzeMix } from '../actions';
+import { analyzeMix, applyMixPreset } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { clearMidiMap, ccOf, learn } from '../input';
 import { S, commit, emit, select } from '../store';
-import { Track } from '../types';
+import { MIX_PRESETS, Track } from '../types';
 import { ICON } from './arr';
 import { db, h, pct, slider } from './dom';
 
@@ -32,9 +32,12 @@ function strip(tr: Track, i: number) {
   const tog = (key: 'mute' | 'solo' | 'comp', txt: string) => h('button', {
     class: `mini ${key} ${tr[key] ? 'on' : ''}`, title: t('mix.' + key), 'aria-pressed': String(tr[key]), data: { tog: key }, onclick: () => { tr[key] = !tr[key]; commit(); },
   }, txt);
+  const preset = h('select', { class: 'mpreset', 'aria-label': `${t('mp.title')} – ${tr.name}`, title: t('mp.tip'), data: { role: 'mixpreset' } },
+    h('option', { value: '' }, t('mp.title') + '…'), ...Object.keys(MIX_PRESETS).map(k => h('option', { value: k }, t('mp.' + k))));
+  preset.onchange = () => { if (preset.value) applyMixPreset(tr, preset.value); };
   const panFmt = (v: number) => v === 0 ? t('mix.center') : (v < 0 ? t('mix.left') : t('mix.right')) + ' ' + Math.round(Math.abs(v) * 100);
   return h('div', { class: 'strip' + (S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id }, style: `--c:${tr.color}`, onpointerdown: () => select(tr.id, S.selTrack === tr.id ? S.selClip : '') },
-    h('div', { class: 'sname', title: tr.name }, `${ICON[tr.type]} ${tr.name}`),
+    h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, `${ICON[tr.type]} ${tr.name}`), preset),
     h('div', { class: 'sbody' },
       h('div', { class: 'scol' },
         h('span', { class: 'sect' }, t('mix.eq')),

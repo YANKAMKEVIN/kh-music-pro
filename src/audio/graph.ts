@@ -245,8 +245,8 @@ function noise(mix: Mix, t: number, dur: number, type: BiquadFilterType, freq: n
   return f;
 }
 
-export function playDrum(mix: Mix, dest: AudioNode, row: number, t: number, vel = 1, kit = 'electro') {
-  const c = mix.ctx, { tune: T, dec: D } = KITS[kit] ?? KITS.electro;
+export function playDrum(mix: Mix, dest: AudioNode, row: number, t: number, vel = 1, kit = 'electro', semis = 0) {
+  const c = mix.ctx, K = KITS[kit] ?? KITS.electro, T = K.tune * Math.pow(2, semis / 12), D = K.dec;
   const tone = (type: OscillatorType, f0: number, f1: number, ft: number, dur: number, g: number) =>
     osc(mix, type, t, dur * D, f0 * T, f1 * T, ft).connect(env(c, t, vel * g, dur * D)).connect(dest);
   const nz = (type: BiquadFilterType, f: number, dur: number, g: number, q = 1) =>
@@ -287,12 +287,16 @@ export function playDrum(mix: Mix, dest: AudioNode, row: number, t: number, vel 
 
 /** Déclenche un pad : sample chargé par l'utilisateur, sinon son synthétisé. */
 export function hitPad(mix: Mix, buffers: Buffers, tr: Track, dest: AudioNode, row: number, t: number, vel = 1) {
-  const pad = tr.pads?.[row], buf = pad ? buffers.get(pad.bufferId) : undefined;
+  const pad = tr.pads?.[row], buf = pad ? buffers.get(pad.bufferId) : undefined, fx = tr.padFx?.[row];
   if (row === 0 || row === 8) mix.kick(t);
-  if (!buf) return playDrum(mix, dest, row, t, vel, tr.kit);
+  // Réglages du pad : volume, hauteur, panoramique.
+  let out = dest;
+  if (fx?.pan) { const pn = mix.ctx.createStereoPanner(); pn.pan.value = fx.pan; pn.connect(dest); out = pn; }
+  const v = vel * (fx?.vol ?? 1), semis = fx?.tune ?? 0;
+  if (!buf) return playDrum(mix, out, row, t, v, tr.kit, semis);
   const s = mix.reg(mix.ctx.createBufferSource()), g = mix.ctx.createGain();
-  s.buffer = buf; g.gain.value = vel;
-  s.connect(g).connect(dest); s.start(t);
+  s.buffer = buf; g.gain.value = v; s.playbackRate.value = Math.pow(2, semis / 12);
+  s.connect(g).connect(out); s.start(t);
 }
 
 // ---------- Instruments mélodiques ----------

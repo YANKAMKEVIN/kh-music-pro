@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-148 cas réussis sur 148.
+155 cas réussis sur 155.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -152,3 +152,10 @@
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
 | DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
+| CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
+| CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
+| CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
+| PD01 | Pads | Réglages par pad : volume, hauteur et panoramique, audibles au rendu, puis retour à l'origine | OK |
+| PT01 | Batterie | Décaler le motif d'un pas et doubler sa longueur | OK |
+| MP02 | Mixeur | Appliquer un préréglage de mixage à une piste, l'entendre et l'annuler | OK |
+| NT01 | Projet | Notes du projet : écrire sans déclencher de raccourci, retrouver le texte, le garder dans le fichier | OK |

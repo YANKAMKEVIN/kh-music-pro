@@ -1,4 +1,4 @@
-import { addTrack, audioFiles, deleteTrack, duplicateTrack, importFiles, moveTrack, pickAudio } from '../actions';
+import { addTrack, audioFiles, deleteTrack, duplicateTrack, importFiles, moveTrack, pickAudio, selectedClips } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, select } from '../store';
@@ -174,9 +174,9 @@ function clipEl(tr: Track, c: Clip) {
   const px = S.px, w = c.len * px;
   const cv = h('canvas', {});
   const el = h('div', {
-    class: 'clip' + (S.selClip === c.id ? ' sel' : ''), data: { id: c.id }, tabIndex: 0,
+    class: 'clip' + (S.selClip === c.id ? ' sel' : S.selMore.has(c.id) ? ' sel sel2' : ''), data: { id: c.id }, tabIndex: 0,
     style: `left:${c.start * px}px;width:${w}px;--c:${tr.color}`, title: c.name,
-  }, h('div', { class: 'cname' }, c.name), cv, h('div', { class: 'grip' }));
+  }, h('div', { class: 'cname' }, c.name), cv, h('div', { class: 'grip gripl' }), h('div', { class: 'grip' }));
   drawPreview(cv, tr, c, w, TRACK_H - 34);
   return el;
 }
@@ -201,20 +201,40 @@ function laneDown(e: PointerEvent, tr: Track) {
   const el = (e.target as HTMLElement).closest<HTMLElement>('.clip');
   if (!el) { select(tr.id, ''); return; }
   const clip = tr.clips.find(c => c.id === el.dataset.id)!;
-  select(tr.id, clip.id);
+  if (e.shiftKey) {
+    // Maj+clic : ajoute le clip à la sélection, ou l'en retire.
+    e.preventDefault();
+    if (S.selMore.has(clip.id)) S.selMore.delete(clip.id);
+    else if (clip.id !== S.selClip) { if (S.selClip) S.selMore.add(clip.id); else { S.selTrack = tr.id; S.selClip = clip.id; } }
+    refreshSelection(); return;
+  }
+  const grouped = S.selMore.size > 0 && (S.selMore.has(clip.id) || S.selClip === clip.id);
+  if (!grouped) select(tr.id, clip.id);
   e.preventDefault();
-  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len };
-  const resize = e.clientX > el.getBoundingClientRect().right - 10;
+  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset }, r = el.getBoundingClientRect(), dur = stepDur(S.project.bpm);
+  const resize = e.clientX > r.right - 10, trim = !resize && e.clientX < r.left + 8 && r.width > 30;
   const buf = clip.bufferId ? buffers.get(clip.bufferId) : undefined;
-  const maxLen = buf ? Math.ceil((buf.duration - clip.offset) / stepDur(S.project.bpm)) : Infinity;
+  const maxLen = buf ? Math.ceil((buf.duration - clip.offset) / dur) : Infinity;
+  // Déplacement de groupe : les autres clips sélectionnés suivent, chacun sur sa piste.
+  const others = grouped && !resize && !trim ? selectedClips().filter(x => x.clip !== clip).map(x => ({ c: x.clip, s: x.clip.start, el: document.querySelector<HTMLElement>(`.clip[data-id="${x.clip.id}"]`) })) : [];
+  const minStart = Math.min(o.start, ...others.map(x => x.s));
   let changed = false, target = tr;
   const mv = (ev: PointerEvent) => {
-    const d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
-    if (resize) clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen); else clip.start = Math.max(0, o.start + d);
+    let d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
+    if (resize) clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen);
+    else if (trim) {
+      // Bord gauche : le début avance ou recule, le contenu reste en place sur la timeline.
+      d = clamp(d, Math.max(-o.start, buf ? -Math.floor(o.offset / dur) : -o.start), o.len - Math.min(S.snap, o.len));
+      clip.start = o.start + d; clip.len = o.len - d;
+      clip.offset = buf ? Math.max(0, o.offset + d * dur) : ((o.offset + d) % clip.patLen! + clip.patLen!) % clip.patLen!;
+    } else {
+      d = Math.max(-minStart, d); clip.start = o.start + d;
+      for (const x of others) { x.c.start = x.s + d; if (x.el) x.el.style.left = x.c.start * px + 'px'; }
+    }
     el.style.left = clip.start * px + 'px'; el.style.width = clip.len * px + 'px';
     if (d !== 0) changed = true;
-    if (resize) return;
-    const over = [...document.querySelectorAll<HTMLElement>('.lane')].find(l => { const r = l.getBoundingClientRect(); return ev.clientY >= r.top && ev.clientY < r.bottom; });
+    if (resize || trim || others.length) return;
+    const over = [...document.querySelectorAll<HTMLElement>('.lane')].find(l => { const q = l.getBoundingClientRect(); return ev.clientY >= q.top && ev.clientY < q.bottom; });
     const tt = over && findTrack(over.dataset.id!);
     if (over && tt && tt.type === tr.type && tt !== target) { target = tt; over.append(el); changed = true; }
   };
@@ -244,7 +264,18 @@ export function renderArr() {
     ondblclick: () => { const n = prompt(t('mark.rename'), m.name); if (n?.trim()) { m.name = n.trim().slice(0, 24); commit(); } },
     oncontextmenu: (e: Event) => { e.preventDefault(); p.markers.splice(p.markers.indexOf(m), 1); commit(); },
   }, '⚑ ' + m.name));
-  ruler.onpointerdown = e => engine.seek(Math.max(0, Math.round((e.clientX - ruler.getBoundingClientRect().left) / px / S.snap) * S.snap));
+  ruler.onpointerdown = e => {
+    const left = ruler.getBoundingClientRect().left, bar = (x: number) => Math.max(0, Math.floor((x - left) / px / BAR));
+    if (!e.shiftKey) return engine.seek(Math.max(0, Math.round((e.clientX - left) / px / S.snap) * S.snap));
+    // Maj+glisser dans la règle : trace la zone de boucle.
+    e.preventDefault();
+    const b0 = bar(e.clientX), zone = ruler.querySelector<HTMLElement>('.loopr') ?? ruler.appendChild(h('div', { class: 'loopr' }));
+    const set = (x: number) => { const b1 = bar(x); p.loop = true; p.loopStart = Math.min(b0, b1); p.loopLen = Math.abs(b1 - b0) + 1; zone.style.cssText = `left:${p.loopStart * BAR * px}px;width:${p.loopLen * BAR * px}px`; };
+    set(e.clientX);
+    const mv = (ev: PointerEvent) => set(ev.clientX);
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); commit(); };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  };
   lanes.append(ruler);
 
   for (const tr of p.tracks) {
@@ -260,7 +291,7 @@ export function renderArr() {
 /** Met à jour les surbrillances de sélection sans reconstruire le DOM. */
 export function refreshSelection() {
   document.querySelectorAll<HTMLElement>('#arr .head, #arr .lane').forEach(e => e.classList.toggle('sel', e.dataset.id === S.selTrack));
-  document.querySelectorAll<HTMLElement>('#arr .clip').forEach(e => e.classList.toggle('sel', e.dataset.id === S.selClip));
+  document.querySelectorAll<HTMLElement>('#arr .clip').forEach(e => { const more = S.selMore.has(e.dataset.id!); e.classList.toggle('sel', more || e.dataset.id === S.selClip); e.classList.toggle('sel2', more); });
 }
 
 export function initArrDrop() {

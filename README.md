@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.7)
+## Fonctions (v0.8)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,9 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Édition des clips** : rognage par les deux bords, sélection multiple (Maj+clic) pour déplacer, dupliquer ou supprimer en groupe, boucle tracée dans la règle (Maj+glisser).
+- **Réglages par pad** (volume, hauteur, panoramique) ; outils de motif (décaler, doubler).
+- **Préréglages de mixage** par piste ; **notes du projet**.
 - **Effets de modulation** par piste : chorus, trémolo calé sur le tempo, lo-fi.
 - **Accordeur** sur l'entrée audio.
 - **Visite guidée** interactive, depuis l'aide.
@@ -48,7 +51,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 148 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 155 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -72,6 +75,7 @@ npm run desktop
 
 ouvre l'application dans une fenêtre de bureau (Electron). `npm run desktop:build` produit l'installateur de votre système dans `release/`.
 Sur GitHub, l'action **Version bureau** construit les installateurs Windows, macOS et Linux ; ils se téléchargent dans les *Artifacts* de l'exécution.
+Poser une étiquette de version (`git tag v0.8.0 && git push origin v0.8.0`) les publie dans la page **Releases** du dépôt.
 Ils ne sont pas signés : Windows et macOS afficheront un avertissement au premier lancement.
 
 ## QA automatique

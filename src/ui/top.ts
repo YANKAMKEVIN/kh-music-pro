@@ -61,7 +61,7 @@ export function buildTop(onLang: () => void) {
       tgl('bLoop', '⟲ ' + t('top.loop'), t('top.loopTip'), () => { S.project.loop = !S.project.loop; commit(); }),
       h('label', { class: 'mini-in' }, t('top.from'), num('loopS', t('top.loopS'), 1, 999, setLoop)),
       h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop)),
-      b('bMark', 'pill', '⚑', t('mark.add'), addMarker)),
+      b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', '📝', t('notes.title'), showNotes)),
     h('div', { class: 'grp right' },
       h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
       b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
@@ -77,6 +77,15 @@ export function buildTop(onLang: () => void) {
   buildHelp();
 }
 
+/** Bloc-notes du projet : paroles, idées, liste de choses à faire. */
+function showNotes() {
+  const d = $<HTMLDialogElement>('notes'), area = h('textarea', { id: 'notesText', 'aria-label': t('notes.title'), placeholder: t('notes.placeholder'), spellcheck: true });
+  area.value = S.project.notes;
+  d.replaceChildren(h('h2', {}, '📝 ' + t('notes.title')), area, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close'))));
+  d.onclose = () => { if (area.value !== S.project.notes) { S.project.notes = area.value; commit(); } };
+  d.showModal(); area.focus();
+}
+
 export function renderTop() {
   const p = S.project, bpm = $<HTMLInputElement>('bpm'), pname = $<HTMLInputElement>('pname');
   if (document.activeElement !== bpm) bpm.value = String(p.bpm);
@@ -84,7 +93,7 @@ export function renderTop() {
   $<HTMLInputElement>('loopS').value = String(p.loopStart + 1);
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
   $<HTMLSelectElement>('snap').value = String(S.snap);
-  for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bMidi', midi.inputs > 0]] as const) {
+  for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {
     $(id).classList.toggle('on', on); $(id).setAttribute('aria-pressed', String(on));
   }
 }
@@ -96,7 +105,7 @@ function buildHelp() {
     [k(t('help.key.space')), 'space'], [k(t('help.key.enter')), 'enter'], [k('R'), 'rec'], [`${k('L')} / ${k('M')}`, 'loop'],
     [`${k('Ctrl')}+${k('Z')} / ${k('Y')}`, 'undo'], [`${k('Ctrl')}+${k('D')}`, 'dup'], [`${k('Ctrl')}+${k('E')}`, 'split'],
     [k(t('help.key.del')), 'del'], [`${k('Ctrl')}+${k('S')}`, 'save'], [piano + '…', 'piano'],
-    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
+    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [k(t('help.key.shiftClick')), 'multi'], [k(t('help.key.shiftDrag')), 'looprule'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
   ];
   $('help').innerHTML = `
     <h2><span class="logo">KH</span> ${t('help.title')}</h2>

@@ -1,9 +1,11 @@
 # Construit la version bureau (Windows, macOS, Linux). Les installateurs sont à télécharger dans les « Artifacts » de l'exécution.
-# Se lance à la main (onglet Actions > Version bureau > Run workflow) ou quand la partie bureau change.
+# Se lance à la main (onglet Actions > Version bureau > Run workflow), quand la partie bureau change,
+# ou à la pose d'une étiquette de version (v0.8.0…) : les installateurs sont alors publiés dans une Release.
 name: Version bureau
 on:
   workflow_dispatch:
   push:
+    tags: ['v*.*.*']
     paths: ['electron/**', '.github/workflows/desktop.yml', 'qa/desktop-smoke.cjs']
 permissions:
   contents: read
@@ -40,3 +42,19 @@ jobs:
             release/*.exe
             release/*.dmg
           if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publier les installateurs
+        run: gh release create "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --title "KH Music Pro $TAG" --notes "Installateurs Windows (.exe), macOS (.dmg) et Linux (.AppImage). Ils ne sont pas signés : Windows et macOS affichent un avertissement au premier lancement. Version en ligne : https://yankamkevin.github.io/kh-music-pro/"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
