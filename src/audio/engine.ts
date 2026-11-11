@@ -1,0 +1,274 @@
+import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
+import { S, buffers } from '../store';
+import { BAR, Project, Track, contentEnd, stepDur } from '../types';
+
+const LOOKAHEAD = 0.12;
+const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
+
+export type RecDone = (buf: AudioBuffer | null, startStep: number, offsetSec: number) => void;
+
+class Engine {
+  ctx = new AudioContext({ latencyHint: 'interactive' });
+  mix = new Mix(this.ctx, true);
+  playing = false;
+  recording: false | 'audio' | 'midi' = false;
+  recTrack = '';
+  mode: 'arr' | 'live' = 'arr';
+  pos = 0;                 // tête de lecture de l'arrangement, à l'arrêt (en pas)
+  /** Mode Live : clip actif et clip en attente par piste. */
+  liveActive = new Map<string, { clipId: string; since: number }>();
+  liveQueued = new Map<string, string | null>();
+  onLive: () => void = () => { };
+  onRecEnd: (kind: 'audio' | 'midi') => void = () => { };
+
+  private playFrom = 0;
+  private nextStep = 0;
+  private nextTime = 0;
+  private t0 = 0;
+  private seg = true;
+  private marks: { t: number; s: number }[] = [];
+  private timer = 0;
+  private levels = new Map<string, number>();
+  private scratch = new Float32Array(512);
+  private voices = new Map<string, Voice>();
+  private liveSrc = new Map<string, AudioBufferSourceNode[]>();
+  private workletReady?: Promise<void>;
+  private cap?: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone };
+
+  sync() { this.mix.sync(S.project); }
+
+  // ---------- Transport ----------
+  private async start(preroll: number) {
+    await this.ctx.resume();
+    this.mix.autoOn = this.mode === 'arr';
+    this.sync();
+    this.playing = true;
+    this.t0 = this.nextTime = this.ctx.currentTime + 0.06 + preroll;
+    this.seg = true; this.marks = [];
+    if (preroll > 0) { const beat = preroll / 4; for (let i = 0; i < 4; i++) this.click(this.t0 - preroll + i * beat, i === 0); }
+    this.timer = window.setInterval(() => this.tick(), 25);
+    this.tick();
+  }
+
+  async play(preroll = 0) {
+    if (this.playing) return;
+    this.mode = 'arr'; this.playFrom = this.pos; this.nextStep = Math.floor(this.pos);
+    await this.start(preroll);
+  }
+
+  /** Arrêt. À l'arrêt, un second appel ramène au début. */
+  stop() {
+    if (!this.playing) { this.pos = 0; return; }
+    this.playing = false; clearInterval(this.timer);
+    this.mix.stopAll(); this.voices.clear(); this.mix.clearAuto(S.project);
+    if (this.mode === 'live') { this.liveActive.clear(); this.liveQueued.clear(); this.liveSrc.clear(); this.mode = 'arr'; this.onLive(); }
+    else this.pos = this.playFrom;
+    const kind = this.recording;
+    if (kind) { this.recording = false; if (kind === 'audio') this.finishCapture(); this.onRecEnd(kind); }
+  }
+
+  toggle() { this.playing ? this.stop() : this.play(); }
+
+  seek(step: number) {
+    const was = this.playing && !this.recording && this.mode === 'arr';
+    if (this.playing) this.stop();
+    this.pos = Math.max(0, step);
+    if (was) this.play();
+  }
+
+  currentStep(): number {
+    if (!this.playing) return this.pos;
+    const now = this.ctx.currentTime, m = this.marks;
+    while (m.length > 1 && m[1].t <= now) m.shift();
+    if (!m.length || now < m[0].t) return m.length ? m[0].s : (this.mode === 'live' ? 0 : this.pos);
+    return m[0].s + Math.min(1, (now - m[0].t) / stepDur(S.project.bpm));
+  }
+
+  private tick() {
+    const p = S.project, dur = stepDur(p.bpm);
+    if (this.mode === 'live') {
+      while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
+        const s = this.nextStep, t = this.nextTime;
+        if (s % BAR === 0 && this.liveQueued.size) {
+          for (const [tid, cid] of this.liveQueued) {
+            for (const src of this.liveSrc.get(tid) ?? []) { try { src.stop(t); } catch { /* fini */ } }
+            this.liveSrc.delete(tid);
+            if (cid) this.liveActive.set(tid, { clipId: cid, since: s }); else this.liveActive.delete(tid);
+          }
+          this.liveQueued.clear();
+          setTimeout(() => this.onLive(), Math.max(0, (t - this.ctx.currentTime) * 1000));
+        }
+        scheduleLive(this.mix, p, buffers, s, swingT(p, s, t), this.liveActive, (tid, src) => {
+          const l = this.liveSrc.get(tid) ?? []; l.push(src); this.liveSrc.set(tid, l.slice(-4));
+        });
+        if (p.metronome && s % 4 === 0) this.click(t, s % BAR === 0);
+        this.marks.push({ t, s }); this.nextStep++; this.nextTime += dur;
+      }
+      return;
+    }
+    const ls = p.loopStart * BAR, le = ls + p.loopLen * BAR;
+    const looping = p.loop && this.recording !== 'audio';
+    const end = Math.max(contentEnd(p), BAR);
+    if (!this.recording && !(looping && this.nextStep <= le) && this.currentStep() >= end) { this.stop(); this.pos = 0; return; }
+    while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
+      if (looping && this.nextStep === le) { this.nextStep = ls; this.seg = true; }
+      const limit = looping && this.nextStep < le ? le : null;
+      this.mix.applyAuto(p, this.nextStep, this.nextTime);
+      scheduleStep(this.mix, p, buffers, this.nextStep, swingT(p, this.nextStep, this.nextTime), this.seg, limit);
+      if (p.metronome && this.nextStep % 4 === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
+      this.marks.push({ t: this.nextTime, s: this.nextStep });
+      this.nextStep++; this.nextTime += dur; this.seg = false;
+    }
+  }
+
+  private click(t: number, accent: boolean) {
+    const o = this.mix.reg(this.ctx.createOscillator()), g = this.ctx.createGain();
+    o.frequency.value = accent ? 1600 : 1000;
+    g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    o.connect(g).connect(this.ctx.destination); o.start(t); o.stop(t + 0.05);
+  }
+
+  // ---------- Mode Live ----------
+  /** Lance (ou arrête, avec `null`) un clip sur sa piste à la prochaine mesure. */
+  async launch(trackId: string, clipId: string | null) {
+    if (this.playing && this.mode === 'arr') this.stop();
+    if (!this.playing) {
+      if (!clipId) return;
+      this.mode = 'live'; this.nextStep = 0;
+      this.liveQueued.set(trackId, clipId);
+      await this.start(0);
+    } else this.liveQueued.set(trackId, clipId);
+    this.onLive();
+  }
+
+  async launchScene(i: number) {
+    const p = S.project;
+    const picks = p.tracks.map(tr => [tr.id, [...tr.clips].sort((a, b) => a.start - b.start)[i]?.id ?? null] as const);
+    if (!picks.some(([, c]) => c)) return;
+    if (this.playing && this.mode === 'arr') this.stop();
+    for (const [tid, cid] of picks) if (cid || this.liveActive.has(tid)) this.liveQueued.set(tid, cid);
+    if (!this.playing) { this.mode = 'live'; this.nextStep = 0; await this.start(0); }
+    this.onLive();
+  }
+
+  // ---------- Jeu en direct ----------
+  noteOn(track: Track, midi: number, vel = 0.8) {
+    this.ctx.resume(); this.sync();
+    const n = this.mix.tracks.get(track.id), key = track.id + ':' + midi;
+    if (!n || !track.synth) return;
+    this.voices.get(key)?.release(this.ctx.currentTime);
+    const v = playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.003, null, vel, buffers);
+    if (v) this.voices.set(key, v);
+  }
+  noteOff(track: Track, midi: number) {
+    const key = track.id + ':' + midi;
+    this.voices.get(key)?.release(this.ctx.currentTime); this.voices.delete(key);
+  }
+  previewNote(track: Track, midi: number, dur = 0.25) {
+    this.ctx.resume(); this.sync();
+    const n = this.mix.tracks.get(track.id);
+    if (n && track.synth) playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.005, dur, 0.8, buffers);
+  }
+  pad(track: Track, row: number, vel = 1) {
+    this.ctx.resume(); this.sync();
+    const n = this.mix.tracks.get(track.id);
+    if (n) hitPad(this.mix, buffers, track, n.input, row, this.ctx.currentTime + 0.003, vel);
+  }
+
+  // ---------- Enregistrement ----------
+  /** Enregistre ce qui est joué (notes, pads) : l'écriture dans le clip est faite par le module d'entrée. */
+  async recordMidi(trackId: string, preroll: number) {
+    if (this.playing) this.stop();
+    this.recording = 'midi'; this.recTrack = trackId;
+    await this.play(preroll);
+  }
+
+  /** Enregistre le micro, calé à l'échantillon près sur le transport. */
+  async recordAudio(done: RecDone, preroll: number) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    if (this.playing) this.stop();
+    await this.ctx.resume();
+    this.workletReady ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
+    await this.workletReady;
+    const src = this.ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(this.ctx, 'kh-rec', { numberOfInputs: 1, numberOfOutputs: 0 });
+    const cap = { stream, src, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done };
+    node.port.onmessage = e => { if (cap.first < 0) cap.first = e.data.f; cap.chunks.push(e.data.ch); };
+    src.connect(node);
+    this.cap = cap; this.recording = 'audio';
+    await this.play(preroll);
+  }
+
+  private finishCapture() {
+    const cap = this.cap;
+    if (!cap) return;
+    this.cap = undefined;
+    cap.src.disconnect(); cap.node.port.onmessage = null;
+    const inLat = (cap.stream.getAudioTracks()[0]?.getSettings() as { latency?: number }).latency ?? 0;
+    cap.stream.getTracks().forEach(t => t.stop());
+    const total = cap.chunks.reduce((n, c) => n + c[0].length, 0), sr = this.ctx.sampleRate;
+    if (!total) { cap.done(null, cap.startStep, 0); return; }
+    const nch = Math.min(2, cap.chunks[0].length);
+    const buf = new AudioBuffer({ length: total, numberOfChannels: nch, sampleRate: sr });
+    for (let c = 0; c < nch; c++) {
+      const d = buf.getChannelData(c); let o = 0;
+      for (const ch of cap.chunks) { d.set(ch[c] ?? ch[0], o); o += ch[0].length; }
+    }
+    // Décalage entre le début de la capture et l'instant où le premier temps a été entendu.
+    const off = (this.t0 - cap.first / sr) + (this.ctx.outputLatency || 0) + inLat;
+    cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)));
+  }
+
+  // ---------- Vumètres ----------
+  level(id: string): number {
+    const a = id === 'master' ? this.mix.analyser : this.mix.tracks.get(id)?.analyser;
+    if (!a) return 0;
+    const buf = this.scratch.subarray(0, a.fftSize);
+    a.getFloatTimeDomainData(buf);
+    let pk = 0; for (let i = 0; i < buf.length; i++) pk = Math.max(pk, Math.abs(buf[i]));
+    const v = pk > 0.0005 ? Math.max(0, Math.min(1, (20 * Math.log10(pk) + 54) / 57)) : 0;
+    const out = Math.max(v, (this.levels.get(id) ?? 0) - 0.03);
+    this.levels.set(id, out);
+    return out;
+  }
+
+  decode(data: ArrayBuffer) { return this.ctx.decodeAudioData(data); }
+}
+
+export const engine = new Engine();
+
+// ---------- Export : rendu hors-ligne + encodage WAV ----------
+export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
+  const end = contentEnd(p);
+  if (!end) throw new Error('empty');
+  const dur = stepDur(p.bpm), sr = 44100;
+  const off = new OfflineAudioContext(2, Math.ceil((end * dur + 2.5) * sr), sr);
+  const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
+  for (let s = 0; s < end; s++) mix.applyAuto(p, s, s * dur);
+  for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, s * dur), s === 0, null);
+  const out = await off.startRendering();
+  mix.active.clear();
+  // Évite toute saturation : si une crête dépasse -0,3 dB, on ramène l'ensemble en dessous.
+  let pk = 0;
+  for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
+  if (normalize && pk > 0.966) for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c), k = 0.966 / pk; for (let i = 0; i < d.length; i++) d[i] *= k; }
+  return out;
+}
+
+export function encodeWav(b: AudioBuffer): Blob {
+  const ch = b.numberOfChannels, n = b.length, v = new DataView(new ArrayBuffer(44 + n * ch * 2));
+  const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * ch * 2, true); str(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true);
+  v.setUint32(24, b.sampleRate, true); v.setUint32(28, b.sampleRate * ch * 2, true);
+  v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, n * ch * 2, true);
+  const data = Array.from({ length: ch }, (_, i) => b.getChannelData(i));
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) {
+    const x = Math.max(-1, Math.min(1, data[c][i]));
+    v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); o += 2;
+  }
+  return new Blob([v], { type: 'audio/wav' });
+}

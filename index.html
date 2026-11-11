@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KH Music Pro</title>
+  <meta name="theme-color" content="#060914" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <header id="top"></header>
+  <main>
+    <section id="arr" aria-label="Arrangement"></section>
+    <section id="bottom">
+      <div id="split" role="separator" aria-orientation="horizontal"></div>
+      <nav id="tabs" role="tablist">
+        <button role="tab" data-tab="editor"></button>
+        <button role="tab" data-tab="mixer"></button>
+        <button role="tab" data-tab="live"></button>
+      </nav>
+      <div id="panel"></div>
+    </section>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="fAudio" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a,.aif,.aiff" hidden />
+  <input type="file" id="fMidi" accept=".mid,.midi,audio/midi" hidden />
+  <input type="file" id="fProj" accept=".khm,application/json" hidden />
+  <dialog id="help"></dialog>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
