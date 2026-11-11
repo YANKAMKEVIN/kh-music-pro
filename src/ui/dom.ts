@@ -21,12 +21,12 @@ export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b
 
 /** Curseur étiqueté : mise à jour audio en direct, validation (annulable) au relâchement. */
 export function slider(label: string, min: number, max: number, step: number, value: number,
-  set: (v: number) => void, fmt: (v: number) => string = v => String(v), cls = '') {
+  set: (v: number) => void, fmt: (v: number) => string = v => String(v), cls = '', transient = false) {
   const out = h('span', { class: 'val' }, fmt(value));
   const inp = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': label });
   inp.value = String(value);
   inp.oninput = () => { const v = +inp.value; set(v); out.textContent = fmt(v); engine.sync(); };
-  inp.onchange = () => commit();
+  if (!transient) inp.onchange = () => commit(); // `transient` : réglage d'interface, hors projet et hors annulation
   return h('label', { class: 'sl ' + cls }, h('span', { class: 'lb' }, label), inp, out);
 }
 

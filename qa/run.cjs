@@ -56,7 +56,7 @@ const PAGE_HELPERS = () => {
 };
 
 const results = [];
-let page, browser, errors = [];
+let page, browser, dialogText, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
 
@@ -65,7 +65,8 @@ async function reset() {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
-    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false }); k.kb.chord = 1; k.kb.octave = 0;
+    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2;
+    k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
     k.S.selTrack = k.S.project.tracks[0].id; k.S.selClip = k.S.project.tracks[0].clips[0].id;
     k.resetHistory(); k.commit();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -561,7 +562,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await page.click('#bHelp'); text += await page.innerText('#help'); await page.keyboard.press('Escape');
     await page.click('#menu summary'); text += await page.innerText('#top'); await page.click('#menu summary');
     const titles = await page.$$eval('[title], [aria-label]', els => els.map(e => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' | '));
-    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord)\.[a-zA-Z0-9.]+/g);
+    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark)\.[a-zA-Z0-9.]+/g);
     expect(!raw, `clés non traduites : ${raw && [...new Set(raw)].join(', ')}`);
     const miss = errors.slice(n0).filter(e => e.includes('i18n')); expect(!miss.length, miss.join(' ; '));
     if (code !== 'fr') expect(!/Éditeur|Supprimer|Enregistrer|Longueur/.test(text), 'du français subsiste');
@@ -863,9 +864,9 @@ test('E04', 'Passerelles', 'Exporter les pistes séparées : une archive ZIP val
 
 // ============ V3 : projet, robustesse, application installable ============
 test('P06', 'Projet', 'Un projet de la V2 s\'ouvre dans la V3 avec les nouveaux réglages par défaut', async () => {
-  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale']) delete p[k]; p.tracks.forEach(t => { delete t.duck; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers']) delete p[k]; p.tracks.forEach(t => { delete t.duck; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
   const f = path.join(TMP, 'v2.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(400);
-  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0), 'valeurs par défaut absentes');
+  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0) && Array.isArray(p.markers), 'valeurs par défaut absentes');
   const a = await S(() => window.qa.stats(window.kh.S.project)), b = await S(() => window.qa.stats(window.kh.demoProject())); near(a.rms / b.rms, 1, 0.08, 'le projet doit sonner comme avant'); // la réverb est tirée au hasard à chaque rendu
 });
 test('X10', 'Robustesse', 'Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud', async () => {
@@ -893,13 +894,146 @@ test('W01', 'Application', 'Version construite : installable (manifeste) et util
   } finally { await ctx2.close(); try { process.kill(-srv.pid); } catch { /* déjà arrêté */ } }
 });
 
+// ============ V4 : tempo et hauteur des sons ============
+const toneClip = () => S(() => { const k = window.kh, b = new AudioBuffer({ length: 44100, numberOfChannels: 1, sampleRate: 44100 }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 220 * i / 44100) * 0.5; k.buffers.set('qa-220', b); const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-clip', name: 'Son', start: 0, len: 8, offset: 0, bufferId: 'qa-220', gain: 1 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-clip'; k.commit(); });
+/** Durée, fréquence (passages par zéro) et régularité du niveau du son du clip de test. */
+const clipSound = () => S(() => { const k = window.kh, c = k.S.project.tracks[4].clips[0], b = k.buffers.get(c.bufferId), d = b.getChannelData(0), sr = b.sampleRate, i0 = Math.floor(d.length * 0.2), i1 = Math.floor(d.length * 0.8); let z = 0, lo = 9, hi = 0; for (let i = i0 + 1; i < i1; i++) if (d[i - 1] < 0 && d[i] >= 0) z++; const blk = Math.floor(sr * 0.05); for (let i = i0; i + blk < i1; i += blk) { let e = 0; for (let j = 0; j < blk; j++) e += d[i + j] ** 2; e = Math.sqrt(e / blk); lo = Math.min(lo, e); hi = Math.max(hi, e); } return { dur: b.duration, freq: z / ((i1 - i0) / sr), lo, hi, len: c.len, id: c.bufferId }; });
+
+test('ST01', 'Tempo et hauteur', 'Étirer un son à 200 % : deux fois plus long, même hauteur, niveau régulier', async () => {
+  await toneClip(); await setSlider('.editor', 'Durée', 200); await page.click('[data-act=stretch]'); await sleep(300);
+  const r = await clipSound(); near(r.dur, 2, 0.02, 'durée'); near(r.freq, 220, 4, 'hauteur conservée'); near(r.len, 16, 0, 'durée du clip en pas');
+  expect(r.lo > 0.3 && r.hi < 0.4, `niveau irrégulier (${r.lo.toFixed(3)} – ${r.hi.toFixed(3)}, attendu ≈ 0,354)`);
+  expect((await page.textContent('#toast')).includes('recalculé'), 'pas de message');
+  await page.keyboard.press('Control+z'); expect((await clipSound()).id === 'qa-220', 'annulation');
+});
+test('ST02', 'Tempo et hauteur', 'Transposer un son d\'une octave ou d\'une quinte : même durée, nouvelle hauteur', async () => {
+  await toneClip(); await setSlider('.editor', 'Hauteur', 12); await page.click('[data-act=stretch]'); await sleep(300);
+  let r = await clipSound(); near(r.dur, 1, 0.02, 'durée conservée'); near(r.freq, 440, 8, 'octave au-dessus'); expect(r.lo > 0.28 && r.hi < 0.42, `niveau irrégulier (${r.lo.toFixed(3)} – ${r.hi.toFixed(3)})`);
+  await setSlider('.editor', 'Hauteur', -5); await page.click('[data-act=stretch]'); await sleep(300);
+  r = await clipSound(); near(r.dur, 1, 0.02, 'durée conservée (2)'); near(r.freq, 440 * Math.pow(2, -5 / 12), 8, 'quarte en dessous');
+});
+test('ST03', 'Tempo et hauteur', 'Indiquer le BPM du son le cale sur le tempo du projet', async () => {
+  await toneClip(); await S(() => { window.kh.S.project.bpm = 120; window.kh.commit(); });
+  await page.fill('[data-role=srcbpm]', '90'); await page.keyboard.press('Tab');
+  near(await S(() => window.kh.S.stretch.pct), 75, 0, 'durée proposée');
+  await page.click('[data-act=stretch]'); await sleep(300);
+  const r = await clipSound(); near(r.dur, 0.75, 0.02, 'durée'); near(r.freq, 220, 4, 'hauteur conservée'); near(r.len, 6, 0, 'pas');
+  await page.click('[data-act=stretch]'); expect((await clipSound()).id === r.id, 'sans réglage, « Appliquer » ne doit rien faire');
+});
+
+// ============ V4 : entrée audio ============
+const waitLevel = (id, min, ms = 3000) => page.evaluate(async ([id, min, ms]) => { for (let i = 0; i < 40; i++) window.kh.engine.level(id); /* purge la mémoire du vumètre */ const end = performance.now() + ms; let m = 0; while (performance.now() < end) { m = Math.max(m, window.kh.engine.level(id)); if (m > min) return m; await new Promise(r => setTimeout(r, 30)); } return m; }, [id, min, ms]);
+
+test('IN01', 'Entrée audio', 'Activer l\'entrée : liste des micros, vumètre d\'entrée, puis fermeture', async () => {
+  await page.click(await headSel(4)); expect(await page.$('.inbar'), 'panneau d\'entrée absent');
+  await page.click('[data-act=inopen]'); await sleep(400);
+  expect(await S(() => !!window.kh.engine.inp), 'entrée non ouverte'); expect(await page.getAttribute('[data-act=inopen]', 'aria-pressed') === 'true', 'état du bouton');
+  expect(await page.$$eval('[data-role=indev] option', e => e.length) >= 2, 'aucun micro listé');
+  const lvl = await waitLevel('input', 0.2); expect(lvl > 0.2, `vumètre d'entrée inactif (${lvl})`);
+  await page.click('[data-act=inopen]'); await sleep(150); expect(await S(() => !window.kh.engine.inp), 'entrée non fermée');
+  expect(await page.$eval('[data-act=inmon]', e => e.disabled), 'l\'écoute devrait être indisponible');
+});
+test('IN02', 'Entrée audio', 'Écoute de contrôle et gain d\'entrée', async () => {
+  await page.click(await headSel(4)); await page.click('[data-act=inopen]'); await sleep(400);
+  const quiet = await waitLevel('master', 0.5, 1300); expect(quiet < 0.05, `l'entrée s'entend sans écoute (${quiet})`);
+  await page.click('[data-act=inmon]'); const on = await waitLevel('master', 0.2); expect(on > 0.2, `écoute inaudible (${on})`);
+  await setSlider('.inbar', 'Gain d\'entrée', 0); await sleep(1300);
+  const zero = await waitLevel('input', 0.5, 1300); expect(zero < 0.05, `le gain à zéro laisse passer le signal (${zero})`);
+});
+test('IN03', 'Entrée audio', 'Enregistrer avec l\'entrée déjà ouverte : la prise est faite et l\'entrée reste disponible', async () => {
+  await page.click(await headSel(4)); await page.click('[data-act=inopen]'); await sleep(400);
+  await page.keyboard.press('r'); await sleep(1600); await page.keyboard.press('Space'); await sleep(700);
+  const r = await S(() => { const k = window.kh, c = k.S.project.tracks[4].clips[0], b = c && k.buffers.get(c.bufferId); let pk = 0; if (b) for (const v of b.getChannelData(0)) pk = Math.max(pk, Math.abs(v)); return { clip: !!c, pk, open: !!k.engine.inp }; });
+  expect(r.clip && r.pk > 0.05, `prise absente ou silencieuse (${r.pk})`); expect(r.open, 'l\'entrée a été refermée');
+  await page.click(await headSel(4)); await page.click('[data-act=inopen]'); await sleep(150); await page.keyboard.press('r'); await sleep(1200); await page.keyboard.press('Space'); await sleep(600);
+  expect(await S(() => !window.kh.engine.inp && window.kh.S.project.tracks[4].clips.length === 2), 'sans entrée ouverte, le micro doit être libéré après la prise');
+});
+
+// ============ V4 : arpégiateur ============
+const spyArp = () => S(() => { const e = window.kh.engine; window.qaLog = []; if (!e.playAt0) e.playAt0 = e.playAt.bind(e); e.playAt = (tr, m, t, d, v) => { window.qaLog.push([m, t]); e.playAt0(tr, m, t, d, v); }; });
+
+test('AR01', 'Arpégiateur', 'Les notes tenues sont égrenées dans l\'ordre, au tempo, et s\'arrêtent au relâchement', async () => {
+  await S(() => { window.kh.S.project.bpm = 120; window.kh.commit(); });
+  await page.click(await headSel(3)); await page.selectOption('[data-role=arp]', 'up'); await page.selectOption('[data-role=arprate]', '1'); await spyArp();
+  await S(() => { for (const n of [64, 60, 67]) window.kh.noteOn(n); }); await sleep(900);
+  const lvl = await S(() => window.qa.level(200)); await S(() => { for (const n of [64, 60, 67]) window.kh.noteOff(n); });
+  const log = await S(() => window.qaLog.slice()); await sleep(400); const after = await S(() => window.qaLog.length);
+  expect(log.slice(0, 6).map(x => x[0]).join() === '60,64,67,60,64,67', `ordre ${log.map(x => x[0])}`);
+  near(log[4][1] - log[0][1], 0.5, 0.01, 'quatre doubles-croches à 120 BPM'); expect(lvl > 0.1, 'arpège inaudible'); near(after, log.length, 0, 'l\'arpège continue après le relâchement');
+  near(await S(() => window.kh.engine.voices.size), 0, 0, 'aucune note tenue en parallèle');
+});
+test('AR02', 'Arpégiateur', 'Modes descendant et aller-retour, avec un accord à un doigt', async () => {
+  await page.click(await headSel(3)); await page.selectOption('[data-role=arp]', 'updown'); await page.selectOption('[data-role=arprate]', '1'); await page.selectOption('[data-role=chord]', '3'); await spyArp();
+  await S(() => window.kh.noteOn(60)); await sleep(800); await S(() => window.kh.noteOff(60));
+  let seq = (await S(() => window.qaLog.slice())).map(x => x[0]); expect(seq.slice(0, 5).join() === '60,64,67,64,60', `aller-retour ${seq}`);
+  await page.selectOption('[data-role=arp]', 'down'); await spyArp(); await S(() => window.kh.noteOn(60)); await sleep(500); await S(() => window.kh.noteOff(60));
+  seq = (await S(() => window.qaLog.slice())).map(x => x[0]); expect(seq.slice(0, 3).join() === '67,64,60', `descendant ${seq}`);
+});
+test('AR03', 'Arpégiateur', 'En enregistrement, l\'arpège est calé sur la grille et écrit dans le clip', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 120; p.loop = false; p.tracks[1].clips = []; window.kh.commit(); });
+  await page.click(await headSel(1)); await page.selectOption('[data-role=arp]', 'up'); await page.selectOption('[data-role=arprate]', '2');
+  await page.keyboard.press('r'); await sleep(400); await S(() => { window.kh.noteOn(48); window.kh.noteOn(55); }); await sleep(1300);
+  await S(() => { window.kh.noteOff(48); window.kh.noteOff(55); }); await sleep(450); await page.keyboard.press('Space'); await sleep(700);
+  const ns = (await proj()).tracks[1].clips[0].notes.slice().sort((a, b) => a.s - b.s);
+  expect(ns.length >= 4 && ns.length <= 7, `${ns.length} notes enregistrées`); expect(ns.every(n => n.s % 2 === 0 && n.l <= 2), `notes hors grille ${JSON.stringify(ns)}`);
+  expect(ns.every((n, i) => n.p === (i % 2 ? 55 : 48)) && ns.every((n, i) => !i || n.s === ns[i - 1].s + 2), `alternance ${ns.map(n => n.s + ':' + n.p)}`);
+});
+
+// ============ V4 : repères ============
+test('MK01', 'Repères', 'Poser des repères, y sauter, les renommer et les supprimer', async () => {
+  await page.click('#bMark'); await S(() => window.kh.engine.seek(70)); await page.click('#bMark');
+  let m = (await proj()).markers; expect(m.length === 2 && m[0].s === 0 && m[1].s === 64 && m[1].name === 'Repère 2', `repères ${JSON.stringify(m)}`);
+  await page.click('#bMark'); expect((await proj()).markers.length === 2 && (await page.textContent('#toast')).includes('déjà'), 'doublon accepté');
+  await page.click('.mark >> nth=0'); near(await S(() => window.kh.engine.pos), 0, 0, 'saut au premier repère');
+  await page.click('.mark >> nth=1'); near(await S(() => window.kh.engine.pos), 64, 0, 'saut au second repère');
+  dialogText = 'Refrain'; await page.dblclick('.mark >> nth=1'); dialogText = undefined; await sleep(100);
+  expect((await proj()).markers[1].name === 'Refrain' && (await page.textContent('.mark >> nth=1')).includes('Refrain'), 'renommage');
+  await page.click('.mark >> nth=0', { button: 'right' }); m = (await proj()).markers; expect(m.length === 1 && m[0].name === 'Refrain', 'suppression');
+  await page.keyboard.press('Control+z'); near((await proj()).markers.length, 2, 0, 'annulation');
+});
+
+// ============ V4 : téléphone ============
+test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button');
+    const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
+    expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top < 80 && lay.topScroll > lay.iw, `barre supérieure non compacte (${lay.top} px)`);
+    expect(lay.panel > 250 && lay.arr > 180 && lay.lane < 140, `zones mal réparties (${JSON.stringify(lay)})`);
+    await pg.tap('#bPlay'); await pg.waitForTimeout(500); expect(await pg.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1), 'la lecture ne démarre pas au doigt');
+    await pg.tap('#bPlay'); expect(await pg.evaluate(() => !window.kh.engine.playing), 'la lecture ne s\'arrête pas');
+    await pg.tap('.cell[data-r="1"][data-s="1"]'); await pg.waitForTimeout(100); expect(await pg.evaluate(() => window.kh.S.project.tracks[0].clips[0].drums[1][1] === 1), 'case non activée au doigt');
+    await pg.tap('[data-view=pads]'); await pg.tap('.pad[data-pad="5"]'); expect(await pg.$eval('.pad[data-pad="5"]', e => e.classList.contains('hit')), 'pad sans réaction');
+    const pads = await pg.$eval('.pads', e => { const r = e.getBoundingClientRect(); return r.right; }); expect(pads <= 390, `les pads débordent (${pads})`);
+    await pg.$eval('#menu', e => e.scrollIntoView({ inline: 'center' })); await pg.tap('#menu summary'); const b = await (await pg.$('#bSave')).boundingBox();
+    expect(b && b.x >= 0 && b.x + b.width <= 390 && b.y > 0 && b.y < 844, `menu hors écran (${JSON.stringify(b)})`); await pg.tap('#menu summary');
+    await pg.tap('#tabs [data-tab=mixer]'); expect(await pg.$('.mixer'), 'mixeur'); await pg.tap('#tabs [data-tab=live]'); await pg.tap('.lcell[data-clip] >> nth=0'); await pg.waitForTimeout(300);
+    expect(await pg.evaluate(() => window.kh.engine.mode === 'live' && window.kh.engine.playing), 'le mode Live ne se lance pas au doigt'); await pg.evaluate(() => window.kh.engine.stop());
+    expect(!errs.length, 'erreur : ' + errs[0]);
+  } finally { await ctx2.close(); }
+});
+test('MB02', 'Téléphone', 'Au doigt : déplacer un clip et dessiner une courbe d\'automation', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button');
+    const cdp = await ctx2.newCDPSession(pg);
+    const swipe = async (x, y, dx, dy) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 5, y: y + dy * i / 5 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150); };
+    await pg.evaluate(() => { const k = window.kh; k.S.project.tracks[1].clips[0].len = 16; k.S.project.tracks[1].autoShow = 'vol'; k.commit(); });
+    const c = await (await pg.$('.lane >> nth=1 >> .clip')).boundingBox(); await swipe(c.x + 40, c.y + 40, 88, 0);
+    expect(await pg.evaluate(() => window.kh.S.project.tracks[1].clips[0].start) === 8, 'clip non déplacé au doigt');
+    const a = await (await pg.$('.alane')).boundingBox(); await pg.touchscreen.tap(a.x + 44, a.y + 20); await pg.waitForTimeout(100);
+    expect(await pg.evaluate(() => (window.kh.S.project.tracks[1].auto.vol || []).length) === 1, 'point d\'automation non posé au doigt');
+  } finally { await ctx2.close(); }
+});
+
 (async () => {
   browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
   page = await ctx.newPage();
   page.on('pageerror', e => errors.push('PAGE ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
-  page.on('dialog', d => d.accept());
+  page.on('dialog', d => d.accept(dialogText));
   await page.addInitScript(PAGE_HELPERS);
   await page.goto(BASE); await page.waitForSelector('.clip');
   if (await page.$eval('#help', d => d.open)) await page.click('#help button');

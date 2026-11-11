@@ -1,4 +1,4 @@
-import { audioFiles, deleteClip, duplicateClip, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, transposeClip } from '../actions';
+import { audioFiles, chooseInput, deleteClip, duplicateClip, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { lang, t } from '../i18n';
 import { kb, padHit } from '../input';
@@ -114,8 +114,8 @@ function drumEditor(tr: Track, c: Clip | null) {
     const v = e.shiftKey || e.button === 2 ? (cur === 0.5 ? 1 : 0.5) : cur ? 0 : 1;
     setCell(el, v);
     const mv = (ev: PointerEvent) => { const x = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.cell'); if (x && grid.contains(x)) setCell(x, v); };
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); commit(); };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
   };
   grid.oncontextmenu = e => e.preventDefault();
   grid.onkeydown = e => {
@@ -193,7 +193,11 @@ function scaleTools() {
   scale.onchange = () => { P.scale = scale.value; commit(); };
   const chord = h('select', { 'aria-label': t('ed.chord'), title: t('ed.chordTip'), data: { role: 'chord' } }, ...[1, 3, 4].map(n => h('option', { value: String(n), selected: kb.chord === n }, t('chord.' + n))));
   chord.onchange = () => { kb.chord = +chord.value; chord.blur(); };
-  return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.scale'), key, scale), h('label', { class: 'fld' }, t('ed.chord'), chord));
+  const arp = h('select', { 'aria-label': t('ed.arp'), title: t('ed.arpTip'), data: { role: 'arp' } }, ...['off', 'up', 'down', 'updown', 'random'].map(k => h('option', { value: k, selected: kb.arp === k }, t('arp.' + k))));
+  arp.onchange = () => { kb.arp = arp.value as typeof kb.arp; arp.blur(); };
+  const rate = h('select', { 'aria-label': t('ed.arpRate'), title: t('ed.arpRate'), data: { role: 'arprate' } }, ...[[1, '1/16'], [2, '1/8'], [4, '1/4']].map(([v, l]) => h('option', { value: String(v), selected: kb.arpRate === v }, String(l))));
+  rate.onchange = () => { kb.arpRate = +rate.value; rate.blur(); };
+  return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.scale'), key, scale), h('label', { class: 'fld' }, t('ed.chord'), chord), h('label', { class: 'fld' }, t('ed.arp'), arp, rate));
 }
 
 // ---------- Piano roll ----------
@@ -294,6 +298,19 @@ function pianoRoll(tr: Track, c: Clip) {
     synthPanel(tr, true), scroll);
 }
 
+// ---------- Entrée audio ----------
+function inputPanel() {
+  const on = !!engine.inp;
+  const dev = h('select', { 'aria-label': t('in.device'), title: t('in.device'), data: { role: 'indev' } },
+    h('option', { value: '' }, t('in.default')), ...inputs.map(d => h('option', { value: d.id, selected: S.inputDevice === d.id }, d.label)));
+  dev.onchange = () => chooseInput(dev.value);
+  return h('div', { class: 'ebar inbar' }, h('span', { class: 'sect' }, t('in.title')), h('label', { class: 'fld' }, t('in.device'), dev),
+    h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, '🎤 ' + t(on ? 'in.on' : 'in.open')),
+    h('div', { class: 'meter', title: t('in.level') }, h('div', { class: 'mfill', data: { id: 'input' } })),
+    slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true),
+    h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, '🎧 ' + t('in.monitor')));
+}
+
 // ---------- Clip audio ----------
 function audioEditor(tr: Track, c: Clip) {
   const cv = h('canvas', { class: 'bigwave' });
@@ -305,13 +322,22 @@ function audioEditor(tr: Track, c: Clip) {
   });
   const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
   const act = (key: string, icon: string, fn: () => void) => h('button', { title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
+  if (S.stretch.clip !== c.id) S.stretch = { clip: c.id, pct: 100, semis: 0 };
+  const st = S.stretch;
+  const bpm = h('input', { type: 'number', min: '40', max: '240', placeholder: '—', 'aria-label': t('st.bpm'), title: t('st.bpmTip'), data: { role: 'srcbpm' } });
+  bpm.onchange = () => { const v = +bpm.value; if (v >= 20 && v <= 400) { st.pct = clamp(Math.round(v / S.project.bpm * 100), 50, 200); emit(); } };
   return h('div', { class: 'editor' },
     h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`), clipTools(c),
       slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct),
       slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec),
       slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec),
       act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip)),
-    cv, h('p', { class: 'tip pad-x' }, t('hint.audioClip')));
+    h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),
+      slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true),
+      h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
+      slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true),
+      act('stretch', '⏱', () => stretchClip(st.pct, st.semis))),
+    inputPanel(), cv, h('p', { class: 'tip pad-x' }, t('hint.audioClip')));
 }
 
 function emptyState(tr?: Track) {
@@ -319,7 +345,9 @@ function emptyState(tr?: Track) {
   if (tr?.type === 'synth') return h('div', { class: 'editor' },
     h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), scaleTools(), h('span', { class: 'tip' }, t('hint.synthEmpty', ['A', 'S', 'D', 'F', 'G', 'H', 'J'].map(keyLabel).join(' '), keyLabel('Z'), 'X'))),
     synthPanel(tr));
-  return h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t(tr ? 'hint.audioEmpty' : 'hint.nothing')));
+  if (tr) return h('div', { class: 'editor' }, h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`)), inputPanel(),
+    h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.audioEmpty'))));
+  return h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.nothing')));
 }
 
 export function renderEditor(): HTMLElement {

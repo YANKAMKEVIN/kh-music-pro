@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-106 cas réussis sur 106.
+118 cas réussis sur 118.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -110,3 +110,15 @@
 | P06 | Projet | Un projet de la V2 s'ouvre dans la V3 avec les nouveaux réglages par défaut | OK |
 | X10 | Robustesse | Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud | OK |
 | W01 | Application | Version construite : installable (manifeste) et utilisable hors-ligne après une première visite | OK |
+| ST01 | Tempo et hauteur | Étirer un son à 200 % : deux fois plus long, même hauteur, niveau régulier | OK |
+| ST02 | Tempo et hauteur | Transposer un son d'une octave ou d'une quinte : même durée, nouvelle hauteur | OK |
+| ST03 | Tempo et hauteur | Indiquer le BPM du son le cale sur le tempo du projet | OK |
+| IN01 | Entrée audio | Activer l'entrée : liste des micros, vumètre d'entrée, puis fermeture | OK |
+| IN02 | Entrée audio | Écoute de contrôle et gain d'entrée | OK |
+| IN03 | Entrée audio | Enregistrer avec l'entrée déjà ouverte : la prise est faite et l'entrée reste disponible | OK |
+| AR01 | Arpégiateur | Les notes tenues sont égrenées dans l'ordre, au tempo, et s'arrêtent au relâchement | OK |
+| AR02 | Arpégiateur | Modes descendant et aller-retour, avec un accord à un doigt | OK |
+| AR03 | Arpégiateur | En enregistrement, l'arpège est calé sur la grille et écrit dans le clip | OK |
+| MK01 | Repères | Poser des repères, y sauter, les renommer et les supprimer | OK |
+| MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | OK |
+| MB02 | Téléphone | Au doigt : déplacer un clip et dessiner une courbe d'automation | OK |

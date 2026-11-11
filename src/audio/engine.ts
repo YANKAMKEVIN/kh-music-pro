@@ -20,6 +20,8 @@ class Engine {
   liveQueued = new Map<string, string | null>();
   onLive: () => void = () => { };
   onRecEnd: (kind: 'audio' | 'midi') => void = () => { };
+  /** Appelé pour chaque pas programmé de l'arrangement (arpégiateur). */
+  onStep: (s: number, t: number) => void = () => { };
 
   private playFrom = 0;
   private nextStep = 0;
@@ -33,7 +35,9 @@ class Engine {
   private voices = new Map<string, Voice>();
   private liveSrc = new Map<string, AudioBufferSourceNode[]>();
   private workletReady?: Promise<void>;
-  private cap?: { stream: MediaStream; src: MediaStreamAudioSourceNode; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone };
+  /** Entrée audio ouverte (micro ou carte son) : gain, vumètre et écoute de contrôle. */
+  inp?: { stream: MediaStream; src: MediaStreamAudioSourceNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
+  private cap?: { temp: boolean; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone; inLat: number };
 
   sync() { this.mix.sync(S.project); }
 
@@ -113,7 +117,7 @@ class Engine {
     while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
       if (looping && this.nextStep === le) { this.nextStep = ls; this.seg = true; }
       const limit = looping && this.nextStep < le ? le : null;
-      this.mix.applyAuto(p, this.nextStep, this.nextTime);
+      this.mix.applyAuto(p, this.nextStep, this.nextTime); this.onStep(this.nextStep, this.nextTime);
       scheduleStep(this.mix, p, buffers, this.nextStep, swingT(p, this.nextStep, this.nextTime), this.seg, limit);
       if (p.metronome && this.nextStep % 4 === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
       this.marks.push({ t: this.nextTime, s: this.nextStep });
@@ -169,6 +173,17 @@ class Engine {
     const n = this.mix.tracks.get(track.id);
     if (n && track.synth) playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.005, dur, 0.8, buffers);
   }
+  /** Note programmée à un instant précis (arpégiateur). */
+  playAt(track: Track, midi: number, t: number, dur: number, vel = 0.8) {
+    const n = this.mix.tracks.get(track.id);
+    if (n && track.synth) playNote(this.mix, n.input, track.synth, midi, Math.max(t, this.ctx.currentTime), dur, vel, buffers);
+  }
+  /** Prochain pas que le séquenceur va programmer, et son instant (lecture de l'arrangement uniquement). */
+  grid(): { s: number; t: number } | null {
+    if (!this.playing || this.mode !== 'arr') return null;
+    const p = S.project, le = (p.loopStart + p.loopLen) * BAR;
+    return { s: p.loop && this.recording !== 'audio' && this.nextStep === le ? p.loopStart * BAR : this.nextStep, t: this.nextTime };
+  }
   pad(track: Track, row: number, vel = 1) {
     this.ctx.resume(); this.sync();
     const n = this.mix.tracks.get(track.id);
@@ -183,20 +198,45 @@ class Engine {
     await this.play(preroll);
   }
 
-  /** Enregistre le micro, calé à l'échantillon près sur le transport. */
-  async recordAudio(done: RecDone, preroll: number) {
+  /** Ouvre l'entrée audio choisie (ou celle par défaut) et la garde ouverte : vumètre, gain, écoute. */
+  async openInput(device = ''): Promise<void> {
+    if (this.inp && this.inp.device === device) return;
+    const gainVal = this.inp?.gain.gain.value ?? S.inputGain, monVal = this.inp?.mon.gain.value ?? 0;
+    this.closeInput();
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: { deviceId: device ? { exact: device } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
+    await this.ctx.resume();
+    const src = this.ctx.createMediaStreamSource(stream), gain = this.ctx.createGain(), mon = this.ctx.createGain(), analyser = this.ctx.createAnalyser();
+    gain.gain.value = gainVal; mon.gain.value = monVal; analyser.fftSize = 512;
+    src.connect(gain); gain.connect(analyser); gain.connect(mon).connect(this.mix.master);
+    this.inp = { stream, src, gain, mon, analyser, device };
+  }
+  closeInput() {
+    const i = this.inp;
+    if (!i) return;
+    i.src.disconnect(); i.gain.disconnect(); i.mon.disconnect(); i.stream.getTracks().forEach(t => t.stop());
+    this.inp = undefined;
+  }
+  setInput(gain: number, monitor: boolean) {
+    if (!this.inp) return;
+    this.inp.gain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.02); this.inp.mon.gain.setTargetAtTime(monitor ? 1 : 0, this.ctx.currentTime, 0.02);
+  }
+
+  /** Enregistre l'entrée audio, calée à l'échantillon près sur le transport. */
+  async recordAudio(done: RecDone, preroll: number) {
+    const temp = !this.inp;
+    await this.openInput(S.inputDevice);
+    const inp = this.inp!;
     if (this.playing) this.stop();
     await this.ctx.resume();
     this.workletReady ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
     await this.workletReady;
-    const src = this.ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(this.ctx, 'kh-rec', { numberOfInputs: 1, numberOfOutputs: 0 });
-    const cap = { stream, src, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done };
+    const inLat = (inp.stream.getAudioTracks()[0]?.getSettings() as { latency?: number }).latency ?? 0;
+    const cap = { temp, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done, inLat };
     node.port.onmessage = e => { if (cap.first < 0) cap.first = e.data.f; cap.chunks.push(e.data.ch); };
-    src.connect(node);
+    inp.gain.connect(node);
     this.cap = cap; this.recording = 'audio';
     await this.play(preroll);
   }
@@ -205,9 +245,10 @@ class Engine {
     const cap = this.cap;
     if (!cap) return;
     this.cap = undefined;
-    cap.src.disconnect(); cap.node.port.onmessage = null;
-    const inLat = (cap.stream.getAudioTracks()[0]?.getSettings() as { latency?: number }).latency ?? 0;
-    cap.stream.getTracks().forEach(t => t.stop());
+    try { this.inp?.gain.disconnect(cap.node); } catch { /* entrée déjà fermée */ }
+    cap.node.port.onmessage = null;
+    const inLat = cap.inLat;
+    if (cap.temp) this.closeInput();
     const total = cap.chunks.reduce((n, c) => n + c[0].length, 0), sr = this.ctx.sampleRate;
     if (!total) { cap.done(null, cap.startStep, 0); return; }
     const nch = Math.min(2, cap.chunks[0].length);
@@ -223,7 +264,7 @@ class Engine {
 
   // ---------- Vumètres ----------
   level(id: string): number {
-    const a = id === 'master' ? this.mix.analyser : this.mix.tracks.get(id)?.analyser;
+    const a = id === 'master' ? this.mix.analyser : id === 'input' ? this.inp?.analyser : this.mix.tracks.get(id)?.analyser;
     if (!a) return 0;
     const buf = this.scratch.subarray(0, a.fftSize);
     a.getFloatTimeDomainData(buf);

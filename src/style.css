@@ -320,3 +320,40 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
 .synth .pill { height: 30px; }
 .menu-list { min-width: 300px; }
 .menu-list button { white-space: nowrap; }
+
+/* ================= V4 ================= */
+.mark { position: absolute; top: 14px; height: 20px; padding: 0 7px; border: 0; border-left: 2px solid var(--a3); border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--a3) 30%, #0c1124); color: #ffd9ec; font-size: 10.5px; font-weight: 700; white-space: nowrap; z-index: 2; }
+.mark:hover { background: var(--a3); color: #1a0612; }
+.inbar .meter { width: 10px; height: 32px; }
+.inbar .sect, .ebar > .sect { color: var(--a1); }
+.ebar .pill { height: 32px; }
+.ebar .mini-in input { height: 32px; width: 62px; }
+.pill:disabled { opacity: .4; cursor: not-allowed; }
+.clip, .pr-grid, .alane, .vel, #split, .apt, .note { touch-action: none; }
+
+/* Téléphone : barre supérieure sur une ligne défilante, en-têtes de piste compacts */
+@media (max-width: 760px) {
+  :root { --headw: 128px; }
+  #top { flex-wrap: nowrap; overflow-x: auto; padding: 8px 10px; gap: 10px; backdrop-filter: none; background: #0a0e1e; scrollbar-width: none; }
+  #top::-webkit-scrollbar { display: none; }
+  #top > * { flex: none; }
+  .grp.right { margin-left: 0; flex-wrap: nowrap; }
+  .menu-list { position: fixed; right: 8px; top: 64px; }
+  .tbtn { width: 40px; height: 40px; } .tbtn.play { width: 48px; height: 48px; }
+  .display { gap: 10px; padding: 4px 8px; } .display span, .display input { min-width: 52px; width: 52px; font-size: 15px; }
+  .head { padding: 6px 4px 6px 10px; } .head .sm, .head .tvol, .head .del { display: none; }
+  .corner .add span { display: none; }
+  .ahead .albl { display: none; }
+  main { grid-template-rows: 1fr 54vh; }
+  #tabs button { padding: 0 14px; }
+  .pads { grid-template-columns: repeat(4, 78px); gap: 6px; } .pad { height: 60px; padding: 5px 6px; } .padwrap { flex-direction: column; }
+  .perf { width: 190px; }
+  dialog { padding: 16px; max-height: 90vh; }
+  /* Barres d'outils sur une seule ligne défilante : la place va aux notes et aux pads */
+  .ebar, .synth { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 10px; }
+  .ebar::-webkit-scrollbar, .synth::-webkit-scrollbar { display: none; }
+  .ebar > *, .synth > * { flex: none; } .tools { flex-wrap: nowrap; }
+  .ebar .tip, .synth .tip { display: none; }
+  .escroll { padding: 8px 10px; }
+  .pact { top: 2px; right: 2px; } .pact button { width: 20px; height: 20px; font-size: 10px; }
+}

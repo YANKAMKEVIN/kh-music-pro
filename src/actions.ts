@@ -1,7 +1,8 @@
 import { encodeWav, engine, renderOffline } from './audio/engine';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, findClip, findTrack, idbClear, loadProjectFile, resetHistory, serializeProject } from './store';
+import { S, addBuffer, buffers, commit, emit, findClip, findTrack, idbClear, loadProjectFile, resetHistory, serializeProject } from './store';
+import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
 import { BAR, Clip, Track, TrackType, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
@@ -76,6 +77,41 @@ export function normalizeClip() {
   const k = 0.966 / pk;
   rewriteClip((a, b) => { for (let i = 0; i < a.length; i++) b[i] = a[i] * k; }, clip => { clip.gain = 1; });
   toast(t('toast.normalized', (20 * Math.log10(k)).toFixed(1)));
+}
+
+/** Étire le son du clip (`pct` % de sa durée) et le transpose de `semis` demi-tons, l'un sans toucher à l'autre. */
+export function stretchClip(pct: number, semis: number) {
+  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
+  if (!f || !buf || (pct === 100 && !semis)) return;
+  const r = pct / 100, clip = f.clip, id = uid(), out = stretchBuffer(buf, r, semis);
+  addBuffer(id, out); clip.bufferId = id;
+  clip.offset *= r; clip.len = Math.max(1, Math.min(Math.round(clip.len * r), Math.ceil((out.duration - clip.offset) / stepDur(S.project.bpm))));
+  clip.fadeIn = Math.round((clip.fadeIn ?? 0) * r); clip.fadeOut = Math.round((clip.fadeOut ?? 0) * r);
+  S.stretch = { clip: '', pct: 100, semis: 0 };
+  commit(); toast(t('toast.stretched'));
+}
+
+export function addMarker() {
+  const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
+  if (p.markers.some(m => m.s === s)) return toast(t('toast.markerExists'));
+  p.markers.push({ s, name: t('mark.name', p.markers.length + 1) }); p.markers.sort((a, b) => a.s - b.s); commit();
+}
+
+/** Ouvre (ou ferme) l'entrée audio pour régler le niveau et s'écouter avant d'enregistrer. */
+export async function toggleInput(on: boolean) {
+  if (!on) { engine.closeInput(); emit(); return; }
+  try { await engine.openInput(S.inputDevice); engine.setInput(S.inputGain, S.inputMonitor); await listInputs(); }
+  catch { toast(t('toast.noMic'), 'error'); }
+  emit();
+}
+export let inputs: { id: string; label: string }[] = [];
+export async function listInputs() {
+  const all = await navigator.mediaDevices.enumerateDevices();
+  inputs = all.filter(d => d.kind === 'audioinput' && d.deviceId).map((d, i) => ({ id: d.deviceId, label: d.label || `${t('in.device')} ${i + 1}` }));
+}
+export async function chooseInput(id: string) {
+  S.inputDevice = id;
+  if (engine.inp) await toggleInput(true); else emit();
 }
 
 export function transposeClip(semis: number) {

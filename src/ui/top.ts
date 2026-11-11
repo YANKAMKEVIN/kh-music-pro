@@ -1,4 +1,4 @@
-import { exportMidiFile, exportStems, exportWav, filesPicked, importMidiFile, newProject, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
+import { addMarker, exportMidiFile, exportStems, exportWav, filesPicked, importMidiFile, newProject, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -58,7 +58,8 @@ export function buildTop(onLang: () => void) {
       tgl('bCount', t('top.countIn'), t('top.countInTip'), () => { S.project.countIn = !S.project.countIn; commit(); }),
       tgl('bLoop', '⟲ ' + t('top.loop'), t('top.loopTip'), () => { S.project.loop = !S.project.loop; commit(); }),
       h('label', { class: 'mini-in' }, t('top.from'), num('loopS', t('top.loopS'), 1, 999, setLoop)),
-      h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop))),
+      h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop)),
+      b('bMark', 'pill', '⚑', t('mark.add'), addMarker)),
     h('div', { class: 'grp right' },
       h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
       b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
@@ -98,7 +99,7 @@ function buildHelp() {
   $('help').innerHTML = `
     <h2><span class="logo">KH</span> ${t('help.title')}</h2>
     <div class="hcols">
-      <div><h3>${t('help.start')}</h3><ol>${[1, 2, 3, 4, 5, 6, 7, 9, 8].map(i => `<li>${t('help.s' + i)}</li>`).join('')}</ol></div>
+      <div><h3>${t('help.start')}</h3><ol>${[1, 2, 3, 4, 5, 10, 6, 7, 9, 8].map(i => `<li>${t('help.s' + i)}</li>`).join('')}</ol></div>
       <div><h3>${t('help.keys')}</h3><table>${rows.map(([a, key]) => `<tr><td>${a}</td><td>${t('help.k.' + key)}</td></tr>`).join('')}</table></div>
     </div>
     <form method="dialog"><button class="pill accent" autofocus>${t('help.go')}</button></form>`;
