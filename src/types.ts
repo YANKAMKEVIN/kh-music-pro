@@ -75,6 +75,9 @@ export interface Project {
   dlySteps: number; dlyFb: number; // écho : temps (pas) et répétitions 0..0,85
   key: number; scale: string;      // tonalité (0 = do) et gamme
   markers: { s: number; name: string }[]; // repères de la règle
+  mLow: number; mMid: number; mHigh: number; // égaliseur du général (dB)
+  width: number;                             // largeur stéréo : 0 mono, 1 normale, 2 élargie
+  target: number;                            // niveau d'export en LUFS, 0 = simple protection des crêtes
   tracks: Track[];
 }
 
@@ -175,7 +178,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [],
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0,
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -185,7 +188,7 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= [];
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0;
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0;
     if (tr.type === 'drums') {
@@ -239,5 +242,47 @@ export function demoProject(): Project {
 
   au.name = t('demo.voice');
   p.tracks = [dr, bass, pad, lead, au];
+  return p;
+}
+
+/** Modèles de départ : un projet déjà en place dans un style donné. */
+export const TEMPLATES = ['empty', 'trap', 'house', 'lofi', 'demo'] as const;
+export type Template = typeof TEMPLATES[number];
+export function templateProject(tpl: Template): Project {
+  if (tpl === 'demo') return demoProject();
+  const p = blankProject();
+  if (tpl === 'empty') return p;
+  p.name = t('tpl.' + tpl); p.loop = true; p.loopLen = 2;
+  const [dr, , au] = p.tracks;
+  const beat = newPatternClip('drums', 0, 'Beat'); beat.len = 32; beat.patLen = 32; beat.drums = emptyDrums(32);
+  const hit = (row: number, steps: number[], v = 1) => { for (const s of steps) beat.drums![row][s] = v; };
+  const synth = (name: string, preset: string, color: number, notes: [number, number, number][], vel = 0.8) => {
+    const tr = newTrack('synth', 1, preset); tr.name = name; tr.color = COLORS[color];
+    const c = newPatternClip('synth', 0, name); c.len = 32; c.patLen = 32; c.notes = notes.map(([s, pp, l]) => ({ s, p: pp, l, v: vel })); tr.clips.push(c);
+    return tr;
+  };
+  const chords = (list: number[][], len: number): [number, number, number][] => list.flatMap((ch, i) => ch.map(n => [i * len, n, len] as [number, number, number]));
+  let tracks: Track[] = [];
+  if (tpl === 'trap') {
+    p.bpm = 140; p.key = 0; p.scale = 'minor'; dr.kit = 'deep';
+    hit(8, [0, 11, 16, 22, 27]); hit(2, [8, 24]); hit(3, Array.from({ length: 16 }, (_, i) => i * 2)); hit(3, [13, 15, 29, 30, 31], 0.5); hit(4, [6, 22]);
+    tracks = [synth(t('demo.bass'), 'sub808', 1, [[0, 36, 6], [11, 36, 3], [16, 39, 6], [22, 34, 4], [27, 31, 4]], 0.9),
+      synth(t('demo.melody'), 'bell', 4, [[0, 72, 2], [3, 75, 2], [6, 79, 2], [10, 77, 3], [16, 75, 2], [19, 72, 2], [22, 70, 4], [28, 67, 3]])];
+    tracks[1].rev = 0.3; tracks[1].dly = 0.25;
+  } else if (tpl === 'house') {
+    p.bpm = 124; p.key = 9; p.scale = 'minor';
+    hit(0, [0, 4, 8, 12, 16, 20, 24, 28]); hit(2, [4, 12, 20, 28]); hit(4, [2, 6, 10, 14, 18, 22, 26, 30]); hit(12, Array.from({ length: 32 }, (_, i) => i), 0.5);
+    tracks = [synth(t('demo.bass'), 'bass', 1, [2, 6, 10, 14].map(s => [s, 33, 2] as [number, number, number]).concat([18, 22, 26, 30].map(s => [s, 29, 2] as [number, number, number])), 0.9),
+      synth(t('demo.chords'), 'supersaw', 2, chords([[57, 60, 64, 67], [53, 57, 60, 64]], 16), 0.7)];
+    tracks[0].duck = 0.6; tracks[1].duck = 0.8; tracks[1].rev = 0.3; tracks[1].vol = 0.55;
+  } else {
+    p.bpm = 82; p.swing = 0.3; p.key = 2; p.scale = 'dorian'; dr.kit = 'tight'; dr.drive = 0.25; dr.filter = -0.25;
+    hit(0, [0, 7, 10, 16, 23, 26]); hit(1, [4, 12, 20, 28]); hit(3, Array.from({ length: 16 }, (_, i) => i * 2), 0.5); hit(6, [15, 31], 0.5);
+    tracks = [synth(t('demo.bass'), 'bass', 1, [[0, 38, 4], [7, 38, 2], [10, 41, 4], [16, 43, 4], [23, 43, 2], [26, 40, 4]], 0.85),
+      synth(t('demo.keys'), 'epiano', 4, chords([[62, 65, 69, 72], [67, 71, 74, 77]], 16), 0.7)];
+    tracks[0].synth!.cutoff = 380; tracks[1].rev = 0.35; tracks[1].drive = 0.15;
+  }
+  dr.clips.push(beat);
+  p.tracks = [dr, ...tracks, au];
   return p;
 }

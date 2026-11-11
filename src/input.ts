@@ -4,7 +4,7 @@ import { S, emit, findTrack } from './store';
 import { BAR, Clip, NPADS, Note, Track, chordOf, newPatternClip, stepDur } from './types';
 
 /** Décalage d'octave du clavier d'ordinateur. */
-export const kb = { octave: 0, chord: 1, arp: 'off' as 'off' | 'up' | 'down' | 'updown' | 'random', arpRate: 2 };
+export const kb = { octave: 0, chord: 1, arp: 'off' as 'off' | 'up' | 'down' | 'updown' | 'random', arpRate: 2, repeat: 0 };
 interface Held { track: Track; keys: number[]; notes: Note[]; clip?: Clip; start: number; arp?: boolean }
 const held = new Map<number, Held>();
 
@@ -32,15 +32,28 @@ function recSpot(tr: Track, at?: number): { clip: Clip; local: number } {
 /** L'écriture est différée : sinon le séquenceur rejouerait aussitôt la note qu'on vient de jouer. */
 const later = (fn: () => void) => setTimeout(() => { fn(); emit(); }, 300);
 
+/** Pads maintenus, pour la répétition de notes (roulements). */
+const rolls = new Map<number, Track>();
+let rollT = 0, clock = 0;
+function ensureClock() { if (!clock) clock = window.setInterval(() => { arpFree(); rollFree(); if (!arp.keys.length && !rolls.size) { clearInterval(clock); clock = 0; } }, 25); }
+function rollFree() {
+  if (!rolls.size || !kb.repeat || engine.grid()) { rollT = 0; return; }
+  const now = engine.ctx.currentTime, d = kb.repeat * stepDur(S.project.bpm);
+  if (rollT < now) rollT = now + d;
+  while (rollT < now + 0.1) { for (const [row, tr] of rolls) engine.padAt(tr, row, rollT, 0.85); rollT += d; }
+}
+
 export function padHit(row: number, vel = 1, track?: Track) {
   const tr = track ?? findTrack(S.selTrack);
   if (!tr || tr.type !== 'drums' || row < 0 || row >= NPADS) return;
   engine.pad(tr, row, vel);
   if (isRec(tr)) { const { clip, local } = recSpot(tr); later(() => { clip.drums![row][local] = 1; }); }
+  if (kb.repeat) { rolls.set(row, tr); ensureClock(); }
 }
+export function padRelease(row: number) { rolls.delete(row); }
 
 // ---------- Arpégiateur : les notes tenues sont égrenées en rythme ----------
-const arp = { keys: [] as number[], track: null as Track | null, vel: 0.8, idx: 0, nextT: 0, timer: 0 };
+const arp = { keys: [] as number[], track: null as Track | null, vel: 0.8, idx: 0, nextT: 0 };
 function arpPick(): number {
   const ks = [...new Set(arp.keys)].sort((a, b) => a - b), n = ks.length, k = arp.idx++;
   if (kb.arp === 'down') return ks[n - 1 - (k % n)];
@@ -50,6 +63,10 @@ function arpPick(): number {
 }
 /** En lecture : calé sur les pas du séquenceur, et enregistré si l'enregistrement est armé. */
 engine.onStep = (s, t) => {
+  if (kb.repeat && rolls.size && s % kb.repeat === 0) for (const [row, rt] of rolls) {
+    engine.padAt(rt, row, t, 0.85);
+    if (isRec(rt)) { const { clip, local } = recSpot(rt, s); later(() => { clip.drums![row][local] = 1; }); }
+  }
   const tr = arp.track;
   if (!tr || !arp.keys.length || s % kb.arpRate) return;
   const m = arpPick();
@@ -72,11 +89,10 @@ function arpAdd(tr: Track, keys: number[], vel: number) {
   arp.track = tr; arp.vel = vel; arp.keys.push(...keys);
   engine.ctx.resume(); engine.sync();
   // Premier coup au prochain battement de l'horloge : les notes d'un accord plaqué ont le temps d'arriver.
-  if (!arp.timer) arp.timer = window.setInterval(arpFree, 25);
+  ensureClock();
 }
 function arpRemove(keys: number[]) {
   for (const k of keys) { const i = arp.keys.indexOf(k); if (i >= 0) arp.keys.splice(i, 1); }
-  if (!arp.keys.length) { clearInterval(arp.timer); arp.timer = 0; }
 }
 
 export function noteOn(midi: number, vel = 0.8) {
@@ -99,7 +115,7 @@ export function noteOn(midi: number, vel = 0.8) {
 
 export function noteOff(midi: number) {
   const h = held.get(midi);
-  if (!h) return;
+  if (!h) { padRelease(midi - 36); return; }
   held.delete(midi);
   if (h.arp) return arpRemove(h.keys);
   for (const k of h.keys) engine.noteOff(h.track, k);
@@ -110,7 +126,7 @@ export function noteOff(midi: number) {
   }
 }
 
-export function allNotesOff() { for (const m of [...held.keys()]) noteOff(m); }
+export function allNotesOff() { for (const m of [...held.keys()]) noteOff(m); rolls.clear(); }
 
 // ---------- Clavier maître MIDI ----------
 export const midi = { inputs: 0, supported: 'requestMIDIAccess' in navigator, onChange: () => { } };

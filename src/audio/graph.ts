@@ -24,6 +24,7 @@ export class Mix {
   master: GainNode; mlp: BiquadFilterNode; mhp: BiquadFilterNode; limiter: DynamicsCompressorNode; analyser?: AnalyserNode;
   revBus: GainNode; dlyBus: GainNode; delay: DelayNode; noise: AudioBuffer;
   conv: ConvolverNode; fb: GainNode; revSize = 0;
+  meq: BiquadFilterNode[]; wDirect: GainNode[]; wCross: GainNode[];
   /** Vrai pendant la lecture de l'arrangement : les paramètres automatisés ne sont plus pilotés par `sync`. */
   autoOn = false;
   active = new Set<AudioScheduledSourceNode>();
@@ -35,7 +36,15 @@ export class Mix {
     this.limiter = ctx.createDynamicsCompressor();
     this.limiter.threshold.value = -2; this.limiter.knee.value = 0;
     this.limiter.ratio.value = 20; this.limiter.attack.value = 0.002; this.limiter.release.value = 0.1;
-    this.master.connect(this.mlp).connect(this.mhp).connect(this.limiter).connect(ctx.destination);
+    // Égaliseur du général, puis largeur stéréo (mélange croisé des deux canaux).
+    this.meq = [['lowshelf', 120], ['peaking', 1200], ['highshelf', 7000]].map(([type, f]) => { const b = ctx.createBiquadFilter(); b.type = type as BiquadFilterType; b.frequency.value = f as number; b.Q.value = 0.8; return b; });
+    const split = ctx.createChannelSplitter(2), merge = ctx.createChannelMerger(2), stereo = ctx.createGain();
+    stereo.channelCount = 2; stereo.channelCountMode = 'explicit';
+    this.wDirect = [ctx.createGain(), ctx.createGain()]; this.wCross = [ctx.createGain(), ctx.createGain()];
+    for (const g of this.wCross) g.gain.value = 0;
+    this.master.connect(this.mlp).connect(this.mhp).connect(this.meq[0]).connect(this.meq[1]).connect(this.meq[2]).connect(stereo).connect(split);
+    for (const c of [0, 1]) { split.connect(this.wDirect[c], c).connect(merge, 0, c); split.connect(this.wCross[c], c).connect(merge, 0, 1 - c); }
+    merge.connect(this.limiter).connect(ctx.destination);
     if (live) { this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 512; this.limiter.connect(this.analyser); }
 
     this.revBus = ctx.createGain();
@@ -97,6 +106,8 @@ export class Mix {
     if (this.revSize !== p.revSize) { this.conv.buffer = this.impulse(p.revSize); this.revSize = p.revSize; }
     const [mlp, mhp] = djFreqs(p.filter);
     this.set(this.mlp.frequency, mlp); this.set(this.mhp.frequency, mhp);
+    this.set(this.meq[0].gain, p.mLow); this.set(this.meq[1].gain, p.mMid); this.set(this.meq[2].gain, p.mHigh);
+    for (const c of [0, 1]) { this.set(this.wDirect[c].gain, (1 + p.width) / 2); this.set(this.wCross[c].gain, (1 - p.width) / 2); }
     const anySolo = p.tracks.some(t => t.solo);
     for (const t of p.tracks) {
       let n = this.tracks.get(t.id);

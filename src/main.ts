@@ -1,15 +1,17 @@
 import './style.css';
 import { deleteClip, duplicateClip, saveFile, splitClip, toggleRecord } from './actions';
 import { engine, renderOffline } from './audio/engine';
+import { lufs } from './audio/loudness';
 import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
-import { allNotesOff, kb, midi, noteOff, noteOn, onMidi, padHit } from './input';
+import { allNotesOff, kb, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, redo, resetHistory, undo } from './store';
-import { BAR, demoProject, stepDur } from './types';
+import { BAR, demoProject, stepDur, templateProject } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, toast } from './ui/dom';
-import { flashPad, renderEditor, updateEditorPlayhead } from './ui/editor';
+import { flashPad, notesKey, renderEditor, updateEditorPlayhead } from './ui/editor';
+import { createFromTemplate, showLibrary } from './ui/library';
 import { refreshLive, renderLive } from './ui/live';
 import { renderMixer, updateMeters } from './ui/mixer';
 import { buildTop, initFileInputs, renderTop } from './ui/top';
@@ -50,9 +52,10 @@ const down = new Map<string, number>();
 
 addEventListener('keydown', e => {
   const el = e.target as HTMLElement;
-  if (help.open) return;
+  if (document.querySelector('dialog[open]')) return;
   if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type !== 'range')) return;
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (el.tagName !== 'INPUT' && notesKey(e)) { e.preventDefault(); return; }
   if (mod) {
     const fn = ({ z: e.shiftKey ? redo : undo, y: redo, d: duplicateClip, e: splitClip, s: saveFile } as Record<string, () => void>)[k];
     if (fn) { e.preventDefault(); fn(); }
@@ -79,7 +82,7 @@ addEventListener('keydown', e => {
   else if (k === 'l') $('bLoop').click();
   else if (k === 'm') $('bMetro').click();
 });
-addEventListener('keyup', e => { const m = down.get(e.code); if (m !== undefined) { down.delete(e.code); noteOff(m); } });
+addEventListener('keyup', e => { const pi = PADS.indexOf(e.code); if (pi >= 0) padRelease(pi); const m = down.get(e.code); if (m !== undefined) { down.delete(e.code); noteOff(m); } });
 addEventListener('blur', () => { down.clear(); allNotesOff(); });
 
 // ---------- Boucle d'affichage ----------
@@ -119,7 +122,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, showLibrary, createFromTemplate, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -1,3 +1,4 @@
+import { gainLimit, lufs, peakOf } from './loudness';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
 import { S, buffers } from '../store';
 import { BAR, Project, Track, contentEnd, stepDur } from '../types';
@@ -184,6 +185,11 @@ class Engine {
     const p = S.project, le = (p.loopStart + p.loopLen) * BAR;
     return { s: p.loop && this.recording !== 'audio' && this.nextStep === le ? p.loopStart * BAR : this.nextStep, t: this.nextTime };
   }
+  /** Pad programmé à un instant précis (répétition de notes). */
+  padAt(track: Track, row: number, t: number, vel = 1) {
+    const n = this.mix.tracks.get(track.id);
+    if (n) hitPad(this.mix, buffers, track, n.input, row, Math.max(t, this.ctx.currentTime), vel);
+  }
   pad(track: Track, row: number, vel = 1) {
     this.ctx.resume(); this.sync();
     const n = this.mix.tracks.get(track.id);
@@ -291,11 +297,23 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, s * dur), s === 0, null);
   const out = await off.startRendering();
   mix.active.clear();
-  // Évite toute saturation : si une crête dépasse -0,3 dB, on ramène l'ensemble en dessous.
-  let pk = 0;
-  for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; } }
-  if (normalize && pk > 0.966) for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c), k = 0.966 / pk; for (let i = 0; i < d.length; i++) d[i] *= k; }
+  if (!normalize) return out;
+  if (p.target < 0) {
+    // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.
+    const l = lufs(out);
+    if (Number.isFinite(l)) gainLimit(out, Math.min(8, Math.pow(10, (p.target - l) / 20)));
+  } else {
+    // Simple protection : si une crête dépasse -0,3 dB, on ramène l'ensemble en dessous.
+    const pk = peakOf(out);
+    if (pk > 0.966) gainLimit(out, 0.966 / pk);
+  }
   return out;
+}
+
+/** Volume perçu et crête du morceau tel qu'il sera exporté. */
+export async function analyze(p: Project): Promise<{ lufs: number; peakDb: number }> {
+  const b = await renderOffline(p);
+  return { lufs: lufs(b), peakDb: 20 * Math.log10(Math.max(1e-9, peakOf(b))) };
 }
 
 export function encodeWav(b: AudioBuffer): Blob {

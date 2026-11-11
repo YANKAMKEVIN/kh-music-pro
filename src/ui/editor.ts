@@ -1,11 +1,11 @@
 import { audioFiles, chooseInput, deleteClip, duplicateClip, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { lang, t } from '../i18n';
-import { kb, padHit } from '../input';
+import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack } from '../store';
 import { BAR, CATS, Clip, KITS, NPADS, Note, PRESETS, SCALES, Track, emptyDrums, inScale, makeSynth, snapToScale, stepDur } from '../types';
 import { ICON, drawFades, drawWave } from './arr';
-import { clamp, h, pct, slider } from './dom';
+import { clamp, h, pct, slider, toast } from './dom';
 
 const RH = 16, SW = 28, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150;
 const SOLF = { fr: ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], es: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], en: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] };
@@ -71,6 +71,8 @@ function padsView(tr: Track) {
     pad.onpointerdown = e => {
       if ((e.target as HTMLElement).closest('.pact')) return;
       e.preventDefault(); padHit(r, 1, tr); flashPad(r);
+      const up = () => { padRelease(r); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+      addEventListener('pointerup', up); addEventListener('pointercancel', up);
     };
     pad.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); padHit(r, 1, tr); flashPad(r); } };
     pad.ondragover = e => { e.preventDefault(); pad.classList.add('over'); };
@@ -78,7 +80,9 @@ function padsView(tr: Track) {
     pad.ondrop = e => { e.preventDefault(); e.stopPropagation(); pad.classList.remove('over'); const f = audioFiles(e.dataTransfer?.files)[0]; if (f) setSample(f); };
     grid.append(pad);
   }
-  return h('div', { class: 'escroll padwrap' }, grid, h('p', { class: 'tip' }, t('pad.help')));
+  const rep = h('select', { 'aria-label': t('pad.repeat'), title: t('pad.repeatTip'), data: { role: 'repeat' } }, ...[[0, t('chord.1')], [1, '1/16'], [2, '1/8'], [4, '1/4']].map(([v, l]) => h('option', { value: String(v), selected: kb.repeat === v }, String(l))));
+  rep.onchange = () => { kb.repeat = +rep.value; rep.blur(); };
+  return h('div', { class: 'escroll padwrap' }, grid, h('div', { class: 'padside' }, h('label', { class: 'fld' }, t('pad.repeat'), rep), h('p', { class: 'tip' }, t('pad.help'))));
 }
 
 export function flashPad(r: number) {
@@ -158,6 +162,7 @@ function synthPanel(tr: Track, collapsible = false) {
   const open = !collapsible || S.synthOpen;
   const head = [h('label', { class: 'fld big' }, t('syn.sound'), preset),
     collapsible && h('button', { class: 'pill' + (open ? ' on' : ''), data: { act: 'synthopen' }, 'aria-expanded': String(open), title: t('syn.settingsTip'), onclick: () => { S.synthOpen = !S.synthOpen; emit(); } }, `🎚 ${t('syn.settings')} ${open ? '▴' : '▾'}`),
+    h('button', { class: 'pill' + (S.kbShow ? ' on' : ''), data: { act: 'okb' }, 'aria-pressed': String(S.kbShow), title: t('okb.tip'), onclick: () => { S.kbShow = !S.kbShow; emit(); } }, '🎹 ' + t('okb.title')),
     collapsible && h('span', { class: 'tip' }, t('hint.pianoRoll'))];
   if (!open) return h('div', { class: 'synth' }, ...head);
   return h('div', { class: 'synth' },
@@ -184,6 +189,63 @@ function samplerBox(tr: Track) {
   return box;
 }
 
+// ---------- Clavier à l'écran ----------
+function screenKeys() {
+  // Deux octaves sur grand écran, une seule sur téléphone pour garder des touches assez larges pour le doigt.
+  const base = 48 + kb.octave * 12, N = innerWidth < 760 ? 13 : 25, whites: number[] = [];
+  for (let m = base; m < base + N; m++) if (!isBlack(m)) whites.push(m);
+  const el = h('div', { class: 'okb-keys', style: `--nw:${N === 13 ? 8 : 15}` });
+  whites.forEach(m => el.append(h('div', { class: 'wk', data: { m: String(m) } }, m % 12 === 0 ? noteName(m) : '')));
+  for (let m = base; m < base + N; m++) if (isBlack(m)) {
+    const i = whites.findIndex(w => w > m);
+    el.append(h('div', { class: 'bk', data: { m: String(m) }, style: `left:calc(${i} * 100% / ${whites.length} - 100% / ${whites.length} * .3)` }));
+  }
+  // Plusieurs doigts, et glissé d'une touche à l'autre.
+  const down = new Map<number, number>();
+  const at = (e: PointerEvent) => { const k = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-m]'); return k && el.contains(k) ? +k.dataset.m! : null; };
+  const mark = (m: number, on: boolean) => el.querySelector(`[data-m="${m}"]`)?.classList.toggle('on', on);
+  const set = (id: number, m: number | null) => {
+    const cur = down.get(id);
+    if (cur === m || (cur === undefined && m === null)) return;
+    if (cur !== undefined) { noteOff(cur); mark(cur, false); down.delete(id); }
+    if (m !== null && ![...down.values()].includes(m)) { noteOn(m, 0.8); mark(m, true); down.set(id, m); }
+  };
+  el.onpointerdown = e => { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch { /* pointeur synthétique */ } set(e.pointerId, at(e)); };
+  el.onpointermove = e => { if (down.has(e.pointerId)) set(e.pointerId, at(e)); };
+  el.onpointerup = el.onpointercancel = e => set(e.pointerId, null);
+  const oct = (d: number, label: string) => h('button', { class: 'pill', data: { act: d < 0 ? 'octdown' : 'octup' }, 'aria-label': t('help.k.octave') + ' ' + label, title: t('help.k.octave'), onclick: () => { kb.octave = clamp(kb.octave + d, -3, 3); emit(); } }, label);
+  return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, oct(-1, '−'), el, oct(1, '+'));
+}
+
+// ---------- Sélection de notes ----------
+let selNotes = new Set<Note>(), selOwner = '', clipboard: Note[] = [];
+
+/** Raccourcis du piano roll (sélection, copier/coller, flèches). Renvoie vrai si la touche a été traitée. */
+export function notesKey(e: KeyboardEvent): boolean {
+  const f = S.tab === 'editor' ? findClip(S.selClip) : null, c = f?.clip;
+  if (!c?.notes) return false;
+  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), sel = c.notes.filter(n => selNotes.has(n));
+  if (mod && k === 'a') { selNotes = new Set(c.notes); selOwner = c.id; emit(); return true; }
+  if (mod && k === 'v' && clipboard.length) {
+    const step = engine.currentStep(), inside = step >= c.start && step < c.start + c.len;
+    const at = inside ? Math.round(step - c.start + c.offset) % c.patLen! : 0, min = Math.min(...clipboard.map(n => n.s));
+    const added = clipboard.map(n => ({ ...n, s: n.s - min + at })).filter(n => n.s < c.patLen!).map(n => ({ ...n, l: Math.min(n.l, c.patLen! - n.s) }));
+    if (!added.length) return true;
+    c.notes.push(...added); selNotes = new Set(added); selOwner = c.id; commit(); toast(t('toast.pasted', added.length)); return true;
+  }
+  if (!sel.length) return false;
+  if (mod && k === 'c') { clipboard = sel.map(n => ({ ...n })); toast(t('toast.copied', sel.length)); return true; }
+  if (mod) return false;
+  if (e.key === 'Escape') { selNotes.clear(); emit(); return true; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { c.notes = c.notes.filter(n => !selNotes.has(n)); selNotes.clear(); commit(); return true; }
+  const dp = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0, ds = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+  if (!dp && !ds) return false;
+  const P = dp * (e.shiftKey ? 12 : 1);
+  if (sel.some(n => n.p + P < PMIN || n.p + P > PMAX || n.s + ds < 0 || n.s + n.l + ds > c.patLen!)) return true;
+  for (const n of sel) { n.p += P; n.s += ds; }
+  commit(); return true;
+}
+
 // ---------- Gamme et accords ----------
 function scaleTools() {
   const P = S.project;
@@ -204,6 +266,8 @@ function scaleTools() {
 function pianoRoll(tr: Track, c: Clip) {
   const rows = PMAX - PMIN + 1, W = c.patLen! * SW, P = S.project, scaled = P.scale !== 'off';
   const fit = (p: number) => clamp(scaled ? snapToScale(P, p) : p, PMIN, PMAX);
+  if (selOwner !== c.id) { selNotes.clear(); selOwner = c.id; }
+  const refreshSel = () => grid.querySelectorAll<HTMLElement>('.note').forEach(el => el.classList.toggle('sel', selNotes.has(c.notes![+el.dataset.i!])));
   const keys = h('div', { class: 'keys' });
   const grid = h('div', { class: 'pr-grid ed-grid', style: `width:${W}px;height:${rows * RH}px;--sw:${SW}px;--rh:${RH}px` });
   for (let p = PMAX; p >= PMIN; p--) {
@@ -215,47 +279,66 @@ function pianoRoll(tr: Track, c: Clip) {
     if (p % 12 === 0) grid.append(h('div', { class: 'oct', style: `top:${(PMAX - p + 1) * RH}px` }));
   }
   const place = (el: HTMLElement, n: Note) => { el.style.cssText = `left:${n.s * SW}px;top:${(PMAX - n.p) * RH}px;width:${n.l * SW - 1}px;opacity:${(0.4 + 0.6 * n.v).toFixed(2)}`; el.title = noteName(n.p); };
-  const mk = (n: Note, i: number) => { const el = h('div', { class: 'note', data: { i: String(i) } }, h('i', {})); place(el, n); return el; };
+  const mk = (n: Note, i: number) => { const el = h('div', { class: 'note' + (selNotes.has(n) ? ' sel' : ''), data: { i: String(i) } }, h('i', {})); place(el, n); return el; };
   c.notes!.forEach((n, i) => grid.append(mk(n, i)));
   grid.append(h('div', { class: 'ed-ph' }));
 
   grid.oncontextmenu = e => e.preventDefault();
   grid.ondblclick = e => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('.note');
-    if (el) { c.notes!.splice(+el.dataset.i!, 1); commit(); }
+    if (el) { selNotes.delete(c.notes![+el.dataset.i!]); c.notes!.splice(+el.dataset.i!, 1); commit(); }
   };
   grid.onpointerdown = e => {
     e.preventDefault();
     const r = grid.getBoundingClientRect();
     let el = (e.target as HTMLElement).closest<HTMLElement>('.note');
     let note: Note, resize: boolean;
+    if (!el && e.shiftKey && e.button === 0) {
+      // Maj+glisser dans le vide : rectangle de sélection.
+      const x0 = e.clientX - r.left, y0 = e.clientY - r.top, box = h('div', { class: 'marq' }); grid.append(box);
+      let x1 = x0, y1 = y0;
+      const mv = (ev: PointerEvent) => { x1 = ev.clientX - r.left; y1 = ev.clientY - r.top; box.style.cssText = `left:${Math.min(x0, x1)}px;top:${Math.min(y0, y1)}px;width:${Math.abs(x1 - x0)}px;height:${Math.abs(y1 - y0)}px`; };
+      const up = () => {
+        removeEventListener('pointermove', mv); removeEventListener('pointerup', up); box.remove();
+        const sa = Math.min(x0, x1) / SW, sb = Math.max(x0, x1) / SW, pa = PMAX - Math.floor(Math.max(y0, y1) / RH), pb = PMAX - Math.floor(Math.min(y0, y1) / RH);
+        selNotes = new Set(c.notes!.filter(n => n.s < sb && n.s + n.l > sa && n.p >= pa && n.p <= pb)); refreshSel();
+      };
+      addEventListener('pointermove', mv); addEventListener('pointerup', up);
+      return;
+    }
     if (el) {
       note = c.notes![+el.dataset.i!];
-      if (e.button === 2) { c.notes!.splice(c.notes!.indexOf(note), 1); commit(); return; }
+      if (e.button === 2) { selNotes.delete(note); c.notes!.splice(c.notes!.indexOf(note), 1); commit(); return; }
+      if (e.shiftKey) { if (selNotes.has(note)) selNotes.delete(note); else selNotes.add(note); refreshSel(); return; }
+      if (!selNotes.has(note)) { selNotes.clear(); selNotes.add(note); refreshSel(); }
       resize = e.clientX > el.getBoundingClientRect().right - 8;
     } else {
       if (e.button !== 0) return;
       const s = clamp(Math.floor((e.clientX - r.left) / SW), 0, c.patLen! - 1);
       note = { p: fit(PMAX - Math.floor((e.clientY - r.top) / RH)), s, l: Math.min(lastLen, c.patLen! - s), v: 0.8 };
-      c.notes!.push(note); el = mk(note, c.notes!.length - 1); grid.append(el); resize = true;
+      c.notes!.push(note); selNotes.clear(); selNotes.add(note); el = mk(note, c.notes!.length - 1); grid.append(el); refreshSel(); resize = true;
     }
     engine.previewNote(tr, note.p);
     const o = { ...note }, sx = e.clientX, sy = e.clientY, node = el;
     node.classList.add('drag');
     const mv = (ev: PointerEvent) => {
       const dx = Math.round((ev.clientX - sx) / SW), dy = Math.round((ev.clientY - sy) / RH);
-      if (resize) note.l = clamp(o.l + dx, 1, c.patLen! - note.s);
-      else {
-        note.s = clamp(o.s + dx, 0, c.patLen! - note.l);
-        const np = fit(o.p - dy);
-        if (np !== note.p) { note.p = np; engine.previewNote(tr, np); }
+      if (resize) { note.l = clamp(o.l + dx, 1, c.patLen! - note.s); place(node, note); return; }
+      // Déplacement de toute la sélection, bornée pour qu'aucune note ne sorte du clip.
+      const cdx = clamp(dx, -Math.min(...group.map(g => g.o.s)), Math.min(...group.map(g => c.patLen! - g.o.s - g.o.l)));
+      const cdy = clamp(dy, Math.max(...group.map(g => g.o.p)) - PMAX, Math.min(...group.map(g => g.o.p)) - PMIN);
+      for (const g of group) {
+        g.n.s = g.o.s + cdx;
+        const np = fit(g.o.p - cdy);
+        if (np !== g.n.p) { g.n.p = np; if (g.n === note) engine.previewNote(tr, np); }
+        if (g.el) place(g.el, g.n);
       }
-      place(node, note);
     };
+    const group = [...selNotes].filter(n => c.notes!.includes(n)).map(n => ({ n, o: { ...n }, el: n === note ? node : grid.querySelector<HTMLElement>(`.note[data-i="${c.notes!.indexOf(n)}"]`) }));
     const created = !o.l || resize && !(e.target as HTMLElement).closest('.note');
     const up = () => {
       removeEventListener('pointermove', mv); removeEventListener('pointerup', up); lastLen = note.l; node.classList.remove('drag');
-      if (created || note.s !== o.s || note.p !== o.p || note.l !== o.l) commit();
+      if (created || note.l !== o.l || group.some(g => g.n.s !== g.o.s || g.n.p !== g.o.p)) commit();
     };
     addEventListener('pointermove', mv); addEventListener('pointerup', up);
   };
@@ -295,7 +378,7 @@ function pianoRoll(tr: Track, c: Clip) {
       h('div', { class: 'segs', role: 'group', 'aria-label': t('ed.transpose'), title: t('ed.transpose') },
         ...[-12, -1, 1, 12].map(n => h('button', { class: 'seg', data: { act: 'tr' + n }, 'aria-label': `${t('ed.transpose')} ${n > 0 ? '+' : ''}${n}`, onclick: () => transposeClip(n) }, (n > 0 ? '+' : '−') + Math.abs(n)))),
       scaleTools()),
-    synthPanel(tr, true), scroll);
+    synthPanel(tr, true), S.kbShow && screenKeys(), scroll);
 }
 
 // ---------- Entrée audio ----------
@@ -344,7 +427,7 @@ function emptyState(tr?: Track) {
   if (tr?.type === 'drums') return drumEditor(tr, null);
   if (tr?.type === 'synth') return h('div', { class: 'editor' },
     h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), scaleTools(), h('span', { class: 'tip' }, t('hint.synthEmpty', ['A', 'S', 'D', 'F', 'G', 'H', 'J'].map(keyLabel).join(' '), keyLabel('Z'), 'X'))),
-    synthPanel(tr));
+    synthPanel(tr), S.kbShow && screenKeys());
   if (tr) return h('div', { class: 'editor' }, h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`)), inputPanel(),
     h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.audioEmpty'))));
   return h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.nothing')));

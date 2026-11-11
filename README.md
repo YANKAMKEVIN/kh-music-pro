@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.4)
+## Fonctions (v0.5)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,11 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Clavier à l'écran** : jouable au doigt (plusieurs touches, glissé) ou à la souris.
+- **Sélection de notes** : rectangle de sélection, déplacement en groupe, copier/coller, flèches du clavier.
+- **Répétition de notes** sur les pads (roulements), enregistrable.
+- **Finition** : égaliseur et largeur stéréo sur le général, mesure du volume perçu (LUFS), export au niveau des plateformes (−14 LUFS) avec limiteur.
+- **Mes projets** : plusieurs projets gardés dans le navigateur, modèles de départ (trap, house, lo-fi).
 - **Arpégiateur** : notes tenues égrenées au tempo (quatre modes), jouable et enregistrable.
 - **Repères** nommés dans la règle (Intro, Refrain…) pour naviguer.
 - **Téléphone et tablette** : mise en page compacte et commandes tactiles.
@@ -36,7 +41,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 118 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 132 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -64,6 +69,8 @@ Le fichier `.github/workflows/deploy.yml` publie l'application sur GitHub Pages 
 - `src/audio/graph.ts` — graphe de mixage, instruments, batterie, séquenceur (partagé entre temps réel et export)
 - `src/audio/engine.ts` — transport, mode Live, enregistrement, rendu hors-ligne, WAV
 - `src/audio/stretch.ts` — étirement temporel et transposition des sons
+- `src/audio/loudness.ts` — mesure LUFS et limiteur d'export
+- `src/ui/library.ts` — fenêtre des projets et des modèles
 - `src/input.ts` — jeu en direct (clavier, MIDI, accords, arpégiateur) et écriture des prises
 - `src/files.ts` — export et import MIDI, archive ZIP des pistes séparées
 - `public/` — manifeste, icône et service worker (hors-ligne)

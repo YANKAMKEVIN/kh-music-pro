@@ -1,10 +1,11 @@
-import { addMarker, exportMidiFile, exportStems, exportWav, filesPicked, importMidiFile, newProject, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
+import { addMarker, exportMidiFile, exportStems, exportWav, filesPicked, importMidiFile, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
 import { S, commit, emit, redo, undo } from '../store';
 import { clamp, h, toast } from './dom';
 import { keyLabel } from './editor';
+import { showLibrary } from './library';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -37,7 +38,7 @@ export function buildTop(onLang: () => void) {
   const menu = h('details', { class: 'menu', id: 'menu' });
   const item = (id: string, label: string, fn: () => void) => h('button', { id, onclick: () => { menu.open = false; fn(); } }, label);
   menu.append(h('summary', { class: 'pill' }, t('top.project') + ' ▾'), h('div', { class: 'menu-list' },
-    item('bNew', t('top.new'), newProject), item('bOpen', t('top.open'), () => $('fProj').click()),
+    item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bOpen', t('top.open'), () => $('fProj').click()),
     item('bSave', t('top.save'), saveFile), item('bImport', t('top.import'), () => pickAudio()),
     item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()), h('hr', {}),
     item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile)));
@@ -94,12 +95,12 @@ function buildHelp() {
     [k(t('help.key.space')), 'space'], [k(t('help.key.enter')), 'enter'], [k('R'), 'rec'], [`${k('L')} / ${k('M')}`, 'loop'],
     [`${k('Ctrl')}+${k('Z')} / ${k('Y')}`, 'undo'], [`${k('Ctrl')}+${k('D')}`, 'dup'], [`${k('Ctrl')}+${k('E')}`, 'split'],
     [k(t('help.key.del')), 'del'], [`${k('Ctrl')}+${k('S')}`, 'save'], [piano + '…', 'piano'],
-    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
+    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
   ];
   $('help').innerHTML = `
     <h2><span class="logo">KH</span> ${t('help.title')}</h2>
     <div class="hcols">
-      <div><h3>${t('help.start')}</h3><ol>${[1, 2, 3, 4, 5, 10, 6, 7, 9, 8].map(i => `<li>${t('help.s' + i)}</li>`).join('')}</ol></div>
+      <div><h3>${t('help.start')}</h3><ol>${[1, 11, 2, 3, 4, 5, 10, 6, 7, 9, 8].map(i => `<li>${t('help.s' + i)}</li>`).join('')}</ol></div>
       <div><h3>${t('help.keys')}</h3><table>${rows.map(([a, key]) => `<tr><td>${a}</td><td>${t('help.k.' + key)}</td></tr>`).join('')}</table></div>
     </div>
     <form method="dialog"><button class="pill accent" autofocus>${t('help.go')}</button></form>`;

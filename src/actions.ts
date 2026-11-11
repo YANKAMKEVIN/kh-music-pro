@@ -1,7 +1,7 @@
-import { encodeWav, engine, renderOffline } from './audio/engine';
+import { analyze, encodeWav, engine, renderOffline } from './audio/engine';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, emit, findClip, findTrack, idbClear, loadProjectFile, resetHistory, serializeProject } from './store';
+import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
 import { BAR, Clip, Track, TrackType, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
@@ -261,6 +261,15 @@ export async function importMidiFile(f: File) {
   } catch { toast(t('toast.badMidi'), 'error'); }
 }
 
+/** Mesure le volume perçu et la crête du morceau tel qu'il sera exporté. */
+export async function analyzeMix(): Promise<string> {
+  try {
+    toast(t('toast.rendering'));
+    const r = await analyze(S.project), txt = t('mix.result', Number.isFinite(r.lufs) ? r.lufs.toFixed(1) : '−∞', r.peakDb.toFixed(1));
+    toast(txt); return txt;
+  } catch { toast(t('toast.emptyProject'), 'error'); return ''; }
+}
+
 export function saveFile() {
   download(new Blob([serializeProject()], { type: 'application/json' }), safeName() + '.khm');
   toast(t('toast.saved'));
@@ -269,14 +278,6 @@ export function saveFile() {
 export async function openFile(f: File) {
   try { engine.stop(); loadProjectFile(await f.text()); toast(t('toast.opened')); }
   catch { toast(t('toast.badProject'), 'error'); }
-}
-
-export function newProject() {
-  if (!confirm(t('confirm.new'))) return;
-  engine.stop(); engine.pos = 0;
-  buffers.clear(); idbClear().catch(() => { });
-  S.project = blankProject(); S.selTrack = S.project.tracks[0].id; S.selClip = '';
-  resetHistory(); commit();
 }
 
 export function setLoopToClip() {

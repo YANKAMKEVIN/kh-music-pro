@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-118 cas réussis sur 118.
+132 cas réussis sur 132.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -122,3 +122,17 @@
 | MK01 | Repères | Poser des repères, y sauter, les renommer et les supprimer | OK |
 | MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | OK |
 | MB02 | Téléphone | Au doigt : déplacer un clip et dessiner une courbe d'automation | OK |
+| OK01 | Clavier à l'écran | Afficher le clavier, jouer une touche à la souris, glisser vers une autre, changer d'octave | OK |
+| OK02 | Clavier à l'écran | Sur écran tactile : clavier affiché d'office, accord à deux doigts | OK |
+| SN01 | Piano roll | Sélectionner plusieurs notes au rectangle (Maj+glisser) et les déplacer ensemble | OK |
+| SN02 | Piano roll | Tout sélectionner, copier, coller à la tête de lecture, supprimer la sélection | OK |
+| SN03 | Piano roll | Flèches : déplacer et transposer la sélection ; sans sélection, Suppr supprime toujours le clip | OK |
+| NR01 | Pads | Répétition de notes : un pad maintenu roule au tempo, puis s'arrête au relâchement | OK |
+| NR02 | Pads | Un roulement joué pendant l'enregistrement est écrit sur la grille | OK |
+| MA01 | Finition | Égaliseur et largeur stéréo du général : réglables et audibles | OK |
+| MA02 | Finition | La mesure LUFS est juste sur des signaux de référence | OK |
+| MA03 | Finition | Export au niveau streaming : le morceau sort à −14 LUFS sans saturer ; le bouton Mesurer l'affiche | OK |
+| LB01 | Projets | Nouveau projet depuis un modèle ; le précédent reste dans « Mes projets » et se rouvre | OK |
+| LB02 | Projets | Chaque modèle (trap, house, lo-fi, vide) donne un projet jouable, propre et dans sa gamme | OK |
+| LB03 | Projets | Dupliquer et supprimer un projet ; la bibliothèque survit au rechargement de la page | OK |
+| LB04 | Projets | Ouvrir un fichier .khm crée un nouveau projet sans écraser celui en cours | OK |

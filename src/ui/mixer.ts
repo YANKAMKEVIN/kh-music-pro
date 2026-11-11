@@ -1,3 +1,4 @@
+import { analyzeMix } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, commit, select } from '../store';
@@ -44,8 +45,13 @@ function strip(tr: Track) {
         h('div', { class: 'srow' }, tog('mute', 'M'), tog('solo', 'S')))));
 }
 
+let lastResult = '';
+
 export function renderMixer(): HTMLElement {
   const p = S.project;
+  const target = h('select', { 'aria-label': t('mix.target'), title: t('mix.targetTip'), data: { role: 'target' } }, ...[0, -14, -9, -23].map(v => h('option', { value: String(v), selected: p.target === v }, t('mix.target' + v))));
+  target.onchange = () => { p.target = +target.value; commit(); };
+  const result = h('span', { class: 'lufs', role: 'status' }, lastResult);
   const m = fader(t('mix.master'), p.master, v => p.master = v);
   return h('div', { class: 'mixer' },
     ...p.tracks.map(strip),
@@ -57,7 +63,14 @@ export function renderMixer(): HTMLElement {
           slider(t('mix.revSize'), 0.4, 6, 0.1, p.revSize, v => p.revSize = v, v => v.toFixed(1) + ' s'),
           h('span', { class: 'sect' }, t('mix.echo')),
           slider(t('mix.dlyTime'), 1, 8, 1, p.dlySteps, v => p.dlySteps = v, v => v + '/16'),
-          slider(t('mix.dlyFb'), 0, 0.85, 0.01, p.dlyFb, v => p.dlyFb = v, pct)),
+          slider(t('mix.dlyFb'), 0, 0.85, 0.01, p.dlyFb, v => p.dlyFb = v, pct),
+          h('span', { class: 'sect' }, t('mix.eq')),
+          slider(t('mix.high'), -12, 12, 0.5, p.mHigh, v => p.mHigh = v, db),
+          slider(t('mix.mid'), -12, 12, 0.5, p.mMid, v => p.mMid = v, db),
+          slider(t('mix.low'), -12, 12, 0.5, p.mLow, v => p.mLow = v, db),
+          slider(t('mix.width'), 0, 2, 0.01, p.width, v => p.width = Math.abs(v - 1) < 0.04 ? 1 : v, pct),
+          h('span', { class: 'sect' }, t('mix.export')), target,
+          h('button', { class: 'mini', data: { act: 'analyze' }, title: t('mix.analyzeTip'), onclick: async () => { lastResult = await analyzeMix(); result.textContent = lastResult; } }, '📊 ' + t('mix.analyze')), result),
         h('div', { class: 'fcol' },
         h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: 'master' } })), m.inp),
         m.out, h('p', { class: 'tip' }, t('mix.limiter'))))));

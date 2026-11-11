@@ -1,7 +1,9 @@
-import { Clip, Project, Track, demoProject, migrate } from './types';
+import { Clip, Project, Track, demoProject, migrate, uid } from './types';
 
 export const S = {
   project: demoProject() as Project,
+  pid: '',    // identifiant du projet courant dans la bibliothèque du navigateur
+  kbShow: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches, // clavier à l'écran
   selTrack: '',
   selClip: '',
   tab: 'editor' as 'editor' | 'mixer' | 'live',
@@ -67,6 +69,7 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
 const idbSet = (k: string, v: unknown) => tx('readwrite', s => s.put(v, k));
 const idbGet = <T>(k: string) => tx<T>('readonly', s => s.get(k));
 export const idbClear = () => tx('readwrite', s => s.clear());
+const idbDel = (k: string) => tx('readwrite', s => s.delete(k));
 
 interface RawBuf { sr: number; ch: Float32Array[] }
 const toRaw = (b: AudioBuffer): RawBuf => ({ sr: b.sampleRate, ch: Array.from({ length: b.numberOfChannels }, (_, i) => b.getChannelData(i).slice()) });
@@ -92,24 +95,71 @@ export function addBuffer(id: string, b: AudioBuffer) {
   idbSet('buf:' + id, toRaw(b)).catch(() => { /* stockage indisponible */ });
 }
 
+// ---------- Bibliothèque : plusieurs projets gardés dans le navigateur ----------
+export interface LibEntry { id: string; name: string; updated: number }
+export let library: LibEntry[] = [];
+
 let saveTimer = 0;
 function autosave() {
   clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => idbSet('project', JSON.stringify(S.project)).catch(() => { }), 500);
+  saveTimer = window.setTimeout(() => { saveNow().catch(() => { /* stockage indisponible */ }); }, 500);
+}
+async function saveNow() {
+  clearTimeout(saveTimer);
+  if (!S.pid) S.pid = uid();
+  const id = S.pid, e = library.find(x => x.id === id), now = Date.now();
+  if (e) { e.name = S.project.name; e.updated = now; } else library.push({ id, name: S.project.name, updated: now });
+  await idbSet('proj:' + id, JSON.stringify(S.project)); await idbSet('lib', library); await idbSet('current', id);
+}
+async function loadBuffers(p: Project) {
+  for (const id of usedBuffers(p)) if (!buffers.has(id)) {
+    const raw = await idbGet<RawBuf>('buf:' + id);
+    if (raw) buffers.set(id, fromRaw(raw));
+  }
 }
 
 export async function loadAutosave(): Promise<boolean> {
   try {
-    const json = await idbGet<string>('project');
+    library = (await idbGet<LibEntry[]>('lib')) ?? [];
+    let id = await idbGet<string>('current'), json = id ? await idbGet<string>('proj:' + id) : undefined;
+    if (!json) { json = await idbGet<string>('project'); id = uid(); } // sauvegarde d'une version antérieure
+    S.pid = id || uid();
     if (!json) return false;
     const p: Project = migrate(JSON.parse(json));
-    for (const id of usedBuffers(p)) if (!buffers.has(id)) {
-      const raw = await idbGet<RawBuf>('buf:' + id);
-      if (raw) buffers.set(id, fromRaw(raw));
-    }
+    await loadBuffers(p);
     S.project = p;
     return true;
-  } catch { return false; }
+  } catch { S.pid ||= uid(); return false; }
+}
+
+function install(p: Project, id: string) {
+  S.project = p; S.pid = id; S.selTrack = ''; S.selClip = '';
+  resetHistory(); autosave(); emit();
+}
+/** Démarre un nouveau projet ; le précédent reste dans la bibliothèque. */
+export function startProject(p: Project) {
+  saveNow().catch(() => { });
+  install(p, uid());
+}
+export async function openProject(id: string) {
+  await saveNow().catch(() => { });
+  const json = await idbGet<string>('proj:' + id);
+  if (!json) throw new Error('missing');
+  const p: Project = migrate(JSON.parse(json));
+  await loadBuffers(p); install(p, id);
+}
+export async function duplicateProject(id: string) {
+  if (id === S.pid) await saveNow();
+  const json = await idbGet<string>('proj:' + id), src = library.find(x => x.id === id);
+  if (!json || !src) return;
+  const p: Project = JSON.parse(json), nid = uid(); p.name = src.name + ' 2';
+  library.push({ id: nid, name: p.name, updated: Date.now() });
+  await idbSet('proj:' + nid, JSON.stringify(p)); await idbSet('lib', library);
+}
+export async function deleteProject(id: string) {
+  if (id === S.pid) return;
+  library = library.filter(x => x.id !== id);
+  await idbDel('proj:' + id); await idbSet('lib', library);
 }
 
 // ---------- Fichier projet (.khm) ----------
@@ -137,6 +187,6 @@ export function loadProjectFile(text: string) {
   for (const [id, r] of Object.entries<{ sr: number; ch: string[] }>(data.buffers ?? {})) {
     addBuffer(id, fromRaw({ sr: r.sr, ch: r.ch.map(unb64) }));
   }
-  S.project = migrate(data.project); S.selClip = ''; S.selTrack = '';
-  resetHistory(); autosave(); emit();
+  saveNow().catch(() => { });
+  install(migrate(data.project), uid());
 }
