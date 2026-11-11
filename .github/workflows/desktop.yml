@@ -54,7 +54,9 @@ jobs:
           path: installers
           merge-multiple: true
       - name: Publier les installateurs
-        run: gh release create "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --title "KH Music Pro $TAG" --notes "Installateurs Windows (.exe), macOS (.dmg) et Linux (.AppImage). Ils ne sont pas signés : Windows et macOS affichent un avertissement au premier lancement. Version en ligne : https://yankamkevin.github.io/kh-music-pro/"
+        run: |
+          gh release create "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --title "KH Music Pro $TAG" --notes "$NOTES"
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          NOTES: "Installateurs Windows (.exe), macOS (.dmg) et Linux (.AppImage). Ils ne sont pas signés, Windows et macOS affichent donc un avertissement au premier lancement. Version en ligne sur https://yankamkevin.github.io/kh-music-pro/"
