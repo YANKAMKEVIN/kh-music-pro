@@ -96,6 +96,21 @@ Le moteur audio vit dans le navigateur (Web Audio). Un plugin natif vit dans un 
 - Carte son : pas d'interface audio dédiée. Sortie par défaut : un adaptateur USB « USB-Audio-1.0 » (Yichip, 2 sorties et 1 entrée, 48 kHz). Entrée par défaut : le micro intégré du MacBook Pro. Les haut-parleurs intégrés sont aussi disponibles.
 - Conséquence : les mesures de latence (étapes 1 et 3) se feront avec ce matériel grand public. Elles serviront de comparaison entre le navigateur et le natif sur la même machine, mais pas de référence « studio ». L'objectif de 12 ms est à juger avec cette réserve.
 
+**Étape 1 — latence de référence de la version bureau (12/11/2026)**
+
+Version bureau (Electron 45.3) lancée par un script Playwright, qui appelle `engine.latency()` puis cinq fois `engine.measureLatency()` (clic à 2 kHz joué, puis repéré au micro) pour chaque sortie. Entrée : micro intégré, sans annulation d'écho, réduction de bruit ni contrôle de gain. 48 kHz partout.
+
+| Sortie | Latence annoncée (base + sortie + entrée) | Aller-retour mesuré |
+|---|---|---|
+| Adaptateur USB « USB-Audio-1.0 » (12d1:3a06) | 5,3 + 13,0 + 2,7 = **21 ms** | clic non détecté (5 fois sur 5) |
+| Haut-parleurs du MacBook Pro | 5,3 + 28,0 + 2,7 = **36 ms** | **108 à 111 ms** (4 essais sur 5 ; le premier, raté, est le temps que l'entrée se lance) |
+
+Lecture :
+- La sortie USB n'est pas entendue par le micro : c'est sans doute un casque ou des écouteurs. C'est le chemin « clic non détecté » prévu, pas une panne. Pour mesurer cette sortie, il faudra un micro qui l'entende.
+- Sur les haut-parleurs, le trajet réel est environ **trois fois** ce que le système annonce : il manque environ 73 ms. Ils viennent du traitement des haut-parleurs intégrés et des tampons d'entrée de Chromium, que Web Audio ne déclare pas.
+- Le chemin navigateur est donc loin des 12 ms visées (au moins 21 ms annoncées, environ 110 ms réelles sur haut-parleurs). L'argument « latence native » tient. Reste à savoir, à l'étape 3, quelle part de ces 110 ms appartient au matériel (et ne disparaîtra pas en natif).
+- Pour refaire la mesure : `npm ci`, puis `node node_modules/electron/install.js` (npm 11 ne télécharge plus Electron tout seul), `npm run build`, et le script décrit ci-dessus (ou la fenêtre « Réglages audio », bouton de mesure).
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
