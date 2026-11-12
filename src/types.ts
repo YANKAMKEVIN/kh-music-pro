@@ -3,7 +3,7 @@ import { t } from './i18n';
 export type TrackType = 'drums' | 'synth' | 'audio';
 export type Engine = 'sub' | 'fm' | 'pluck' | 'sampler';
 
-/** p = hauteur MIDI, s = début (en pas), l = durée (en pas), v = vélocité 0..1 */
+/** p = hauteur MIDI, s = début (en pas), l = durée (en pas), v = vélocité 0..1. s et l peuvent être fractionnaires (triolets, triples-croches). */
 export interface Note { p: number; s: number; l: number; v: number }
 
 export interface Clip {
@@ -15,6 +15,8 @@ export interface Clip {
   /** décalage dans le contenu : en pas pour les motifs, en secondes pour l'audio */
   offset: number;
   patLen?: number;
+  /** Batterie : nombre de cases par pas (1 = doubles-croches, 2 = triples-croches, 0,75 = triolets de croches, 1,5 = triolets de doubles). */
+  res?: number;
   drums?: number[][];
   notes?: Note[];
   bufferId?: string;
@@ -87,6 +89,23 @@ export interface Project {
 }
 
 export const BAR = 16;
+
+/** Grilles du piano roll : taille d'une division, en pas (un pas = une double-croche). */
+export const GRIDS: Record<string, number> = { '16': 1, '32': 0.5, '8t': 4 / 3, '16t': 2 / 3, free: 1 / 6 };
+/** Aimante une position sur la grille `g`, sans erreur d'arrondi cumulée. */
+export const snapTo = (x: number, g: number) => Math.round(Math.round(x / g) * g * 1e4) / 1e4;
+export const resOf = (c: Clip) => c.res ?? 1;
+/** Change la résolution d'un motif de batterie en gardant chaque coup au plus près de sa place. */
+export function setRes(c: Clip, res: number) {
+  if (!c.drums) return;
+  const old = resOf(c), n = Math.max(1, Math.round(c.patLen! * res));
+  c.drums = c.drums.map(row => {
+    const out = new Array(n).fill(0);
+    row.forEach((v, i) => { if (v) { const j = Math.min(n - 1, Math.round(i / old * res)); out[j] = Math.max(out[j], v); } });
+    return out;
+  });
+  if (res === 1) delete c.res; else c.res = res;
+}
 export const NPADS = 16;
 export const COLORS = ['#22d3ee', '#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#fb7185', '#60a5fa', '#c084fc'];
 /** Gammes : intervalles en demi-tons. `parent` = gamme à 7 notes servant à construire les accords. */

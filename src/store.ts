@@ -6,6 +6,7 @@ export const S = {
   kbShow: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches, // clavier à l'écran
   selTrack: '',
   selClip: '',
+  grid: '16',   // grille du piano roll et de l'enregistrement des notes (clé de GRIDS)
   selMore: new Set<string>(), // clips ajoutés à la sélection par Maj+clic
   padEdit: -1,                // pad dont les réglages sont affichés
   tab: 'editor' as 'editor' | 'mixer' | 'live',

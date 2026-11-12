@@ -422,9 +422,15 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
   }
   const local = (rel + c.offset) % c.patLen!;
   if (tr.type === 'drums') {
-    c.drums!.forEach((row, r) => { if (row[local]) hitPad(mix, buffers, tr, n.input, r, t, row[local]); });
+    // Les cases qui tombent dans ce pas : une seule à la double-croche, plusieurs avec une grille plus fine.
+    const res = c.res ?? 1, i0 = Math.ceil(local * res - 1e-6), i1 = Math.ceil((local + 1) * res - 1e-6);
+    c.drums!.forEach((row, r) => { for (let i = i0; i < i1 && i < row.length; i++) if (row[i]) hitPad(mix, buffers, tr, n.input, r, t + (i / res - local) * dur, row[i]); });
   } else if (tr.synth) {
-    for (const nt of c.notes!) if (nt.s === local) playNote(mix, n.input, tr.synth, nt.p, t, Math.min(nt.l, remain) * dur * 0.98, nt.v, buffers);
+    // Une note démarre dans ce pas, éventuellement avec un décalage (triolet, triple-croche, placement libre).
+    for (const nt of c.notes!) {
+      const f = nt.s - local;
+      if (f >= 0 && f < 1) playNote(mix, n.input, tr.synth, nt.p, t + f * dur, Math.max(0.02, Math.min(nt.l, remain - f) * dur * 0.98), nt.v, buffers);
+    }
   }
 }
 

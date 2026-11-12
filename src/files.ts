@@ -44,8 +44,11 @@ export function flatten(tr: Track): Note[] {
   const out: Note[] = [];
   for (const c of tr.clips) for (let s = 0; s < c.len; s++) {
     const local = (s + c.offset) % (c.patLen ?? BAR);
-    if (c.drums) c.drums.forEach((row, r) => { if (row[local]) out.push({ p: GM_DRUMS[r], s: c.start + s, l: 1, v: row[local] }); });
-    for (const n of c.notes ?? []) if (n.s === local) out.push({ p: n.p + (tr.synth?.octave ?? 0) * 12, s: c.start + s, l: Math.min(n.l, c.len - s), v: n.v });
+    if (c.drums) {
+      const res = c.res ?? 1, i0 = Math.ceil(local * res - 1e-6), i1 = Math.ceil((local + 1) * res - 1e-6);
+      c.drums.forEach((row, r) => { for (let i = i0; i < i1 && i < row.length; i++) if (row[i]) out.push({ p: GM_DRUMS[r], s: c.start + s + i / res - local, l: Math.min(1, 1 / res), v: row[i] }); });
+    }
+    for (const n of c.notes ?? []) { const f = n.s - local; if (f >= 0 && f < 1) out.push({ p: n.p + (tr.synth?.octave ?? 0) * 12, s: c.start + s + f, l: Math.min(n.l, c.len - s - f), v: n.v }); }
   }
   return out;
 }
@@ -74,8 +77,9 @@ export function exportMidi(p: Project): Uint8Array {
     const ev: { t: number; d: number[] }[] = [];
     for (const n of flatten(tr)) {
       const pitch = Math.max(0, Math.min(127, n.p));
-      ev.push({ t: n.s * TICK, d: [0x90 | channel, pitch, Math.max(1, Math.round(n.v * 127))] });
-      ev.push({ t: (n.s + n.l) * TICK - 1, d: [0x80 | channel, pitch, 0] });
+      const t0 = Math.round(n.s * TICK);
+      ev.push({ t: t0, d: [0x90 | channel, pitch, Math.max(1, Math.round(n.v * 127))] });
+      ev.push({ t: Math.max(t0 + 1, Math.round((n.s + n.l) * TICK) - 1), d: [0x80 | channel, pitch, 0] });
     }
     ev.sort((a, b) => a.t - b.t || a.d[0] - b.d[0]);
     const data = meta(0x03, text(tr.name)); let last = 0;
@@ -93,7 +97,8 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Trac
   if (tag(0) !== 'MThd') throw new Error('invalid');
   const div = d.getUint16(12);
   if (div & 0x8000) throw new Error('invalid');
-  const toStep = (tick: number) => Math.round(tick / (div / 4));
+  // Positions gardées au 1/24 de pas : triolets et triples-croches survivent à l'import.
+  const toStep = (tick: number) => Math.round(tick / (div / 4) * 24) / 24;
   let o = 8 + d.getUint32(4), bpm: number | null = null;
   const out: Track[] = [];
   while (o + 8 <= u.length) {
@@ -122,7 +127,7 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Trac
         if (on) {
           open.delete(key);
           const s = toStep(on.t), list = notes.get(chn) ?? [];
-          list.push({ p: a, s, l: Math.max(1, toStep(tick) - s), v: Math.round(on.v * 100) / 100 }); notes.set(chn, list);
+          list.push({ p: a, s, l: Math.max(1 / 6, toStep(tick + 1) - s), v: Math.round(on.v * 100) / 100 }); notes.set(chn, list);
         }
       }
     }
@@ -130,11 +135,11 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Trac
     for (const [chn, list] of notes) {
       const drums = chn === 9, tr = newTrack(drums ? 'drums' : 'synth', out.length + 1, 'keys');
       if (name) tr.name = name.slice(0, 40);
-      const len = Math.max(BAR, Math.ceil(Math.max(...list.map(n => n.s + n.l)) / BAR) * BAR);
+      const len = Math.max(BAR, Math.ceil((Math.max(...list.map(n => n.s + n.l)) - 0.01) / BAR) * BAR);
       const clip: Clip = { id: uid(), name: tr.name, start: 0, len, offset: 0, patLen: len };
       if (drums) {
         clip.drums = emptyDrums(len);
-        for (const n of list) { const r = GM_DRUMS.indexOf(n.p); clip.drums[r >= 0 ? r : n.p % 16][n.s] = n.v; }
+        for (const n of list) { const r = GM_DRUMS.indexOf(n.p); clip.drums[r >= 0 ? r : n.p % 16][Math.min(len - 1, Math.round(n.s))] = n.v; }
       } else clip.notes = list;
       tr.clips.push(clip); out.push(tr);
     }

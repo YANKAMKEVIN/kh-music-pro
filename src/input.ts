@@ -1,7 +1,7 @@
 import { engine } from './audio/engine';
 import { t } from './i18n';
 import { S, emit, findTrack } from './store';
-import { BAR, Clip, NPADS, Note, Track, chordOf, newPatternClip, stepDur } from './types';
+import { BAR, Clip, GRIDS, NPADS, Note, Track, chordOf, newPatternClip, snapTo, stepDur } from './types';
 
 /** Décalage d'octave du clavier d'ordinateur. */
 export const kb = { octave: 0, chord: 1, arp: 'off' as 'off' | 'up' | 'down' | 'updown' | 'random', arpRate: 2, repeat: 0 };
@@ -14,7 +14,7 @@ const isRec = (tr: Track) => engine.recording === 'midi' && engine.recTrack === 
 function recSpot(tr: Track, at?: number): { clip: Clip; local: number } {
   const p = S.project, ls = p.loopStart * BAR, le = ls + p.loopLen * BAR;
   let abs = at ?? Math.round(engine.currentStep());
-  if (p.loop && abs === le) abs = ls;
+  if (p.loop && abs > le - 1e-6 && abs < le + 1) abs = ls + (abs - le);
   let clip = tr.clips.find(c => abs >= c.start && abs < c.start + c.len);
   if (!clip) {
     let start = Math.floor(abs / BAR) * BAR, len = BAR;
@@ -43,11 +43,14 @@ function rollFree() {
   while (rollT < now + 0.1) { for (const [row, tr] of rolls) engine.padAt(tr, row, rollT, 0.85); rollT += d; }
 }
 
+const cellOf = (clip: Clip, local: number) => { const n = clip.drums![0].length; return Math.round(local * (clip.res ?? 1)) % n; };
+
 export function padHit(row: number, vel = 1, track?: Track) {
   const tr = track ?? findTrack(S.selTrack);
   if (!tr || tr.type !== 'drums' || row < 0 || row >= NPADS) return;
   engine.pad(tr, row, vel);
-  if (isRec(tr)) { const { clip, local } = recSpot(tr); later(() => { clip.drums![row][local] = 1; }); }
+  // La frappe est rangée dans la case la plus proche, selon la résolution du motif.
+  if (isRec(tr)) { const { clip, local } = recSpot(tr, engine.currentStep()); later(() => { clip.drums![row][cellOf(clip, local)] = 1; }); }
   if (kb.repeat) { rolls.set(row, tr); ensureClock(); }
 }
 export function padRelease(row: number) { rolls.delete(row); }
@@ -65,7 +68,7 @@ function arpPick(): number {
 engine.onStep = (s, t) => {
   if (kb.repeat && rolls.size && s % kb.repeat === 0) for (const [row, rt] of rolls) {
     engine.padAt(rt, row, t, 0.85);
-    if (isRec(rt)) { const { clip, local } = recSpot(rt, s); later(() => { clip.drums![row][local] = 1; }); }
+    if (isRec(rt)) { const { clip, local } = recSpot(rt, s); later(() => { clip.drums![row][cellOf(clip, local)] = 1; }); }
   }
   const tr = arp.track;
   if (!tr || !arp.keys.length || s % kb.arpRate) return;
@@ -97,17 +100,18 @@ function arpRemove(keys: number[]) {
 
 export function noteOn(midi: number, vel = 0.8) {
   const tr = findTrack(S.selTrack);
-  if (!tr) return;
+  if (!tr || !Number.isFinite(midi)) return;
   if (tr.type === 'drums') return padHit(midi - 36, Math.max(0.3, vel));
-  if (tr.type !== 'synth' || held.has(midi) || midi < 0 || midi > 127) return;
+  if (tr.type !== 'synth' || held.has(midi) || !Number.isFinite(midi) || midi < 0 || midi > 127) return;
   // Accords à un doigt : une touche joue l'accord construit dans la gamme du projet.
   const keys = kb.chord > 1 ? chordOf(S.project, midi, kb.chord) : [midi];
   const h: Held = { track: tr, keys, notes: [], start: engine.currentStep(), arp: kb.arp !== 'off' };
   if (h.arp) { arpAdd(tr, keys, vel); held.set(midi, h); return; }
   for (const k of keys) engine.noteOn(tr, k, vel);
   if (isRec(tr)) {
-    const { clip, local } = recSpot(tr);
-    h.notes = keys.map(k => ({ p: k, s: local, l: 1, v: Math.round(vel * 100) / 100 })); h.clip = clip;
+    // Les notes jouées sont calées sur la grille choisie dans le piano roll.
+    const g = GRIDS[S.grid] ?? 1, { clip, local } = recSpot(tr, snapTo(engine.currentStep(), g));
+    h.notes = keys.map(k => ({ p: k, s: Math.min(snapTo(local, g), clip.patLen! - g), l: g, v: Math.round(vel * 100) / 100 })); h.clip = clip;
     later(() => { clip.notes!.push(...h.notes); });
   }
   held.set(midi, h);
@@ -122,7 +126,8 @@ export function noteOff(midi: number) {
   if (h.clip) {
     let d = engine.currentStep() - h.start;
     if (d < 0) d += S.project.loopLen * BAR;
-    for (const n of h.notes) n.l = Math.max(1, Math.min(Math.round(d), h.clip.patLen! - n.s));
+    const g = GRIDS[S.grid] ?? 1;
+    for (const n of h.notes) n.l = Math.max(g, Math.min(snapTo(d, g), h.clip.patLen! - n.s));
   }
 }
 

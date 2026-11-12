@@ -403,4 +403,16 @@ const D: Record<string, [string, string, string]> = {
   'help.k.multi': ['Ajouter un clip à la sélection', 'Add a clip to the selection', 'Añadir un clip a la selección'],
   'help.k.looprule': ['Tracer la boucle dans la règle', 'Draw the loop in the ruler', 'Trazar el bucle en la regla'],
   'help.key.shiftClick': ['Maj+clic', 'Shift+click', 'Mayús+clic'], 'help.key.shiftDrag': ['Maj+glisser', 'Shift+drag', 'Mayús+arrastrar'],
+
+  // ===== V9 =====
+  'ed.grid': ['Grille', 'Grid', 'Rejilla'],
+  'ed.gridTip': ['Finesse de la grille : les notes posées, déplacées et enregistrées s\'y aimantent', 'Grid resolution: notes you draw, move and record snap to it', 'Resolución de la rejilla: las notas dibujadas, movidas y grabadas se ajustan a ella'],
+  'grid.8t': ['Triolets de croches', 'Eighth triplets', 'Tresillos de corchea'],
+  'grid.16t': ['Triolets de doubles', 'Sixteenth triplets', 'Tresillos de semicorchea'],
+  'grid.free': ['Libre', 'Free', 'Libre'],
+  'act.quantize': ['Quantifier', 'Quantize', 'Cuantizar'],
+  'tip.quantize': ['Recaler les notes sélectionnées (ou toutes) sur la grille', 'Snap the selected notes (or all of them) to the grid', 'Ajustar las notas seleccionadas (o todas) a la rejilla'],
+  'toast.quantized': ['{0} note(s) recalée(s) sur la grille', '{0} note(s) snapped to the grid', '{0} nota(s) ajustada(s) a la rejilla'],
+  'ed.res': ['Résolution', 'Resolution', 'Resolución'],
+  'ed.resTip': ['Finesse du motif : triples-croches ou triolets pour les roulements et les rythmes ternaires', 'Pattern resolution: 32nd notes or triplets for rolls and ternary rhythms', 'Resolución del patrón: fusas o tresillos para redobles y ritmos ternarios'],
 };

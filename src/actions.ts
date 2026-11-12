@@ -4,7 +4,7 @@ import { allNotesOff } from './input';
 import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -159,6 +159,15 @@ export async function exportMp3() {
   } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : t('toast.exportFail'), 'error'); }
 }
 
+/** Recale les notes sélectionnées (ou toutes) sur la grille du piano roll. */
+export function quantizeNotes(notes: { s: number; l: number }[], g: number, patLen: number) {
+  for (const n of notes) {
+    n.s = Math.min(snapTo(n.s, g), snapTo(Math.floor((patLen - 1e-6) / g) * g, g));
+    n.l = Math.max(g, Math.min(snapTo(n.l, g), patLen - n.s));
+  }
+  commit(); toast(t('toast.quantized', notes.length));
+}
+
 export function applyMixPreset(tr: Track, key: string) {
   const p = MIX_PRESETS[key];
   if (!p) return;
@@ -227,8 +236,7 @@ export function duplicateClip() {
 export function shiftPattern(d: -1 | 1) {
   const c = findClip(S.selClip)?.clip;
   if (!c?.drums) return;
-  const n = c.patLen!;
-  c.drums = c.drums.map(row => row.map((_, i) => row[((i - d) % n + n) % n])); commit();
+  c.drums = c.drums.map(row => { const n = row.length; return row.map((_, i) => row[((i - d) % n + n) % n]); }); commit();
 }
 /** Double la longueur du motif en le recopiant, pour pouvoir varier la seconde moitié. */
 export function doublePattern() {

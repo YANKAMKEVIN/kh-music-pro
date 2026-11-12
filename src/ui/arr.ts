@@ -44,7 +44,8 @@ function drawPreview(cv: HTMLCanvasElement, tr: Track, c: Clip, wCss: number, hg
     const rh = hgt / c.drums!.length;
     for (let s = 0; s < c.len; s++) {
       const l = (s + c.offset) % c.patLen!;
-      c.drums!.forEach((row, r) => { if (row[l]) g.fillRect(s * sw + 0.5, r * rh, Math.max(1.5, sw - 1), Math.max(2, rh - 0.5)); });
+      const res = c.res ?? 1, i0 = Math.ceil(l * res - 1e-6), i1 = Math.ceil((l + 1) * res - 1e-6);
+      c.drums!.forEach((row, r) => { for (let i = i0; i < i1 && i < row.length; i++) if (row[i]) g.fillRect((s + i / res - l) * sw + 0.5, r * rh, Math.max(1.5, sw / res - 1), Math.max(2, rh - 0.5)); });
     }
   } else if (tr.type === 'synth') {
     const ns = c.notes!;

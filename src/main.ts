@@ -7,7 +7,7 @@ import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, redo, resetHistory, undo } from './store';
-import { BAR, MIX_PRESETS, demoProject, stepDur, templateProject } from './types';
+import { BAR, MIX_PRESETS, demoProject, setRes, stepDur, templateProject } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
@@ -126,7 +126,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -48,6 +48,12 @@ const PAGE_HELPERS = () => {
       const b = await window.kh.renderOffline(proj, false), L = b.getChannelData(0), R = b.getChannelData(1), sr = b.sampleRate;
       return wins.map(([t0, t1]) => { let l = 0, r = 0, hf = 0; const i0 = Math.floor(t0 * sr), i1 = Math.min(L.length, Math.floor(t1 * sr)); for (let i = i0; i < i1; i++) { l += L[i] * L[i]; r += R[i] * R[i]; if (i > i0) hf += (L[i] - L[i - 1]) ** 2; } const n = Math.max(1, i1 - i0); return { l: Math.sqrt(l / n), r: Math.sqrt(r / n), hf: Math.sqrt(hf / n) }; });
     },
+    /** Instants (en secondes) où un son démarre après au moins `gap` secondes de silence. */
+    async onsets(proj, thr = 0.02, gap = 0.03) {
+      const b = await window.kh.renderOffline(proj, false), d = b.getChannelData(0), sr = b.sampleRate, out = []; let quiet = gap * sr;
+      for (let i = 0; i < d.length; i++) { if (Math.abs(d[i]) > thr) { if (quiet >= gap * sr) out.push(i / sr); quiet = 0; } else quiet++; }
+      return out;
+    },
     sine(id) {
       const b = new AudioBuffer({ length: 44100, numberOfChannels: 1, sampleRate: 44100 }), d = b.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 261.63 * i / 44100) * 0.5 * Math.exp(-i / 20000);
@@ -66,7 +72,7 @@ async function reset() {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
-    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
+    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16' }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1;
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
@@ -1445,6 +1451,89 @@ test('NT01', 'Projet', 'Notes du projet : écrire sans déclencher de raccourci,
   const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'notes.khm'); await dl.saveAs(f);
   await newBlank(); expect((await proj()).notes === '' && !(await page.$eval('#bNotes', e => e.classList.contains('on'))), 'un nouveau projet doit avoir des notes vides');
   await page.setInputFiles('#fProj', f); await sleep(400); expect((await proj()).notes.startsWith('Couplet 1'), 'notes perdues à la réouverture');
+});
+
+// ============ V9 : grille fine ============
+/** Piste instrument seule, avec un son très bref, pour mesurer l'instant exact de chaque note. */
+const blips = notes => page.evaluate(notes => { const p = window.qa.only(1, (p, t) => { p.bpm = 120; t.rev = 0; Object.assign(t.synth, { engine: 'sub', wave: 'sine', mix2: 0, cutoff: 12000, envAmt: 0, a: 0.002, d: 0.03, s: 0, r: 0.01, octave: 0, pitchEnv: 0 }); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = notes.map(s => ({ p: 84, s, l: 0.2, v: 1 })); }); return window.qa.onsets(p); }, notes);
+const gaps = o => o.slice(1).map((t, i) => +(t - o[i]).toFixed(4));
+
+test('GR01', 'Grille fine', 'Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant', async () => {
+  await page.click(await clipSel(1, 0)); await page.selectOption('[data-role=notegrid]', '32');
+  await page.$eval('.pr', e => { e.scrollLeft = 0; e.scrollTop = (96 - 40) * 16 - 80; }); const g = await (await page.$('.pr-grid')).boundingBox();
+  await page.mouse.click(g.x + 28 * 20.6, g.y + (96 - 40) * 16 + 8); let ns = await notesOf(); let n = ns[ns.length - 1];
+  expect(n.s === 20.5 && n.p === 40, `note posée à ${n.s} (attendu 20,5)`);
+  const nb = await box(`.note[data-i="${ns.length - 1}"]`); await drag(nb.x + 6, nb.y + 8, 14, 0); n = (await notesOf())[ns.length - 1]; near(n.s, 21, 0, 'déplacement d\'un demi-pas');
+  await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); near((await notesOf())[ns.length - 1].s, 19.5, 0, 'flèches : pas de la grille');
+  const o = await blips([0, 0.5, 1, 2.5, 4]); near(o.length, 5, 0, 'notes entendues');
+  for (const [i, want] of [0.0625, 0.0625, 0.1875, 0.1875].entries()) near(gaps(o)[i], want, 0.002, `écart ${i + 1} entre deux notes`);
+});
+test('GR02', 'Grille fine', 'Triolets : trois notes par temps, placées et jouées à intervalles égaux', async () => {
+  await page.click(await clipSel(1, 0)); await page.selectOption('[data-role=notegrid]', '8t');
+  await page.$eval('.pr', e => { e.scrollLeft = 0; e.scrollTop = (96 - 45) * 16 - 80; }); const g = await (await page.$('.pr-grid')).boundingBox(), y = g.y + (96 - 45) * 16 + 8;
+  // Une note par ligne, pour ne pas cliquer sur la précédente ; la grille est relue à chaque fois car l'éditeur se redessine.
+  for (const [i, x] of [0.3, 1.6, 2.9, 4.2].entries()) { await page.$eval('.pr', e => { e.scrollLeft = 0; e.scrollTop = (96 - 48) * 16 - 60; }); await sleep(60); const q = await (await page.$('.pr-grid')).boundingBox(); await page.mouse.click(q.x + 28 * x, q.y + (96 - 45 - i) * 16 + 8); await sleep(80); }
+  const mine = (await notesOf()).filter(n => n.p >= 45 && n.p <= 48).sort((a, b) => a.p - b.p).map(n => n.s); expect(mine.map(s => s.toFixed(4)).join() === '0.0000,1.3333,2.6667,4.0000', `positions ${mine}`);
+  const o = await blips([0, 1.3333, 2.6667, 4, 5.3333, 6.6667, 8]); near(o.length, 7, 0, 'notes entendues');
+  for (const [i, d] of gaps(o).entries()) near(d, 1 / 6, 0.002, `écart ${i + 1} (triolet de croches à 120 BPM)`);
+  await page.selectOption('[data-role=notegrid]', '16t'); await page.$eval('.pr', e => { e.scrollLeft = 0; e.scrollTop = (96 - 48) * 16 - 60; }); await sleep(60); const q2 = await (await page.$('.pr-grid')).boundingBox(); await page.mouse.click(q2.x + 28 * 9.0, q2.y + (96 - 44) * 16 + 8);
+  near((await notesOf()).filter(n => n.p === 44).pop().s, 8.6667, 0.0001, 'triolet de doubles');
+});
+test('GR03', 'Grille fine', 'Quantifier : recaler toutes les notes ou seulement la sélection sur la grille', async () => {
+  await S(() => { const c = window.kh.S.project.tracks[1].clips[0]; c.notes = [{ p: 40, s: 0.4, l: 1.8, v: 0.8 }, { p: 43, s: 1.7, l: 0.3, v: 0.8 }, { p: 47, s: 5.34, l: 2.2, v: 0.8 }]; window.kh.commit(); });
+  await page.click(await clipSel(1, 0)); await page.selectOption('[data-role=notegrid]', 'free'); expect((await notesOf())[0].s === 0.4, 'choisir une grille ne doit pas déplacer les notes');
+  const nb = await box('.note[data-i="2"]'); await page.mouse.click(nb.x + 5, nb.y + 8); await page.selectOption('[data-role=notegrid]', '8t'); await page.click('[data-act=quantize]');
+  let ns = await notesOf(); expect(ns[0].s === 0.4 && ns[1].s === 1.7, 'seule la note sélectionnée devait bouger'); near(ns[2].s, 5.3333, 0.0001, 'note recalée sur le triolet'); near(ns[2].l, 2.6667, 0.0001, 'durée recalée');
+  await page.keyboard.press('Escape'); await page.selectOption('[data-role=notegrid]', '16'); await page.click('[data-act=quantize]');
+  ns = await notesOf(); expect(ns.map(n => n.s).join() === '0,2,5' && ns.map(n => n.l).join() === '2,1,3', `après quantification : ${JSON.stringify(ns.map(n => [n.s, n.l]))}`);
+  expect((await page.textContent('#toast')).includes('3'), 'message'); await page.keyboard.press('Control+z'); near((await notesOf())[0].s, 0.4, 0, 'annulation');
+});
+test('GR04', 'Grille fine', 'Batterie en triples-croches et en triolets : les coups gardent leur place, les nouveaux sonnent au bon instant', async () => {
+  const kick = async () => (await proj()).tracks[0].clips[0].drums[0].map(v => +!!v).join('');
+  await page.selectOption('[data-role=res]', '2'); let c = (await proj()).tracks[0].clips[0];
+  expect(c.res === 2 && c.drums[0].length === 32 && (await kick()) === '10000000'.repeat(4), `passage en 1/32 : ${await kick()}`);
+  near(await page.$$eval('.drow >> nth=0 >> .cell', e => e.length), 32, 0, 'cases affichées');
+  await page.click('.cell[data-r="3"][data-s="1"]'); expect((await proj()).tracks[0].clips[0].drums[3][1] === 1, 'case en triple-croche');
+  const hats = (res, cells) => page.evaluate(([res, cells]) => window.qa.onsets(window.qa.only(0, (p, t) => { p.bpm = 120; t.rev = 0; const c = t.clips[0]; c.len = 16; c.patLen = 16; c.res = res; c.drums = c.drums.map((r, i) => Array.from({ length: Math.round(16 * res) }, (_, s) => +(i === 3 && cells.includes(s)))); })), [res, cells]);
+  let o = await hats(2, [0, 1, 2, 3, 4]); near(o.length, 5, 0, 'charleys en 1/32'); for (const d of gaps(o)) near(d, 0.0625, 0.003, 'écart en triples-croches');
+  await page.selectOption('[data-role=res]', '0.75'); c = (await proj()).tracks[0].clips[0];
+  expect(c.drums[0].length === 12 && (await kick()) === '100100100100', `passage en triolets : ${await kick()}`);
+  o = await hats(0.75, [0, 1, 2, 3]); for (const d of gaps(o)) near(d, 1 / 6, 0.003, 'écart en triolets de croches');
+  await page.selectOption('[data-role=length]', '32'); near((await proj()).tracks[0].clips[0].drums[0].length, 24, 0, 'cases pour 2 mesures en triolets');
+  await page.selectOption('[data-role=res]', '1'); c = (await proj()).tracks[0].clips[0]; expect(!c.res && c.drums[0].length === 32 && c.drums[0].slice(0, 16).map(v => +!!v).join('') === '1000100010001000', 'retour aux doubles-croches');
+  await page.keyboard.press('Space'); await sleep(500); expect(await S(() => window.qa.level()) > 0.2, 'lecture');
+});
+test('GR05', 'Grille fine', 'Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 100; p.loop = false; p.tracks[1].clips = []; window.kh.S.grid = '32'; window.kh.commit(); });
+  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400);
+  for (const [n, w] of [[48, 190], [50, 230], [52, 170], [53, 260]]) { await page.evaluate(m => window.kh.noteOn(m), n); await sleep(w); await page.evaluate(m => window.kh.noteOff(m), n); await sleep(70); }
+  await sleep(400); await page.keyboard.press('Space'); await sleep(700);
+  const ns = (await proj()).tracks[1].clips[0].notes; near(ns.length, 4, 0, 'notes enregistrées');
+  expect(ns.every(n => Number.isInteger(n.s * 2) && Number.isInteger(n.l * 2) && n.l >= 0.5), `notes hors grille 1/32 : ${JSON.stringify(ns.map(n => [n.s, n.l]))}`);
+  expect(ns.some(n => !Number.isInteger(n.s) || !Number.isInteger(n.l)), 'aucune note sur un demi-pas : la grille fine ne sert à rien');
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 120; p.loop = true; p.loopStart = 0; p.loopLen = 1; k.setRes(p.tracks[0].clips[0], 2); k.kb.repeat = 1; k.commit(); });
+  await page.click(await clipSel(0, 0)); await page.keyboard.press('r'); await sleep(500); await page.keyboard.down('k'); await sleep(600); await page.keyboard.up('k'); await sleep(450); await page.keyboard.press('Space'); await sleep(700);
+  const row = (await proj()).tracks[0].clips[0].drums[15], idx = row.map((v, i) => (v ? i : -1)).filter(i => i >= 0);
+  // La première frappe tombe où le doigt l'a jouée ; les répétitions sont calées sur les doubles-croches.
+  expect(row.length === 32 && idx.length >= 3 && idx.filter(i => i % 2).length <= 1, `roulement mal rangé dans le motif en 1/32 : ${idx}`);
+});
+test('GR06', 'Grille fine', 'MIDI : triolets et triples-croches survivent à l\'export puis à l\'import', async () => {
+  const r = await S(() => { const k = window.kh, p = k.demoProject(); p.tracks = [p.tracks[0], p.tracks[1]]; p.tracks[0].clips.length = 1; const d = p.tracks[0].clips[0]; d.len = 16; k.setRes(d, 2); d.drums = d.drums.map((row, i) => row.map((_, s) => +(i === 3 && s < 4)));
+    const c = p.tracks[1].clips[0]; c.len = 16; c.patLen = 16; c.notes = [0, 0.5, 1.3333, 2.6667, 4].map((s, i) => ({ p: 60 + i, s, l: s === 0.5 ? 0.5 : 1.3333, v: 0.8 }));
+    const m = k.importMidi(k.exportMidi(p).buffer); return { notes: m.tracks.find(t => t.type === 'synth').clips[0].notes.map(n => [n.s, n.l]).sort((a, b) => a[0] - b[0]), hats: m.tracks.find(t => t.type === 'drums').clips[0].drums[3].slice(0, 4), flat: k.exportMidi(p).length }; });
+  for (const [i, want] of [0, 0.5, 1.3333, 2.6667, 4].entries()) near(r.notes[i][0], want, 0.02, `position de la note ${i + 1}`);
+  near(r.notes[1][1], 0.5, 0.05, 'durée d\'une triple-croche'); near(r.notes[2][1], 1.3333, 0.05, 'durée d\'un triolet'); expect(r.hats[0] > 0 && r.flat > 100, 'batterie exportée');
+});
+test('GR07', 'Grille fine', 'Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche', async () => {
+  await S(() => { const c = window.kh.S.project.tracks[1].clips[0]; c.notes = [0.5, 2.6667, 9.5, 12.5].map(s => ({ p: 40, s, l: 1, v: 0.9 })); window.kh.commit(); });
+  await page.click(await clipSel(1, 0)); await S(() => window.kh.engine.seek(8)); await page.keyboard.press('Control+e');
+  const cl = (await proj()).tracks[1].clips; expect(cl.length === 2 && cl[1].offset === 8 && cl[1].notes.length === 4, 'scission');
+  const w = await S(async () => { const p = JSON.parse(JSON.stringify(window.kh.S.project)); p.tracks = [p.tracks[1]]; p.tracks[0].rev = 0; return window.qa.onsets(p, 0.01, 0.05); });
+  expect(w.length >= 4, `après scission, ${w.length} notes entendues sur les 4 premières`);
+  await page.click(await clipSel(1, 0)); await page.keyboard.press('Control+a'); await page.keyboard.press('Control+c'); await S(() => window.kh.engine.seek(4)); await page.keyboard.press('Control+v');
+  const ns = (await proj()).tracks[1].clips[0].notes; expect(ns.length > 4 && ns.every(n => n.s >= 0 && n.s + n.l <= 64 + 1e-6), 'collage');
+  await tab('live'); await page.click('.lcell[data-clip] >> nth=1'); await sleep(1200);
+  expect(await S(async () => window.kh.engine.mode === 'live' && (await window.qa.level()) > 0.05), 'le clip ne sonne pas en mode Live');
 });
 
 (async () => {

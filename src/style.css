@@ -428,3 +428,7 @@ dialog form { gap: 8px; }
 .mpreset { height: 28px; width: 118px; font-size: 12px; padding: 0 6px; }
 #notes { width: min(640px, 94vw); }
 #notesText { width: 100%; height: min(50vh, 420px); resize: vertical; background: rgba(0, 0, 0, .35); color: var(--txt); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font: 14px/1.6 system-ui, sans-serif; user-select: text; }
+
+/* ================= V9 ================= */
+.dgrid .cell { width: var(--cw, 30px); }
+.pr-grid { background-size: calc(var(--sw) * 16) 100%, calc(var(--sw) * 4) 100%, var(--gw, var(--sw)) 100%, 100% var(--rh); }

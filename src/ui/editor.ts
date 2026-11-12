@@ -1,10 +1,10 @@
-import { audioFiles, chopClip, chooseInput, deleteClip, doublePattern, duplicateClip, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
+import { audioFiles, chopClip, chooseInput, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack } from '../store';
-import { BAR, CATS, Clip, KITS, NPADS, Note, PRESETS, SCALES, Track, emptyDrums, inScale, makeSynth, snapToScale, stepDur } from '../types';
+import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, stepDur } from '../types';
 import { ICON, drawFades, drawWave } from './arr';
 import { clamp, h, pct, slider, toast } from './dom';
 
@@ -19,14 +19,14 @@ export const padName = (tr: Track, r: number) => tr.pads?.[r]?.name ?? t('d' + r
 
 let lastLen = 2;
 let scrollKey = '', scrollPos = { x: 0, y: 0 };
-let edStepW = 0;
+let edStepW = 0, edRes = 1;
 
 function lengthSelect(c: Clip, opts: number[]) {
   const sel = h('select', { 'aria-label': t('ed.length'), title: t('ed.length'), data: { role: 'length' } });
   for (const b of opts) sel.append(h('option', { value: String(b * BAR), selected: c.patLen === b * BAR }, t(b > 1 ? 'ed.bars' : 'ed.bar', b)));
   sel.onchange = () => {
     const n = +sel.value;
-    if (c.drums) c.drums = c.drums.map(r => Array.from({ length: n }, (_, i) => r[i] ?? 0));
+    if (c.drums) { const cells = Math.max(1, Math.round(n * resOf(c))); c.drums = c.drums.map(r => Array.from({ length: cells }, (_, i) => r[i] ?? 0)); }
     if (c.notes) c.notes = c.notes.filter(x => x.s < n).map(x => ({ ...x, l: Math.min(x.l, n - x.s) }));
     c.patLen = n; c.offset = 0; if (c.len < n) c.len = n;
     commit();
@@ -52,15 +52,23 @@ function drumBar(tr: Track, c: Clip | null) {
   }, label);
   return h('div', { class: 'ebar' }, h('strong', {}, `${ICON.drums} ${tr.name}`),
     h('div', { class: 'segs', role: 'group' }, view('seq', t('drum.seq')), view('pads', t('drum.pads'))),
-    c && clipTools(c), c && lengthSelect(c, [1, 2, 4]),
+    c && clipTools(c), c && lengthSelect(c, [1, 2, 4]), c && resSelect(c),
     h('label', { class: 'fld' }, t('drum.kit'), kit),
     slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct),
-    c && h('button', { title: t('tip.clear'), data: { act: 'clear' }, onclick: () => { c.drums = emptyDrums(c.patLen!); commit(); } }, t('act.clear')),
+    c && h('button', { title: t('tip.clear'), data: { act: 'clear' }, onclick: () => { c.drums = c.drums!.map(r => r.map(() => 0)); commit(); } }, t('act.clear')),
     c && h('div', { class: 'segs', role: 'group', 'aria-label': t('pat.tools') },
       h('button', { class: 'seg', data: { act: 'patleft' }, title: t('pat.left'), 'aria-label': t('pat.left'), onclick: () => shiftPattern(-1) }, '◀'),
       h('button', { class: 'seg', data: { act: 'patright' }, title: t('pat.right'), 'aria-label': t('pat.right'), onclick: () => shiftPattern(1) }, '▶'),
       h('button', { class: 'seg', data: { act: 'patdouble' }, title: t('pat.double'), 'aria-label': t('pat.double'), onclick: doublePattern }, '×2')),
     c && S.drumView === 'seq' && h('span', { class: 'tip' }, t('hint.accent')));
+}
+
+/** Résolution du motif de batterie : doubles-croches, triples-croches ou triolets. */
+function resSelect(c: Clip) {
+  const sel = h('select', { 'aria-label': t('ed.res'), title: t('ed.resTip'), data: { role: 'res' } },
+    ...[[1, '1/16'], [2, '1/32'], [0.75, t('grid.8t')], [1.5, t('grid.16t')]].map(([v, l]) => h('option', { value: String(v), selected: resOf(c) === v }, String(l))));
+  sel.onchange = () => { setRes(c, +sel.value); commit(); };
+  return h('label', { class: 'fld' }, t('ed.res'), sel);
 }
 
 function padsView(tr: Track) {
@@ -116,12 +124,15 @@ export function flashPad(r: number) {
 
 function drumEditor(tr: Track, c: Clip | null) {
   if (!c || S.drumView === 'pads') return h('div', { class: 'editor' }, drumBar(tr, c), padsView(tr));
-  const grid = h('div', { class: 'dgrid ed-grid' });
+  const res = resOf(c), cw = res > 1 ? 20 : 30;
+  const grid = h('div', { class: 'dgrid ed-grid', style: `--cw:${cw}px` });
+  // Regroupement visuel par temps : le pas d'une case vaut 1/res double-croche.
+  const beat = (s: number) => Math.floor(s / res / 4 + 1e-6), isBar = (s: number) => s > 0 && Math.abs(s / res / BAR - Math.round(s / res / BAR)) < 1e-6;
   c.drums!.forEach((row, r) => {
     const line = h('div', { class: 'drow' },
       h('button', { class: 'dlabel', title: t('drum.listen', padName(tr, r)), onclick: () => engine.pad(tr, r) }, h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', {}, padName(tr, r))));
     row.forEach((v, s) => line.append(h('button', {
-      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${Math.floor(s / 4) % 2 ? ' alt' : ''}${s % BAR === 0 && s ? ' barstart' : ''}`,
+      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}`,
       data: { r: String(r), s: String(s) }, 'aria-label': `${padName(tr, r)} ${s + 1}`, 'aria-pressed': String(!!v),
     })));
     grid.append(line);
@@ -150,7 +161,7 @@ function drumEditor(tr: Track, c: Clip | null) {
     if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); setCell(el, c.drums![+el.dataset.r!][+el.dataset.s!] ? 0 : 1); commit(); }
   };
   grid.append(h('div', { class: 'ed-ph' }));
-  edStepW = CELL;
+  edStepW = cw + 4; edRes = res;
   return h('div', { class: 'editor' }, drumBar(tr, c), h('div', { class: 'escroll' }, grid));
 }
 
@@ -261,12 +272,21 @@ export function notesKey(e: KeyboardEvent): boolean {
   if (mod) return false;
   if (e.key === 'Escape') { selNotes.clear(); emit(); return true; }
   if (e.key === 'Delete' || e.key === 'Backspace') { c.notes = c.notes.filter(n => !selNotes.has(n)); selNotes.clear(); commit(); return true; }
-  const dp = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0, ds = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+  const G = GRIDS[S.grid] ?? 1, dp = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0, ds = e.key === 'ArrowRight' ? G : e.key === 'ArrowLeft' ? -G : 0;
   if (!dp && !ds) return false;
   const P = dp * (e.shiftKey ? 12 : 1);
-  if (sel.some(n => n.p + P < PMIN || n.p + P > PMAX || n.s + ds < 0 || n.s + n.l + ds > c.patLen!)) return true;
-  for (const n of sel) { n.p += P; n.s += ds; }
+  if (sel.some(n => n.p + P < PMIN || n.p + P > PMAX || n.s + ds < -1e-6 || n.s + n.l + ds > c.patLen! + 1e-6)) return true;
+  for (const n of sel) { n.p += P; n.s = Math.max(0, snapTo(n.s + ds, 1 / 24)); }
   commit(); return true;
+}
+
+// ---------- Grille des notes ----------
+function gridTools(c: Clip) {
+  const sel = h('select', { 'aria-label': t('ed.grid'), title: t('ed.gridTip'), data: { role: 'notegrid' } },
+    ...[['16', '1/16'], ['32', '1/32'], ['8t', t('grid.8t')], ['16t', t('grid.16t')], ['free', t('grid.free')]].map(([v, l]) => h('option', { value: v, selected: S.grid === v }, l)));
+  sel.onchange = () => { S.grid = sel.value; emit(); };
+  return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.grid'), sel),
+    h('button', { title: t('tip.quantize'), data: { act: 'quantize' }, onclick: () => { const sel2 = c.notes!.filter(n => selNotes.has(n)); quantizeNotes(sel2.length ? sel2 : c.notes!, GRIDS[S.grid] ?? 1, c.patLen!); } }, '🧲 ' + t('act.quantize')));
 }
 
 // ---------- Gamme et accords ----------
@@ -287,12 +307,12 @@ function scaleTools() {
 
 // ---------- Piano roll ----------
 function pianoRoll(tr: Track, c: Clip) {
-  const rows = PMAX - PMIN + 1, W = c.patLen! * SW, P = S.project, scaled = P.scale !== 'off';
+  const rows = PMAX - PMIN + 1, W = c.patLen! * SW, P = S.project, scaled = P.scale !== 'off', G = GRIDS[S.grid] ?? 1;
   const fit = (p: number) => clamp(scaled ? snapToScale(P, p) : p, PMIN, PMAX);
   if (selOwner !== c.id) { selNotes.clear(); selOwner = c.id; }
   const refreshSel = () => grid.querySelectorAll<HTMLElement>('.note').forEach(el => el.classList.toggle('sel', selNotes.has(c.notes![+el.dataset.i!])));
   const keys = h('div', { class: 'keys' });
-  const grid = h('div', { class: 'pr-grid ed-grid', style: `width:${W}px;height:${rows * RH}px;--sw:${SW}px;--rh:${RH}px` });
+  const grid = h('div', { class: 'pr-grid ed-grid', style: `width:${W}px;height:${rows * RH}px;--sw:${SW}px;--rh:${RH}px;--gw:${G * SW}px` });
   for (let p = PMAX; p >= PMIN; p--) {
     keys.append(h('button', {
       class: 'key' + (isBlack(p) ? ' black' : '') + (p % 12 === 0 ? ' c' : '') + (scaled && (p - P.key) % 12 === 0 ? ' root' : ''), tabIndex: -1, 'aria-label': noteName(p),
@@ -337,21 +357,21 @@ function pianoRoll(tr: Track, c: Clip) {
       resize = e.clientX > el.getBoundingClientRect().right - 8;
     } else {
       if (e.button !== 0) return;
-      const s = clamp(Math.floor((e.clientX - r.left) / SW), 0, c.patLen! - 1);
-      note = { p: fit(PMAX - Math.floor((e.clientY - r.top) / RH)), s, l: Math.min(lastLen, c.patLen! - s), v: 0.8 };
+      const s = clamp(snapTo(Math.floor((e.clientX - r.left) / SW / G + 1e-6) * G, G), 0, c.patLen! - G);
+      note = { p: fit(PMAX - Math.floor((e.clientY - r.top) / RH)), s, l: Math.min(Math.max(G, snapTo(lastLen, G)), c.patLen! - s), v: 0.8 };
       c.notes!.push(note); selNotes.clear(); selNotes.add(note); el = mk(note, c.notes!.length - 1); grid.append(el); refreshSel(); resize = true;
     }
     engine.previewNote(tr, note.p);
     const o = { ...note }, sx = e.clientX, sy = e.clientY, node = el;
     node.classList.add('drag');
     const mv = (ev: PointerEvent) => {
-      const dx = Math.round((ev.clientX - sx) / SW), dy = Math.round((ev.clientY - sy) / RH);
-      if (resize) { note.l = clamp(o.l + dx, 1, c.patLen! - note.s); place(node, note); return; }
+      const dx = snapTo((ev.clientX - sx) / SW, G), dy = Math.round((ev.clientY - sy) / RH);
+      if (resize) { note.l = clamp(snapTo(o.l + dx, G), G, c.patLen! - note.s); place(node, note); return; }
       // Déplacement de toute la sélection, bornée pour qu'aucune note ne sorte du clip.
       const cdx = clamp(dx, -Math.min(...group.map(g => g.o.s)), Math.min(...group.map(g => c.patLen! - g.o.s - g.o.l)));
       const cdy = clamp(dy, Math.max(...group.map(g => g.o.p)) - PMAX, Math.min(...group.map(g => g.o.p)) - PMIN);
       for (const g of group) {
-        g.n.s = g.o.s + cdx;
+        g.n.s = snapTo(g.o.s + cdx, 1 / 24);
         const np = fit(g.o.p - cdy);
         if (np !== g.n.p) { g.n.p = np; if (g.n === note) engine.previewNote(tr, np); }
         if (g.el) place(g.el, g.n);
@@ -376,7 +396,7 @@ function pianoRoll(tr: Track, c: Clip) {
     const apply = (ev: PointerEvent) => {
       const s = Math.floor((ev.clientX - r.left) / SW), v = Math.round(clamp(1 - (ev.clientY - r.top) / r.height, 0.05, 1) * 100) / 100;
       c.notes!.forEach((n, i) => {
-        if (n.s !== s || !bars[i]) return;
+        if (Math.floor(n.s + 1e-6) !== s || !bars[i]) return;
         n.v = v; changed = true; bars[i].style.height = Math.round(v * 100) + '%';
         const el = grid.querySelector<HTMLElement>(`.note[data-i="${i}"]`); if (el) el.style.opacity = (0.4 + 0.6 * v).toFixed(2);
       });
@@ -400,7 +420,7 @@ function pianoRoll(tr: Track, c: Clip) {
     h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), clipTools(c), lengthSelect(c, [1, 2, 4, 8]),
       h('div', { class: 'segs', role: 'group', 'aria-label': t('ed.transpose'), title: t('ed.transpose') },
         ...[-12, -1, 1, 12].map(n => h('button', { class: 'seg', data: { act: 'tr' + n }, 'aria-label': `${t('ed.transpose')} ${n > 0 ? '+' : ''}${n}`, onclick: () => transposeClip(n) }, (n > 0 ? '+' : '−') + Math.abs(n)))),
-      scaleTools()),
+      gridTools(c), scaleTools()),
     synthPanel(tr, true), S.kbShow && screenKeys(), scroll);
 }
 
@@ -493,6 +513,6 @@ export function updateEditorPlayhead(step: number) {
   if (!inside) return;
   const local = (step - f.clip.start + f.clip.offset) % f.clip.patLen!;
   const drums = f.track.type === 'drums';
-  ph.style.left = (drums ? LABEL_W + Math.floor(local) * edStepW : local * edStepW) + 'px';
+  ph.style.left = (drums ? LABEL_W + Math.floor(local * edRes + 1e-6) * edStepW : local * edStepW) + 'px';
   ph.style.width = drums ? edStepW + 'px' : '2px';
 }

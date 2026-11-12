@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-155 cas réussis sur 155.
+162 cas réussis sur 162.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -159,3 +159,10 @@
 | PT01 | Batterie | Décaler le motif d'un pas et doubler sa longueur | OK |
 | MP02 | Mixeur | Appliquer un préréglage de mixage à une piste, l'entendre et l'annuler | OK |
 | NT01 | Projet | Notes du projet : écrire sans déclencher de raccourci, retrouver le texte, le garder dans le fichier | OK |
+| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | OK |
+| GR02 | Grille fine | Triolets : trois notes par temps, placées et jouées à intervalles égaux | OK |
+| GR03 | Grille fine | Quantifier : recaler toutes les notes ou seulement la sélection sur la grille | OK |
+| GR04 | Grille fine | Batterie en triples-croches et en triolets : les coups gardent leur place, les nouveaux sonnent au bon instant | OK |
+| GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
+| GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
+| GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
