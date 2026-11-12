@@ -134,6 +134,37 @@ Lecture :
 - **Coût de calcul négligeable** : 3 s de son traitées en 0,6 à 2,4 ms, soit 1 600 à 5 000 fois le temps réel. Le calcul ne sera pas le facteur limitant ; la latence viendra des tampons et du matériel.
 - Limites : seuls des AU d'Apple ont été essayés (aucun plugin tiers installé), sans interface graphique de plugin, et sans VST3.
 
+**Étape 3 — hôte en temps réel sur la carte son (12/11/2026)**
+
+Méthode (`au-host rt`, fichier `native/au-host/Sources/RealTime.swift`) : pour éviter tout larsen au bureau, le micro n'est jamais renvoyé vers les haut-parleurs. Un clic à 2 kHz (6 ms) est produit en temps réel, passe ou non par un AU (AULowpass réglé à 18 kHz), sort sur les haut-parleurs du MacBook au volume laissé bas par le propriétaire, et le micro intégré l'enregistre. Les deux côtés sont datés avec l'horloge de la machine (`mHostTime`) ; l'écart est le trajet réel entre l'instant où le son quitte le logiciel et l'instant où il y revient. L'aller-retour d'une application (entrée → traitement → sortie) ajoute deux tampons. 8 clics par réglage ; le premier est souvent manqué (démarrage de l'entrée).
+
+| Tampon | Latence déclarée par Core Audio | Trajet mesuré (médiane) | Aller-retour d'une appli (mesuré + 2 tampons) |
+|---|---|---|---|
+| 512 (10,7 ms) | 69,7 ms | 46,4 ms | **67,7 ms** |
+| 256 (5,3 ms) | 59,1 ms | 46,4 ms | **57,1 ms** |
+| 128 (2,7 ms) | 53,7 ms | 46,3 ms | **51,7 ms** |
+| 64 (1,3 ms) | 51,1 ms | 46,5 ms | **49,1 ms** |
+| 32 (0,7 ms) | 49,7 ms | 46,4 ms | **47,7 ms** |
+
+- Avec ou sans plugin : aucune différence (écart < 0,2 ms). Écart entre clics : 0,1 à 0,7 ms.
+- Détail déclaré, en échantillons à 48 kHz : sortie = appareil 70 + marge 74 + flux **690** ; entrée = marge 50 + flux **1 439**. Le traitement du micro intégré (30 ms) et celui des haut-parleurs intégrés (14 ms) font à eux seuls environ 46 ms, quels que soient le logiciel et le tampon. La mesure le confirme : le trajet reste à 46,4 ms de 512 à 32.
+
+Tenue dans la durée (`au-host stress`) : chaîne de 8 AU d'Apple (NBandEQ → Lowpass → DynamicsProcessor → MatrixReverb → Delay → PeakLimiter → ParametricEQ → Hipass) sur les haut-parleurs, signal inaudible (-100 dBFS), 5 minutes. On compte les surcharges signalées par Core Audio et les trous dans la cadence de rendu.
+
+| Tampon | Surcharges | Trous de rendu |
+|---|---|---|
+| 64 (1,3 ms) | 2 (une au démarrage, une entre 280 et 310 s) | 1 (9,7 ms) |
+| 128 (2,7 ms) | 3 (vers 60, 120 et 270 s) | 3 (le plus long : 15,3 ms) |
+| 128, **sans aucun plugin** (contrôle) | 0 | 0 |
+
+- Les décrochages viennent bien de la chaîne de plugins, pas du système ni de l'hôte : sans plugin, 5 minutes parfaitement propres. Ils ne dépendent pas de la taille du tampon (plutôt plus nombreux à 128 qu'à 64), donc ce n'est pas un manque de puissance : 8 AU d'Apple sont très légers pour un M3. Hypothèse la plus probable : un plugin qui fait de temps en temps un travail lourd ou une allocation dans le fil audio (`AUMatrixReverb`, ancien, est le premier suspect). À vérifier en retirant les plugins un par un.
+- Le critère « sans craquement pendant 5 minutes » n'est donc **pas encore rempli** avec cette chaîne ; il l'est sans plugin.
+
+Lecture :
+- **En natif, sur le même matériel, l'aller-retour tombe d'environ 110 ms (navigateur, étape 1) à environ 50 ms.** Le natif gagne donc environ 60 ms.
+- **L'objectif de 12 ms est impossible avec le micro et les haut-parleurs intégrés**, quel que soit le logiciel : environ 46 ms sont dans le matériel et ses pilotes. Le critère « < 12 ms » ne peut se juger qu'avec une interface audio (ou un casque-micro USB), qui n'a pas ces traitements.
+- La sortie USB (Yichip) déclare 13 ms de sortie côté navigateur, contre 28 ms pour les haut-parleurs : c'est sur ce genre de matériel que l'écart entre navigateur et natif deviendra décisif. Mesure à refaire avec un micro qui l'entend, ou avec une interface qui a une boucle de retour.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.

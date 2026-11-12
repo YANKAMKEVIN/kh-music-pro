@@ -5,6 +5,8 @@
 //   au-host process <type> <sous-type> <fabricant> in.wav out.wav [adresse=valeur ...] [--tail s]
 //   au-host gen tones|impulse out.wav              signal de test (48 kHz, stéréo)
 //   au-host analyse file.wav [fréquence ...]       niveau global, niveau par fréquence, pics
+//   au-host rt [tampon ...]                        latence réelle haut-parleurs → micro, sans et avec plugin
+//   au-host stress [secondes] [tampon] [plugins]   tenue d'une chaîne de plugins en temps réel
 import AVFoundation
 import AudioToolbox
 
@@ -154,6 +156,12 @@ case "analyse":
         } else { k += 1 }
     }
     for (p, v) in peaks.prefix(8) { print(String(format: "  pic à %.4f s (%.1f dBFS)", Double(p) / sr, 20 * log10(abs(Double(v))))) }
+
+case "rt":
+    await runRealtime(Array(args.dropFirst(2)))
+
+case "stress":
+    await runStress(Array(args.dropFirst(2)))
 
 default:
     fail("Commande inconnue : \(args[1])")
