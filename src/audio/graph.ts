@@ -6,13 +6,19 @@ export interface TrackNodes {
   low: BiquadFilterNode; mid: BiquadFilterNode; high: BiquadFilterNode;
   comp: DynamicsCompressorNode; makeup: GainNode; fader: GainNode; auto: GainNode; duck: GainNode; pan: StereoPannerNode;
   revSend: GainNode; dlySend: GainNode; analyser?: AnalyserNode; compOn?: boolean; driveVal?: number; duckAmt: number;
+  outId?: string;
   crush: WaveShaperNode; crushIn: GainNode; crushOut: GainNode; crushVal?: number; chWet: GainNode; trem: GainNode; tremDepth: GainNode; tremLfo: OscillatorNode;
 }
 export interface Voice { release(at: number): void }
 type Buffers = Map<string, AudioBuffer>;
 
 /** Filtre « DJ » bipolaire : négatif = passe-bas, positif = passe-haut. */
-const djFreqs = (v: number): [number, number] => [v < 0 ? 20000 * Math.pow(2, v * 8) : 20000, v > 0 ? 20 * Math.pow(2, v * 9.5) : 20];
+const djFreqs = (v: number): [number, number] => [v < 0 ? 20000 * Math.pow(2, v * 8) : 20000, v > 0 ? 20 * Math.pow(2, v * 9.5) : 10];
+/**
+ * Résonance des filtres (en dB, comme l'attend le navigateur). Au repos : aucune, pour que le filtre ne colore pas le son
+ * — une légère bosse dans le grave s'ajoutait sinon à chaque étage traversé. En action : un peu de résonance, pour le caractère.
+ */
+const REST_Q = -3.01, SWEEP_Q = 3;
 
 /** Lo-fi : réduit le nombre de niveaux du signal (de 32 à 3 paliers par demi-onde). */
 function crushCurve(amount: number) {
@@ -116,6 +122,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       crush: c.createWaveShaper(), crushIn: c.createGain(), crushOut: c.createGain(), chWet: c.createGain(), trem: c.createGain(), tremDepth: c.createGain(), tremLfo: c.createOscillator(),
     };
     n.lp.type = 'lowpass'; n.lp.frequency.value = 20000; n.hp.type = 'highpass'; n.hp.frequency.value = 20;
+    n.lp.Q.value = REST_Q; n.hp.Q.value = REST_Q; n.hp.frequency.value = 10;
     n.shaper.oversample = '2x';
     n.low.type = 'lowshelf'; n.low.frequency.value = 200;
     n.mid.type = 'peaking'; n.mid.frequency.value = 1000; n.mid.Q.value = 0.9;
@@ -135,7 +142,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     n.tremDepth.gain.value = 0; n.tremLfo.connect(n.tremDepth).connect(n.trem.gain); n.tremLfo.start();
     n.trem.connect(n.low).connect(n.mid).connect(n.high);
     n.comp.connect(n.makeup).connect(n.fader);
-    n.fader.connect(n.auto).connect(n.duck).connect(n.pan).connect(this.master);
+    n.fader.connect(n.auto).connect(n.duck).connect(n.pan); // la sortie (général ou bus) est branchée par sync
     n.pan.connect(n.revSend).connect(this.revBus);
     n.pan.connect(n.dlySend).connect(this.dlyBus);
     if (this.live) { n.analyser = c.createAnalyser(); n.analyser.fftSize = 256; n.duck.connect(n.analyser); }
@@ -149,28 +156,40 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     if (this.revSize !== p.revSize) { this.conv.buffer = this.impulse(p.revSize); this.revSize = p.revSize; }
     const [mlp, mhp] = djFreqs(p.filter);
     this.set(this.mlp.frequency, mlp); this.set(this.mhp.frequency, mhp);
+    this.set(this.mlp.Q, p.filter < 0 ? SWEEP_Q : REST_Q); this.set(this.mhp.Q, p.filter > 0 ? SWEEP_Q : REST_Q);
     this.set(this.meq[0].gain, p.mLow); this.set(this.meq[1].gain, p.mMid); this.set(this.meq[2].gain, p.mHigh);
     for (const c of [0, 1]) { this.set(this.wDirect[c].gain, (1 + p.width) / 2); this.set(this.wCross[c].gain, (1 - p.width) / 2); }
-    const anySolo = p.tracks.some(t => t.solo);
-    for (const t of p.tracks) {
+    const anySolo = p.tracks.some(t => t.solo), busIds = new Set(p.buses.map(b => b.id));
+    // Les bus d'abord : les pistes qui y sont envoyées doivent trouver leur entrée.
+    for (const t of [...p.buses, ...p.tracks]) {
       let n = this.tracks.get(t.id);
       if (!n) { n = this.makeTrack(); this.tracks.set(t.id, n); }
+      const isBus = busIds.has(t.id), outId = !isBus && busIds.has(t.out) ? t.out : '';
+      if (n.outId !== outId) {
+        if (n.outId !== undefined) n.pan.disconnect(n.outId ? this.tracks.get(n.outId)?.input ?? this.master : this.master);
+        n.pan.connect(outId ? this.tracks.get(outId)!.input : this.master); n.outId = outId;
+      }
+      this.set(n.mid.frequency, t.eqMidF); this.set(n.comp.threshold, t.compThr); this.set(n.comp.ratio, t.compRatio);
+      this.set(n.makeup.gain, Math.pow(10, -t.compThr * (1 - 1 / t.compRatio) * 0.2 / 20));
       this.set(n.low.gain, t.eqLow); this.set(n.mid.gain, t.eqMid); this.set(n.high.gain, t.eqHigh);
       const au = this.autoOn ? t.auto : undefined;
       if (!au?.filter?.length) { const [lp, hp] = djFreqs(t.filter); this.set(n.lp.frequency, lp); this.set(n.hp.frequency, hp); }
+      const swept = !!t.auto?.filter?.length;
+      this.set(n.lp.Q, swept || t.filter < 0 ? SWEEP_Q : REST_Q); this.set(n.hp.Q, swept || t.filter > 0 ? SWEEP_Q : REST_Q);
       n.duckAmt = t.duck;
       // Le signal est amplifié avant la réduction puis ramené à son niveau : l'effet reste audible sur un son faible.
       if (n.crushVal !== t.crush) { n.crush.curve = t.crush > 0 ? crushCurve(t.crush) : null; n.crushIn.gain.value = t.crush > 0 ? 3 : 1; n.crushOut.gain.value = t.crush > 0 ? 1 / 3 : 1; n.crushVal = t.crush; }
-      this.set(n.chWet.gain, t.chorus * 0.8);
+      if (!au?.chorus?.length) this.set(n.chWet.gain, t.chorus * 0.8);
       this.set(n.trem.gain, 1 - t.trem / 2); this.set(n.tremDepth.gain, t.trem / 2); this.set(n.tremLfo.frequency, p.bpm / 30);
       if (n.driveVal !== t.drive) { n.shaper.curve = t.drive > 0 ? driveCurve(t.drive) : null; n.driveVal = t.drive; }
       if (n.compOn !== t.comp) { n.high.disconnect(); n.high.connect(t.comp ? n.comp : n.fader); n.compOn = t.comp; }
-      const audible = !t.mute && (!anySolo || t.solo);
+      const audible = !t.mute && (isBus || !anySolo || t.solo);
       this.set(n.fader.gain, audible ? t.vol : 0);
       if (!au?.pan?.length) this.set(n.pan.pan, t.pan);
-      this.set(n.revSend.gain, t.rev); this.set(n.dlySend.gain, t.dly);
+      if (!au?.rev?.length) this.set(n.revSend.gain, t.rev);
+      if (!au?.dly?.length) this.set(n.dlySend.gain, t.dly);
     }
-    for (const [id, n] of this.tracks) if (!p.tracks.some(t => t.id === id)) {
+    for (const [id, n] of this.tracks) if (!p.tracks.some(t => t.id === id) && !busIds.has(id)) {
       n.pan.disconnect(); n.revSend.disconnect(); n.dlySend.disconnect(); this.tracks.delete(id);
     }
   }
@@ -187,6 +206,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       };
       ramp(n.auto.gain, a.vol, v => v); ramp(n.pan.pan, a.pan, v => v);
       ramp(n.lp.frequency, a.filter, v => djFreqs(v)[0]); ramp(n.hp.frequency, a.filter, v => djFreqs(v)[1]);
+      ramp(n.revSend.gain, a.rev, v => v); ramp(n.dlySend.gain, a.dly, v => v); ramp(n.chWet.gain, a.chorus, v => v * 0.8);
     }
   }
 
@@ -195,10 +215,19 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     this.autoOn = false;
     const now = this.ctx.currentTime;
     for (const n of this.tracks.values()) {
-      for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency]) prm.cancelScheduledValues(now);
+      for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain]) prm.cancelScheduledValues(now);
       n.auto.gain.setTargetAtTime(1, now, 0.015); n.duck.gain.setTargetAtTime(1, now, 0.015);
     }
     this.sync(p);
+  }
+
+  /** Courbe de l'égaliseur et des filtres d'une tranche : gain en dB pour chaque fréquence demandée. */
+  eqCurve(id: string, freqs: Float32Array): Float32Array | null {
+    const n = this.tracks.get(id);
+    if (!n) return null;
+    const out = new Float32Array(freqs.length), mag = new Float32Array(freqs.length), ph = new Float32Array(freqs.length);
+    for (const f of [n.lp, n.hp, n.low, n.mid, n.high]) { f.getFrequencyResponse(freqs as Float32Array<ArrayBuffer>, mag, ph); for (let i = 0; i < out.length; i++) out[i] += 20 * Math.log10(Math.max(1e-6, mag[i])); }
+    return out;
   }
 
   /** Sidechain : chaque coup de kick fait « pomper » les pistes qui le demandent. */

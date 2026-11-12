@@ -29,8 +29,8 @@ export interface Clip {
 
 /** Point d'automation : s = position (pas), v = valeur (volume 0..1, pan et filtre -1..1). */
 export interface Pt { s: number; v: number }
-export type AutoParam = 'vol' | 'pan' | 'filter';
-export const AUTO: Record<AutoParam, { min: number; def: number }> = { vol: { min: 0, def: 1 }, pan: { min: -1, def: 0 }, filter: { min: -1, def: 0 } };
+export type AutoParam = 'vol' | 'pan' | 'filter' | 'rev' | 'dly' | 'chorus';
+export const AUTO: Record<AutoParam, { min: number; def: number }> = { vol: { min: 0, def: 1 }, pan: { min: -1, def: 0 }, filter: { min: -1, def: 0 }, rev: { min: 0, def: 0 }, dly: { min: 0, def: 0 }, chorus: { min: 0, def: 0 } };
 
 /** Valeur d'une courbe d'automation (points triés) à la position `s`. */
 export function autoAt(pts: Pt[], s: number): number {
@@ -66,6 +66,9 @@ export interface Track {
   filter: number;  // -1..0 passe-bas, 0..1 passe-haut
   duck: number;    // sidechain : atténuation à chaque coup de kick, 0..1
   chorus: number; trem: number; crush: number; // modulation : chorus, trémolo (à la croche), lo-fi, 0..1
+  eqMidF: number;                    // fréquence de la bande médium (Hz)
+  compThr: number; compRatio: number; // compresseur : seuil (dB) et taux
+  out: string;                       // sortie : '' = général, sinon identifiant d'un bus
   auto?: Partial<Record<AutoParam, Pt[]>>;
   autoShow?: AutoParam | '';
   synth?: SynthParams;
@@ -89,6 +92,7 @@ export interface Project {
   target: number;                            // niveau d'export en LUFS, 0 = simple protection des crêtes
   notes: string;                             // bloc-notes du projet (paroles, idées)
   punch: boolean;                            // enregistrement audio limité à la zone de boucle (punch-in / punch-out)
+  buses: Track[];                            // bus de mixage : des tranches sans clip, où l'on envoie plusieurs pistes
   tracks: Track[];
 }
 
@@ -191,12 +195,17 @@ export function newTrack(type: TrackType, index: number, preset = 'lead'): Track
   return {
     id: uid(), name: `${t('type.' + type)} ${index}`, type,
     color: COLORS[(index - 1 + (type === 'drums' ? 0 : type === 'synth' ? 1 : 3)) % COLORS.length],
-    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0,
+    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0, eqMidF: 1000, compThr: -24, compRatio: 4, out: '',
     synth: type === 'synth' ? makeSynth(preset) : undefined,
     kit: type === 'drums' ? 'electro' : undefined,
     pads: type === 'drums' ? new Array(NPADS).fill(null) : undefined,
     clips: [],
   };
+}
+
+export function newBus(index: number): Track {
+  const b = newTrack('audio', index); b.name = `Bus ${index}`; b.color = '#c084fc';
+  return b;
 }
 
 export function newPatternClip(type: TrackType, start: number, name: string): Clip {
@@ -213,7 +222,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false,
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [],
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -223,9 +232,11 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false;
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= [];
+  for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; }
   for (const tr of p.tracks) {
-    tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0;
+    tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4;
+    tr.out = tr.out && p.buses.some(b => b.id === tr.out) ? tr.out : '';
     if (tr.type === 'drums') {
       tr.kit ??= 'electro'; tr.pads ??= new Array(NPADS).fill(null);
       for (const c of tr.clips) while (c.drums && c.drums.length < NPADS) c.drums.push(new Array(c.patLen!).fill(0));

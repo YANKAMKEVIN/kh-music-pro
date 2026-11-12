@@ -437,3 +437,10 @@ dialog form { gap: 8px; }
 .tip.real { color: var(--a1); }
 .credits { margin: 12px 0 0; font-size: 11px; }
 .note i { width: min(8px, 33%); }
+
+/* ================= V12 ================= */
+.eqc { width: 100%; height: 46px; background: rgba(0, 0, 0, .35); border: 1px solid var(--line); border-radius: 8px; color: var(--c); }
+.strip.bus { border-top-style: double; background: rgba(192, 132, 252, .07); }
+.strip.bus .tname { flex: 1; min-width: 0; }
+.gr { font-size: 11px; color: var(--a2); min-height: 14px; }
+.shead select.mpreset { width: 96px; }

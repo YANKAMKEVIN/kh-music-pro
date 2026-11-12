@@ -115,7 +115,7 @@ function head(tr: Track) {
 const AH = 64, PADY = 8, NS = 'http://www.w3.org/2000/svg';
 const autoY = (prm: AutoParam, v: number) => PADY + (1 - (v - AUTO[prm].min) / (1 - AUTO[prm].min)) * (AH - 2 * PADY);
 const autoV = (prm: AutoParam, y: number) => Math.round(clamp(AUTO[prm].min + (1 - (y - PADY) / (AH - 2 * PADY)) * (1 - AUTO[prm].min), AUTO[prm].min, 1) * 100) / 100;
-const PARAMS: AutoParam[] = ['vol', 'pan', 'filter'];
+const PARAMS: AutoParam[] = ['vol', 'pan', 'filter', 'rev', 'dly', 'chorus'];
 
 function ahead(tr: Track) {
   const prm = tr.autoShow as AutoParam;

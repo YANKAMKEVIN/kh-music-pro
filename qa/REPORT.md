@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-172 cas réussis sur 172.
+177 cas réussis sur 177.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -176,3 +176,8 @@
 | LT02 | Prises | Punch : seule la zone de boucle est réenregistrée, ce qui l'entoure est conservé | OK |
 | TN01 | Justesse | La correction ramène une note fausse sur la gamme, sans changer la durée ni abîmer le son | OK |
 | TN02 | Justesse | Bouton « Corriger » : le clip est accordé, le message le dit, l'annulation le rétablit ; un bruit est refusé | OK |
+| BS01 | Bus | Créer un bus, y envoyer des pistes, et les traiter ensemble (volume, muet, filtre) | OK |
+| BS02 | Bus | Renommer et supprimer un bus ; le routage survit au fichier projet ; les vumètres du bus bougent | OK |
+| EQ01 | Mixeur | Bande médium à fréquence réglable, et courbe d'égaliseur fidèle aux réglages | OK |
+| CP01 | Mixeur | Compresseur réglable : seuil et taux agissent, la réduction s'affiche en lecture | OK |
+| AU08 | Automation | Automatiser les envois de réverb et d'écho et le chorus | OK |

@@ -1,4 +1,4 @@
-import { analyzeMix, applyMixPreset } from '../actions';
+import { addBus, analyzeMix, applyMixPreset, deleteBus } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { clearMidiMap, ccOf, learn } from '../input';
@@ -27,7 +27,7 @@ function tag<T extends HTMLElement>(el: T, target: string): T {
 
 export const filterFmt = (v: number) => Math.abs(v) < 0.02 ? '—' : (v < 0 ? 'LP ' : 'HP ') + Math.round(Math.abs(v) * 100);
 
-function strip(tr: Track, i: number) {
+function strip(tr: Track, i: number, bus = false) {
   const f = fader(`${t('mix.volume')} – ${tr.name}`, tr.vol, v => tr.vol = v);
   const tog = (key: 'mute' | 'solo' | 'comp', txt: string) => h('button', {
     class: `mini ${key} ${tr[key] ? 'on' : ''}`, title: t('mix.' + key), 'aria-pressed': String(tr[key]), data: { tog: key }, onclick: () => { tr[key] = !tr[key]; commit(); },
@@ -35,30 +35,45 @@ function strip(tr: Track, i: number) {
   const preset = h('select', { class: 'mpreset', 'aria-label': `${t('mp.title')} – ${tr.name}`, title: t('mp.tip'), data: { role: 'mixpreset' } },
     h('option', { value: '' }, t('mp.title') + '…'), ...Object.keys(MIX_PRESETS).map(k => h('option', { value: k }, t('mp.' + k))));
   preset.onchange = () => { if (preset.value) applyMixPreset(tr, preset.value); };
+  // Sortie de la piste : le général, ou un bus qui regroupe plusieurs pistes.
+  const out = !bus && S.project.buses.length > 0 && h('select', { class: 'mpreset', 'aria-label': `${t('bus.out')} – ${tr.name}`, title: t('bus.outTip'), data: { role: 'out' } },
+    h('option', { value: '', selected: !tr.out }, '→ ' + t('mix.master')), ...S.project.buses.map(b => h('option', { value: b.id, selected: tr.out === b.id }, '→ ' + b.name)));
+  if (out) out.onchange = () => { tr.out = out.value; commit(); };
+  const bname = bus && h('input', { class: 'tname', value: tr.name, 'aria-label': t('bus.name'), spellcheck: false });
+  if (bname) { bname.onchange = () => { tr.name = bname.value.trim() || tr.name; commit(); }; bname.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') bname.blur(); }; }
+  const hz = (v: number) => (v >= 1000 ? (v / 1000).toFixed(1) + ' kHz' : Math.round(v) + ' Hz');
   const panFmt = (v: number) => v === 0 ? t('mix.center') : (v < 0 ? t('mix.left') : t('mix.right')) + ' ' + Math.round(Math.abs(v) * 100);
-  return h('div', { class: 'strip' + (S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id }, style: `--c:${tr.color}`, onpointerdown: () => select(tr.id, S.selTrack === tr.id ? S.selClip : '') },
-    h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, `${ICON[tr.type]} ${tr.name}`), preset),
+  const T = (el: HTMLElement, key: string) => (bus ? el : tag(el, `${i}:${key}`)); // l'assignation MIDI vise les pistes, pas les bus
+  return h('div', { class: 'strip' + (bus ? ' bus' : S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id }, style: `--c:${tr.color}`, onpointerdown: () => { if (!bus) select(tr.id, S.selTrack === tr.id ? S.selClip : ''); } },
+    bus ? h('div', { class: 'shead' }, h('span', { class: 'sname' }, '🔀'), bname, preset,
+      h('button', { class: 'mini del', data: { act: 'busdel' }, title: t('bus.del'), 'aria-label': `${t('bus.del')} – ${tr.name}`, onclick: () => deleteBus(tr.id) }, '✕'))
+      : h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, `${ICON[tr.type]} ${tr.name}`), out, preset),
+    h('canvas', { class: 'eqc', width: 280, height: 46, data: { eq: tr.id }, role: 'img', 'aria-label': `${t('mix.eqCurve')} – ${tr.name}`, title: t('mix.eqCurve') }),
     h('div', { class: 'sbody' },
       h('div', { class: 'scol' },
         h('span', { class: 'sect' }, t('mix.eq')),
         slider(t('mix.high'), -15, 15, 0.5, tr.eqHigh, v => tr.eqHigh = v, db),
         slider(t('mix.mid'), -15, 15, 0.5, tr.eqMid, v => tr.eqMid = v, db),
+        slider(t('mix.midF'), 200, 8000, 10, tr.eqMidF, v => tr.eqMidF = v, hz),
         slider(t('mix.low'), -15, 15, 0.5, tr.eqLow, v => tr.eqLow = v, db),
         h('span', { class: 'sect' }, t('mix.fx')),
-        tag(slider(t('mix.filter'), -1, 1, 0.01, tr.filter, v => tr.filter = Math.abs(v) < 0.03 ? 0 : v, filterFmt), `${i}:filter`),
-        tag(slider(t('mix.drive'), 0, 1, 0.01, tr.drive, v => tr.drive = v, pct), `${i}:drive`),
-        tag(slider(t('mix.reverb'), 0, 1, 0.01, tr.rev, v => tr.rev = v, pct), `${i}:rev`),
-        tag(slider(t('mix.echo'), 0, 1, 0.01, tr.dly, v => tr.dly = v, pct), `${i}:dly`),
-        tag(slider(t('mix.duck'), 0, 1, 0.01, tr.duck, v => tr.duck = v, pct), `${i}:duck`),
-        tag(slider(t('mix.chorus'), 0, 1, 0.01, tr.chorus, v => tr.chorus = v, pct), `${i}:chorus`),
-        tag(slider(t('mix.trem'), 0, 1, 0.01, tr.trem, v => tr.trem = v, pct), `${i}:trem`),
-        tag(slider(t('mix.crush'), 0, 1, 0.01, tr.crush, v => tr.crush = v, pct), `${i}:crush`),
-        tag(slider(t('mix.pan'), -1, 1, 0.01, tr.pan, v => tr.pan = v, panFmt), `${i}:pan`),
-        tog('comp', t('mix.comp'))),
+        T(slider(t('mix.filter'), -1, 1, 0.01, tr.filter, v => tr.filter = Math.abs(v) < 0.03 ? 0 : v, filterFmt), 'filter'),
+        T(slider(t('mix.drive'), 0, 1, 0.01, tr.drive, v => tr.drive = v, pct), 'drive'),
+        T(slider(t('mix.reverb'), 0, 1, 0.01, tr.rev, v => tr.rev = v, pct), 'rev'),
+        T(slider(t('mix.echo'), 0, 1, 0.01, tr.dly, v => tr.dly = v, pct), 'dly'),
+        T(slider(t('mix.duck'), 0, 1, 0.01, tr.duck, v => tr.duck = v, pct), 'duck'),
+        T(slider(t('mix.chorus'), 0, 1, 0.01, tr.chorus, v => tr.chorus = v, pct), 'chorus'),
+        T(slider(t('mix.trem'), 0, 1, 0.01, tr.trem, v => tr.trem = v, pct), 'trem'),
+        T(slider(t('mix.crush'), 0, 1, 0.01, tr.crush, v => tr.crush = v, pct), 'crush'),
+        T(slider(t('mix.pan'), -1, 1, 0.01, tr.pan, v => tr.pan = v, panFmt), 'pan'),
+        tog('comp', t('mix.comp')),
+        tr.comp && slider(t('mix.compThr'), -60, 0, 1, tr.compThr, v => tr.compThr = v, v => v + ' dB'),
+        tr.comp && slider(t('mix.compRatio'), 1, 20, 0.5, tr.compRatio, v => tr.compRatio = v, v => v + ':1'),
+        tr.comp && h('span', { class: 'gr', data: { gr: tr.id }, title: t('mix.grTip') }, '')),
       h('div', { class: 'fcol' },
-        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: tr.id } })), tag(f.inp, `${i}:vol`)),
+        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: tr.id } })), bus ? f.inp : tag(f.inp, `${i}:vol`)),
         f.out,
-        h('div', { class: 'srow' }, tog('mute', 'M'), tog('solo', 'S')))));
+        h('div', { class: 'srow' }, tog('mute', 'M'), !bus && tog('solo', 'S')))));
 }
 
 let lastResult = '';
@@ -74,8 +89,9 @@ export function renderMixer(): HTMLElement {
       h('button', { class: 'pill' + (learn.on ? ' on' : ''), data: { act: 'learn' }, 'aria-pressed': String(learn.on), title: t('learn.tip'), onclick: () => { learn.on = !learn.on; learn.target = ''; emit(); } }, '🎛 ' + t('learn.title')),
       learn.on && h('p', { class: 'tip' }, t(learn.target ? 'learn.move' : 'learn.pick')),
       Object.keys(learn.map).length > 0 && h('button', { class: 'pill', data: { act: 'learnclear' }, onclick: clearMidiMap }, t('learn.clear')),
+      h('button', { class: 'pill', data: { act: 'busadd' }, title: t('bus.addTip'), onclick: addBus }, '＋ ' + t('bus.add')),
       h('canvas', { class: 'spec', width: 150, height: 70, role: 'img', 'aria-label': t('mix.spectrum'), title: t('mix.spectrum') })),
-    ...p.tracks.map(strip),
+    ...p.tracks.map((tr, i) => strip(tr, i)), ...p.buses.map((b, i) => strip(b, i, true)),
     h('div', { class: 'strip master', style: '--c:#fff' },
       h('div', { class: 'sname' }, '🔊 ' + t('mix.master')),
       h('div', { class: 'sbody' },
@@ -121,8 +137,23 @@ function drawSpectrum() {
   }
 }
 
+const EQF = Float32Array.from({ length: 70 }, (_, i) => 30 * Math.pow(600, i / 69)); // 30 Hz à 18 kHz, échelle logarithmique
+function drawEq() {
+  document.querySelectorAll<HTMLCanvasElement>('.eqc').forEach(cv => {
+    const curve = engine.mix.eqCurve(cv.dataset.eq!, EQF);
+    if (!curve) return;
+    const g = cv.getContext('2d')!, W = cv.width, H = cv.height, y = (dbv: number) => H / 2 - Math.max(-18, Math.min(18, dbv)) / 18 * (H / 2 - 2);
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+    g.strokeStyle = getComputedStyle(cv).color; g.lineWidth = 2; g.beginPath();
+    curve.forEach((v, i) => { const x = i / (curve.length - 1) * W; if (i) g.lineTo(x, y(v)); else g.moveTo(x, y(v)); });
+    g.stroke();
+  });
+  document.querySelectorAll<HTMLElement>('.gr').forEach(el => { const r = engine.reduction(el.dataset.gr!); el.textContent = r < -0.2 ? t('mix.gr', r.toFixed(1)) : t('mix.gr', '0'); });
+}
+
 export function updateMeters() {
-  drawSpectrum();
+  drawSpectrum(); drawEq();
   document.querySelectorAll<HTMLElement>('.mfill').forEach(el => {
     el.style.transform = `scaleY(${engine.level(el.dataset.id!).toFixed(3)})`;
   });

@@ -448,4 +448,18 @@ const D: Record<string, [string, string, string]> = {
   'tip.tune': ['Ramener la voix ou l\'instrument vers les notes de la gamme du projet', 'Pull the voice or instrument towards the notes of the project scale', 'Llevar la voz o el instrumento hacia las notas de la escala del proyecto'],
   'toast.tuned': ['Justesse corrigée (écart moyen : {0} centièmes)', 'Tuning corrected (average offset: {0} cents)', 'Afinación corregida (desviación media: {0} cents)'],
   'toast.noPitch': ['Aucune note nette détectée dans ce son', 'No clear note detected in this sound', 'No se detectó ninguna nota clara en este sonido'],
+
+  // ===== V12 =====
+  'bus.add': ['Bus', 'Bus', 'Bus'],
+  'bus.addTip': ['Créer un bus : une tranche où envoyer plusieurs pistes pour les traiter ensemble', 'Create a bus: a channel where several tracks are sent to be processed together', 'Crear un bus: un canal al que enviar varias pistas para tratarlas juntas'],
+  'bus.out': ['Sortie', 'Output', 'Salida'],
+  'bus.outTip': ['Où part le son de cette piste : le général, ou un bus', 'Where this track\'s sound goes: the master, or a bus', 'Adónde va el sonido de esta pista: el máster o un bus'],
+  'bus.name': ['Nom du bus', 'Bus name', 'Nombre del bus'],
+  'bus.del': ['Supprimer le bus', 'Delete bus', 'Eliminar el bus'],
+  'mix.eqCurve': ['Courbe de l\'égaliseur et du filtre', 'Equalizer and filter curve', 'Curva del ecualizador y del filtro'],
+  'mix.midF': ['Fréq. méd.', 'Mid freq.', 'Frec. med.'],
+  'mix.compThr': ['Seuil', 'Threshold', 'Umbral'], 'mix.compRatio': ['Taux', 'Ratio', 'Ratio'],
+  'mix.gr': ['Réduction : {0} dB', 'Reduction: {0} dB', 'Reducción: {0} dB'],
+  'mix.grTip': ['Niveau retiré par le compresseur en ce moment', 'Level currently being removed by the compressor', 'Nivel que el compresor está quitando ahora'],
+  'auto.rev': ['Réverb', 'Reverb', 'Reverb'], 'auto.dly': ['Écho', 'Echo', 'Eco'], 'auto.chorus': ['Chorus', 'Chorus', 'Chorus'],
 };

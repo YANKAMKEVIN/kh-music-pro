@@ -324,6 +324,9 @@ class Engine {
     return detectPitch(buf, this.ctx.sampleRate);
   }
 
+  /** Réduction de gain appliquée par le compresseur d'une tranche, en dB (0 = aucune). */
+  reduction(id: string): number { const n = this.mix.tracks.get(id); return n?.compOn ? n.comp.reduction : 0; }
+
   /** Spectre du général (amplitudes 0..255 par bande de fréquence). */
   spectrum(): Uint8Array | null {
     const a = this.mix.analyser;
@@ -367,8 +370,13 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   if (!normalize) return out;
   if (p.target < 0) {
     // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.
-    const l = lufs(out);
-    if (Number.isFinite(l)) gainLimit(out, Math.min(8, Math.pow(10, (p.target - l) / 20)));
+    // Le limiteur retient les crêtes, donc un seul passage peut rester sous la cible : on s'en approche en trois passes au plus.
+    for (let pass = 0; pass < 3; pass++) {
+      const l = lufs(out);
+      if (!Number.isFinite(l) || Math.abs(p.target - l) < 0.3) break;
+      gainLimit(out, Math.min(8, Math.pow(10, (p.target - l) / 20)));
+    }
+    if (peakOf(out) > 0.966) gainLimit(out, 1); // déjà au bon volume : il reste à retenir les crêtes
   } else {
     // Simple protection : si une crête dépasse -0,3 dB, on ramène l'ensemble en dessous.
     const pk = peakOf(out);

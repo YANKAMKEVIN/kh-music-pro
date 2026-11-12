@@ -5,7 +5,7 @@ import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFi
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, inScale, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, inScale, newBus, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -167,6 +167,19 @@ export function quantizeNotes(notes: { s: number; l: number }[], g: number, patL
     n.l = Math.max(g, Math.min(snapTo(n.l, g), patLen - n.s));
   }
   commit(); toast(t('toast.quantized', notes.length));
+}
+
+export function addBus() {
+  const p = S.project, b = newBus(p.buses.length + 1);
+  while (p.buses.some(x => x.name === b.name)) b.name += '′';
+  p.buses.push(b); commit();
+  return b;
+}
+export function deleteBus(id: string) {
+  const p = S.project;
+  p.buses = p.buses.filter(b => b.id !== id);
+  for (const tr of p.tracks) if (tr.out === id) tr.out = ''; // les pistes qui y étaient envoyées reviennent au général
+  commit();
 }
 
 export function applyMixPreset(tr: Track, key: string) {
