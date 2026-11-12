@@ -414,7 +414,7 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
   const out = await off.startRendering();
-  mix.active.clear();
+  mix.active.clear(); mix.disposePlugins();
   if (!normalize) return out;
   if (p.target < 0) {
     // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.

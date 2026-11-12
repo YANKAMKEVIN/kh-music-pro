@@ -1,5 +1,11 @@
 import { drumSample, sampleFor } from './banks';
 import { WamInstance, createWam, liveWams, wamKey } from './wam';
+import { createAu } from './au';
+
+/** Plugin d'une chaîne d'effets : web (WAM) ou, dans la version bureau native, Audio Unit. */
+const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
+const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
+  i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
 import { Clip, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, durAt, stepDur as sd, timeOf } from '../types';
 
 export interface TrackNodes {
@@ -152,10 +158,10 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const i of list) {
       let node = n.ins.get(i.id);
       if (!node) { node = this.buildInsert(i.type); n.ins.set(i.id, node); }
-      if (i.type === 'wam' && i.url && !node.wam && !node.loading && this.live) {
+      if (isPlugin(i) && !node.wam && !node.loading && this.live) {
         node.loading = true;
         const made = node;
-        createWam(this.ctx, i.url, i.state).then(inst => { this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true); },
+        createPlugin(this.ctx, i, i.state).then(inst => { this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true); },
           () => { this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
       }
       node.set(i, p, (prm, v) => this.set(prm, v));
@@ -169,14 +175,19 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
   onWam?: (trackId: string, insertId: string, ok: boolean) => void;
 
   /** Rendu hors-ligne : crée les plugins web sur ce contexte, avec l'état de ceux en service. Renvoie le nombre d'échecs. */
+  /** Après un rendu hors-ligne : libère les plugins créés pour lui (les Audio Units ont un fil natif à arrêter). */
+  disposePlugins() {
+    for (const n of this.tracks.values()) for (const node of n.ins.values()) node.wam?.audioNode.destroy?.();
+  }
+
   async loadWams(p: Project): Promise<number> {
     let failed = 0;
     for (const t of [...p.buses, ...p.tracks]) for (const i of t.inserts ?? []) {
       const node = this.tracks.get(t.id)?.ins.get(i.id);
-      if (i.type !== 'wam' || !i.url || !i.on || !node) continue;
+      if (!isPlugin(i) || !i.on || !node) continue;
       try {
         const live = liveWams.get(wamKey(t.id, i.id)), state = live?.audioNode.getState ? await live.audioNode.getState() : i.state;
-        this.attachWam(node, await createWam(this.ctx, i.url, state));
+        this.attachWam(node, await createPlugin(this.ctx, i, state));
       } catch { failed++; }
     }
     return failed;

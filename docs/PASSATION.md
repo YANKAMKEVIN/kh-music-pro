@@ -165,6 +165,58 @@ Lecture :
 - **L'objectif de 12 ms est impossible avec le micro et les haut-parleurs intégrés**, quel que soit le logiciel : environ 46 ms sont dans le matériel et ses pilotes. Le critère « < 12 ms » ne peut se juger qu'avec une interface audio (ou un casque-micro USB), qui n'a pas ces traitements.
 - La sortie USB (Yichip) déclare 13 ms de sortie côté navigateur, contre 28 ms pour les haut-parleurs : c'est sur ce genre de matériel que l'écart entre navigateur et natif deviendra décisif. Mesure à refaire avec un micro qui l'entend, ou avec une interface qui a une boucle de retour.
 
+**Étape 4 — pont avec l'application (12/11/2026)**
+
+Choix : **piste 3**, un module natif chargé dans la version bureau. L'étape 3 a montré que le plugin lui-même ne coûte rien en latence ni en calcul ; tout se joue sur le pont, et un pont dans le même processus, par mémoire partagée, est le seul qui puisse ne rien ajouter.
+
+Fonctionnement :
+- `native/kh-au-bridge` : module Node natif (Objective-C++, ~200 lignes), construit contre les en-têtes d'Electron 45. Il crée l'Audio Unit et un fil à priorité temps réel qui le fait tourner. API : `open`, `setParam`, `info`, `close`, `list`.
+- `src/audio/au.ts` : un AudioWorklet écrit chaque bloc de 128 échantillons dans un `SharedArrayBuffer`, signale la demande, et attend la réponse du fil natif **dans le même bloc**. Le pont n'ajoute donc aucun retard. Si le natif ne répond pas en 3 ms, le bloc passe tel quel et il est compté comme manqué.
+- Vu du mixeur, un Audio Unit est un effet de la chaîne comme un plugin web : type `au`, `url: 'aufx:lpas:appl'`, paramètres par adresse dans `p`. Il prend la même place (`attachWam`, `loadWams`) et sert donc à l'écoute **et** à l'export, comme l'exige le principe « temps réel et export partagent le graphe ». Les instances créées pour un export sont libérées ensuite (`disposePlugins`).
+- Activé seulement par `KH_NATIVE=1` sur macOS : la fenêtre sort alors du bac à sable pour le script de préchargement (`electron/native-preload.cjs`), coupe l'isolation de contexte et active `SharedArrayBuffer`. La page n'a toujours pas accès à `require`. Sans cette variable, rien ne change. Ce réglage est à revoir avant toute version publiée (Electron affiche d'ailleurs son avertissement de sécurité dans ce mode).
+- **Aucun moteur de mixage dupliqué** : Web Audio mixe toujours ; le natif ne fait que les plugins. Le critère d'arrêt n'est pas atteint.
+
+Pour essayer :
+
+```
+npm run build
+cd native/kh-au-bridge && npx node-gyp@11 rebuild --target=45.3.0 --arch=arm64 --dist-url=https://electronjs.org/headers && cd ../..
+node qa/au-bridge.cjs 300        # vérifications automatiques, temps réel sans sortie audio
+KH_NATIVE=1 npx electron .       # l'application, avec le pont
+```
+
+Résultats (`qa/au-bridge.cjs`) :
+
+| Vérification | Résultat |
+|---|---|
+| Pont chargé, 23 Audio Units listés, page toujours sans `require` | oui |
+| AULowpass 1 kHz sur 200 Hz + 8 kHz (rendu hors-ligne) | 200 Hz : -11,9 dBFS ; 8 kHz : -49,8 dBFS, comme l'hôte Swift |
+| Retard ajouté par le pont (impulsion, passe-bas ouvert) | **0 échantillon** |
+| AUPeakLimiter | décalage de 96 échantillons = sa latence déclarée (2 ms) |
+| AUDelay 250 ms | écho à 36 001 (attendu 36 000 ± 1, même écart dans l'hôte Swift) |
+| Vraie piste du projet de démo, à l'export, avec AULowpass 300 Hz | aigus de -29,2 à -51,4 dB ; aucun échec |
+| Vraie piste (« Basse »), rendu sans plugin refait deux fois | identique (-54,3 / -54,3 dB) |
+| Même piste à l'export avec AULowpass 300 Hz | aigus de -54,3 à -63,5 dB ; aucun échec |
+| Lecture en boucle de la démo à travers le plugin, 5 minutes | **113 411 blocs, 0 manqué**, aucune erreur ni plantage |
+
+Le temps réel a tourné avec la sortie audio coupée (`setSinkId({ type: 'none' })`), pour ne rien jouer au bureau : la cadence est alors donnée par une horloge logicielle, pas par la carte son. L'attente du worklet est restée très courte (au plus environ 30 000 tours de boucle par bloc, sans jamais toucher la limite de 3 ms).
+
+Ce que les essais ont appris en route :
+- Fenêtre cachée : Chromium ralentit une page en arrière-plan, et avec la sortie coupée, l'horloge audio ralentit avec elle (5 minutes devenues 26, 8 327 blocs au lieu de 113 000). Le mode natif désactive donc ce ralentissement (`backgroundThrottling: false`), ce qui est de toute façon souhaitable pour une application audio.
+- Un premier essai s'est arrêté vers 4 min 30 sans rapport de plantage macOS ; l'essai surveillé suivant (fermeture de fenêtre, plantage de page, fin du processus) n'a rien montré d'anormal. Cause non établie ; fermeture manuelle de la fenêtre possible.
+- Les projets de la version bureau sont enregistrés : les premiers essais avaient laissé deux effets `au` dans le projet de démo du profil de développement (nettoyés depuis). Le test utilise désormais un profil temporaire (`--user-data-dir`).
+- Sans le pont (version normale), un effet `au` ne se charge pas et le son passe tel quel, comme un plugin web absent.
+
+Non-régression de la version normale (13/11/2026, sur ce Mac) : `qa/desktop-smoke.cjs` OK ; campagne `qa/run.cjs` : 188/190. Les deux échecs ne viennent pas de V14b :
+- **DK01** appelle `xvfb-run`, qui n'existe que sous Linux : ce cas ne peut pas tourner sur un Mac (le test de la version bureau, lancé directement, passe).
+- **RI05** (pad 4 de la batterie acoustique « identique au son synthétisé ») est **instable** : il échoue aussi sur `main` sans les changements de V14b (1 réussite sur 3). L'écart mesuré entre les deux sons frôle le seuil de 3 %. À corriger à part (seuil du test, ou son du pad 4).
+- Sur un Mac neuf, il faut d'abord `npx playwright install chromium`.
+
+Lecture :
+- **On sait maintenant faire passer le son d'une piste de KH Music Pro dans un plugin Audio Unit du Mac**, à l'écoute comme à l'export, sans retard ajouté par le pont.
+- **Ce pont ne réduit pas la latence de l'application** : le son entre et sort toujours par Web Audio (environ 110 ms aller-retour sur les haut-parleurs, étape 1). Il apporte l'accès aux plugins du Mac, pas la faible latence.
+- Pour gagner aussi la latence (environ 50 ms au lieu de 110 sur ce matériel, étape 3), il faudrait que le natif prenne aussi l'entrée et la sortie de la carte son, Web Audio ne faisant plus que le calcul du mixage. C'est faisable sans dupliquer le mixage, mais demande de caler deux horloges (Web Audio et carte son) : c'est la prochaine étape possible.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
@@ -177,5 +229,6 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En attente** : V14b (ci-dessus), et la phase de QA humaine annoncée par le propriétaire.
+- **En cours** : V14b (ci-dessus), étapes 0 à 4 faites le 12/11/2026 sur la branche `v14b-prototype-natif`. Décision attendue du propriétaire : s'arrêter là, chercher le plugin qui décroche (étape 3), ou faire prendre l'entrée et la sortie au natif pour gagner aussi la latence.
+- **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
