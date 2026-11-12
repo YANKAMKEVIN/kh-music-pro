@@ -357,7 +357,8 @@ function pianoRoll(tr: Track, c: Clip) {
       if (e.button === 2) { selNotes.delete(note); c.notes!.splice(c.notes!.indexOf(note), 1); commit(); return; }
       if (e.shiftKey) { if (selNotes.has(note)) selNotes.delete(note); else selNotes.add(note); refreshSel(); return; }
       if (!selNotes.has(note)) { selNotes.clear(); selNotes.add(note); refreshSel(); }
-      resize = e.clientX > el.getBoundingClientRect().right - 8;
+      // La poignée d'étirement occupe le bord droit, mais jamais plus du tiers d'une note courte : celle-ci doit rester déplaçable.
+      const nr = el.getBoundingClientRect(); resize = e.clientX > nr.right - Math.min(8, nr.width / 3);
     } else {
       if (e.button !== 0) return;
       const s = clamp(snapTo(Math.floor((e.clientX - r.left) / SW / G + 1e-6) * G, G), 0, c.patLen! - G);

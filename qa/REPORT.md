@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-167 cas réussis sur 168.
+168 cas réussis sur 168.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -159,7 +159,7 @@
 | PT01 | Batterie | Décaler le motif d'un pas et doubler sa longueur | OK |
 | MP02 | Mixeur | Appliquer un préréglage de mixage à une piste, l'entendre et l'annuler | OK |
 | NT01 | Projet | Notes du projet : écrire sans déclencher de raccourci, retrouver le texte, le garder dans le fichier | OK |
-| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | ÉCHEC : déplacement d'un demi-pas (attendu ≈ 21, obtenu 20.5) |
+| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | OK |
 | GR02 | Grille fine | Triolets : trois notes par temps, placées et jouées à intervalles égaux | OK |
 | GR03 | Grille fine | Quantifier : recaler toutes les notes ou seulement la sélection sur la grille | OK |
 | GR04 | Grille fine | Batterie en triples-croches et en triolets : les coups gardent leur place, les nouveaux sonnent au bon instant | OK |

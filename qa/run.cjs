@@ -1464,8 +1464,11 @@ test('GR01', 'Grille fine', 'Triples-croches : la grille 1/32 aimante au demi-pa
   await page.$eval('.pr', e => { e.scrollLeft = 0; e.scrollTop = (96 - 40) * 16 - 80; }); const g = await (await page.$('.pr-grid')).boundingBox();
   await page.mouse.click(g.x + 28 * 20.6, g.y + (96 - 40) * 16 + 8); let ns = await notesOf(); let n = ns[ns.length - 1];
   expect(n.s === 20.5 && n.p === 40, `note posée à ${n.s} (attendu 20,5)`);
+  // Cas difficile : une note d'une triple-croche (14 px de large) doit rester déplaçable, sans que la poignée d'étirement prenne toute la place.
+  await S(() => { const c = window.kh.S.project.tracks[1].clips[0]; c.notes[c.notes.length - 1].l = 0.5; window.kh.commit(); });
   await sleep(150); // l'éditeur vient de se redessiner : on laisse le défilement se stabiliser avant de viser la note
-  const nb = await (await page.$(`.note[data-i="${ns.length - 1}"]`)).boundingBox(); await drag(nb.x + 6, nb.y + 8, 14, 0); n = (await notesOf())[ns.length - 1]; near(n.s, 21, 0, 'déplacement d\'un demi-pas');
+  await page.$eval(`.note[data-i="${ns.length - 1}"]`, e => e.scrollIntoView({ block: 'center', inline: 'center' })); await sleep(80);
+  const nb = await (await page.$(`.note[data-i="${ns.length - 1}"]`)).boundingBox(); await drag(nb.x + 6, nb.y + 8, 14, 0); n = (await notesOf())[ns.length - 1]; near(n.s, 21, 0, 'déplacement d\'un demi-pas'); near(n.l, 0.5, 0, 'la note ne doit pas avoir été étirée');
   await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); near((await notesOf())[ns.length - 1].s, 19.5, 0, 'flèches : pas de la grille');
   const o = await blips([0, 0.5, 1, 2.5, 4]); near(o.length, 5, 0, 'notes entendues');
   for (const [i, want] of [0.0625, 0.0625, 0.1875, 0.1875].entries()) near(gaps(o)[i], want, 0.002, `écart ${i + 1} entre deux notes`);

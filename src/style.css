@@ -436,3 +436,4 @@ dialog form { gap: 8px; }
 /* ================= V10 ================= */
 .tip.real { color: var(--a1); }
 .credits { margin: 12px 0 0; font-size: 11px; }
+.note i { width: min(8px, 33%); }
