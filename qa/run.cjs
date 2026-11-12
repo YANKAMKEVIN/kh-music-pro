@@ -8,6 +8,11 @@ const path = require('path');
 const BASE = process.env.KH_URL || 'http://localhost:5173/';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'kh-qa-'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function until(check, message, timeout = 15000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { if (await check()) return; await sleep(100); }
+  throw new Error(message);
+}
 
 function wavFile(name, freq = 440, sec = 1) {
   const sr = 44100, n = Math.floor(sr * sec), b = Buffer.alloc(44 + n * 2);
@@ -914,7 +919,7 @@ test('W01', 'Application', 'Version construite : installable (manifeste) et util
     const m = await pg.evaluate(async () => { const href = document.querySelector('link[rel=manifest]').href, j = await (await fetch(href)).json(); await navigator.serviceWorker.ready; return { name: j.name, display: j.display, icons: j.icons.length }; });
     expect(m.name === 'KH Music Pro' && m.display === 'standalone' && m.icons > 0, 'manifeste incomplet');
     await pg.evaluate(async () => { const k = window.kh; k.S.project.tracks[1].synth = k.makeSynth('r_clavinet'); k.commit(); await k.engine.prepare(); });
-    await pg.waitForFunction(async () => { const c = await caches.open('kh-music-pro-v3'); return (await c.keys()).filter(r => r.url.includes('/banks/clavinet/')).length === 25; });
+    await until(() => pg.evaluate(async () => { const c = await caches.open('kh-music-pro-v3'); return (await c.keys()).filter(r => r.url.includes('/banks/clavinet/')).length === 25; }), 'Les 25 notes ne sont pas encore dans le cache hors ligne');
     await sleep(1500); await ctx2.setOffline(true); await pg.reload(); await pg.waitForSelector('.clip', { timeout: 8000 });
     expect(await pg.evaluate(() => !!window.kh && document.querySelectorAll('.head').length === 5 && getComputedStyle(document.body).display === 'grid'), 'application incomplète hors-ligne');
     const offline = await pg.evaluate(async () => { const k = window.kh; const p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; const b = await k.renderOffline(p, false), d = b.getChannelData(0); return { id: p.tracks[0].synth.preset, rms: Math.sqrt(d.reduce((s, v) => s + v * v, 0) / d.length) }; });
@@ -1932,8 +1937,6 @@ test('BN03', 'Banque généraliste', 'Les banques sont chargées uniquement au c
   } finally { page.off('request', onRequest); }
 });
 test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement', async () => {
-  const trace = m => { if (m.text().startsWith('BNTRACE')) console.log(m.text()); }; page.on('console', trace);
-  await S(() => { const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function(value, key) { console.log('BNTRACE', String(key), typeof value === 'string' && String(key).startsWith('proj:') ? JSON.parse(value).tracks.length : String(key) === 'current' ? value : '', 'active', window.kh.S.pid, window.kh.S.project.tracks.length); return put.call(this, value, key); }; });
   await page.evaluate(ids => { const k = window.kh, p = k.S.project, base = JSON.stringify(p.tracks[1]);
     p.tracks = ids.map((id, i) => { const t = JSON.parse(base); t.id = 'bank-track-' + i; t.name = id; t.synth = k.makeSynth(id); t.rev = 0;
       t.clips = [{ id: 'bank-clip-' + i, name: id, start: i * 4, len: 4, offset: 0, patLen: 4, notes: [{ p: 60, s: 0, l: 2, v: 0.8 }] }]; return t; });
@@ -1941,11 +1944,11 @@ test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit
   }, NEW_BANK_PRESETS);
   const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'banque-v15.khm'); await dl.saveAs(f);
   const saved = JSON.parse(fs.readFileSync(f, 'utf8')); expect(saved.project.tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'fichier incomplet');
-  await newBlank(); console.log('BNTRACE blank', await S(() => ({pid:window.kh.S.pid, tracks:window.kh.S.project.tracks.length}))); await page.setInputFiles('#fProj', f);
-  await page.waitForFunction(() => window.kh.S.project.tracks.length === 18); console.log('BNTRACE imported', await S(() => ({pid:window.kh.S.pid, tracks:window.kh.S.project.tracks.length})));
+  await newBlank(); await page.setInputFiles('#fProj', f);
+  await page.waitForFunction(() => window.kh.S.project.tracks.length === 18);
   // Attendre l'écriture effective dans IndexedDB : le délai de 500 ms déclenche
   // la sauvegarde, mais ne garantit pas que ses transactions soient terminées.
-  await page.waitForFunction(async () => {
+  await until(() => page.evaluate(async () => {
     const p = await new Promise((resolve, reject) => {
       const request = indexedDB.open('khmusicpro', 1);
       request.onerror = () => reject(request.error);
@@ -1957,8 +1960,8 @@ test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit
       };
     });
     return p?.tracks.length === 18 && p.tracks[0].synth.preset === 'r_honky' && p.tracks[17].synth.preset === 'r_synthchoir';
-  }, null, { polling: 100, timeout: 15000 });
-  const importedPid = await S(() => window.kh.S.pid); console.log('BNTRACE before reload', importedPid);
+  }), 'Le projet importé n’est pas encore sauvegardé');
+  const importedPid = await S(() => window.kh.S.pid);
   await page.reload(); await page.waitForSelector('.head');
   const reopened = await S(() => ({ pid: window.kh.S.pid, presets: window.kh.S.project.tracks.map(t => t.synth?.preset), clips: document.querySelectorAll('.clip').length }));
   expect(reopened.pid === importedPid && reopened.clips === 18, `projet rouvert (attendu ${importedPid}) : ${JSON.stringify(reopened)}`);

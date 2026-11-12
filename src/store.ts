@@ -111,28 +111,12 @@ function autosave() {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => { saveNow().catch(() => { /* stockage indisponible */ }); }, 500);
 }
-let saveQueue: Promise<void> = Promise.resolve();
-function saveNow(): Promise<void> {
+async function saveNow() {
   clearTimeout(saveTimer);
   if (!S.pid) S.pid = uid();
   const id = S.pid, e = library.find(x => x.id === id), now = Date.now();
   if (e) { e.name = S.project.name; e.updated = now; } else library.push({ id, name: S.project.name, updated: now });
-  // Capturer avant toute attente : un nouveau projet peut être ouvert entre-temps.
-  const json = JSON.stringify(S.project), entries = library.map(x => ({ ...x }));
-  const write = async () => {
-    const d = await db();
-    await new Promise<void>((resolve, reject) => {
-      const tx = d.transaction('kv', 'readwrite'), kv = tx.objectStore('kv');
-      tx.oncomplete = () => { d.close(); resolve(); };
-      tx.onerror = tx.onabort = () => { d.close(); reject(tx.error); };
-      // Le projet, l'index et le projet courant doivent être validés ensemble.
-      kv.put(json, 'proj:' + id); kv.put(entries, 'lib'); kv.put(id, 'current');
-    });
-  };
-  // Une ancienne sauvegarde ne doit jamais finir après celle du nouveau projet.
-  const saved = saveQueue.catch(() => { }).then(write);
-  saveQueue = saved;
-  return saved;
+  await idbSet('proj:' + id, JSON.stringify(S.project)); await idbSet('lib', library); await idbSet('current', id);
 }
 async function loadBuffers(p: Project) {
   for (const id of usedBuffers(p)) if (!buffers.has(id)) {
