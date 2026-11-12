@@ -56,7 +56,9 @@ jobs:
           merge-multiple: true
       - name: Publier les installateurs
         run: |
-          gh release create "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --title "KH Music Pro $TAG" --notes "$NOTES"
+          # La Release existe déjà si l'étiquette a été créée depuis la page Releases de GitHub : on y ajoute alors les fichiers.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "KH Music Pro $TAG" --notes "$NOTES"
+          gh release upload "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
