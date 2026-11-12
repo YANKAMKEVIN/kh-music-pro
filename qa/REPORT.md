@@ -1,6 +1,8 @@
 # Rapport de QA — KH Music Pro
 
-190 cas réussis sur 190.
+212 cas réussis sur 212.
+
+Validation : https://github.com/YANKAMKEVIN/kh-music-pro/actions/runs/43330407090
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -166,7 +168,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 11 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI01 | Vrais instruments | Les 29 instruments enregistrés se chargent et produisent un signal propre | OK |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -194,3 +196,25 @@
 | WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
 | LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
 | LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
+| BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | OK |
+| BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | OK |
+| BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | OK |
+| BN04 | Banque généraliste | Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement | OK |
+| BN05 | Banque généraliste | Un nouveau son indisponible signale l’échec puis peut être rechargé | OK |
+| BN06 | Banque généraliste | Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt | OK |
+| LH01 | Notes longues | Les dix instruments à maintien restent audibles dans trois registres après huit secondes | OK |
+| LH02 | Notes longues | Le maintien conserve l’attaque originale et peut être désactivé sans prolonger le son | OK |
+| LH03 | Notes longues | Une touche tenue joue au-delà de la durée du fichier et s’arrête quand elle est relâchée | OK |
+| LH04 | Notes longues | Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier | OK |
+| LH05 | Notes longues | Arrêter le transport coupe aussi les voix bouclées sans note bloquée | OK |
+| LH06 | Notes longues | L’export WAV contient la note longue et une fin silencieuse sans saturation | OK |
+| SB01 | Navigateur de sons | Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
+| SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
+| SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
+| SB05 | Navigateur de sons | Choisir un instrument est annulable et conserve les sons personnels du sampler | OK |
+| SB06 | Navigateur de sons | La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste | OK |
+| SB07 | Navigateur de sons | Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt | OK |
+| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | OK |
+| SB09 | Navigateur de sons | Une préécoute indisponible signale l’échec puis fonctionne après réessai | OK |
+| SB10 | Navigateur de sons | Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste | OK |

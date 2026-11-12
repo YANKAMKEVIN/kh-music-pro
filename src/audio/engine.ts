@@ -3,7 +3,7 @@ import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
 import { S, buffers } from '../store';
-import { BAR, Project, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
+import { BAR, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
@@ -200,6 +200,34 @@ class Engine {
     this.ctx.resume(); this.sync();
     const n = this.mix.tracks.get(track.id);
     if (n && track.synth) playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.005, dur, 0.8, buffers);
+  }
+  private auditionToken = 0;
+  private auditionGain?: GainNode;
+  private auditionVoice?: Voice;
+  private auditionTimer = 0;
+  /** Préécoute indépendante de la piste : ne change ni le projet ni le transport. */
+  async audition(sp: SynthParams, midi = 60): Promise<boolean> {
+    this.stopAudition(); const token = this.auditionToken;
+    await this.ctx.resume();
+    if (sp.engine === 'multi' && sp.bank && !await this.loadBank(sp.bank)) return false;
+    if (token !== this.auditionToken) return false;
+    this.sync();
+    const gain = this.ctx.createGain(); gain.gain.value = 0.65; gain.connect(this.mix.master);
+    const voice = playNote(this.mix, gain, sp, midi, this.ctx.currentTime + 0.005, null, 0.8, buffers);
+    if (!voice) { gain.disconnect(); return false; }
+    this.auditionGain = gain; this.auditionVoice = voice;
+    this.auditionTimer = window.setTimeout(() => this.stopAudition(), 1200);
+    return true;
+  }
+  stopAudition() {
+    this.auditionToken++; clearTimeout(this.auditionTimer);
+    const gain = this.auditionGain; this.auditionGain = undefined;
+    if (gain) {
+      const now = this.ctx.currentTime; gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now); gain.gain.linearRampToValueAtTime(0, now + 0.02);
+      this.auditionVoice?.release(now); window.setTimeout(() => gain.disconnect(), 60);
+    }
+    this.auditionVoice = undefined;
   }
   /** Note programmée à un instant précis (arpégiateur). */
   playAt(track: Track, midi: number, t: number, dur: number, vel = 0.8) {

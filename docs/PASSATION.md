@@ -1,11 +1,11 @@
 # Document de passation — KH Music Pro
 
-Rédigé à la fin de la V14a pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
+Rédigé à la fin de la V14a, puis mis à jour pour la branche V15.1, pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
 
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
-- **État** : version 0.14, 190 cas de QA verts. En ligne sur https://yankamkevin.github.io/kh-music-pro/, installable (PWA), et empaqueté pour le bureau (Electron) pour Windows, macOS (Apple et Intel) et Linux.
+- **État de la branche v15-banque-generaliste** : version 0.15.1, 212 cas de QA validés. Installable (PWA), avec des installateurs Electron pour Windows, macOS (Apple et Intel) et Linux. Le site publié sur https://yankamkevin.github.io/kh-music-pro/ suit `main` ; cette branche attend les retours du propriétaire.
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0.
 - **Liste des fonctions** : section « Fonctions » du README.
 
@@ -50,7 +50,7 @@ Principes à respecter :
 
 ## 4. Limites connues, assumées
 
-- Instruments enregistrés : notes d'environ 3 secondes, une seule nuance, pas de bouclage.
+- Instruments enregistrés : une seule nuance, sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
 - Tempo : les clips audio ne suivent pas les changements de tempo ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
 - Signature : une seule pour tout le morceau, de 2/4 à 7/4.
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
@@ -100,3 +100,23 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
 - **En attente** : V14b (ci-dessus), et la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
+
+## 7. Extension généraliste V15 (branche v15-banque-generaliste)
+
+- Version 0.15.0 : 18 banques supplémentaires, 29 instruments échantillonnés au total et 24 sons existants (sampler compris), classés par famille dans le menu Son. Les identifiants existants et le format du projet sont conservés ; aucun nouveau champ à migrer.
+- 450 MP3 supplémentaires sélectionnés sans conversion dans FluidR3 GM / midi-js-soundfonts (CC BY 3.0), source figée au commit `044fab8e1456bfafc5776e86dfd6bb8697149aef`. Attribution dans `public/banks/CREDITS.txt` et l’aide.
+- Le script `tools/build-banks.sh` reconstruit aussi ces sons. Le chargement à la demande et le graphe commun à l’écoute et à l’export sont inchangés.
+- En V15.0 : une seule couche de vélocité, durée finie et pas de boucle de maintien ; la V15.1 ajoute le maintien décrit en section 8. Le piano droit est un honky-tonk ; ne pas le présenter comme un piano droit neutre.
+- QA : six cas BN01–BN06 ajoutés (traductions/familles, clavier, chargement à la demande, fichier/rechargement, échec/réessai, téléphone) ; RI01 vérifie les 29 sons, W01 un nouvel instrument hors ligne et DK01 un nouvel instrument dans Electron.
+- Écoute humaine, micro et MIDI matériels, Windows/macOS réels : toujours à vérifier par le propriétaire.
+
+## 8. V15.1 — navigateur de sons et notes longues
+
+- `src/ui/sounds.ts` : navigateur modal, recherche sans accents, familles, favoris locaux validés, préécoute sans modifier le projet et sélection via le même chemin que le menu rapide. Fermeture et changement de filtres annulent les préécoutes en attente ; une piste disparue ne peut plus être modifiée.
+- `src/audio/sustain.ts` : banques éligibles, recherche d’un raccord de phase et préparation d’un tampon de maintien avec fondu croisé. Le tampon original reste inchangé. `banks.ts` prépare les boucles au chargement et choisit une note enregistrée audible si l’échantillon le plus proche est silencieux.
+- `SynthParams.hold` : `false` dans BASE pour préserver les anciens fichiers ; activé pour les nouveaux préréglages compatibles. `graph.ts` utilise les mêmes boucles en direct et en export, avec l’enveloppe et l’arrêt des voix existants.
+- `engine.audition()` et `stopAudition()` isolent la préécoute du contenu du projet et des tranches de piste. Les requêtes périmées sont annulées logiquement après chargement. Le général règle le volume de préécoute.
+- QA : LH01–LH06 (maintien dans plusieurs registres, attaque, relâchement, anciens projets, arrêt, WAV) et SB01–SB10 (langues, recherche, favoris, préécoute, chargements tardifs, annulation, clavier, tactile et erreurs). Captures du navigateur jointes au rapport GitHub Actions.
+- À apprécier par le propriétaire : qualité des raccords à l’oreille et confort de jeu, clavier MIDI réel, téléphone réel et ouverture des installateurs Windows/macOS.
+
+Validation V15.1 : compilation réussie ; 212/212 cas dans https://github.com/YANKAMKEVIN/kh-music-pro/actions/runs/43330407090. Installateurs dans https://github.com/YANKAMKEVIN/kh-music-pro/actions/runs/43330406587 ; le test Electron Linux vérifie le maintien après quatre secondes, la préécoute du navigateur et le retour du focus.

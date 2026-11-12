@@ -21,8 +21,15 @@ jobs:
       - run: bash qa/all.sh
         env:
           NODE_PATH: node_modules
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kh-music-pro-web
+          path: dist/
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rapport-qa
-          path: qa/REPORT.md
+          path: |
+            qa/REPORT.md
+            qa/shots/v15.1-sounds-*.png

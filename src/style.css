@@ -462,3 +462,36 @@ dialog form { gap: 8px; }
 .mini.rackb { margin-top: 4px; font-weight: 600; } .mini.rackb.has { border-color: var(--a1); color: var(--a1); }
 .latrow { font: 600 14px ui-monospace, monospace; color: var(--a1); margin: 4px 0; }
 #audio .fld { margin: 6px 0; } #audio .fld select { flex: 1; }
+
+/* Navigateur de sons : commandes utilisables au clavier et au doigt. */
+#sounds { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 20px; overflow: auto; }
+#sounds[open] { display: flex; flex-direction: column; gap: 12px; }
+.sound-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#sounds h2 { margin: 0; font-size: 20px; }
+.sound-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.sound-filters input { flex: 1 0 100%; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px 12px; }
+.sound-filters select { flex: 1; min-width: 0; height: 44px; }
+#sounds .pill { min-height: 44px; height: auto; }
+.sound-count { font-size: 12px; color: var(--dim); }
+.sound-list { flex: 1 1 auto; min-height: 0; max-height: 48vh; overflow: auto; list-style: none; margin: 0; padding: 0 3px 0 0; }
+#sounds .sound-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px 44px; align-items: stretch; gap: 6px; margin: 0 0 6px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.sound-row.selected { border-color: var(--a1) !important; box-shadow: inset 3px 0 var(--a1); }
+.sound-use { min-height: 48px; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; justify-content: center; gap: 3px; overflow-wrap: anywhere; }
+.sound-use strong { font-size: 14px; } .sound-use small { text-transform: none; letter-spacing: 0; }
+.sound-icon { min-height: 44px; width: 44px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); font-size: 20px; }
+.sound-icon.on { color: #fbbf24; background: rgba(251, 191, 36, .12); }
+.sound-use:hover, .sound-icon:hover { background: var(--panel2); }
+.sound-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sound-status { margin: 0; color: var(--dim); font-size: 12px; }
+.sound-empty { padding: 24px 12px; color: var(--dim); }
+@media (max-width: 520px) { #sounds { padding: 12px; } #sounds h2 { font-size: 17px; } .sound-filters select { flex-basis: 100%; } .sound-list { max-height: 42dvh; } }
+
+.sound-head, .sound-filters, .sound-count, .sound-footer { flex-shrink: 0; }
+
+.synth [data-act=sound-browser], .synth [data-act=sustain] { min-height: 44px; height: 44px; }
+@media (max-width: 520px) {
+  .synth .fld.big { max-width: calc(100vw - 90px); }
+  .synth .fld.big select { max-width: calc(100vw - 130px); }
+  .synth [data-act=sound-browser] { width: 44px; min-width: 44px; padding: 0; font-size: 0; }
+  .synth [data-act=sound-browser]::before { content: '♫'; font-size: 20px; }
+}
