@@ -1941,7 +1941,22 @@ test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit
   const saved = JSON.parse(fs.readFileSync(f, 'utf8')); expect(saved.project.tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'fichier incomplet');
   await newBlank(); await page.setInputFiles('#fProj', f);
   await page.waitForFunction(() => window.kh.S.project.tracks.length === 18);
-  await sleep(800); await page.reload(); await page.waitForSelector('.clip');
+  // Attendre l'écriture effective dans IndexedDB : le délai de 500 ms déclenche
+  // la sauvegarde, mais ne garantit pas que ses transactions soient terminées.
+  await page.waitForFunction(async () => {
+    const p = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('khmusicpro', 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result, tx = db.transaction('kv', 'readonly'), kv = tx.objectStore('kv');
+        tx.oncomplete = () => db.close(); tx.onerror = () => { db.close(); reject(tx.error); };
+        const current = kv.get('current');
+        current.onsuccess = () => { const project = kv.get('proj:' + current.result); project.onsuccess = () => resolve(project.result ? JSON.parse(project.result) : null); };
+      };
+    });
+    return p?.tracks.length === 18 && p.tracks[0].synth.preset === 'r_honky' && p.tracks[17].synth.preset === 'r_synthchoir';
+  }, null, { polling: 100, timeout: 15000 });
+  await page.reload(); await page.waitForSelector('.clip');
   expect((await proj()).tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'les sons ne sont pas conservés');
   const result = await S(() => window.qa.stats(window.kh.S.project)); expect(result.bad === 0 && result.rms > 0.005 && result.peak <= 0.97, `rendu du projet : ${JSON.stringify(result)}`);
 });

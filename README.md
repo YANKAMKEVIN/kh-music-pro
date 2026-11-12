@@ -32,7 +32,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9.
 - **Mixage avancé** : bus pour regrouper des pistes, bande médium à fréquence réglable avec courbe d'égaliseur visible, compresseur réglable (seuil, taux, réduction affichée), automation des envois de réverb et d'écho et du chorus.
 - **Prises multiples** : enregistrement audio en boucle (une prise par tour), choix de la prise, montage par scission ; **punch** sur la zone de boucle ; **correction de justesse** vers la gamme du projet.
-- **Banque généraliste** : 29 instruments échantillonnés, classés en huit familles (claviers et orgues, guitares, basses, cordes, cuivres, bois, percussions mélodiques, voix et ambiances), et une batterie acoustique. Seuls les sons utilisés sont chargés, depuis les fichiers embarqués. Les 24 sons de synthèse et le sampler restent disponibles.
+- **Banque généraliste** : 29 instruments échantillonnés, classés en huit familles (claviers et orgues, guitares, basses, cordes, cuivres, bois, percussions mélodiques, voix et ambiances), et une batterie acoustique. Seuls les sons utilisés sont chargés, depuis les fichiers embarqués. Les sons de synthèse et le sampler restent disponibles.
 - **Grille fine** : triples-croches, triolets de croches et de doubles, placement libre ; quantification ; motifs de batterie en 1/32 ou en triolets ; MIDI fidèle au 1/24 de pas.
 - **Édition des clips** : rognage par les deux bords, sélection multiple (Maj+clic) pour déplacer, dupliquer ou supprimer en groupe, boucle tracée dans la règle (Maj+glisser).
 - **Réglages par pad** (volume, hauteur, panoramique) ; outils de motif (décaler, doubler).
