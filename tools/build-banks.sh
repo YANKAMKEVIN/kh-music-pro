@@ -64,5 +64,7 @@ par Frank Wen (CC BY 3.0), fichiers MP3 non modifiés de midi-js-soundfonts.
 Source figée : https://github.com/gleitz/midi-js-soundfonts/tree/044fab8e1456bfafc5776e86dfd6bb8697149aef/FluidR3_GM
 Une note tous les trois demi-tons (MIDI 24 à 96), sélectionnée sans conversion.
 Les nappes et le chœur synthétique sont des timbres synthétiques échantillonnés.
+La lecture des instruments à maintien adapte une copie du son en mémoire
+(raccord de phase et fondu croisé) ; les fichiers MP3 sources restent inchangés.
 TXT
 du -sh "$OUT"

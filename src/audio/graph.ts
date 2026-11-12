@@ -461,7 +461,8 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
     // Vrai instrument : l'échantillon le plus proche, transposé jusqu'à la note demandée.
     const m = p.bank ? sampleFor(p.bank, midi + p.octave * 12) : null;
     if (!m) return;
-    const s = mix.reg(c.createBufferSource()); s.buffer = m.s.buf; s.playbackRate.value = m.rate;
+    const s = mix.reg(c.createBufferSource()); s.buffer = p.hold && m.s.held ? m.s.held.buf : m.s.buf; s.playbackRate.value = m.rate;
+    if (p.hold && m.s.held) { s.loop = true; s.loopStart = m.s.held.loop.start; s.loopEnd = m.s.held.loop.end; }
     s.connect(filt); srcs.push(s); level = 0.5 * m.s.gain; startOff = m.s.off;
   } else if (p.engine === 'sampler') {
     const buf = p.bufferId ? buffers?.get(p.bufferId) : undefined;

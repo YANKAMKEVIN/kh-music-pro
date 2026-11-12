@@ -918,12 +918,17 @@ test('W01', 'Application', 'Version construite : installable (manifeste) et util
     expect(up, 'le serveur de la version construite ne démarre pas'); await pg.waitForSelector('.clip');
     const m = await pg.evaluate(async () => { const href = document.querySelector('link[rel=manifest]').href, j = await (await fetch(href)).json(); await navigator.serviceWorker.ready; return { name: j.name, display: j.display, icons: j.icons.length }; });
     expect(m.name === 'KH Music Pro' && m.display === 'standalone' && m.icons > 0, 'manifeste incomplet');
-    await pg.evaluate(async () => { const k = window.kh; k.S.project.tracks[1].synth = k.makeSynth('r_clavinet'); k.commit(); await k.engine.prepare(); });
-    await until(() => pg.evaluate(async () => { const c = await caches.open('kh-music-pro-v3'); return (await c.keys()).filter(r => r.url.includes('/banks/clavinet/')).length === 25; }), 'Les 25 notes ne sont pas encore dans le cache hors ligne');
+    await pg.evaluate(async () => { const k = window.kh; k.S.project.tracks[1].synth = k.makeSynth('r_drawbar'); k.commit(); await k.engine.prepare(); });
+    await until(() => pg.evaluate(async () => { const c = await caches.open('kh-music-pro-v3'); return (await c.keys()).filter(r => r.url.includes('/banks/drawbar_organ/')).length === 25; }), 'Les 25 notes ne sont pas encore dans le cache hors ligne');
     await sleep(1500); await ctx2.setOffline(true); await pg.reload(); await pg.waitForSelector('.clip', { timeout: 8000 });
     expect(await pg.evaluate(() => !!window.kh && document.querySelectorAll('.head').length === 5 && getComputedStyle(document.body).display === 'grid'), 'application incomplète hors-ligne');
     const offline = await pg.evaluate(async () => { const k = window.kh; const p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; const b = await k.renderOffline(p, false), d = b.getChannelData(0); return { id: p.tracks[0].synth.preset, rms: Math.sqrt(d.reduce((s, v) => s + v * v, 0) / d.length) }; });
-    expect(offline.id === 'r_clavinet' && offline.rms > 0.005, `nouvel instrument muet hors-ligne : ${JSON.stringify(offline)}`);
+    expect(offline.id === 'r_drawbar' && offline.rms > 0.005, `nouvel instrument muet hors-ligne : ${JSON.stringify(offline)}`);
+    await pg.click('.head >> nth=1 >> .ticon'); await pg.click('[data-act=sound-browser]'); await pg.fill('[data-role=sound-search]', 'tirettes');
+    await pg.click('[data-sound="r_drawbar"] [data-act=sound-preview]');
+    await until(() => pg.$eval('.sound-status', e => e.textContent.startsWith('Préécoute')), 'préécoute indisponible hors ligne');
+    await until(() => pg.evaluate(() => { const a = window.kh.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return d.some(x => Math.abs(x) > 0.001); }), 'préécoute muette hors ligne');
+    await pg.keyboard.press('Escape');
   } finally { await ctx2.close(); try { process.kill(-srv.pid); } catch { /* déjà arrêté */ } }
 });
 
@@ -1993,6 +1998,167 @@ test('BN06', 'Banque généraliste', 'Sur téléphone, le sélecteur de sons et 
     expect(await pg.$eval('[data-role=preset]', e => e.selectedOptions[0].textContent === 'Steel drum'), 'son non sélectionné');
     await pg.screenshot({ path: path.join(__dirname, 'shots/v15-phone.png') });
   } finally { await ctx2.close(); }
+});
+
+// ============ V15.1 : notes longues et navigateur de sons ============
+const HELD = ['r_drawbar', 'r_church', 'r_strings', 'r_cello', 'r_violin', 'r_contrabass', 'r_choir', 'r_air', 'r_cinema', 'r_synthchoir'];
+const heldProject = (id, midi = 60, hold = true) => page.evaluate(([id, midi, hold]) => window.qa.only(1, (p, tr) => {
+  p.bpm = 120; p.loop = false; tr.rev = 0; tr.dly = 0; tr.synth = window.kh.makeSynth(id); tr.synth.hold = hold;
+  tr.clips = [{ id: 'held-note', name: id, start: 0, len: 80, offset: 0, patLen: 80, notes: [{ p: midi, s: 0, l: 80, v: 0.8 }] }];
+}), [id, midi, hold]);
+const soundRow = id => `#sounds [data-sound="${id}"]`;
+const masterRms = () => S(() => { const a = window.kh.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return Math.sqrt(d.reduce((e, v) => e + v * v, 0) / d.length); });
+async function soundsOpen() { await page.click(await headSel(1)); await page.click('[data-act=sound-browser]'); await page.waitForSelector('#sounds'); }
+
+test('LH01', 'Notes longues', 'Les dix instruments à maintien restent audibles dans trois registres après huit secondes', async () => {
+  for (const id of HELD) for (const midi of [36, 60, 84]) {
+    const p = await heldProject(id, midi);
+    const w = await page.evaluate(p => window.qa.wins(p, [[0.5, 0.9], [5.1, 5.5], [8.1, 8.5], [11.5, 12]]), p);
+    expect(w.slice(0, 3).every(x => Number.isFinite(x.l) && x.l > 0.001), `${id}/${midi} : son interrompu (${JSON.stringify(w)})`);
+    expect(w[3].l < Math.max(w[1].l, w[2].l) * 0.03 + 1e-5, `${id}/${midi} : la note ne s'arrête pas`);
+  }
+});
+test('LH02', 'Notes longues', 'Le maintien conserve l’attaque originale et peut être désactivé sans prolonger le son', async () => {
+  for (const id of ['r_drawbar', 'r_strings', 'r_air']) {
+    const yes = await heldProject(id), no = await heldProject(id, 60, false);
+    const r = await page.evaluate(async ([a, b]) => {
+      const x = await window.kh.renderOffline(a, false), y = await window.kh.renderOffline(b, false), X = x.getChannelData(0), Y = y.getChannelData(0); let delta = 0;
+      for (let i = 0; i < x.sampleRate; i++) delta = Math.max(delta, Math.abs(X[i] - Y[i]));
+      const rms = (d, sr) => { let e = 0; for (let i = sr * 7; i < sr * 8; i++) e += d[i] * d[i]; return Math.sqrt(e / sr); };
+      return { delta, yes: rms(X, x.sampleRate), no: rms(Y, y.sampleRate) };
+    }, [yes, no]);
+    expect(r.delta < 1e-5 && r.yes > 0.001 && r.no < 1e-6, `${id} : ${JSON.stringify(r)}`);
+  }
+});
+test('LH03', 'Notes longues', 'Une touche tenue joue au-delà de la durée du fichier et s’arrête quand elle est relâchée', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_drawbar'); await S(() => window.kh.engine.prepare()); await sleep(700);
+  expect(await page.$eval('[data-act=sustain]', b => b.getAttribute('aria-pressed') === 'true'), 'maintien non activé par défaut');
+  await page.keyboard.down('a'); await sleep(3600); const on = await masterRms(); await page.keyboard.up('a');
+  await sleep(650); const off = await masterRms(); expect(on > 0.001 && off < on * 0.03, `note tenue ${on}, relâchée ${off}`);
+});
+test('LH04', 'Notes longues', 'Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier', async () => {
+  const data = await S(() => { const p = window.kh.demoProject(); p.name = 'Legacy sustain'; p.tracks[1].synth = window.kh.makeSynth('r_drawbar'); delete p.tracks[1].synth.hold; return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const f = path.join(TMP, 'legacy-hold.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await page.waitForFunction(() => window.kh.S.project.name === 'Legacy sustain');
+  await page.click(await headSel(1)); expect((await proj()).tracks[1].synth.hold === false, 'un ancien projet a changé de durée');
+  await page.click('[data-act=sustain]'); expect((await proj()).tracks[1].synth.hold === true, 'activation');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].synth.hold === false, 'annulation');
+  await page.keyboard.press('Control+Shift+z'); expect((await proj()).tracks[1].synth.hold === true, 'rétablissement');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const saved = path.join(TMP, 'hold.khm'); await dl.saveAs(saved);
+  expect(JSON.parse(fs.readFileSync(saved, 'utf8')).project.tracks[1].synth.hold === true, 'maintien absent du fichier');
+  await newBlank(); await page.setInputFiles('#fProj', saved); await page.waitForFunction(() => window.kh.S.project.name === 'Legacy sustain');
+  expect((await proj()).tracks[1].synth.hold === true, 'maintien perdu à la réouverture');
+});
+test('LH05', 'Notes longues', 'Arrêter le transport coupe aussi les voix bouclées sans note bloquée', async () => {
+  const p = await heldProject('r_strings'); p.tracks[0].clips[0].notes = [];
+  await page.evaluate(p => { const k = window.kh; k.S.project = p; k.S.selTrack = p.tracks[0].id; k.S.selClip = ''; k.commit(); }, p);
+  await S(() => window.kh.engine.prepare()); await page.keyboard.press('Space'); await sleep(150); await page.keyboard.down('a'); await sleep(400);
+  expect(await S(() => window.qa.level(150)) > 0.005, 'la note ne joue pas');
+  await page.keyboard.press('Space'); await page.keyboard.up('a'); await sleep(400);
+  expect(await masterRms() < 0.0001, 'une voix reste bloquée après Stop');
+});
+test('LH06', 'Notes longues', 'L’export WAV contient la note longue et une fin silencieuse sans saturation', async () => {
+  const p = await heldProject('r_strings'); p.tracks[0].clips[0].len = 64; p.tracks[0].clips[0].patLen = 64; p.tracks[0].clips[0].notes[0].l = 64;
+  await page.evaluate(p => { window.kh.S.project = p; window.kh.commit(); }, p);
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 90000 }), page.click('#bExport')]); const f = path.join(TMP, 'held.wav'); await dl.saveAs(f);
+  const b = fs.readFileSync(f), sr = b.readUInt32LE(24), ch = b.readUInt16LE(22); expect(b.toString('ascii', 0, 4) === 'RIFF', 'WAV invalide');
+  const rms = (a, z) => { let e = 0, n = 0; for (let i = Math.floor(a * sr); i < Math.min(Math.floor(z * sr), (b.length - 44) / ch / 2); i++) { e += (b.readInt16LE(44 + i * ch * 2) / 32768) ** 2; n++; } return Math.sqrt(e / n); };
+  expect(rms(6, 7) > 0.001 && rms(9.5, 10) < 0.001, `WAV : niveau tardif ${rms(6, 7)}, fin ${rms(9.5, 10)}`);
+  let peak = 0; for (let i = 44; i + 1 < b.length; i += 2) peak = Math.max(peak, Math.abs(b.readInt16LE(i))); expect(peak < 32700, 'export saturé');
+});
+
+test('SB01', 'Navigateur de sons', 'Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
+  for (const lang of ['fr', 'en', 'es']) {
+    await page.evaluate(l => window.kh.setLang(l), lang); await soundsOpen();
+    near(await page.$$eval('#sounds [data-sound]', es => es.length), 53, 0, 'sons');
+    near(await page.$$eval('[data-role=sound-family] option', es => es.length), 16, 0, 'familles');
+    expect(await page.$eval('[data-role=sound-search]', e => document.activeElement === e), 'recherche non focalisée');
+    const bad = await page.$$eval('#sounds button, #sounds input, #sounds select', es => es.filter(e => !(e.getAttribute('aria-label') || e.textContent.trim())).length); near(bad, 0, 0, 'commandes sans nom');
+    expect(!/sounds\.|cat\.|ins\./.test(await page.innerText('#sounds')), `texte manquant en ${lang}`);
+    if (lang === 'fr') await page.screenshot({ path: path.join(__dirname, 'shots/v15.1-sounds-desktop.png') });
+    await page.keyboard.press('Escape');
+  }
+  await S(() => window.kh.setLang('fr'));
+});
+test('SB02', 'Navigateur de sons', 'Recherche sans accents, filtres combinés et favoris conservés après rechargement', async () => {
+  await S(() => localStorage.removeItem('kh-sound-favorites')); await soundsOpen();
+  await page.fill('[data-role=sound-search]', '  PIANO electrique '); expect(await page.$(soundRow('r_epiano')), 'recherche sans accents');
+  await page.selectOption('[data-role=sound-family]', 'realBass'); near(await page.$$eval('#sounds [data-sound]', es => es.length), 0, 0, 'intersection des filtres');
+  await page.selectOption('[data-role=sound-family]', ''); await page.fill('[data-role=sound-search]', '');
+  await page.click(soundRow('r_drawbar') + ' [data-act=sound-favorite]'); await page.click('[data-act=sound-favorites]');
+  near(await page.$$eval('#sounds [data-sound]', es => es.length), 1, 0, 'favori'); expect(await page.$(soundRow('r_drawbar')), 'mauvais favori');
+  await page.fill('[data-role=sound-search]', 'guitare'); expect((await page.textContent('.sound-empty')).includes('Aucun'), 'état vide absent');
+  await page.keyboard.press('Escape'); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await soundsOpen(); await page.click('[data-act=sound-favorites]');
+  expect(await page.$(soundRow('r_drawbar')), 'favori perdu'); await page.keyboard.press('Escape');
+});
+test('SB03', 'Navigateur de sons', 'La préécoute et les favoris ne changent ni le projet ni le transport', async () => {
+  const before = JSON.stringify(await proj()); await soundsOpen();
+  await page.click(soundRow('r_drawbar') + ' [data-act=sound-preview]');
+  await until(() => page.$eval('.sound-status', e => e.textContent.startsWith('Préécoute')), 'préécoute non prête');
+  expect(await S(() => window.qa.level(200)) > 0.005, 'préécoute muette');
+  await page.click(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
+  expect(JSON.stringify(await proj()) === before && await S(() => !window.kh.engine.playing && !window.kh.engine.recording), 'la préécoute a modifié le projet ou le transport');
+  await page.click('[data-act=sound-stop]'); await sleep(150); expect(await masterRms() < 0.0001, 'préécoute non arrêtée'); await page.keyboard.press('Escape');
+});
+test('SB04', 'Navigateur de sons', 'Fermer pendant le chargement empêche une préécoute tardive', async () => {
+  await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
+  await page.route('**/banks/church_organ/**', async r => { await sleep(250); await r.continue(); });
+  const before = JSON.stringify(await proj());
+  try {
+    await soundsOpen(); await page.click(soundRow('r_church') + ' [data-act=sound-preview]');
+    await page.keyboard.press('Escape'); await S(() => window.kh.engine.loadBank('church')); await sleep(150);
+    expect(!(await page.$('#sounds')), 'fenêtre encore ouverte'); expect(await masterRms() < 0.0001, 'une préécoute a démarré après fermeture');
+    expect(JSON.stringify(await proj()) === before, 'le projet a été modifié');
+  } finally { await page.unroute('**/banks/church_organ/**'); }
+});
+test('SB05', 'Navigateur de sons', 'Choisir un instrument est annulable et conserve les sons personnels du sampler', async () => {
+  await S(() => { window.qa.sine('sound-browser-user'); const t = window.kh.S.project.tracks[1]; t.synth.bufferId = 'sound-browser-user'; t.synth.sampleName = 'Personnel'; t.synth.root = 57; window.kh.commit(); });
+  const previous = (await proj()).tracks[1].synth.preset; await soundsOpen(); await page.fill('[data-role=sound-search]', 'slap');
+  await page.click(soundRow('r_slap') + ' [data-act=sound-use]'); expect(!(await page.$('#sounds')), 'choisir devrait fermer la fenêtre');
+  let sp = (await proj()).tracks[1].synth; expect(sp.preset === 'r_slap' && sp.bufferId === 'sound-browser-user' && sp.root === 57 && sp.sampleName === 'Personnel', 'son personnel perdu');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].synth.preset === previous, 'annulation');
+  await page.keyboard.press('Control+Shift+z'); expect((await proj()).tracks[1].synth.preset === 'r_slap', 'rétablissement');
+});
+test('SB06', 'Navigateur de sons', 'La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste', async () => {
+  await soundsOpen(); await page.fill('[data-role=sound-search]', 'r '); await page.keyboard.press('Space');
+  expect(await S(() => !window.kh.engine.playing && !window.kh.engine.recording), 'un raccourci a démarré le transport');
+  await page.keyboard.press('Escape'); expect(await page.$eval('[data-act=sound-browser]', b => document.activeElement === b), 'focus non rendu');
+  await page.click('[data-act=sound-browser]'); await page.keyboard.press('Tab'); expect(await page.$eval('[data-role=sound-family]', b => document.activeElement === b), 'navigation au clavier');
+  await page.keyboard.press('Escape');
+});
+test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await pg.tap('.head >> nth=1 >> .ticon'); await pg.tap('[data-act=sound-browser]');
+    await pg.fill('[data-role=sound-search]', 'orgue'); await pg.selectOption('[data-role=sound-family]', 'realKeys');
+    await pg.tap(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
+    const fit = async () => pg.$eval('#sounds', d => { const r = d.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && d.scrollWidth <= d.clientWidth + 1; });
+    expect(await fit(), 'fenêtre hors écran sur téléphone');
+    const targets = await pg.$$eval('.sound-icon', es => es.map(e => { const r = e.getBoundingClientRect(); return r.width >= 44 && r.height >= 44; })); expect(targets.every(Boolean), 'cibles tactiles trop petites');
+    await pg.screenshot({ path: path.join(__dirname, 'shots/v15.1-sounds-phone.png') });
+    await pg.setViewportSize({ width: 844, height: 390 }); expect(await fit(), 'fenêtre hors écran en paysage');
+    await pg.tap('[data-act=sound-close]'); expect(!(await pg.$('#sounds')), 'fermeture tactile');
+  } finally { await ctx2.close(); }
+});
+test('SB08', 'Navigateur de sons', 'Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté', async () => {
+  await S(() => localStorage.setItem('kh-sound-favorites', '[null,42,"inconnu","r_air"]')); await soundsOpen(); await page.click('[data-act=sound-favorites]');
+  near(await page.$$eval('#sounds [data-sound]', es => es.length), 1, 0, 'favoris valides'); expect(await page.$(soundRow('r_air')), 'favori valide absent');
+  await page.click('[data-act=sound-favorites]'); await page.fill('[data-role=sound-search]', 'sampler');
+  await page.click(soundRow('sampler') + ' [data-act=sound-preview]'); expect((await page.textContent('.sound-status')).includes('Chargez'), 'sampler vide non expliqué'); await page.keyboard.press('Escape');
+  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 53, 0, 'favoris corrompus'); await page.keyboard.press('Escape');
+});
+test('SB09', 'Navigateur de sons', 'Une préécoute indisponible signale l’échec puis fonctionne après réessai', async () => {
+  await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
+  await page.route('**/banks/violin/**', r => r.abort()); ignoreErr = /ERR_FAILED/;
+  try { await soundsOpen(); await page.click(soundRow('r_violin') + ' [data-act=sound-preview]'); await until(() => page.$eval('.sound-status', e => e.textContent.includes('ne peut pas')), 'échec de préécoute non signalé'); }
+  finally { await page.unroute('**/banks/violin/**'); }
+  await page.click(soundRow('r_violin') + ' [data-act=sound-preview]'); await until(() => page.$eval('.sound-status', e => e.textContent.startsWith('Préécoute')), 'réessai non prêt');
+  expect(await S(() => window.qa.level(180)) > 0.005, 'préécoute muette après réessai'); await page.keyboard.press('Escape');
+});
+test('SB10', 'Navigateur de sons', 'Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste', async () => {
+  await soundsOpen(); await S(() => window.kh.createFromTemplate('empty')); const before = JSON.stringify(await proj());
+  await page.click(soundRow('r_piano') + ' [data-act=sound-use]'); expect((await page.textContent('.sound-status')).includes('plus disponible'), 'piste disparue non signalée');
+  expect(JSON.stringify(await proj()) === before, 'le nouveau projet a changé'); await page.keyboard.press('Escape');
 });
 
 (async () => {

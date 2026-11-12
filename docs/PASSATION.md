@@ -109,3 +109,12 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 - Les anciennes limites restent valables : une seule couche de vélocité, durée finie, pas de boucle de maintien. Le piano droit est un honky-tonk ; ne pas le présenter comme un piano droit neutre.
 - QA : six cas BN01–BN06 ajoutés (traductions/familles, clavier, chargement à la demande, fichier/rechargement, échec/réessai, téléphone) ; RI01 vérifie les 29 sons, W01 un nouvel instrument hors ligne et DK01 un nouvel instrument dans Electron.
 - Écoute humaine, micro et MIDI matériels, Windows/macOS réels : toujours à vérifier par le propriétaire.
+
+## 8. V15.1 — navigateur de sons et notes longues
+
+- `src/ui/sounds.ts` : navigateur modal, recherche sans accents, familles, favoris locaux validés, préécoute sans modifier le projet et sélection via le même chemin que le menu rapide. Fermeture et changement de filtres annulent les préécoutes en attente ; une piste disparue ne peut plus être modifiée.
+- `src/audio/sustain.ts` : banques éligibles, recherche d’un raccord de phase et préparation d’un tampon de maintien avec fondu croisé. Le tampon original reste inchangé. `banks.ts` prépare les boucles au chargement et choisit une note enregistrée audible si l’échantillon le plus proche est silencieux.
+- `SynthParams.hold` : `false` dans BASE pour préserver les anciens fichiers ; activé pour les nouveaux préréglages compatibles. `graph.ts` utilise les mêmes boucles en direct et en export, avec l’enveloppe et l’arrêt des voix existants.
+- `engine.audition()` et `stopAudition()` isolent la préécoute du contenu du projet et des tranches de piste. Les requêtes périmées sont annulées logiquement après chargement. Le général règle le volume de préécoute.
+- QA : LH01–LH06 (maintien dans plusieurs registres, attaque, relâchement, anciens projets, arrêt, WAV) et SB01–SB10 (langues, recherche, favoris, préécoute, chargements tardifs, annulation, clavier, tactile et erreurs). Captures du navigateur jointes au rapport GitHub Actions.
+- À apprécier par le propriétaire : qualité des raccords à l’oreille et confort de jeu, clavier MIDI réel, téléphone réel et ouverture des installateurs Windows/macOS.

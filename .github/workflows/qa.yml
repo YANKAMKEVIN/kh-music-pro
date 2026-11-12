@@ -18,11 +18,22 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx tsc --noEmit
+      - name: Vérifier le navigateur de sons et les notes longues
+        run: bash qa/all.sh LH,SB
+        env:
+          NODE_PATH: node_modules
       - run: bash qa/all.sh
         env:
           NODE_PATH: node_modules
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kh-music-pro-web
+          path: dist/
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rapport-qa
-          path: qa/REPORT.md
+          path: |
+            qa/REPORT.md
+            qa/shots/v15.1-sounds-*.png

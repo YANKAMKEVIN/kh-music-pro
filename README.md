@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.15)
+## Fonctions (v0.15.1)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -72,11 +72,19 @@ Sur une piste **Instrument**, ouvrir le menu **Son** dans l’éditeur. Les sons
 
 Les 18 ajouts représentent 450 fichiers MP3 (25 notes par son, MIDI 24 à 96). Ils sont inclus dans la version bureau ; dans la version web, un son doit être chargé une première fois en ligne avant de pouvoir être réutilisé hors ligne. Les instruments et leurs identifiants précédents sont conservés, ainsi que le format `.khm`.
 
-Les sons ont une seule couche de vélocité et une durée finie, sans boucle de maintien. Les nappes et les orgues ne tiennent donc pas indéfiniment. Le piano droit a une couleur honky-tonk, distincte d’un piano droit neutre. L’écoute humaine et les essais sur matériel réel restent à faire.
+Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’église, les cordes, le violon, le violoncelle, la contrebasse à l’archet, les chœurs et les ambiances proposent désormais des notes longues avec boucle de maintien et raccord fondu. Les sons percussifs gardent leur décroissance naturelle. Le piano droit a une couleur honky-tonk, distincte d’un piano droit neutre. L’écoute humaine et les essais sur matériel réel restent à faire.
+
+## Notes longues et navigateur de sons (v0.15.1)
+
+- **Parcourir les sons**, dans l’éditeur d’une piste Instrument : rechercher par nom (avec ou sans accents), filtrer par famille et retrouver ses **Favoris**. Les favoris restent sur cet appareil et ne modifient pas le projet.
+- Le bouton **▶** préécoute un son sans changer l’instrument de la piste ni démarrer le transport. Cliquer sur son nom pour l’appliquer ; ce changement reste annulable. **Échap** ferme le navigateur et arrête la préécoute.
+- **Notes longues**, à côté du choix du son pour les instruments compatibles, prolonge la partie tenue jusqu’au relâchement, en direct comme dans l’arrangement et à l’export. L’attaque d’origine est conservée et la fin reste progressive. On peut désactiver ce réglage.
+- Les instruments compatibles nouvellement sélectionnés activent ce maintien par défaut. Un ancien projet sans ce réglage conserve sa durée précédente ; le bouton permet de l’activer explicitement. Le choix voyage dans le fichier `.khm`.
+- La boucle est calculée à partir d’une portion du son avec raccord de phase et fondu croisé. Le réalisme du maintien et l’équilibre des timbres restent à vérifier à l’oreille sur du matériel réel.
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 196 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 212 cas).
 Le plus simple, serveur compris :
 
 ```bash
