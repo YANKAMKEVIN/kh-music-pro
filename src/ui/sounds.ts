@@ -85,6 +85,7 @@ export function showSounds(trackId: string) {
   dlg.append(h('header', { class: 'sound-head' }, h('h2', { id: 'sounds-title' }, t('sounds.title')), h('button', { class: 'pill', 'aria-label': t('sounds.close'), data: { act: 'sound-close' }, onclick: () => dlg.close() }, t('sounds.close'))),
     h('div', { class: 'sound-filters' }, query, family, favFilter), count, list,
     h('footer', { class: 'sound-footer' }, status, h('button', { class: 'pill', data: { act: 'sound-stop' }, onclick: stop }, '■ ' + t('sounds.stop'))));
+  dlg.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dlg.close(); } });
   dlg.addEventListener('close', () => { closed = true; stop(); dlg.remove(); document.querySelector<HTMLButtonElement>('[data-act=sound-browser]')?.focus(); });
   document.body.append(dlg); render(); dlg.showModal(); query.focus();
 }

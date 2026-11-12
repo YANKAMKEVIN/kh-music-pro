@@ -24,10 +24,11 @@ const path = require('path');
     await win.waitForTimeout(350);
     const soundBrowser = soundCount === 53 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
     await win.keyboard.press('Escape'); await win.waitForSelector('#sounds', { state: 'detached' });
+    const returnFocus = await win.$eval('[data-act=sound-browser]', b => document.activeElement === b);
     await win.click('#bPlay'); await win.waitForTimeout(600);
     const playing = await win.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1);
-    console.log(JSON.stringify({ ...r, soundBrowser, playing, errors }));
-    const ok = r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && playing && !errors.length;
+    console.log(JSON.stringify({ ...r, soundBrowser, returnFocus, playing, errors }));
+    const ok = r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
     console.log(ok ? 'Version bureau : OK' : 'Version bureau : ÉCHEC');
     process.exitCode = ok ? 0 : 1;
   } finally { await app.close(); }
