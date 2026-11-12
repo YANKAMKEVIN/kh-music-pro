@@ -1951,12 +1951,15 @@ test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit
         const db = request.result, tx = db.transaction('kv', 'readonly'), kv = tx.objectStore('kv');
         tx.oncomplete = () => db.close(); tx.onerror = () => { db.close(); reject(tx.error); };
         const current = kv.get('current');
-        current.onsuccess = () => { const project = kv.get('proj:' + current.result); project.onsuccess = () => resolve(project.result ? JSON.parse(project.result) : null); };
+        current.onsuccess = () => { if (current.result !== window.kh.S.pid) { resolve(null); return; } const project = kv.get('proj:' + current.result); project.onsuccess = () => resolve(project.result ? JSON.parse(project.result) : null); };
       };
     });
     return p?.tracks.length === 18 && p.tracks[0].synth.preset === 'r_honky' && p.tracks[17].synth.preset === 'r_synthchoir';
   }, null, { polling: 100, timeout: 15000 });
-  await page.reload(); await page.waitForSelector('.clip');
+  const importedPid = await S(() => window.kh.S.pid);
+  await page.reload(); await page.waitForSelector('.head');
+  const reopened = await S(() => ({ pid: window.kh.S.pid, presets: window.kh.S.project.tracks.map(t => t.synth?.preset), clips: document.querySelectorAll('.clip').length }));
+  expect(reopened.pid === importedPid && reopened.clips === 18, `projet rouvert : ${JSON.stringify(reopened)}`);
   expect((await proj()).tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'les sons ne sont pas conservés');
   const result = await S(() => window.qa.stats(window.kh.S.project)); expect(result.bad === 0 && result.rms > 0.005 && result.peak <= 0.97, `rendu du projet : ${JSON.stringify(result)}`);
 });

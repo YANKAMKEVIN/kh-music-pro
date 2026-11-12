@@ -18,6 +18,10 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx tsc --noEmit
+      - name: Vérifier les changements rapides de projet
+        run: bash qa/all.sh BN03,BN04
+        env:
+          NODE_PATH: node_modules
       - run: bash qa/all.sh
         env:
           NODE_PATH: node_modules
