@@ -195,7 +195,7 @@ function synthPanel(tr: Track, collapsible = false) {
   // Avec un clip ouvert, les réglages détaillés sont repliés pour laisser la place au piano roll.
   const open = !collapsible || S.synthOpen;
   const head = [h('label', { class: 'fld big' }, t('syn.sound'), preset),
-    h('button', { class: 'pill', data: { act: 'sound-browser' }, onclick: () => showSounds(tr.id) }, t('sounds.browse')),
+    h('button', { class: 'pill', 'aria-label': t('sounds.browse'), title: t('sounds.browse'), data: { act: 'sound-browser' }, onclick: () => showSounds(tr.id) }, t('sounds.browse')),
     sp.engine === 'multi' && !!sp.bank && SUSTAIN_BANKS.has(sp.bank) && h('button', {
       class: 'pill' + (sp.hold ? ' on' : ''), 'aria-pressed': String(!!sp.hold), title: t('syn.holdTip'), data: { act: 'sustain' },
       onclick: () => { sp.hold = !sp.hold; commit(); },

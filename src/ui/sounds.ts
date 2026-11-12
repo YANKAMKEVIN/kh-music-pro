@@ -60,8 +60,8 @@ export function showSounds(trackId: string) {
     const words = normalize(query.value.trim()).split(/\s+/).filter(Boolean);
     const ids = CATS.flatMap(cat => Object.keys(PRESETS).filter(id => PRESETS[id].cat === cat)).filter(id =>
       (!family.value || PRESETS[id].cat === family.value) && (!onlyFavorites || favs.has(id)) &&
-      words.every(w => normalize(t('ins.' + id) + ' ' + t('cat.' + PRESETS[id].cat) + ' ' + id).includes(w)));
-    count.textContent = t('sounds.count', ids.length, Object.keys(PRESETS).length);
+      words.every(w => normalize(t('ins.' + id) + ' ' + id).includes(w)));
+    count.textContent = t(ids.length === 1 ? 'sounds.countOne' : 'sounds.count', ids.length, Object.keys(PRESETS).length);
     list.replaceChildren();
     if (!ids.length) { list.append(h('li', { class: 'sound-empty' }, t('sounds.empty'))); return; }
     for (const id of ids) {

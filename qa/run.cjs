@@ -911,7 +911,7 @@ test('W01', 'Application', 'Version construite : installable (manifeste) et util
   const cp = require('child_process'), root = path.join(__dirname, '..');
   cp.execSync('npx vite build', { cwd: root, stdio: 'ignore' });
   const srv = cp.spawn('npx', ['vite', 'preview', '--port', '4199', '--strictPort'], { cwd: root, stdio: 'ignore', detached: true });
-  const ctx2 = await browser.newContext({ viewport: { width: 1300, height: 800 } });
+  const ctx2 = await browser.newContext({ viewport: { width: 1300, height: 800 }, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); let up = false;
     for (let i = 0; i < 40 && !up; i++) { try { await pg.goto('http://localhost:4199/'); up = true; } catch { await sleep(300); } }
@@ -2008,6 +2008,7 @@ const heldProject = (id, midi = 60, hold = true) => page.evaluate(([id, midi, ho
 }), [id, midi, hold]);
 const soundRow = id => `#sounds [data-sound="${id}"]`;
 const masterRms = () => S(() => { const a = window.kh.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return Math.sqrt(d.reduce((e, v) => e + v * v, 0) / d.length); });
+async function closeSounds(pg = page) { await pg.keyboard.press('Escape'); await pg.waitForSelector('#sounds', { state: 'detached' }); }
 async function soundsOpen() { await page.click(await headSel(1)); await page.click('[data-act=sound-browser]'); await page.waitForSelector('#sounds'); }
 
 test('LH01', 'Notes longues', 'Les dix instruments à maintien restent audibles dans trois registres après huit secondes', async () => {
@@ -2075,7 +2076,7 @@ test('SB01', 'Navigateur de sons', 'Les 53 sons, les familles et les commandes d
     const bad = await page.$$eval('#sounds button, #sounds input, #sounds select', es => es.filter(e => !(e.getAttribute('aria-label') || e.textContent.trim())).length); near(bad, 0, 0, 'commandes sans nom');
     expect(!/sounds\.|cat\.|ins\./.test(await page.innerText('#sounds')), `texte manquant en ${lang}`);
     if (lang === 'fr') await page.screenshot({ path: path.join(__dirname, 'shots/v15.1-sounds-desktop.png') });
-    await page.keyboard.press('Escape');
+    await closeSounds();
   }
   await S(() => window.kh.setLang('fr'));
 });
@@ -2087,8 +2088,8 @@ test('SB02', 'Navigateur de sons', 'Recherche sans accents, filtres combinés et
   await page.click(soundRow('r_drawbar') + ' [data-act=sound-favorite]'); await page.click('[data-act=sound-favorites]');
   near(await page.$$eval('#sounds [data-sound]', es => es.length), 1, 0, 'favori'); expect(await page.$(soundRow('r_drawbar')), 'mauvais favori');
   await page.fill('[data-role=sound-search]', 'guitare'); expect((await page.textContent('.sound-empty')).includes('Aucun'), 'état vide absent');
-  await page.keyboard.press('Escape'); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await soundsOpen(); await page.click('[data-act=sound-favorites]');
-  expect(await page.$(soundRow('r_drawbar')), 'favori perdu'); await page.keyboard.press('Escape');
+  await closeSounds(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await soundsOpen(); await page.click('[data-act=sound-favorites]');
+  expect(await page.$(soundRow('r_drawbar')), 'favori perdu'); await closeSounds();
 });
 test('SB03', 'Navigateur de sons', 'La préécoute et les favoris ne changent ni le projet ni le transport', async () => {
   const before = JSON.stringify(await proj()); await soundsOpen();
@@ -2097,7 +2098,7 @@ test('SB03', 'Navigateur de sons', 'La préécoute et les favoris ne changent ni
   expect(await S(() => window.qa.level(200)) > 0.005, 'préécoute muette');
   await page.click(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
   expect(JSON.stringify(await proj()) === before && await S(() => !window.kh.engine.playing && !window.kh.engine.recording), 'la préécoute a modifié le projet ou le transport');
-  await page.click('[data-act=sound-stop]'); await sleep(150); expect(await masterRms() < 0.0001, 'préécoute non arrêtée'); await page.keyboard.press('Escape');
+  await page.click('[data-act=sound-stop]'); await sleep(150); expect(await masterRms() < 0.0001, 'préécoute non arrêtée'); await closeSounds();
 });
 test('SB04', 'Navigateur de sons', 'Fermer pendant le chargement empêche une préécoute tardive', async () => {
   await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
@@ -2105,7 +2106,7 @@ test('SB04', 'Navigateur de sons', 'Fermer pendant le chargement empêche une pr
   const before = JSON.stringify(await proj());
   try {
     await soundsOpen(); await page.click(soundRow('r_church') + ' [data-act=sound-preview]');
-    await page.keyboard.press('Escape'); await S(() => window.kh.engine.loadBank('church')); await sleep(150);
+    await closeSounds(); await S(() => window.kh.engine.loadBank('church')); await sleep(150);
     expect(!(await page.$('#sounds')), 'fenêtre encore ouverte'); expect(await masterRms() < 0.0001, 'une préécoute a démarré après fermeture');
     expect(JSON.stringify(await proj()) === before, 'le projet a été modifié');
   } finally { await page.unroute('**/banks/church_organ/**'); }
@@ -2113,7 +2114,7 @@ test('SB04', 'Navigateur de sons', 'Fermer pendant le chargement empêche une pr
 test('SB05', 'Navigateur de sons', 'Choisir un instrument est annulable et conserve les sons personnels du sampler', async () => {
   await S(() => { window.qa.sine('sound-browser-user'); const t = window.kh.S.project.tracks[1]; t.synth.bufferId = 'sound-browser-user'; t.synth.sampleName = 'Personnel'; t.synth.root = 57; window.kh.commit(); });
   const previous = (await proj()).tracks[1].synth.preset; await soundsOpen(); await page.fill('[data-role=sound-search]', 'slap');
-  await page.click(soundRow('r_slap') + ' [data-act=sound-use]'); expect(!(await page.$('#sounds')), 'choisir devrait fermer la fenêtre');
+  await page.click(soundRow('r_slap') + ' [data-act=sound-use]'); await page.waitForSelector('#sounds', { state: 'detached' }); expect(!(await page.$('#sounds')), 'choisir devrait fermer la fenêtre');
   let sp = (await proj()).tracks[1].synth; expect(sp.preset === 'r_slap' && sp.bufferId === 'sound-browser-user' && sp.root === 57 && sp.sampleName === 'Personnel', 'son personnel perdu');
   await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].synth.preset === previous, 'annulation');
   await page.keyboard.press('Control+Shift+z'); expect((await proj()).tracks[1].synth.preset === 'r_slap', 'rétablissement');
@@ -2121,9 +2122,9 @@ test('SB05', 'Navigateur de sons', 'Choisir un instrument est annulable et conse
 test('SB06', 'Navigateur de sons', 'La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste', async () => {
   await soundsOpen(); await page.fill('[data-role=sound-search]', 'r '); await page.keyboard.press('Space');
   expect(await S(() => !window.kh.engine.playing && !window.kh.engine.recording), 'un raccourci a démarré le transport');
-  await page.keyboard.press('Escape'); expect(await page.$eval('[data-act=sound-browser]', b => document.activeElement === b), 'focus non rendu');
+  await closeSounds(); expect(await page.$eval('[data-act=sound-browser]', b => document.activeElement === b), 'focus non rendu');
   await page.click('[data-act=sound-browser]'); await page.keyboard.press('Tab'); expect(await page.$eval('[data-role=sound-family]', b => document.activeElement === b), 'navigation au clavier');
-  await page.keyboard.press('Escape');
+  await closeSounds();
 });
 test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR' });
@@ -2137,15 +2138,15 @@ test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres e
     const targets = await pg.$$eval('.sound-icon', es => es.map(e => { const r = e.getBoundingClientRect(); return r.width >= 44 && r.height >= 44; })); expect(targets.every(Boolean), 'cibles tactiles trop petites');
     await pg.screenshot({ path: path.join(__dirname, 'shots/v15.1-sounds-phone.png') });
     await pg.setViewportSize({ width: 844, height: 390 }); expect(await fit(), 'fenêtre hors écran en paysage');
-    await pg.tap('[data-act=sound-close]'); expect(!(await pg.$('#sounds')), 'fermeture tactile');
+    await pg.tap('[data-act=sound-close]'); await pg.waitForSelector('#sounds', { state: 'detached' }); expect(!(await pg.$('#sounds')), 'fermeture tactile');
   } finally { await ctx2.close(); }
 });
 test('SB08', 'Navigateur de sons', 'Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté', async () => {
   await S(() => localStorage.setItem('kh-sound-favorites', '[null,42,"inconnu","r_air"]')); await soundsOpen(); await page.click('[data-act=sound-favorites]');
   near(await page.$$eval('#sounds [data-sound]', es => es.length), 1, 0, 'favoris valides'); expect(await page.$(soundRow('r_air')), 'favori valide absent');
   await page.click('[data-act=sound-favorites]'); await page.fill('[data-role=sound-search]', 'sampler');
-  await page.click(soundRow('sampler') + ' [data-act=sound-preview]'); expect((await page.textContent('.sound-status')).includes('Chargez'), 'sampler vide non expliqué'); await page.keyboard.press('Escape');
-  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 53, 0, 'favoris corrompus'); await page.keyboard.press('Escape');
+  await page.click(soundRow('sampler') + ' [data-act=sound-preview]'); expect((await page.textContent('.sound-status')).includes('Chargez'), 'sampler vide non expliqué'); await closeSounds();
+  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 53, 0, 'favoris corrompus'); await closeSounds();
 });
 test('SB09', 'Navigateur de sons', 'Une préécoute indisponible signale l’échec puis fonctionne après réessai', async () => {
   await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
@@ -2153,12 +2154,12 @@ test('SB09', 'Navigateur de sons', 'Une préécoute indisponible signale l’éc
   try { await soundsOpen(); await page.click(soundRow('r_violin') + ' [data-act=sound-preview]'); await until(() => page.$eval('.sound-status', e => e.textContent.includes('ne peut pas')), 'échec de préécoute non signalé'); }
   finally { await page.unroute('**/banks/violin/**'); }
   await page.click(soundRow('r_violin') + ' [data-act=sound-preview]'); await until(() => page.$eval('.sound-status', e => e.textContent.startsWith('Préécoute')), 'réessai non prêt');
-  expect(await S(() => window.qa.level(180)) > 0.005, 'préécoute muette après réessai'); await page.keyboard.press('Escape');
+  expect(await S(() => window.qa.level(180)) > 0.005, 'préécoute muette après réessai'); await closeSounds();
 });
 test('SB10', 'Navigateur de sons', 'Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste', async () => {
   await soundsOpen(); await S(() => window.kh.createFromTemplate('empty')); const before = JSON.stringify(await proj());
   await page.click(soundRow('r_piano') + ' [data-act=sound-use]'); expect((await page.textContent('.sound-status')).includes('plus disponible'), 'piste disparue non signalée');
-  expect(JSON.stringify(await proj()) === before, 'le nouveau projet a changé'); await page.keyboard.press('Escape');
+  expect(JSON.stringify(await proj()) === before, 'le nouveau projet a changé'); await closeSounds();
 });
 
 (async () => {

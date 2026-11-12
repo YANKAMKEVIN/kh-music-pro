@@ -487,3 +487,11 @@ dialog form { gap: 8px; }
 @media (max-width: 520px) { #sounds { padding: 12px; } #sounds h2 { font-size: 17px; } .sound-filters select { flex-basis: 100%; } .sound-list { max-height: 42dvh; } }
 
 .sound-head, .sound-filters, .sound-count, .sound-footer { flex-shrink: 0; }
+
+.synth [data-act=sound-browser], .synth [data-act=sustain] { min-height: 44px; height: 44px; }
+@media (max-width: 520px) {
+  .synth .fld.big { max-width: calc(100vw - 90px); }
+  .synth .fld.big select { max-width: calc(100vw - 130px); }
+  .synth [data-act=sound-browser] { width: 44px; min-width: 44px; padding: 0; font-size: 0; }
+  .synth [data-act=sound-browser]::before { content: '♫'; font-size: 20px; }
+}
