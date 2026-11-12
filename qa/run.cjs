@@ -1932,6 +1932,8 @@ test('BN03', 'Banque généraliste', 'Les banques sont chargées uniquement au c
   } finally { page.off('request', onRequest); }
 });
 test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement', async () => {
+  const trace = m => { if (m.text().startsWith('BNTRACE')) console.log(m.text()); }; page.on('console', trace);
+  await S(() => { const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function(value, key) { console.log('BNTRACE', String(key), typeof value === 'string' && String(key).startsWith('proj:') ? JSON.parse(value).tracks.length : String(key) === 'current' ? value : '', 'active', window.kh.S.pid, window.kh.S.project.tracks.length); return put.call(this, value, key); }; });
   await page.evaluate(ids => { const k = window.kh, p = k.S.project, base = JSON.stringify(p.tracks[1]);
     p.tracks = ids.map((id, i) => { const t = JSON.parse(base); t.id = 'bank-track-' + i; t.name = id; t.synth = k.makeSynth(id); t.rev = 0;
       t.clips = [{ id: 'bank-clip-' + i, name: id, start: i * 4, len: 4, offset: 0, patLen: 4, notes: [{ p: 60, s: 0, l: 2, v: 0.8 }] }]; return t; });
@@ -1939,8 +1941,8 @@ test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit
   }, NEW_BANK_PRESETS);
   const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'banque-v15.khm'); await dl.saveAs(f);
   const saved = JSON.parse(fs.readFileSync(f, 'utf8')); expect(saved.project.tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'fichier incomplet');
-  await newBlank(); await page.setInputFiles('#fProj', f);
-  await page.waitForFunction(() => window.kh.S.project.tracks.length === 18);
+  await newBlank(); console.log('BNTRACE blank', await S(() => ({pid:window.kh.S.pid, tracks:window.kh.S.project.tracks.length}))); await page.setInputFiles('#fProj', f);
+  await page.waitForFunction(() => window.kh.S.project.tracks.length === 18); console.log('BNTRACE imported', await S(() => ({pid:window.kh.S.pid, tracks:window.kh.S.project.tracks.length})));
   // Attendre l'écriture effective dans IndexedDB : le délai de 500 ms déclenche
   // la sauvegarde, mais ne garantit pas que ses transactions soient terminées.
   await page.waitForFunction(async () => {
@@ -1956,10 +1958,10 @@ test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit
     });
     return p?.tracks.length === 18 && p.tracks[0].synth.preset === 'r_honky' && p.tracks[17].synth.preset === 'r_synthchoir';
   }, null, { polling: 100, timeout: 15000 });
-  const importedPid = await S(() => window.kh.S.pid);
+  const importedPid = await S(() => window.kh.S.pid); console.log('BNTRACE before reload', importedPid);
   await page.reload(); await page.waitForSelector('.head');
   const reopened = await S(() => ({ pid: window.kh.S.pid, presets: window.kh.S.project.tracks.map(t => t.synth?.preset), clips: document.querySelectorAll('.clip').length }));
-  expect(reopened.pid === importedPid && reopened.clips === 18, `projet rouvert : ${JSON.stringify(reopened)}`);
+  expect(reopened.pid === importedPid && reopened.clips === 18, `projet rouvert (attendu ${importedPid}) : ${JSON.stringify(reopened)}`);
   expect((await proj()).tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'les sons ne sont pas conservés');
   const result = await S(() => window.qa.stats(window.kh.S.project)); expect(result.bad === 0 && result.rms > 0.005 && result.peak <= 0.97, `rendu du projet : ${JSON.stringify(result)}`);
 });
