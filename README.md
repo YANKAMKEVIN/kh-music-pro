@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.9)
+## Fonctions (v0.10)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Vrais instruments** : 11 instruments enregistrés (piano à queue, guitares, basses, cordes, violoncelle, cuivres, saxophone, flûte, chœur) et une batterie acoustique, chargés à la demande.
 - **Grille fine** : triples-croches, triolets de croches et de doubles, placement libre ; quantification ; motifs de batterie en 1/32 ou en triolets ; MIDI fidèle au 1/24 de pas.
 - **Édition des clips** : rognage par les deux bords, sélection multiple (Maj+clic) pour déplacer, dupliquer ou supprimer en groupe, boucle tracée dans la règle (Maj+glisser).
 - **Réglages par pad** (volume, hauteur, panoramique) ; outils de motif (décaler, doubler).
@@ -52,7 +53,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 162 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 168 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -88,6 +89,13 @@ L'action **QA** relance toute la campagne à chaque mise à jour du dépôt et j
 Le fichier `.github/workflows/deploy.yml` publie l'application sur GitHub Pages à chaque mise à jour de `main`.
 À activer une fois : dans le dépôt, *Settings > Pages > Source : GitHub Actions*.
 
+## Sons embarqués
+
+Les vrais instruments viennent de banques libres, converties par `tools/build-banks.sh` dans `public/banks` (7 Mo) :
+
+- instruments : **FluidR3 GM** de Frank Wen, licence CC BY 3.0 (la mention de l'auteur est obligatoire : elle figure dans l'aide de l'application et dans `public/banks/CREDITS.txt`) ;
+- batterie acoustique : **Virtuosity Drums** de Versilian Studios, licence CC0.
+
 ## Dépendance
 
 L'export MP3 utilise [`@breezystack/lamejs`](https://www.npmjs.com/package/@breezystack/lamejs) (licence LGPL), chargé seulement au moment d'exporter.
@@ -99,6 +107,7 @@ Tout le reste de l'application est sans dépendance d'exécution. Electron et el
 - `src/i18n.ts` — textes en trois langues
 - `src/audio/graph.ts` — graphe de mixage, instruments, batterie, séquenceur (partagé entre temps réel et export)
 - `src/audio/engine.ts` — transport, mode Live, enregistrement, rendu hors-ligne, WAV
+- `src/audio/banks.ts` — chargement des instruments enregistrés
 - `src/audio/stretch.ts` — étirement temporel et transposition des sons
 - `src/audio/loudness.ts` — mesure LUFS et limiteur d'export
 - `src/ui/library.ts` — fenêtre des projets et des modèles

@@ -63,7 +63,7 @@ const PAGE_HELPERS = () => {
 };
 
 const results = [];
-let page, browser, dialogText, errors = [];
+let page, browser, dialogText, ignoreErr = null, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
 
@@ -313,7 +313,7 @@ test('I02', 'Instruments', 'Choisir un son dans la liste change le moteur et l\'
   expect(!(await page.textContent('.synth')).includes('Étouffé'), 'les réglages détaillés devraient être repliés');
   await page.click('[data-act=synthopen]');
   expect((await page.textContent('.synth')).includes('Étouffé'), 'réglage propre au son absent');
-  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 7, 0, 'catégories');
+  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 8, 0, 'catégories');
 });
 test('I03', 'Piano roll', 'Ajouter une note d\'un clic', async () => {
   await page.click(await clipSel(1, 0)); const n0 = (await proj()).tracks[1].clips[0].notes.length;
@@ -572,6 +572,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await page.click('#bNotes'); text += await page.innerText('#notes'); await page.keyboard.press('Escape');
     await S(() => { const k = window.kh; window.qa.sine('qa-sine'); const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-n', name: 'Son', start: 0, len: 8, offset: 0, bufferId: 'qa-sine', gain: 1 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-n'; k.learn.on = true; k.commit(); }); text += await page.innerText('#panel');
     await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'sampler'); text += await page.innerText('#panel');
+    await page.selectOption('[data-role=preset]', 'r_piano'); await sleep(300); text += await page.innerText('#panel') + (await page.textContent('#toast'));
     await page.selectOption('[data-role=preset]', 'epiano'); await page.click('[data-act=okb]'); text += await page.innerText('#panel');
     await tab('mixer'); text += await page.innerText('#panel'); await tab('live'); text += await page.innerText('#panel');
     await page.click('#bHelp'); text += await page.innerText('#help'); await page.click('#bTour');
@@ -1463,7 +1464,8 @@ test('GR01', 'Grille fine', 'Triples-croches : la grille 1/32 aimante au demi-pa
   await page.$eval('.pr', e => { e.scrollLeft = 0; e.scrollTop = (96 - 40) * 16 - 80; }); const g = await (await page.$('.pr-grid')).boundingBox();
   await page.mouse.click(g.x + 28 * 20.6, g.y + (96 - 40) * 16 + 8); let ns = await notesOf(); let n = ns[ns.length - 1];
   expect(n.s === 20.5 && n.p === 40, `note posée à ${n.s} (attendu 20,5)`);
-  const nb = await box(`.note[data-i="${ns.length - 1}"]`); await drag(nb.x + 6, nb.y + 8, 14, 0); n = (await notesOf())[ns.length - 1]; near(n.s, 21, 0, 'déplacement d\'un demi-pas');
+  await sleep(150); // l'éditeur vient de se redessiner : on laisse le défilement se stabiliser avant de viser la note
+  const nb = await (await page.$(`.note[data-i="${ns.length - 1}"]`)).boundingBox(); await drag(nb.x + 6, nb.y + 8, 14, 0); n = (await notesOf())[ns.length - 1]; near(n.s, 21, 0, 'déplacement d\'un demi-pas');
   await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); near((await notesOf())[ns.length - 1].s, 19.5, 0, 'flèches : pas de la grille');
   const o = await blips([0, 0.5, 1, 2.5, 4]); near(o.length, 5, 0, 'notes entendues');
   for (const [i, want] of [0.0625, 0.0625, 0.1875, 0.1875].entries()) near(gaps(o)[i], want, 0.002, `écart ${i + 1} entre deux notes`);
@@ -1536,6 +1538,60 @@ test('GR07', 'Grille fine', 'Mode Live, scission et copier/coller fonctionnent a
   expect(await S(async () => window.kh.engine.mode === 'live' && (await window.qa.level()) > 0.05), 'le clip ne sonne pas en mode Live');
 });
 
+// ============ V10 : vrais instruments ============
+const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir'];
+/** Piste instrument seule jouant un vrai instrument, sans réverb. */
+const realProj = (id, notes, len = 16) => page.evaluate(([id, notes, len]) => { const k = window.kh; return window.qa.only(1, (p, t) => { p.bpm = 120; t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = len; c.patLen = len; c.notes = notes; }); }, [id, notes, len]);
+
+test('RI01', 'Vrais instruments', 'Les 11 instruments enregistrés se chargent et produisent un signal propre', async () => {
+  const r = await S(async () => { const k = window.kh, out = {}; for (const id of Object.keys(k.PRESETS).filter(x => k.PRESETS[x].cat === 'real')) { const p = window.qa.only(1, (p, t) => { t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = [48, 60, 64, 67].map((n, i) => ({ p: n, s: i * 4, l: 4, v: 0.8 })); }); out[id] = await window.qa.stats(p); } return out; });
+  expect(Object.keys(r).join() === REAL.join(), `instruments : ${Object.keys(r)}`);
+  for (const [id, s] of Object.entries(r)) { expect(s.bad === 0, `${id} : valeurs invalides`); expect(s.rms > 0.01, `${id} : inaudible (rms ${s.rms.toFixed(5)})`); expect(s.peak <= 0.97, `${id} : saturation (${s.peak})`); }
+});
+test('RI02', 'Vrais instruments', 'Les notes sont justes, y compris celles obtenues par transposition', async () => {
+  const pitch = async (id, midi) => page.evaluate(async ([p, midi]) => { const k = window.kh, b = await k.renderOffline(p, false), d = b.getChannelData(0), i0 = Math.floor(b.sampleRate * 0.35); return k.detectPitch(d.slice(i0, i0 + 4096), b.sampleRate); }, [await realProj(id, [{ p: midi, s: 0, l: 12, v: 0.9 }]), midi]);
+  for (const [id, midi] of [['r_piano', 57], ['r_piano', 58], ['r_piano', 61], ['r_flute', 76], ['r_cello', 50], ['r_ebass', 40], ['r_nylon', 64], ['r_sax', 59]]) {
+    const hz = await pitch(id, midi), want = 440 * Math.pow(2, (midi - 69) / 12); expect(hz > 0, `${id} note ${midi} : aucune hauteur détectée`);
+    near(1200 * Math.log2(hz / want), 0, 30, `${id} note ${midi} : écart en cents (${hz.toFixed(1)} Hz pour ${want.toFixed(1)})`);
+  }
+});
+test('RI03', 'Vrais instruments', 'Les notes partent à l\'heure (pas de retard dû au fichier son) et s\'arrêtent quand on les relâche', async () => {
+  const o = await page.evaluate(p => window.qa.onsets(p, 0.02, 0.12), await realProj('r_piano', [0, 4, 8, 12].map(s => ({ p: 72, s, l: 0.5, v: 1 }))));
+  near(o.length, 4, 0, 'notes entendues'); for (const d of gaps(o)) near(d, 0.5, 0.012, 'écart entre deux noires');
+  const ref = await blips([0, 4]); near(o[0], ref[0], 0.012, 'départ de la première note, comparé à un son synthétisé');
+  const w = await page.evaluate(p => window.qa.wins(p, [[0.05, 0.3], [1.2, 1.9]]), await realProj('r_strings', [{ p: 60, s: 0, l: 4, v: 0.9 }]));
+  expect(w[0].l > 0.02 && w[1].l < w[0].l * 0.05, `la note de cordes ne s'arrête pas (${w[0].l.toFixed(4)} puis ${w[1].l.toFixed(4)})`);
+});
+test('RI04', 'Vrais instruments', 'Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement', async () => {
+  await page.click(await headSel(3)); await page.selectOption('[data-role=preset]', 'r_piano'); await sleep(500);
+  const sp = (await proj()).tracks[3].synth; expect(sp.engine === 'multi' && sp.bank === 'piano', 'instrument non appliqué');
+  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 8, 0, 'catégories'); expect((await page.textContent('.synth')).includes('enregistré'), 'mention absente');
+  await page.keyboard.down('a'); const on = await S(() => window.qa.level(300)); await page.keyboard.up('a'); expect(on > 0.1, `piano inaudible au clavier (${on})`);
+  await sleep(700); await page.reload(); await page.waitForSelector('.clip');
+  const r = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[3]]; return { bank: p.tracks[0].synth.bank, st: await window.qa.stats(p) }; });
+  expect(r.bank === 'piano' && r.st.rms > 0.01, `après rechargement : ${JSON.stringify(r)}`);
+  await page.keyboard.press('Space'); await sleep(900); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.2), 'la lecture ne démarre pas avec un vrai instrument');
+});
+test('RI05', 'Vrais instruments', 'Batterie acoustique : 16 sons enregistrés, à l\'heure, différents des sons synthétisés', async () => {
+  await page.selectOption('[data-role=kit]', 'acoustic'); await sleep(600); expect((await proj()).tracks[0].kit === 'acoustic', 'kit non enregistré');
+  await page.click('[data-view=pads]'); expect((await page.textContent('.pad[data-pad="2"]')).includes('Rimshot') && (await page.textContent('.pad[data-pad="0"]')).includes('Kick'), 'noms des pads');
+  const r = await S(async () => { const mk = (kit, row) => window.qa.only(0, (p, t) => { p.bpm = 120; t.kit = kit; t.rev = 0; const c = t.clips[0]; c.len = 16; c.drums = c.drums.map((r, i) => r.map((_, s) => +(i === row && s % 8 === 0))); }); const out = []; for (let row = 0; row < 16; row++) out.push([(await window.qa.stats(mk('acoustic', row))).rms, (await window.qa.stats(mk('electro', row))).rms]); return out; });
+  for (const [row, [a, e]] of r.entries()) { expect(a > 0.003, `pad ${row + 1} acoustique inaudible (${a.toFixed(5)})`); expect(Math.abs(a - e) / e > 0.03, `pad ${row + 1} : identique au son synthétisé`); }
+  const o = await S(() => window.qa.onsets(window.qa.only(0, (p, t) => { p.bpm = 120; t.kit = 'acoustic'; t.rev = 0; const c = t.clips[0]; c.len = 16; c.drums = c.drums.map((r, i) => r.map((_, s) => +(i === 6 && s % 4 === 0))); }), 0.03, 0.15));
+  near(o.length, 4, 0, 'coups entendus'); for (const d of gaps(o)) near(d, 0.5, 0.012, 'écart entre deux coups');
+  await page.dispatchEvent('.pad[data-pad="1"]', 'pointerdown'); expect(await S(() => window.qa.level()) > 0.2, 'pad acoustique muet');
+});
+test('RI06', 'Vrais instruments', 'Si les sons ne peuvent pas être chargés : message clair, rien ne plante, le reste joue', async () => {
+  await page.route('**/banks/choir_aahs/**', r => r.abort()); ignoreErr = /ERR_FAILED/; // le navigateur signale lui-même les fichiers refusés
+  try {
+    await page.click(await headSel(3)); await page.selectOption('[data-role=preset]', 'r_choir'); await sleep(600);
+    expect((await page.textContent('#toast')).includes('Impossible'), `message : ${await page.textContent('#toast')}`);
+    await page.keyboard.down('a'); await sleep(150); await page.keyboard.up('a');
+    await page.keyboard.press('Space'); await sleep(900); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.2), 'les autres pistes ne jouent plus');
+    await page.keyboard.press('Space'); const st = await S(() => window.qa.stats(window.kh.S.project)); expect(st.bad === 0 && st.rms > 0.02, 'export impossible');
+  } finally { await page.unroute('**/banks/choir_aahs/**'); }
+});
+
 (async () => {
   browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
@@ -1553,7 +1609,7 @@ test('GR07', 'Grille fine', 'Mode Live, scission et copier/coller fonctionnent a
     const t0 = Date.now(), e0 = errors.length; let err = '';
     try { await reset(); await c.fn(); await page.evaluate(() => { window.kh.engine.stop(); }); await sleep(450); }
     catch (e) { err = String(e.message || e).split('\n')[0]; }
-    const errs = errors.slice(e0);
+    const errs = errors.slice(e0).filter(e => !(ignoreErr && ignoreErr.test(e))); ignoreErr = null;
     if (!err && errs.length) err = 'erreur console : ' + errs[0];
     results.push({ ...c, ok: !err, err, ms: Date.now() - t0 });
     console.log(`${err ? 'ÉCHEC' : 'ok   '} ${c.id.padEnd(8)} ${c.title}${err ? '\n        → ' + err : ''}`);

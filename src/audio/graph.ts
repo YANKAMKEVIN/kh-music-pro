@@ -1,3 +1,4 @@
+import { drumSample, sampleFor } from './banks';
 import { Clip, KITS, Project, Pt, SynthParams, Track, autoAt, stepDur as sd } from '../types';
 
 export interface TrackNodes {
@@ -293,10 +294,12 @@ export function hitPad(mix: Mix, buffers: Buffers, tr: Track, dest: AudioNode, r
   let out = dest;
   if (fx?.pan) { const pn = mix.ctx.createStereoPanner(); pn.pan.value = fx.pan; pn.connect(dest); out = pn; }
   const v = vel * (fx?.vol ?? 1), semis = fx?.tune ?? 0;
-  if (!buf) return playDrum(mix, out, row, t, v, tr.kit, semis);
+  // Sans sample personnel : la batterie acoustique si elle est choisie et chargée, sinon le son synthétisé.
+  const real = !buf && tr.kit === 'acoustic' ? drumSample(row) : undefined;
+  if (!buf && !real) return playDrum(mix, out, row, t, v, tr.kit, semis);
   const s = mix.reg(mix.ctx.createBufferSource()), g = mix.ctx.createGain();
-  s.buffer = buf; g.gain.value = v; s.playbackRate.value = Math.pow(2, semis / 12);
-  s.connect(g).connect(out); s.start(t);
+  s.buffer = buf ?? real!.buf; g.gain.value = v * (real ? 0.9 * real.gain : 1); s.playbackRate.value = Math.pow(2, semis / 12);
+  s.connect(g).connect(out); s.start(t, real?.off ?? 0);
 }
 
 // ---------- Instruments mélodiques ----------
@@ -327,7 +330,7 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   const freq = 440 * Math.pow(2, (midi - 69) / 12 + p.octave);
   const vca = c.createGain(), filt = c.createBiquadFilter();
   const srcs: AudioScheduledSourceNode[] = [];
-  let level = 0.15;
+  let level = 0.15, startOff = 0;
 
   if (p.engine === 'fm') {
     const car = mix.reg(c.createOscillator()), mod = mix.reg(c.createOscillator()), mg = c.createGain();
@@ -339,6 +342,12 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   } else if (p.engine === 'pluck') {
     const s = mix.reg(c.createBufferSource()); s.buffer = pluckBuffer(c, freq, p.damp);
     s.connect(filt); srcs.push(s); level = 0.5;
+  } else if (p.engine === 'multi') {
+    // Vrai instrument : l'échantillon le plus proche, transposé jusqu'à la note demandée.
+    const m = p.bank ? sampleFor(p.bank, midi + p.octave * 12) : null;
+    if (!m) return;
+    const s = mix.reg(c.createBufferSource()); s.buffer = m.s.buf; s.playbackRate.value = m.rate;
+    s.connect(filt); srcs.push(s); level = 0.5 * m.s.gain; startOff = m.s.off;
   } else if (p.engine === 'sampler') {
     const buf = p.bufferId ? buffers?.get(p.bufferId) : undefined;
     if (!buf) return;
@@ -365,7 +374,7 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   const g = vca.gain;
   g.setValueAtTime(0, t);
   filt.connect(vca).connect(dest);
-  for (const s of srcs) s.start(t);
+  for (const s of srcs) { if (startOff && s instanceof AudioBufferSourceNode) s.start(t, startOff); else s.start(t); }
   const tail = p.r * 2 + 0.1;
 
   if (dur === null) {

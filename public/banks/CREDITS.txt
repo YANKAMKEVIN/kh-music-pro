@@ -1,0 +1,8 @@
+Sons embarqués dans KH Music Pro
+
+Instruments : FluidR3_GM, par Frank Wen. Licence Creative Commons Attribution 3.0
+  (https://creativecommons.org/licenses/by/3.0/), fichiers préparés par le projet midi-js-soundfonts
+  (https://github.com/gleitz/midi-js-soundfonts).
+
+Batterie acoustique : Virtuosity Drums, par Versilian Studios. Licence CC0 1.0 (domaine public)
+  (https://github.com/sfzinstruments/virtuosity_drums). Les sons ont été convertis en mono et normalisés.

@@ -7,7 +7,7 @@ import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, redo, resetHistory, undo } from './store';
-import { BAR, MIX_PRESETS, demoProject, setRes, stepDur, templateProject } from './types';
+import { BAR, MIX_PRESETS, PRESETS, demoProject, makeSynth, setRes, stepDur, templateProject } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
@@ -36,6 +36,7 @@ onSelect(() => {
   else document.querySelectorAll<HTMLElement>('.strip[data-id]').forEach(e => e.classList.toggle('sel', e.dataset.id === S.selTrack));
 });
 engine.onLive = refreshLive;
+engine.onBanks = st => st === 'failed' ? toast(t('toast.bankFailed'), 'error') : toast(t(st === 'loading' ? 'toast.bankLoading' : 'toast.bankReady'));
 midi.onChange = renderTop;
 
 document.querySelectorAll<HTMLElement>('#tabs button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab as typeof S.tab; renderPanel(); });
@@ -121,12 +122,13 @@ function onLang() { rebuild(); }
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
   initArrDrop(); initFileInputs();
   rebuild();
+  engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   requestAnimationFrame(frame);
   try { if (!localStorage.getItem('kh-welcome')) { help.showModal(); localStorage.setItem('kh-welcome', '1'); } } catch { /* stockage désactivé */ }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

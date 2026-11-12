@@ -13,12 +13,15 @@ const path = require('path');
     const r = await win.evaluate(async () => {
       const k = window.kh, b = await k.renderOffline(k.S.project), d = b.getChannelData(0); let e = 0;
       for (const v of d) e += v * v;
-      return { title: document.title, tracks: k.S.project.tracks.length, rms: Math.sqrt(e / d.length), dur: b.duration, node: typeof window.require };
+      // Vrai instrument : les fichiers de sons embarqués doivent se charger aussi depuis l'application de bureau.
+      const pp = k.demoProject(); pp.tracks = [pp.tracks[3]]; pp.tracks[0].synth = { ...pp.tracks[0].synth, engine: 'multi', bank: 'piano', s: 1 };
+      const pb = await k.renderOffline(pp, false), pd = pb.getChannelData(0); let pe = 0; for (const v of pd) pe += v * v;
+      return { piano: Math.sqrt(pe / pd.length), title: document.title, tracks: k.S.project.tracks.length, rms: Math.sqrt(e / d.length), dur: b.duration, node: typeof window.require };
     });
     await win.click('#bPlay'); await win.waitForTimeout(600);
     const playing = await win.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1);
     console.log(JSON.stringify({ ...r, playing, errors }));
-    const ok = r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.node === 'undefined' && playing && !errors.length;
+    const ok = r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.piano > 0.005 && r.node === 'undefined' && playing && !errors.length;
     console.log(ok ? 'Version bureau : OK' : 'Version bureau : ÉCHEC');
     process.exitCode = ok ? 0 : 1;
   } finally { await app.close(); }

@@ -432,3 +432,7 @@ dialog form { gap: 8px; }
 /* ================= V9 ================= */
 .dgrid .cell { width: var(--cw, 30px); }
 .pr-grid { background-size: calc(var(--sw) * 16) 100%, calc(var(--sw) * 4) 100%, var(--gw, var(--sw)) 100%, 100% var(--rh); }
+
+/* ================= V10 ================= */
+.tip.real { color: var(--a1); }
+.credits { margin: 12px 0 0; font-size: 11px; }

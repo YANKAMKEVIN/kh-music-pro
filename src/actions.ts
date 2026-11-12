@@ -386,7 +386,7 @@ export function saveFile() {
 }
 
 export async function openFile(f: File) {
-  try { engine.stop(); loadProjectFile(await f.text()); toast(t('toast.opened')); }
+  try { engine.stop(); loadProjectFile(await f.text()); toast(t('toast.opened')); engine.prepare(); }
   catch { toast(t('toast.badProject'), 'error'); }
 }
 

@@ -12,7 +12,7 @@ const halt = () => { engine.stop(); engine.stop(); allNotesOff(); };
 export function createFromTemplate(tpl: Template) {
   halt(); startProject(templateProject(tpl));
   S.selTrack = S.project.tracks[0].id; S.selClip = S.project.tracks[0].clips[0]?.id ?? '';
-  emit();
+  emit(); engine.prepare();
 }
 
 function render() {
@@ -22,7 +22,7 @@ function render() {
   const rows = [...library].sort((a, b) => b.updated - a.updated).map(e => {
     const cur = e.id === S.pid;
     return h('li', { class: cur ? 'cur' : '', data: { pid: e.id } },
-      h('button', { class: 'lopen', data: { act: 'libopen' }, title: t('lib.open'), onclick: async () => { halt(); await openProject(e.id); d.close(); toast(t('toast.opened')); } },
+      h('button', { class: 'lopen', data: { act: 'libopen' }, title: t('lib.open'), onclick: async () => { halt(); await openProject(e.id); engine.prepare(); d.close(); toast(t('toast.opened')); } },
         h('strong', {}, e.name), h('small', {}, (cur ? t('lib.current') + ' · ' : '') + fmt.format(e.updated))),
       h('button', { class: 'mini', data: { act: 'libdup' }, title: t('lib.dup'), 'aria-label': `${t('lib.dup')} – ${e.name}`, onclick: async () => { await duplicateProject(e.id); render(); } }, '⧉'),
       h('button', { class: 'mini danger', data: { act: 'libdel' }, title: t('lib.del'), 'aria-label': `${t('lib.del')} – ${e.name}`, disabled: cur, onclick: async () => { if (confirm(t('lib.confirmDel', e.name))) { await deleteProject(e.id); render(); } } }, '🗑'));

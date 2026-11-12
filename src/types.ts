@@ -1,7 +1,7 @@
 import { t } from './i18n';
 
 export type TrackType = 'drums' | 'synth' | 'audio';
-export type Engine = 'sub' | 'fm' | 'pluck' | 'sampler';
+export type Engine = 'sub' | 'fm' | 'pluck' | 'sampler' | 'multi';
 
 /** p = hauteur MIDI, s = début (en pas), l = durée (en pas), v = vélocité 0..1. s et l peuvent être fractionnaires (triolets, triples-croches). */
 export interface Note { p: number; s: number; l: number; v: number }
@@ -48,6 +48,7 @@ export interface SynthParams {
   ratio: number; fmAmt: number; fmDecay: number; // FM
   damp: number;                           // corde pincée
   bufferId?: string; sampleName?: string; root: number; // sampler
+  bank?: string;                          // instrument échantillonné (moteur « multi »)
 }
 
 export interface Pad { bufferId: string; name: string }
@@ -134,6 +135,7 @@ export const GM_DRUMS = [36, 38, 39, 42, 46, 45, 37, 56, 35, 40, 47, 50, 70, 49,
 
 export const KITS: Record<string, { tune: number; dec: number }> = {
   electro: { tune: 1, dec: 1 }, deep: { tune: 0.8, dec: 1.6 }, tight: { tune: 1.25, dec: 0.6 },
+  acoustic: { tune: 1, dec: 1 }, // batterie enregistrée (banque « drums »)
 };
 
 const BASE: Omit<SynthParams, 'preset'> = {
@@ -141,7 +143,13 @@ const BASE: Omit<SynthParams, 'preset'> = {
   a: 0.005, d: 0.2, s: 0.6, r: 0.15, pitchEnv: 0, ratio: 1, fmAmt: 1.5, fmDecay: 0.3, damp: 0.5, root: 60,
 };
 type P = Partial<Omit<SynthParams, 'preset'>>;
+/** Instrument échantillonné : l'enveloppe ne fait qu'adoucir l'attaque et la fin de la note. */
+const real = (bank: string, a = 0.002, r = 0.3): P => ({ engine: 'multi', bank, cutoff: 16000, reso: 0.5, envAmt: 0, a, d: 0.2, s: 1, r });
 const DEFS: [string, string, P][] = [
+  ['r_piano', 'real', real('piano', 0.002, 0.35)], ['r_nylon', 'real', real('nylon', 0.002, 0.4)], ['r_eguitar', 'real', real('eguitar', 0.002, 0.3)],
+  ['r_ebass', 'real', real('ebass', 0.002, 0.15)], ['r_abass', 'real', real('abass', 0.002, 0.2)],
+  ['r_strings', 'real', real('strings', 0.04, 0.4)], ['r_cello', 'real', real('cello', 0.02, 0.3)], ['r_brass', 'real', real('brass', 0.01, 0.2)],
+  ['r_sax', 'real', real('sax', 0.01, 0.2)], ['r_flute', 'real', real('flute', 0.01, 0.2)], ['r_choir', 'real', real('choir', 0.05, 0.5)],
   ['epiano', 'keys', { engine: 'fm', ratio: 1, fmAmt: 1.6, fmDecay: 0.35, cutoff: 7000, reso: 0.5, envAmt: 0, a: 0.003, d: 1.2, s: 0.25, r: 0.35 }],
   ['keys', 'keys', { wave: 'triangle', wave2: 'sine', detune: 3, mix2: 0.6, cutoff: 3200, reso: 0.5, envAmt: 0.2, a: 0.004, d: 0.5, s: 0.3, r: 0.3 }],
   ['organ', 'keys', { wave: 'sine', wave2: 'sine', detune: 1200, mix2: 0.6, cutoff: 6000, reso: 0.5, envAmt: 0, a: 0.01, d: 0.1, s: 1, r: 0.08 }],
@@ -169,7 +177,7 @@ const DEFS: [string, string, P][] = [
 ];
 export const PRESETS: Record<string, { cat: string; p: Omit<SynthParams, 'preset'> }> =
   Object.fromEntries(DEFS.map(([id, cat, p]) => [id, { cat, p: { ...BASE, ...p } }]));
-export const CATS = ['keys', 'bass', 'lead', 'pad', 'plucked', 'bell', 'sampler'];
+export const CATS = ['real', 'keys', 'bass', 'lead', 'pad', 'plucked', 'bell', 'sampler'];
 export const makeSynth = (preset: string): SynthParams => ({ preset, ...(PRESETS[preset] ?? PRESETS.lead).p });
 
 export const uid = () => Math.random().toString(36).slice(2, 10);

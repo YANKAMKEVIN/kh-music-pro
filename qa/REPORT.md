@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-162 cas réussis sur 162.
+167 cas réussis sur 168.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -159,10 +159,16 @@
 | PT01 | Batterie | Décaler le motif d'un pas et doubler sa longueur | OK |
 | MP02 | Mixeur | Appliquer un préréglage de mixage à une piste, l'entendre et l'annuler | OK |
 | NT01 | Projet | Notes du projet : écrire sans déclencher de raccourci, retrouver le texte, le garder dans le fichier | OK |
-| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | OK |
+| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | ÉCHEC : déplacement d'un demi-pas (attendu ≈ 21, obtenu 20.5) |
 | GR02 | Grille fine | Triolets : trois notes par temps, placées et jouées à intervalles égaux | OK |
 | GR03 | Grille fine | Quantifier : recaler toutes les notes ou seulement la sélection sur la grille | OK |
 | GR04 | Grille fine | Batterie en triples-croches et en triolets : les coups gardent leur place, les nouveaux sonnent au bon instant | OK |
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
+| RI01 | Vrais instruments | Les 11 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
+| RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
+| RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
+| RI05 | Vrais instruments | Batterie acoustique : 16 sons enregistrés, à l'heure, différents des sons synthétisés | OK |
+| RI06 | Vrais instruments | Si les sons ne peuvent pas être chargés : message clair, rien ne plante, le reste joue | OK |

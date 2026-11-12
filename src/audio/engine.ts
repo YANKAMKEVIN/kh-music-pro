@@ -1,3 +1,4 @@
+import { ensureBanks, loadBank, setDecoder, usedBanks, bankReady } from './banks';
 import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
@@ -41,11 +42,27 @@ class Engine {
   inp?: { stream: MediaStream; src: MediaStreamAudioSourceNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
   private cap?: { temp: boolean; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone; inLat: number };
 
+  /** Signalé quand des sons d'instruments réels sont en cours de chargement, puis chargés ou en échec. */
+  onBanks: (state: 'loading' | 'ready' | 'failed') => void = () => { };
+  constructor() { setDecoder(this.ctx); }
+
   sync() { this.mix.sync(S.project); }
+
+  /** Charge les instruments réels utilisés par le projet (sans attendre) ; prévient l'interface. */
+  async prepare(p: Project = S.project): Promise<boolean> {
+    const need = usedBanks(p).filter(id => !bankReady(id));
+    if (!need.length) return true;
+    this.onBanks('loading');
+    const failed = await ensureBanks(p);
+    this.onBanks(failed.length ? 'failed' : 'ready');
+    return !failed.length;
+  }
+  loadBank(id: string): Promise<boolean> { if (bankReady(id)) return Promise.resolve(true); this.onBanks('loading'); return loadBank(id).then(() => { this.onBanks('ready'); return true; }, () => { this.onBanks('failed'); return false; }); }
 
   // ---------- Transport ----------
   private async start(preroll: number) {
     await this.ctx.resume();
+    await this.prepare(); // les vrais instruments doivent être en mémoire avant le premier temps
     // Le bégaiement garde en mémoire les derniers instants joués : il doit écouter dès le début de la lecture.
     this.mix.initStutter().catch(() => { });
     this.mix.autoOn = this.mode === 'arr';
@@ -162,6 +179,7 @@ class Engine {
   // ---------- Jeu en direct ----------
   noteOn(track: Track, midi: number, vel = 0.8) {
     this.ctx.resume(); this.sync();
+    if (track.synth?.engine === 'multi' && track.synth.bank && !bankReady(track.synth.bank)) { this.loadBank(track.synth.bank); return; }
     const n = this.mix.tracks.get(track.id), key = track.id + ':' + midi;
     if (!n || !track.synth) return;
     this.voices.get(key)?.release(this.ctx.currentTime);
@@ -195,6 +213,7 @@ class Engine {
   }
   pad(track: Track, row: number, vel = 1) {
     this.ctx.resume(); this.sync();
+    if (track.kit === 'acoustic' && !bankReady('drums')) this.loadBank('drums');
     const n = this.mix.tracks.get(track.id);
     if (n) hitPad(this.mix, buffers, track, n.input, row, this.ctx.currentTime + 0.003, vel);
   }
@@ -327,6 +346,7 @@ export const engine = new Engine();
 export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
   const end = contentEnd(p);
   if (!end) throw new Error('empty');
+  await ensureBanks(p);
   const dur = stepDur(p.bpm), sr = 44100;
   const off = new OfflineAudioContext(2, Math.ceil((end * dur + 2.5) * sr), sr);
   const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);

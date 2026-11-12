@@ -1,7 +1,7 @@
 import { audioFiles, chopClip, chooseInput, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
-import { lang, t } from '../i18n';
+import { hasKey, lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack } from '../store';
 import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, stepDur } from '../types';
@@ -15,7 +15,7 @@ export const noteName = (p: number) => SOLF[lang()][p % 12] + (Math.floor(p / 12
 /** Étiquette d'une touche physique selon la disposition la plus probable (AZERTY en français). */
 export const keyLabel = (k: string) => lang() === 'fr' ? ({ A: 'Q', Q: 'A', W: 'Z', Z: 'W' } as Record<string, string>)[k] ?? k : k;
 export const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
-export const padName = (tr: Track, r: number) => tr.pads?.[r]?.name ?? t('d' + r);
+export const padName = (tr: Track, r: number) => tr.pads?.[r]?.name ?? t(tr.kit === 'acoustic' && hasKey('da' + r) ? 'da' + r : 'd' + r);
 
 let lastLen = 2;
 let scrollKey = '', scrollPos = { x: 0, y: 0 };
@@ -45,7 +45,7 @@ function clipTools(c: Clip) {
 function drumBar(tr: Track, c: Clip | null) {
   const kit = h('select', { 'aria-label': t('drum.kit'), data: { role: 'kit' } });
   for (const k of Object.keys(KITS)) kit.append(h('option', { value: k, selected: tr.kit === k }, t('kit.' + k)));
-  kit.onchange = () => { tr.kit = kit.value; commit(); engine.pad(tr, 0); };
+  kit.onchange = async () => { tr.kit = kit.value; commit(); if (kit.value === 'acoustic') await engine.loadBank('drums'); engine.pad(tr, 0); };
   const view = (v: 'seq' | 'pads', label: string) => h('button', {
     class: 'seg' + (S.drumView === v || (!c && v === 'pads') ? ' on' : ''), disabled: !c && v === 'seq', data: { view: v },
     onclick: () => { S.drumView = v; emit(); },
@@ -176,7 +176,9 @@ function synthPanel(tr: Track, collapsible = false) {
   }
   preset.onchange = () => {
     const keep = { bufferId: sp.bufferId, sampleName: sp.sampleName, root: sp.root };
-    tr.synth = { ...makeSynth(preset.value), ...keep }; commit(); engine.previewNote(tr, 60 + kb.octave * 12);
+    tr.synth = { ...makeSynth(preset.value), ...keep }; commit();
+    const bank = tr.synth.engine === 'multi' ? tr.synth.bank : undefined;
+    if (bank) engine.loadBank(bank).then(ok => { if (ok) engine.previewNote(tr, 60 + kb.octave * 12); }); else engine.previewNote(tr, 60 + kb.octave * 12);
   };
   const wave = (key: 'wave' | 'wave2', label: string) => {
     const s = h('select', { 'aria-label': label });
@@ -191,6 +193,7 @@ function synthPanel(tr: Track, collapsible = false) {
     sp.engine === 'fm' ? [sl('ratio', 0.5, 8, 0.5, 'ratio', v => '×' + v), sl('fmAmt', 0, 6, 0.05, 'fmAmt', v => v.toFixed(1)), sl('fmDecay', 0.02, 2, 0.01, 'fmDecay', ms)]
       : sp.engine === 'pluck' ? [sl('damp', 0, 1, 0.01, 'damp', pct)]
         : sp.engine === 'sampler' ? [samplerBox(tr)]
+          : sp.engine === 'multi' ? [h('span', { class: 'tip real' }, '🎻 ' + t('syn.real'))]
           : [wave('wave', t('syn.wave1')), wave('wave2', t('syn.wave2')), sl('mix2', 0, 1, 0.01, 'mix2', pct), sl('detune', 0, 50, 1, 'detune', v => v + ' ct'), sl('pitchEnv', 0, 24, 1, 'pitchEnv', v => v + ' st')];
   // Avec un clip ouvert, les réglages détaillés sont repliés pour laisser la place au piano roll.
   const open = !collapsible || S.synthOpen;

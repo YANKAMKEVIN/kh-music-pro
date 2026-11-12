@@ -16,6 +16,8 @@ export function setLang(l: Lang) {
   try { localStorage.setItem('kh-lang', l); } catch { /* stockage désactivé */ }
 }
 
+export const hasKey = (key: string) => key in D;
+
 export function t(key: string, ...a: (string | number)[]): string {
   const e = D[key];
   if (!e) { console.error('i18n: missing key', key); return key; }
@@ -415,4 +417,18 @@ const D: Record<string, [string, string, string]> = {
   'toast.quantized': ['{0} note(s) recalée(s) sur la grille', '{0} note(s) snapped to the grid', '{0} nota(s) ajustada(s) a la rejilla'],
   'ed.res': ['Résolution', 'Resolution', 'Resolución'],
   'ed.resTip': ['Finesse du motif : triples-croches ou triolets pour les roulements et les rythmes ternaires', 'Pattern resolution: 32nd notes or triplets for rolls and ternary rhythms', 'Resolución del patrón: fusas o tresillos para redobles y ritmos ternarios'],
+
+  // ===== V10 =====
+  'cat.real': ['Vrais instruments', 'Real instruments', 'Instrumentos reales'],
+  'ins.r_piano': ['Piano à queue', 'Grand piano', 'Piano de cola'], 'ins.r_nylon': ['Guitare classique', 'Nylon guitar', 'Guitarra clásica'], 'ins.r_eguitar': ['Guitare électrique', 'Electric guitar', 'Guitarra eléctrica'],
+  'ins.r_ebass': ['Basse électrique', 'Electric bass', 'Bajo eléctrico'], 'ins.r_abass': ['Contrebasse', 'Upright bass', 'Contrabajo'],
+  'ins.r_strings': ['Ensemble de cordes', 'String ensemble', 'Conjunto de cuerdas'], 'ins.r_cello': ['Violoncelle', 'Cello', 'Violonchelo'], 'ins.r_brass': ['Section de cuivres', 'Brass section', 'Sección de metales'],
+  'ins.r_sax': ['Saxophone ténor', 'Tenor sax', 'Saxofón tenor'], 'ins.r_flute': ['Flûte traversière', 'Concert flute', 'Flauta travesera'], 'ins.r_choir': ['Chœur', 'Choir', 'Coro'],
+  'kit.acoustic': ['Acoustique', 'Acoustic', 'Acústica'],
+  'da2': ['Rimshot', 'Rimshot', 'Rimshot'], 'da6': ['Cross-stick', 'Cross-stick', 'Cross-stick'], 'da8': ['Kick mat', 'Dry kick', 'Bombo seco'], 'da9': ['Snare étouffée', 'Muted snare', 'Caja apagada'],
+  'syn.real': ['Instrument enregistré : chaque note est un vrai son, transposé si besoin.', 'Recorded instrument: every note is a real sound, transposed where needed.', 'Instrumento grabado: cada nota es un sonido real, transpuesto si hace falta.'],
+  'toast.bankLoading': ['Chargement des sons de l\'instrument…', 'Loading the instrument sounds…', 'Cargando los sonidos del instrumento…'],
+  'toast.bankReady': ['Instrument prêt', 'Instrument ready', 'Instrumento listo'],
+  'toast.bankFailed': ['Impossible de charger les sons de cet instrument (connexion requise la première fois)', 'Could not load this instrument\'s sounds (a connection is needed the first time)', 'No se pudieron cargar los sonidos de este instrumento (se necesita conexión la primera vez)'],
+  'help.credits': ['Sons : FluidR3 GM de Frank Wen (CC BY 3.0) et Virtuosity Drums de Versilian Studios (CC0).', 'Sounds: FluidR3 GM by Frank Wen (CC BY 3.0) and Virtuosity Drums by Versilian Studios (CC0).', 'Sonidos: FluidR3 GM de Frank Wen (CC BY 3.0) y Virtuosity Drums de Versilian Studios (CC0).'],
 };
