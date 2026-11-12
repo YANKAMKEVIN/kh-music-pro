@@ -111,6 +111,29 @@ Lecture :
 - Le chemin navigateur est donc loin des 12 ms visées (au moins 21 ms annoncées, environ 110 ms réelles sur haut-parleurs). L'argument « latence native » tient. Reste à savoir, à l'étape 3, quelle part de ces 110 ms appartient au matériel (et ne disparaîtra pas en natif).
 - Pour refaire la mesure : `npm ci`, puis `node node_modules/electron/install.js` (npm 11 ne télécharge plus Electron tout seul), `npm run build`, et le script décrit ci-dessus (ou la fenêtre « Réglages audio », bouton de mesure).
 
+**Étape 2 — plus petit hôte Audio Unit (12/11/2026)**
+
+Outil en ligne de commande Swift dans `native/au-host` (paquet Swift, aucune dépendance). Il charge un AU par son identifiant (`AVAudioUnit.instantiate`), le branche dans un `AVAudioEngine` en rendu hors-ligne (blocs de 512 échantillons), traite un WAV et en écrit un autre. Il sait aussi lister les paramètres d'un plugin, générer des signaux de test et analyser un fichier (niveau par fréquence, pics).
+
+```
+cd native/au-host && swift build -c release
+.build/release/au-host params aufx lpas appl
+.build/release/au-host gen tones in.wav
+.build/release/au-host process aufx lpas appl in.wav out.wav 0=1000
+.build/release/au-host analyse out.wav 200 8000
+```
+
+| Plugin et réglage | Signal d'entrée | Résultat attendu | Résultat obtenu |
+|---|---|---|---|
+| AULowpass, coupure 1 kHz | 200 Hz + 8 kHz, chacun à -12 dBFS | 200 Hz intact, 8 kHz fortement atténué | 200 Hz : -11,9 dBFS ; 8 kHz : -49,8 dBFS (**-37,8 dB**) |
+| AUDelay, 250 ms, mix 50 %, sans réinjection | impulsion à 0,500 s | impulsion + écho 250 ms plus tard | pics à 0,5000 s et **0,7500 s** |
+| AUPeakLimiter, réglages d'usine | impulsion à 0,500 s | décalage égal à la latence déclarée (2 ms) | pic à **0,5020 s** |
+
+Lecture :
+- **Preuve faite** : un plugin AU installé sur le Mac traite le son, et le résultat est exactement celui attendu. Le limiteur montre en plus que l'hôte lit la latence déclarée par le plugin (2 ms), ce qu'il faudra compenser plus tard dans le mixage.
+- **Coût de calcul négligeable** : 3 s de son traitées en 0,6 à 2,4 ms, soit 1 600 à 5 000 fois le temps réel. Le calcul ne sera pas le facteur limitant ; la latence viendra des tampons et du matériel.
+- Limites : seuls des AU d'Apple ont été essayés (aucun plugin tiers installé), sans interface graphique de plugin, et sans VST3.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
