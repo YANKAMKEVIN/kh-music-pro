@@ -450,3 +450,15 @@ dialog form { gap: 8px; }
 .mark.tmark:hover { background: var(--a1); color: #04121a; }
 #sig { height: 36px; }
 .perf .fld select { flex: 1; height: 32px; }
+
+/* ================= V14a ================= */
+#fx { width: min(720px, 96vw); } #audio { width: min(560px, 94vw); }
+.fxlist { display: grid; gap: 10px; max-height: 56vh; overflow: auto; padding-right: 4px; }
+.fxcard { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel); }
+.fxcard.off { opacity: .55; }
+.fxhead { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; } .fxhead strong { flex: 1; }
+.fxbody { display: flex; flex-wrap: wrap; gap: 6px 18px; } .fxbody .sl { width: 150px; }
+.fxfoot { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; } .fxfoot form { margin: 0 0 0 auto; }
+.mini.rackb { margin-top: 4px; font-weight: 600; } .mini.rackb.has { border-color: var(--a1); color: var(--a1); }
+.latrow { font: 600 14px ui-monospace, monospace; color: var(--a1); margin: 4px 0; }
+#audio .fld { margin: 6px 0; } #audio .fld select { flex: 1; }

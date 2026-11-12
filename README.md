@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.13)
+## Fonctions (v0.14)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,9 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Chaîne d'effets** par tranche : écho, réverb, phaser, auto-pan, bande d'égaliseur, gain, à ajouter, ordonner et couper librement (jusqu'à huit).
+- **Plugins web** (Web Audio Modules) dans la chaîne d'effets, avec leur propre interface ; un plugin d'exemple est fourni. Un plugin venu d'un autre site demande un accord explicite.
+- **Réglages audio** : choix de la sortie, latence affichée, décalage d'enregistrement réglable ou mesuré.
 - **Tempo et mesure** : changements de tempo en cours de morceau (posés dans la règle, suivis à la lecture, à l'export et dans le MIDI), signature rythmique de 2/4 à 7/4.
 - **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9.
 - **Mixage avancé** : bus pour regrouper des pistes, bande médium à fréquence réglable avec courbe d'égaliseur visible, compresseur réglable (seuil, taux, réduction affichée), automation des envois de réverb et d'écho et du chorus.
@@ -57,7 +60,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 182 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 190 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -100,10 +103,14 @@ Les vrais instruments viennent de banques libres, converties par `tools/build-ba
 - instruments : **FluidR3 GM** de Frank Wen, licence CC BY 3.0 (la mention de l'auteur est obligatoire : elle figure dans l'aide de l'application et dans `public/banks/CREDITS.txt`) ;
 - batterie acoustique : **Virtuosity Drums** de Versilian Studios, licence CC0.
 
+## Passation
+
+`docs/PASSATION.md` décrit l'architecture, ce qui n'a jamais été vérifié, les limites assumées et le plan du prototype natif (V14b). `CLAUDE.md` rappelle les règles du projet.
+
 ## Dépendance
 
 L'export MP3 utilise [`@breezystack/lamejs`](https://www.npmjs.com/package/@breezystack/lamejs) (licence LGPL), chargé seulement au moment d'exporter.
-Tout le reste de l'application est sans dépendance d'exécution. Electron et electron-builder ne servent qu'à la version bureau.
+L'hôte de plugins web utilise `@webaudiomodules/sdk` (licence MIT). Le reste de l'application est sans dépendance d'exécution. Electron et electron-builder ne servent qu'à la version bureau.
 
 ## Structure
 
@@ -111,6 +118,7 @@ Tout le reste de l'application est sans dépendance d'exécution. Electron et el
 - `src/i18n.ts` — textes en trois langues
 - `src/audio/graph.ts` — graphe de mixage, instruments, batterie, séquenceur (partagé entre temps réel et export)
 - `src/audio/engine.ts` — transport, mode Live, enregistrement, rendu hors-ligne, WAV
+- `src/audio/wam.ts` — hôte de plugins web ; `public/wam/kh-tape` — plugin d'exemple
 - `src/audio/banks.ts` — chargement des instruments enregistrés
 - `src/audio/tune.ts` — correction de justesse
 - `src/audio/stretch.ts` — étirement temporel et transposition des sons

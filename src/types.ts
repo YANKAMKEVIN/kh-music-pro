@@ -53,6 +53,20 @@ export interface SynthParams {
   bank?: string;                          // instrument échantillonné (moteur « multi »)
 }
 
+/** Effet ajouté dans la chaîne d'une tranche. `p` = réglages ; pour un plugin web : `url`, `name` et `state`. */
+export interface Insert { id: string; type: string; on: boolean; p: Record<string, number>; url?: string; name?: string; state?: unknown }
+/** Effets disponibles : pour chaque réglage [clé, minimum, maximum, pas, valeur par défaut]. */
+export const FX: Record<string, [string, number, number, number, number][]> = {
+  delay: [['time', 1, 8, 1, 3], ['fb', 0, 0.9, 0.01, 0.35], ['mix', 0, 1, 0.01, 0.3]],
+  reverb: [['size', 0.3, 6, 0.1, 1.8], ['mix', 0, 1, 0.01, 0.25]],
+  phaser: [['rate', 0.05, 5, 0.05, 0.5], ['depth', 0, 1, 0.01, 0.7], ['mix', 0, 1, 0.01, 0.5]],
+  autopan: [['rate', 0.1, 8, 0.1, 1], ['depth', 0, 1, 0.01, 0.8]],
+  eq: [['freq', 40, 12000, 10, 1000], ['gain', -18, 18, 0.5, 0], ['q', 0.3, 8, 0.1, 1]],
+  gain: [['gain', -24, 24, 0.5, 0]],
+  wam: [],
+};
+export const newInsert = (type: string): Insert => ({ id: uid(), type, on: true, p: Object.fromEntries((FX[type] ?? []).map(([k, , , , d]) => [k, d])) });
+
 export interface Pad { bufferId: string; name: string }
 /** Réglages d'un pad : volume (1 = normal), hauteur en demi-tons, panoramique. */
 export interface PadFx { vol: number; tune: number; pan: number }
@@ -69,6 +83,7 @@ export interface Track {
   eqMidF: number;                    // fréquence de la bande médium (Hz)
   compThr: number; compRatio: number; // compresseur : seuil (dB) et taux
   out: string;                       // sortie : '' = général, sinon identifiant d'un bus
+  inserts: Insert[];                 // chaîne d'effets ajoutés, dans l'ordre, après l'égaliseur et le compresseur
   auto?: Partial<Record<AutoParam, Pt[]>>;
   autoShow?: AutoParam | '';
   synth?: SynthParams;
@@ -215,7 +230,7 @@ export function newTrack(type: TrackType, index: number, preset = 'lead'): Track
   return {
     id: uid(), name: `${t('type.' + type)} ${index}`, type,
     color: COLORS[(index - 1 + (type === 'drums' ? 0 : type === 'synth' ? 1 : 3)) % COLORS.length],
-    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0, eqMidF: 1000, compThr: -24, compRatio: 4, out: '',
+    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0, eqMidF: 1000, compThr: -24, compRatio: 4, out: '', inserts: [],
     synth: type === 'synth' ? makeSynth(preset) : undefined,
     kit: type === 'drums' ? 'electro' : undefined,
     pads: type === 'drums' ? new Array(NPADS).fill(null) : undefined,
@@ -253,9 +268,9 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
   p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.liveQ ??= 0;
-  for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; }
+  for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; b.inserts ??= []; }
   for (const tr of p.tracks) {
-    tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4;
+    tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4; tr.inserts ??= [];
     tr.out = tr.out && p.buses.some(b => b.id === tr.out) ? tr.out : '';
     if (tr.type === 'drums') {
       tr.kit ??= 'electro'; tr.pads ??= new Array(NPADS).fill(null);

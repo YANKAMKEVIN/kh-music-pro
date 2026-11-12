@@ -5,6 +5,7 @@ import { clearMidiMap, ccOf, learn } from '../input';
 import { S, commit, emit, select } from '../store';
 import { MIX_PRESETS, Track } from '../types';
 import { ICON } from './arr';
+import { showRack } from './rack';
 import { db, h, pct, slider } from './dom';
 
 function fader(label: string, value: number, set: (v: number) => void) {
@@ -66,6 +67,7 @@ function strip(tr: Track, i: number, bus = false) {
         T(slider(t('mix.trem'), 0, 1, 0.01, tr.trem, v => tr.trem = v, pct), 'trem'),
         T(slider(t('mix.crush'), 0, 1, 0.01, tr.crush, v => tr.crush = v, pct), 'crush'),
         T(slider(t('mix.pan'), -1, 1, 0.01, tr.pan, v => tr.pan = v, panFmt), 'pan'),
+        h('button', { class: 'mini rackb' + (tr.inserts.length ? ' has' : ''), data: { act: 'rack' }, title: t('fx.open'), onclick: () => showRack(tr.id) }, `🧩 ${t('fx.title')}${tr.inserts.length ? ` (${tr.inserts.length})` : ''}`),
         tog('comp', t('mix.comp')),
         tr.comp && slider(t('mix.compThr'), -60, 0, 1, tr.compThr, v => tr.compThr = v, v => v + ' dB'),
         tr.comp && slider(t('mix.compRatio'), 1, 20, 0.5, tr.compRatio, v => tr.compRatio = v, v => v + ':1'),

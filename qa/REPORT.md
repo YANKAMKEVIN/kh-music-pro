@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-182 cas réussis sur 182.
+190 cas réussis sur 190.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -186,3 +186,11 @@
 | TP03 | Tempo | Les changements de tempo voyagent dans le fichier projet et dans le MIDI | OK |
 | SG01 | Signature | Passer en 3/4 : mesures de trois temps dans la règle, la boucle, les clips et les motifs | OK |
 | LQ01 | Live | Calage du lancement : à la mesure, au temps ou immédiat ; les chiffres lancent les scènes | OK |
+| FXC01 | Chaîne d'effets | Ouvrir la chaîne d'une piste, ajouter des effets, les régler, les réordonner, les couper, les retirer | OK |
+| FXC02 | Chaîne d'effets | Chaque effet s'entend au rendu ; un effet coupé ne change rien | OK |
+| FXC03 | Chaîne d'effets | Les effets fonctionnent sur un bus et voyagent dans le fichier projet | OK |
+| WAM01 | Plugins web | Charger le plugin web fourni, le régler par sa propre interface, l'entendre en direct et à l'export, le retrouver dans le projet | OK |
+| WAM02 | Plugins web | Plugin introuvable : message clair, le son passe quand même, l'export le signale | OK |
+| WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
+| LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
+| LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |

@@ -296,8 +296,52 @@ class Engine {
       for (const ch of cap.chunks) { d.set(ch[c] ?? ch[0], o); o += ch[0].length; }
     }
     // Décalage entre le début de la capture et l'instant où le premier temps a été entendu.
-    const off = (this.t0 - cap.first / sr) + (this.ctx.outputLatency || 0) + inLat;
+    // Compensation automatique (latences annoncées par le système), plus le décalage réglé ou mesuré par l'utilisateur.
+    const off = (this.t0 - cap.first / sr) + (this.ctx.outputLatency || 0) + inLat + S.recOffsetMs / 1000;
     cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)), cap.mode);
+  }
+
+  // ---------- Sortie audio et latence ----------
+  /** Latences annoncées par le système, en secondes, et fréquence d'échantillonnage. */
+  latency(): { output: number; input: number; rate: number } {
+    const inLat = (this.inp?.stream.getAudioTracks()[0]?.getSettings() as { latency?: number } | undefined)?.latency ?? 0;
+    return { output: (this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0), input: inLat, rate: this.ctx.sampleRate };
+  }
+  canSetOutput() { return typeof (this.ctx as unknown as { setSinkId?: unknown }).setSinkId === 'function'; }
+  async setOutput(id: string): Promise<boolean> {
+    try { await (this.ctx as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(id); return true; } catch { return false; }
+  }
+  /**
+   * Mesure le trajet complet haut-parleur → micro : un clic est joué, puis repéré dans ce que capte l'entrée.
+   * Renvoie le délai en secondes, ou null si le clic n'a pas été entendu (casque, micro coupé, bruit ambiant).
+   */
+  async measureLatency(): Promise<number | null> {
+    const temp = !this.inp;
+    await this.openInput(S.inputDevice);
+    const inp = this.inp!, sr = this.ctx.sampleRate;
+    await this.ctx.resume();
+    this.workletReady ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
+    await this.workletReady;
+    const node = new AudioWorkletNode(this.ctx, 'kh-rec', { numberOfInputs: 1, numberOfOutputs: 0 }), chunks: Float32Array[] = [];
+    let first = -1;
+    node.port.onmessage = e => { if (first < 0) first = e.data.f; chunks.push(e.data.ch[0]); };
+    inp.gain.connect(node);
+    const t0 = this.ctx.currentTime + 0.25, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.value = 2000; g.gain.setValueAtTime(0.6, t0); g.gain.setValueAtTime(0, t0 + 0.006);
+    g.gain.value = 0; o.connect(g).connect(this.ctx.destination); o.start(t0 - 0.01); o.stop(t0 + 0.02);
+    await new Promise(r => setTimeout(r, 900));
+    try { inp.gain.disconnect(node); } catch { /* entrée fermée */ }
+    node.port.onmessage = null;
+    if (temp) this.closeInput();
+    if (first < 0) return null;
+    const total = chunks.reduce((n, c) => n + c.length, 0), d = new Float32Array(total); let k = 0;
+    for (const c of chunks) { d.set(c, k); k += c.length; }
+    // Bruit de fond avant le clic, puis premier instant qui le dépasse nettement après le clic.
+    const i0 = Math.max(0, Math.round((t0 - first / sr) * sr)); let floor = 0;
+    for (let i = 0; i < Math.min(i0, d.length); i++) floor = Math.max(floor, Math.abs(d[i]));
+    const thr = Math.max(0.02, floor * 4);
+    for (let i = i0; i < d.length; i++) if (Math.abs(d[i]) > thr) return (i - i0) / sr;
+    return null;
   }
 
   // ---------- Effets de performance ----------
@@ -356,6 +400,9 @@ class Engine {
 export const engine = new Engine();
 
 // ---------- Export : rendu hors-ligne + encodage WAV ----------
+/** Ce que le dernier rendu n'a pas pu inclure. */
+export const lastRender = { wamFailed: 0 };
+
 export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
   const end = contentEnd(p);
   if (!end) throw new Error('empty');
@@ -363,6 +410,7 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   const sr = 44100;
   const off = new OfflineAudioContext(2, Math.ceil((timeOf(p, end) + 2.5) * sr), sr);
   const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
+  lastRender.wamFailed = await mix.loadWams(p); // plugins web : recréés pour ce rendu
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
   const out = await off.startRendering();

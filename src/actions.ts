@@ -1,11 +1,12 @@
-import { analyze, encodeMp3, encodeWav, engine, renderOffline } from './audio/engine';
+import { analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from './audio/engine';
+import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
 import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -167,6 +168,56 @@ export function quantizeNotes(notes: { s: number; l: number }[], g: number, patL
     n.l = Math.max(g, Math.min(snapTo(n.l, g), patLen - n.s));
   }
   commit(); toast(t('toast.quantized', notes.length));
+}
+
+// ---------- Chaîne d'effets ----------
+const strip = (id: string) => [...S.project.tracks, ...S.project.buses].find(x => x.id === id);
+export function addInsert(trackId: string, type: string) {
+  const tr = strip(trackId);
+  if (!tr) return;
+  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  tr.inserts.push(newInsert(type)); commit();
+}
+export function removeInsert(trackId: string, id: string) { const tr = strip(trackId); if (tr) { tr.inserts = tr.inserts.filter(i => i.id !== id); commit(); } }
+export function moveInsert(trackId: string, id: string, dir: -1 | 1) {
+  const l = strip(trackId)?.inserts, i = l?.findIndex(x => x.id === id) ?? -1, j = i + dir;
+  if (!l || i < 0 || j < 0 || j >= l.length) return;
+  [l[i], l[j]] = [l[j], l[i]]; commit();
+}
+/** Origines dont les plugins web ont été acceptés par l'utilisateur. */
+const trusted = (): string[] => { try { return JSON.parse(localStorage.getItem('kh-wam-trust') || '[]'); } catch { return []; } };
+/**
+ * Ajoute un plugin web. Un plugin est du code exécuté dans l'application : s'il vient d'un autre site,
+ * l'utilisateur doit l'accepter explicitement (une fois par site).
+ */
+export function addWam(trackId: string, url: string | null, name?: string) {
+  const tr = strip(trackId);
+  if (!tr) return;
+  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  const raw = url ?? prompt(t('wam.ask'), 'https://')?.trim();
+  if (!raw) return;
+  let full: URL;
+  try { full = new URL(wamUrl(raw)); } catch { return toast(t('wam.badUrl'), 'error'); }
+  if (!/^(https?|file):$/.test(full.protocol)) return toast(t('wam.badUrl'), 'error');
+  if (full.origin !== location.origin) {
+    const list = trusted();
+    if (!list.includes(full.origin)) {
+      if (!confirm(t('wam.trust', full.host))) return;
+      try { localStorage.setItem('kh-wam-trust', JSON.stringify([...list, full.origin])); } catch { /* stockage désactivé */ }
+    }
+  }
+  const ins = newInsert('wam'); ins.url = raw; ins.name = name ?? (full.pathname.split('/').filter(Boolean).slice(-2, -1)[0] || full.host);
+  tr.inserts.push(ins); commit();
+}
+/** Recopie dans le projet les réglages internes des plugins web, pour qu'ils soient enregistrés avec lui. */
+export async function saveWamStates() {
+  let changed = false;
+  for (const tr of [...S.project.tracks, ...S.project.buses]) for (const ins of tr.inserts) {
+    const inst = ins.type === 'wam' ? liveWams.get(wamKey(tr.id, ins.id)) : undefined;
+    if (!inst?.audioNode.getState) continue;
+    try { const st = await inst.audioNode.getState(); if (JSON.stringify(st) !== JSON.stringify(ins.state)) { ins.state = st; changed = true; } } catch { /* plugin sans état */ }
+  }
+  if (changed) commit();
 }
 
 export function addBus() {
@@ -418,7 +469,7 @@ export async function exportWav() {
   try {
     toast(t('toast.rendering'));
     download(encodeWav(await renderOffline(S.project)), safeName() + '.wav');
-    toast(t('toast.exported'));
+    toast(lastRender.wamFailed ? t('toast.exportedNoWam', lastRender.wamFailed) : t('toast.exported'), lastRender.wamFailed ? 'error' : 'info');
   } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : t('toast.exportFail'), 'error'); }
 }
 
@@ -465,7 +516,8 @@ export async function analyzeMix(): Promise<string> {
   } catch { toast(t('toast.emptyProject'), 'error'); return ''; }
 }
 
-export function saveFile() {
+export async function saveFile() {
+  await saveWamStates();
   download(new Blob([serializeProject()], { type: 'application/json' }), safeName() + '.khm');
   toast(t('toast.saved'));
 }

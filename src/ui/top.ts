@@ -5,6 +5,7 @@ import { connectMidi, midi } from '../input';
 import { S, commit, emit, redo, undo } from '../store';
 import { clamp, h, toast } from './dom';
 import { keyLabel } from './editor';
+import { showAudio } from './audio';
 import { showLibrary } from './library';
 import { startTour } from './tour';
 
@@ -71,6 +72,7 @@ export function buildTop(onLang: () => void) {
       b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
       b('bUndo', 'icon', '↶', t('top.undo'), undo), b('bRedo', 'icon', '↷', t('top.redo'), redo),
       b('bMidi', 'pill', '🎛 MIDI', t('top.midiTip'), midiConnect),
+      b('bAudio', 'icon', '🔧', t('aud.title'), showAudio),
       pname, menu,
       b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav),
       langSel,

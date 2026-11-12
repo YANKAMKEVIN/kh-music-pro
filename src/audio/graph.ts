@@ -1,5 +1,6 @@
 import { drumSample, sampleFor } from './banks';
-import { Clip, KITS, Project, Pt, SynthParams, Track, autoAt, durAt, stepDur as sd, timeOf } from '../types';
+import { WamInstance, createWam, liveWams, wamKey } from './wam';
+import { Clip, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, durAt, stepDur as sd, timeOf } from '../types';
 
 export interface TrackNodes {
   input: GainNode; lp: BiquadFilterNode; hp: BiquadFilterNode; shaper: WaveShaperNode;
@@ -7,8 +8,11 @@ export interface TrackNodes {
   comp: DynamicsCompressorNode; makeup: GainNode; fader: GainNode; auto: GainNode; duck: GainNode; pan: StereoPannerNode;
   revSend: GainNode; dlySend: GainNode; analyser?: AnalyserNode; compOn?: boolean; driveVal?: number; duckAmt: number;
   outId?: string;
+  insIn: GainNode; insOut: GainNode; ins: Map<string, InsNode>; insSig?: string;
   crush: WaveShaperNode; crushIn: GainNode; crushOut: GainNode; crushVal?: number; chWet: GainNode; trem: GainNode; tremDepth: GainNode; tremLfo: OscillatorNode;
 }
+/** Un effet de la chaîne : on y entre par `in`, on en sort par `out` ; `set` applique ses réglages. */
+export interface InsNode { in: GainNode; out: GainNode; set(i: Insert, p: Project, set: (prm: AudioParam, v: number) => void): void; wam?: WamInstance; loading?: boolean }
 export interface Voice { release(at: number): void }
 type Buffers = Map<string, AudioBuffer>;
 
@@ -99,6 +103,85 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     this.out.disconnect(this.limiter); this.out.connect(node).connect(this.limiter);
   }
 
+  /** Construit un effet de la chaîne. */
+  private buildInsert(type: string): InsNode {
+    const c = this.ctx, input = c.createGain(), out = c.createGain();
+    const lfo = (hz: number) => { const o = c.createOscillator(); o.frequency.value = hz; o.start(); return o; };
+    if (type === 'delay') {
+      const d = c.createDelay(2), fb = c.createGain(), wet = c.createGain(), lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000;
+      input.connect(out); input.connect(d).connect(lp).connect(wet).connect(out); lp.connect(fb).connect(d);
+      return { in: input, out, set: (i, p, set) => { set(d.delayTime, Math.min(1.9, i.p.time * sd(p.bpm))); set(fb.gain, i.p.fb); set(wet.gain, i.p.mix); } };
+    }
+    if (type === 'reverb') {
+      const conv = c.createConvolver(), wet = c.createGain(), dry = c.createGain(); let size = 0;
+      input.connect(dry).connect(out); input.connect(conv).connect(wet).connect(out);
+      return { in: input, out, set: (i, _p, set) => { if (size !== i.p.size) { conv.buffer = this.impulse(i.p.size); size = i.p.size; } set(wet.gain, i.p.mix); set(dry.gain, 1 - i.p.mix * 0.5); } };
+    }
+    if (type === 'phaser') {
+      const stages = [0, 1, 2, 3].map(() => { const f = c.createBiquadFilter(); f.type = 'allpass'; f.frequency.value = 900; f.Q.value = 0.6; return f; });
+      const wet = c.createGain(), o = lfo(0.5), depth = c.createGain();
+      input.connect(out); stages.reduce<AudioNode>((a, f) => a.connect(f), input).connect(wet).connect(out);
+      o.connect(depth); for (const f of stages) depth.connect(f.frequency);
+      return { in: input, out, set: (i, _p, set) => { set(o.frequency, i.p.rate); set(depth.gain, 700 * i.p.depth); set(wet.gain, i.p.mix); } };
+    }
+    if (type === 'autopan') {
+      const pan = c.createStereoPanner(), o = lfo(1), depth = c.createGain();
+      input.connect(pan).connect(out); o.connect(depth).connect(pan.pan);
+      return { in: input, out, set: (i, _p, set) => { set(o.frequency, i.p.rate); set(depth.gain, i.p.depth); } };
+    }
+    if (type === 'eq') {
+      const f = c.createBiquadFilter(); f.type = 'peaking'; input.connect(f).connect(out);
+      return { in: input, out, set: (i, _p, set) => { set(f.frequency, i.p.freq); set(f.gain, i.p.gain); set(f.Q, i.p.q); } };
+    }
+    if (type === 'gain') { input.connect(out); return { in: input, out, set: (i, _p, set) => { set(out.gain, Math.pow(10, i.p.gain / 20)); } }; }
+    input.connect(out); // plugin web : le son passe tel quel tant que le plugin n'est pas chargé
+    return { in: input, out, set: () => { } };
+  }
+
+  /** Branche un plugin web chargé à la place du passage direct. */
+  private attachWam(node: InsNode, inst: WamInstance) {
+    node.wam = inst;
+    try { node.in.disconnect(node.out); } catch { /* déjà débranché */ }
+    node.in.connect(inst.audioNode); inst.audioNode.connect(node.out);
+  }
+
+  /** Met la chaîne d'effets d'une tranche en accord avec le projet : ordre, effets actifs, réglages. */
+  private syncInserts(t: Track, n: TrackNodes, p: Project) {
+    const list = t.inserts ?? [], active = list.filter(i => i.on), sig = active.map(i => i.id + i.type).join('|');
+    for (const [id, node] of n.ins) if (!list.some(i => i.id === id)) { node.out.disconnect(); node.wam?.audioNode.destroy?.(); n.ins.delete(id); liveWams.delete(wamKey(t.id, id)); }
+    for (const i of list) {
+      let node = n.ins.get(i.id);
+      if (!node) { node = this.buildInsert(i.type); n.ins.set(i.id, node); }
+      if (i.type === 'wam' && i.url && !node.wam && !node.loading && this.live) {
+        node.loading = true;
+        const made = node;
+        createWam(this.ctx, i.url, i.state).then(inst => { this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true); },
+          () => { this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
+      }
+      node.set(i, p, (prm, v) => this.set(prm, v));
+    }
+    if (n.insSig === sig) return;
+    n.insIn.disconnect(); for (const node of n.ins.values()) node.out.disconnect();
+    active.reduce<AudioNode>((a, i) => { const node = n.ins.get(i.id)!; a.connect(node.in); return node.out; }, n.insIn).connect(n.insOut);
+    n.insSig = sig;
+  }
+  /** Prévenu quand un plugin web a fini de se charger (ou a échoué). */
+  onWam?: (trackId: string, insertId: string, ok: boolean) => void;
+
+  /** Rendu hors-ligne : crée les plugins web sur ce contexte, avec l'état de ceux en service. Renvoie le nombre d'échecs. */
+  async loadWams(p: Project): Promise<number> {
+    let failed = 0;
+    for (const t of [...p.buses, ...p.tracks]) for (const i of t.inserts ?? []) {
+      const node = this.tracks.get(t.id)?.ins.get(i.id);
+      if (i.type !== 'wam' || !i.url || !i.on || !node) continue;
+      try {
+        const live = liveWams.get(wamKey(t.id, i.id)), state = live?.audioNode.getState ? await live.audioNode.getState() : i.state;
+        this.attachWam(node, await createWam(this.ctx, i.url, state));
+      } catch { failed++; }
+    }
+    return failed;
+  }
+
   private impulse(sec: number) {
     const sr = this.ctx.sampleRate, len = Math.floor(sr * sec), b = this.ctx.createBuffer(2, len, sr);
     for (let c = 0; c < 2; c++) {
@@ -118,6 +201,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       input: c.createGain(), lp: c.createBiquadFilter(), hp: c.createBiquadFilter(), shaper: c.createWaveShaper(),
       low: c.createBiquadFilter(), mid: c.createBiquadFilter(), high: c.createBiquadFilter(),
       comp: c.createDynamicsCompressor(), makeup: c.createGain(), fader: c.createGain(), auto: c.createGain(), duck: c.createGain(), pan: c.createStereoPanner(),
+      insIn: c.createGain(), insOut: c.createGain(), ins: new Map(),
       revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0,
       crush: c.createWaveShaper(), crushIn: c.createGain(), crushOut: c.createGain(), chWet: c.createGain(), trem: c.createGain(), tremDepth: c.createGain(), tremLfo: c.createOscillator(),
     };
@@ -141,7 +225,8 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     n.chWet.connect(n.trem);
     n.tremDepth.gain.value = 0; n.tremLfo.connect(n.tremDepth).connect(n.trem.gain); n.tremLfo.start();
     n.trem.connect(n.low).connect(n.mid).connect(n.high);
-    n.comp.connect(n.makeup).connect(n.fader);
+    // Après l'égaliseur et le compresseur : la chaîne d'effets ajoutés, puis le fader.
+    n.comp.connect(n.makeup).connect(n.insIn); n.insIn.connect(n.insOut); n.insOut.connect(n.fader);
     n.fader.connect(n.auto).connect(n.duck).connect(n.pan); // la sortie (général ou bus) est branchée par sync
     n.pan.connect(n.revSend).connect(this.revBus);
     n.pan.connect(n.dlySend).connect(this.dlyBus);
@@ -182,7 +267,8 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       if (!au?.chorus?.length) this.set(n.chWet.gain, t.chorus * 0.8);
       this.set(n.trem.gain, 1 - t.trem / 2); this.set(n.tremDepth.gain, t.trem / 2); this.set(n.tremLfo.frequency, p.bpm / 30);
       if (n.driveVal !== t.drive) { n.shaper.curve = t.drive > 0 ? driveCurve(t.drive) : null; n.driveVal = t.drive; }
-      if (n.compOn !== t.comp) { n.high.disconnect(); n.high.connect(t.comp ? n.comp : n.fader); n.compOn = t.comp; }
+      if (n.compOn !== t.comp) { n.high.disconnect(); n.high.connect(t.comp ? n.comp : n.insIn); n.compOn = t.comp; }
+      this.syncInserts(t, n, p);
       const audible = !t.mute && (isBus || !anySolo || t.solo);
       this.set(n.fader.gain, audible ? t.vol : 0);
       if (!au?.pan?.length) this.set(n.pan.pan, t.pan);

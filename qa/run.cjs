@@ -67,7 +67,7 @@ const PAGE_HELPERS = () => {
 };
 
 const results = [];
-let page, browser, dialogText, ignoreErr = null, errors = [];
+let page, browser, dialogText, refuseConfirm = false, ignoreErr = null, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
 
@@ -78,7 +78,7 @@ async function reset() {
     k.S.project = k.demoProject(); k.S.project.countIn = false;
     Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1 }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    k.S.selMore.clear(); k.S.padEdit = -1;
+    k.S.selMore.clear(); k.S.padEdit = -1; k.S.recOffsetMs = 0; try { localStorage.removeItem('kh-rec-offset'); localStorage.removeItem('kh-wam-trust'); } catch { }
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
     k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
@@ -574,6 +574,8 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await S(() => { const k = window.kh; k.S.project.tracks.forEach(t => { t.autoShow = 'vol'; }); k.commit(); }); text += await page.innerText('#arr');
     await page.click(await clipSel(0, 0)); await page.click('[data-view=pads]'); await page.click('.pad[data-pad="1"] [data-act=padfx]'); text += await page.innerText('#panel');
     await page.click('#bNotes'); text += await page.innerText('#notes'); await page.keyboard.press('Escape');
+    await page.click('#bAudio'); await sleep(150); text += await page.innerText('#audio'); await page.keyboard.press('Escape');
+    await S(() => { const k = window.kh, t = k.S.project.tracks[0]; t.inserts = ['delay', 'reverb', 'phaser', 'autopan', 'eq', 'gain'].map(x => k.newInsert(x)); k.commit(); k.showRack(t.id); }); text += await page.innerText('#fx'); await page.keyboard.press('Escape');
     await S(() => { const k = window.kh; window.qa.sine('qa-sine'); const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-n', name: 'Son', start: 0, len: 8, offset: 0, bufferId: 'qa-sine', gain: 1, takes: [0, 0.2], take: 0 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-n'; k.learn.on = true; k.S.project.buses.push(k.newBus(1)); k.S.project.tracks[0].comp = true; k.commit(); }); text += await page.innerText('#panel');
     await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'sampler'); text += await page.innerText('#panel');
     await page.selectOption('[data-role=preset]', 'r_piano'); await sleep(300); text += await page.innerText('#panel') + (await page.textContent('#toast'));
@@ -584,7 +586,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await menu('bLib'); text += await page.innerText('#lib'); await page.keyboard.press('Escape');
     await page.click('#menu summary'); text += await page.innerText('#top'); await page.click('#menu summary');
     const titles = await page.$$eval('[title], [aria-label]', els => els.map(e => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' | '));
-    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune|bus|tempo)\.[a-zA-Z0-9.]+/g);
+    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune|bus|tempo|fxn|fxp|wam|aud)\.[a-zA-Z0-9.]+/g);
     expect(!raw, `clés non traduites : ${raw && [...new Set(raw)].join(', ')}`);
     const miss = errors.slice(n0).filter(e => e.includes('i18n')); expect(!miss.length, miss.join(' ; '));
     if (code !== 'fr') expect(!/Éditeur|Supprimer|Enregistrer|Longueur/.test(text), 'du français subsiste');
@@ -886,9 +888,9 @@ test('E04', 'Passerelles', 'Exporter les pistes séparées : une archive ZIP val
 
 // ============ V3 : projet, robustesse, application installable ============
 test('P06', 'Projet', 'Un projet de la V2 s\'ouvre dans la V3 avec les nouveaux réglages par défaut', async () => {
-  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers', 'notes', 'target', 'width']) delete p[k]; delete p.buses; delete p.punch; delete p.tempos; delete p.sig; delete p.liveQ; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; delete t.out; delete t.eqMidF; delete t.compThr; delete t.compRatio; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers', 'notes', 'target', 'width']) delete p[k]; delete p.buses; delete p.punch; delete p.tempos; delete p.sig; delete p.liveQ; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; delete t.out; delete t.inserts; delete t.eqMidF; delete t.compThr; delete t.compRatio; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
   const f = path.join(TMP, 'v2.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(400);
-  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0 && t.out === '' && t.eqMidF === 1000 && t.compThr === -24 && t.compRatio === 4) && Array.isArray(p.buses) && p.punch === false && Array.isArray(p.tempos) && p.sig === 4 && p.liveQ === 0 && Array.isArray(p.markers), 'valeurs par défaut absentes');
+  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0 && t.out === '' && Array.isArray(t.inserts) && t.eqMidF === 1000 && t.compThr === -24 && t.compRatio === 4) && Array.isArray(p.buses) && p.punch === false && Array.isArray(p.tempos) && p.sig === 4 && p.liveQ === 0 && Array.isArray(p.markers), 'valeurs par défaut absentes');
   const a = await S(() => window.qa.stats(window.kh.S.project)), b = await S(() => window.qa.stats(window.kh.demoProject())); near(a.rms / b.rms, 1, 0.08, 'le projet doit sonner comme avant'); // la réverb est tirée au hasard à chaque rendu
 });
 test('X10', 'Robustesse', 'Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud', async () => {
@@ -1785,13 +1787,114 @@ test('LQ01', 'Live', 'Calage du lancement : à la mesure, au temps ou immédiat 
   expect(sc === 'Break', `la touche 2 doit lancer la scène 2 (clip actif : ${sc})`);
 });
 
+// ============ V14a : chaînes d'effets, plugins web, latence ============
+const insertsOf = async ti => (await proj()).tracks[ti].inserts;
+/** Rendu de la piste de basse seule avec une chaîne d'effets donnée. */
+const withFx = (list, wins) => page.evaluate(([list, wins]) => { const k = window.kh, p = window.qa.only(1, (p, t) => { t.rev = 0; t.dly = 0; t.clips[0].len = 16; t.synth.cutoff = 6000; t.inserts = list.map(([type, prm, on]) => { const i = k.newInsert(type); Object.assign(i.p, prm || {}); if (on === false) i.on = false; return i; }); }); return wins ? window.qa.wins(p, wins) : window.qa.stats(p); }, [list, wins]);
+
+test('FXC01', 'Chaîne d\'effets', 'Ouvrir la chaîne d\'une piste, ajouter des effets, les régler, les réordonner, les couper, les retirer', async () => {
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); expect(await page.$eval('#fx', d => d.open) && await page.$('#fx [data-empty]'), 'fenêtre non ouverte ou non vide');
+  await page.selectOption('[data-role=fxadd]', 'delay'); await page.selectOption('[data-role=fxadd]', 'phaser'); await page.selectOption('[data-role=fxadd]', 'gain');
+  let l = await insertsOf(1); expect(l.map(i => i.type).join() === 'delay,phaser,gain' && l[0].p.time === 3 && l[0].p.mix === 0.3 && l.every(i => i.on), `effets ajoutés : ${JSON.stringify(l)}`);
+  near(await page.$$eval('#fx .fxcard', e => e.length), 3, 0, 'cartes affichées');
+  await setSlider('#fx .fxcard >> nth=0', 'Répétitions', 0.6); await setSlider('#fx .fxcard >> nth=2', 'Gain', -6);
+  l = await insertsOf(1); expect(l[0].p.fb === 0.6 && l[2].p.gain === -6, 'réglages non enregistrés');
+  await page.click('#fx .fxcard >> nth=2 >> [data-act=fxup]'); expect((await insertsOf(1)).map(i => i.type).join() === 'delay,gain,phaser', 'ordre après « monter »');
+  expect(await page.$eval('#fx .fxcard >> nth=0 >> [data-act=fxup]', e => e.disabled), 'le premier effet ne peut pas monter');
+  await page.click('#fx .fxcard >> nth=0 >> [data-act=fxon]'); expect((await insertsOf(1))[0].on === false && await page.$('#fx .fxcard.off'), 'effet non coupé');
+  await page.click('#fx .fxcard >> nth=1 >> [data-act=fxdel]'); expect((await insertsOf(1)).map(i => i.type).join() === 'delay,phaser', 'suppression');
+  for (let i = 0; i < 7; i++) await page.selectOption('[data-role=fxadd]', 'eq'); near((await insertsOf(1)).length, 8, 0, 'huit effets au plus'); expect((await page.textContent('#toast')).includes('Huit'), 'message de limite');
+  await page.keyboard.press('Escape'); expect((await page.textContent('.strip >> nth=1 >> [data-act=rack]')).includes('(8)'), 'le bouton n\'indique pas le nombre d\'effets');
+  await page.keyboard.press('Control+z'); near((await insertsOf(1)).length, 7, 0, 'annulation');
+});
+test('FXC02', 'Chaîne d\'effets', 'Chaque effet s\'entend au rendu ; un effet coupé ne change rien', async () => {
+  const dry = await withFx([]), off = await withFx([['delay', { mix: 1, fb: 0.8 }, false], ['gain', { gain: -12 }, false]]);
+  near(off.rms / dry.rms, 1, 0.01, 'un effet coupé ne doit rien changer');
+  const delay = await withFx([['delay', { mix: 0.8, fb: 0.7, time: 3 }]]), reverb = await withFx([['reverb', { mix: 0.8, size: 3 }]]);
+  expect(delay.tail > dry.tail * 5 + 1e-5, 'écho inaudible'); expect(reverb.tail > dry.tail * 5 + 1e-5, 'réverb inaudible');
+  near((await withFx([['gain', { gain: -6 }]])).rms / dry.rms, 0.501, 0.02, 'gain de −6 dB');
+  const eq = await withFx([['eq', { freq: 3000, gain: 15, q: 1 }]]); expect(eq.hf > dry.hf * 1.5, `bande d'égaliseur inaudible (${(eq.hf / dry.hf).toFixed(2)})`);
+  const ph = await withFx([['phaser', { rate: 2, depth: 1, mix: 1 }]]); expect(Math.abs(ph.rms / dry.rms - 1) > 0.03 || Math.abs(ph.hf / dry.hf - 1) > 0.03, 'phaser inaudible');
+  const w = [0.1, 0.35, 0.6, 0.85].map(t => [t, t + 0.1]), pan = await withFx([['autopan', { rate: 1, depth: 1 }]], w), ratios = pan.map(x => x.l / (x.r + 1e-9));
+  expect(Math.max(...ratios) > 2 && Math.min(...ratios) < 0.5, `l'auto-pan ne balaie pas la stéréo (${ratios.map(x => x.toFixed(2))})`);
+  const two = await withFx([['gain', { gain: -6 }], ['gain', { gain: -6 }]]); near(two.rms / dry.rms, 0.251, 0.02, 'deux effets en série se cumulent');
+  for (const [n, s] of Object.entries({ delay, reverb, eq, ph })) expect(s.bad === 0 && s.peak <= 0.97, `${n} : signal invalide`);
+});
+test('FXC03', 'Chaîne d\'effets', 'Les effets fonctionnent sur un bus et voyagent dans le fichier projet', async () => {
+  const r = await S(async () => { const k = window.kh, mk = f => { const p = k.demoProject(); p.tracks = [p.tracks[1]]; const t = p.tracks[0]; t.rev = 0; t.dly = 0; t.clips[0].len = 16; const b = k.newBus(1); b.vol = 1; p.buses.push(b); t.out = b.id; f(b); return window.qa.stats(p); }; return { plain: await mk(() => { }), cut: await mk(b => { const i = k.newInsert('gain'); i.p.gain = -6; b.inserts.push(i); }) }; });
+  near(r.cut.rms / r.plain.rms, 0.501, 0.02, 'effet sur le bus');
+  await S(() => { const k = window.kh, t = k.S.project.tracks[2], a = k.newInsert('delay'), b = k.newInsert('eq'); a.p.fb = 0.5; b.on = false; t.inserts = [a, b]; k.commit(); });
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'fx.khm'); await dl.saveAs(f);
+  await newBlank(); expect((await proj()).tracks.every(t => t.inserts.length === 0), 'un nouveau projet n\'a pas d\'effets ajoutés'); await page.setInputFiles('#fProj', f); await sleep(400);
+  const l = await insertsOf(2); expect(l.length === 2 && l[0].type === 'delay' && l[0].p.fb === 0.5 && l[1].on === false, `effets perdus : ${JSON.stringify(l)}`);
+  await page.keyboard.press('Space'); await sleep(600); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.2), 'lecture avec effets'); await page.keyboard.press('Space');
+});
+test('WAM01', 'Plugins web', 'Charger le plugin web fourni, le régler par sa propre interface, l\'entendre en direct et à l\'export, le retrouver dans le projet', async () => {
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); await page.selectOption('[data-role=fxadd]', 'wam:wam/kh-tape/index.js');
+  await page.waitForSelector('#fx [data-wam=gui]', { timeout: 8000 }); const ins = (await insertsOf(1))[0];
+  expect(ins.type === 'wam' && ins.url === 'wam/kh-tape/index.js' && (await page.textContent('#fx .fxcard')).includes('KH Tape Echo'), `plugin non ajouté : ${JSON.stringify(ins)}`);
+  near(await page.$$eval('#fx [data-wam-param]', e => e.length), 4, 0, 'réglages de l\'interface du plugin');
+  for (const [k, v] of [['mix', 1], ['feedback', 0.8], ['time', 0.3]]) await page.$eval(`#fx [data-wam-param=${k}]`, (e, v) => { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, String(v));
+  await page.keyboard.press('Escape'); await sleep(300);
+  const st = (await insertsOf(1))[0].state; expect(st && st.mix === 1 && st.feedback === 0.8 && st.time === 0.3, `réglages du plugin non enregistrés dans le projet : ${JSON.stringify(st)}`);
+  const r = await S(async () => { const k = window.kh, mk = keep => { const p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; const t = p.tracks[0]; t.rev = 0; t.dly = 0; t.clips[0].len = 16; if (!keep) t.inserts = []; return p; }; const dry = await window.qa.stats(mk(false)), wet = await window.qa.stats(mk(true)); return { dry: dry.tail, wet: wet.tail, failed: k.lastRender.wamFailed, bad: wet.bad }; });
+  expect(r.failed === 0 && r.bad === 0 && r.wet > r.dry * 5 + 1e-5, `le plugin n'est pas dans l'export (${JSON.stringify(r)})`);
+  await S(() => window.kh.padHit(1, 1, window.kh.S.project.tracks[0])); await page.click(await headSel(1)); await page.keyboard.down('a'); await sleep(120); await page.keyboard.up('a');
+  const tail = await levelAt(900); expect(tail > 0.05, `en direct, l'écho du plugin ne s'entend pas (${tail.toFixed(3)})`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'wam.khm'); await dl.saveAs(f);
+  await newBlank(); await page.setInputFiles('#fProj', f); await sleep(1200);
+  const back = await S(async () => { const k = window.kh, t = k.S.project.tracks[1], inst = k.liveWams.get(t.id + ':' + t.inserts[0].id); return inst ? inst.audioNode.getState() : null; });
+  expect(back && back.feedback === 0.8 && back.mix === 1, `après réouverture, le plugin n'a pas retrouvé ses réglages : ${JSON.stringify(back)}`);
+});
+test('WAM02', 'Plugins web', 'Plugin introuvable : message clair, le son passe quand même, l\'export le signale', async () => {
+  ignoreErr = /Failed to load|404|import|MIME/i;
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1], i = k.newInsert('wam'); i.url = 'wam/absent/index.js'; i.name = 'Absent'; t.inserts = [i]; k.commit(); }); await sleep(900);
+  expect((await page.textContent('#toast')).includes('Impossible de charger ce plugin'), `message : ${await page.textContent('#toast')}`);
+  await page.keyboard.press('Space'); await sleep(700); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.2), 'la lecture ne passe plus'); await page.keyboard.press('Space');
+  const r = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; const st = await window.qa.stats(p); return { rms: st.rms, failed: k.lastRender.wamFailed }; });
+  expect(r.rms > 0.01 && r.failed === 1, `export : ${JSON.stringify(r)}`);
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 90000 }), page.click('#bExport')]); await dl.path(); expect((await page.textContent('#toast')).includes('sans 1 plugin'), `l'export ne signale pas le plugin manquant : ${await page.textContent('#toast')}`);
+});
+test('WAM03', 'Plugins web', 'Un plugin venu d\'un autre site demande un accord explicite ; une adresse dangereuse est refusée', async () => {
+  ignoreErr = /Failed to load|ERR_|import|CORS|net::/i;
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  const asked = []; const onDlg = d => asked.push(d.type() + ':' + d.message().slice(0, 60)); page.on('dialog', onDlg);
+  try {
+    dialogText = 'https://plugins.example.org/echo/index.js'; refuseConfirm = true; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300);
+    expect(asked.length === 2 && asked[0].startsWith('prompt') && asked[1].startsWith('confirm') && asked[1].includes('plugins.example.org'), `demandes : ${asked}`);
+    expect((await insertsOf(1)).length === 0 && await S(() => !localStorage.getItem('kh-wam-trust')), 'un refus ne doit rien ajouter ni mémoriser');
+    refuseConfirm = false; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300);
+    const l = await insertsOf(1); expect(l.length === 1 && l[0].url === dialogText && l[0].name === 'echo', `après accord : ${JSON.stringify(l)}`);
+    expect(await S(() => localStorage.getItem('kh-wam-trust')) === '["https://plugins.example.org"]', 'site de confiance non mémorisé');
+    asked.length = 0; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300); expect(asked.length === 1, 'un site déjà accepté ne doit pas redemander l\'accord');
+    dialogText = 'javascript:alert(1)'; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(200);
+    expect((await insertsOf(1)).length === 2 && (await page.textContent('#toast')).includes('invalide'), 'adresse dangereuse acceptée');
+  } finally { page.off('dialog', onDlg); dialogText = undefined; refuseConfirm = false; }
+});
+test('LAT01', 'Latence', 'Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur', async () => {
+  await page.click('#bAudio'); expect(await page.$eval('#audio', d => d.open), 'fenêtre non ouverte');
+  expect(/Sortie : \d+ ms · Entrée : (—|\d+ ms) · \d{5} Hz/.test(await page.textContent('[data-role=latinfo]')), `latence : ${await page.textContent('[data-role=latinfo]')}`);
+  const outs = await page.$$eval('[data-role=audout] option', e => e.map(o => o.value)); expect(outs.length >= 1 && outs[0] === '', 'liste des sorties');
+  if (outs.length > 1) { await page.selectOption('[data-role=audout]', outs[1]); await sleep(300); expect(await S(() => window.kh.engine.ctx.sinkId) === outs[1] && await S(() => window.kh.S.outputDevice) === outs[1], 'sortie non changée'); await page.selectOption('[data-role=audout]', ''); await sleep(200); }
+  await setSlider('#audio', 'Décalage d\'enregistrement', 35); expect(await S(() => window.kh.S.recOffsetMs === 35 && localStorage.getItem('kh-rec-offset') === '35'), 'décalage non mémorisé');
+  await page.click('[data-act=latmeasure]'); await page.waitForFunction(() => /non détecté|mesuré/.test(document.querySelector('[data-role=latresult]').textContent), null, { timeout: 8000 });
+  expect((await page.textContent('[data-role=latresult]')).includes('non détecté'), 'le micro simulé n\'entend pas les haut-parleurs : la mesure doit le dire'); near(await S(() => window.kh.S.recOffsetMs), 35, 0, 'une mesure ratée ne doit pas changer le décalage');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Space'); await sleep(300); expect(await S(() => window.kh.engine.playing), 'raccourcis après fermeture');
+});
+test('LAT02', 'Latence', 'Le décalage d\'enregistrement recale réellement les prises', async () => {
+  const take = async ms => { await S(() => { const k = window.kh; k.S.project.loop = false; k.S.project.tracks[4].clips = []; k.commit(); }); await page.evaluate(v => { window.kh.S.recOffsetMs = v; }, ms);
+    await page.click(await headSel(4)); await page.keyboard.press('r'); await sleep(1300); await page.keyboard.press('Space'); await sleep(600); return (await proj()).tracks[4].clips[0].offset; };
+  const a = await take(0), b = await take(150), c = await take(0);
+  near(b - (a + c) / 2, 0.15, 0.05, `décalage appliqué (${a.toFixed(3)}, ${b.toFixed(3)}, ${c.toFixed(3)})`);
+});
+
 (async () => {
   browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
   page = await ctx.newPage();
   page.on('pageerror', e => errors.push('PAGE ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
-  page.on('dialog', d => d.accept(dialogText));
+  page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
   await page.addInitScript(PAGE_HELPERS);
   await page.goto(BASE); await page.waitForSelector('.clip');
   if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');

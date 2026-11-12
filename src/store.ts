@@ -12,6 +12,8 @@ export const S = {
   tab: 'editor' as 'editor' | 'mixer' | 'live',
   drumView: 'seq' as 'seq' | 'pads',
   inputDevice: '', inputGain: 1, inputMonitor: false, // entrée audio
+  outputDevice: '',                                   // sortie audio choisie ('' = celle du système)
+  recOffsetMs: (() => { try { return +(localStorage.getItem('kh-rec-offset') || 0) || 0; } catch { return 0; } })(), // recalage des prises (ms)
   tuneAmt: 1,                                         // force de la correction de justesse
   stretch: { clip: '', pct: 100, semis: 0 },          // étirement en attente pour le clip audio ouvert
   synthOpen: false, // réglages détaillés de l'instrument dépliés dans le piano roll

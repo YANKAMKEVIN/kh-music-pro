@@ -1,6 +1,7 @@
 import './style.css';
 import { copyClip, deleteClip, duplicateClip, pasteClip, saveFile, splitClip, toggleRecord } from './actions';
-import { engine, renderOffline } from './audio/engine';
+import { engine, lastRender, renderOffline } from './audio/engine';
+import { liveWams } from './audio/wam';
 import { lufs } from './audio/loudness';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
@@ -8,11 +9,12 @@ import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, redo, resetHistory, undo } from './store';
-import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, setBar, setRes, templateProject, timeOf } from './types';
+import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
 import { flashPad, notesKey, renderEditor, updateEditorPlayhead, updateTuner } from './ui/editor';
+import { refreshRack, showRack } from './ui/rack';
 import { startTour } from './ui/tour';
 import { createFromTemplate, showLibrary } from './ui/library';
 import { refreshLive, renderLive } from './ui/live';
@@ -29,7 +31,7 @@ function renderPanel() {
   });
 }
 
-function renderAll() { setBar((S.project.sig || 4) * 4); engine.sync(); renderArr(); renderPanel(); renderTop(); }
+function renderAll() { setBar((S.project.sig || 4) * 4); engine.sync(); refreshRack(); renderArr(); renderPanel(); renderTop(); }
 onChange(renderAll);
 onSelect(() => {
   refreshSelection();
@@ -133,7 +135,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {
