@@ -1,4 +1,4 @@
-import { addTrack, audioFiles, deleteTrack, duplicateTrack, importFiles, moveTrack, pickAudio, selectedClips } from '../actions';
+import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, importFiles, moveTrack, pickAudio, removeTempo, selectedClips } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, select } from '../store';
@@ -260,6 +260,11 @@ export function renderArr() {
   const every = BAR * px >= 44 ? 1 : BAR * px >= 22 ? 2 : 4;
   for (let b = 0; b < total / BAR; b += every) ruler.append(h('span', { style: `left:${b * BAR * px}px` }, String(b + 1)));
   if (p.loop) ruler.append(h('div', { class: 'loopr', style: `left:${p.loopStart * BAR * px}px;width:${p.loopLen * BAR * px}px` }));
+  for (const m of p.tempos) ruler.append(h('button', {
+    class: 'mark tmark', style: `left:${m.s * px}px`, title: t('tempo.tip'), data: { tempo: String(m.s) },
+    onpointerdown: (e: Event) => e.stopPropagation(), onclick: () => editTempo(m.s),
+    oncontextmenu: (e: Event) => { e.preventDefault(); removeTempo(m.s); },
+  }, `♩ ${m.bpm}`));
   for (const m of p.markers) ruler.append(h('button', {
     class: 'mark', style: `left:${m.s * px}px`, title: t('mark.tip'), data: { mark: String(m.s) },
     onpointerdown: (e: Event) => e.stopPropagation(), onclick: () => engine.seek(m.s),

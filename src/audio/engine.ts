@@ -3,7 +3,7 @@ import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
 import { S, buffers } from '../store';
-import { BAR, Project, Track, contentEnd, stepDur } from '../types';
+import { BAR, Project, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
@@ -109,7 +109,7 @@ class Engine {
     const now = this.ctx.currentTime, m = this.marks;
     while (m.length > 1 && m[1].t <= now) m.shift();
     if (!m.length || now < m[0].t) return m.length ? m[0].s : (this.mode === 'live' ? 0 : this.pos);
-    return m[0].s + Math.min(1, (now - m[0].t) / stepDur(S.project.bpm));
+    return m[0].s + Math.min(1, (now - m[0].t) / (this.mode === 'live' ? stepDur(S.project.bpm) : durAt(S.project, m[0].s)));
   }
 
   private tick() {
@@ -117,7 +117,7 @@ class Engine {
     if (this.mode === 'live') {
       while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
         const s = this.nextStep, t = this.nextTime;
-        if (s % BAR === 0 && this.liveQueued.size) {
+        if (s % (p.liveQ || BAR) === 0 && this.liveQueued.size) {
           for (const [tid, cid] of this.liveQueued) {
             for (const src of this.liveSrc.get(tid) ?? []) { try { src.stop(t); } catch { /* fini */ } }
             this.liveSrc.delete(tid);
@@ -148,7 +148,7 @@ class Engine {
       scheduleStep(this.mix, p, buffers, this.nextStep, swingT(p, this.nextStep, this.nextTime), this.seg, limit);
       if (p.metronome && this.nextStep % 4 === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
       this.marks.push({ t: this.nextTime, s: this.nextStep });
-      this.nextStep++; this.nextTime += dur; this.seg = false;
+      this.nextTime += durAt(p, this.nextStep); this.nextStep++; this.seg = false; // le tempo peut changer d'un pas à l'autre
     }
   }
 
@@ -360,11 +360,11 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   const end = contentEnd(p);
   if (!end) throw new Error('empty');
   await ensureBanks(p);
-  const dur = stepDur(p.bpm), sr = 44100;
-  const off = new OfflineAudioContext(2, Math.ceil((end * dur + 2.5) * sr), sr);
+  const sr = 44100;
+  const off = new OfflineAudioContext(2, Math.ceil((timeOf(p, end) + 2.5) * sr), sr);
   const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
-  for (let s = 0; s < end; s++) mix.applyAuto(p, s, s * dur);
-  for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, s * dur), s === 0, null);
+  for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
+  for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
   const out = await off.startRendering();
   mix.active.clear();
   if (!normalize) return out;

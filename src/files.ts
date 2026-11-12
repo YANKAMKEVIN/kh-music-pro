@@ -67,8 +67,11 @@ const text = (s: string) => [...new TextEncoder().encode(s)];
 
 /** Fichier MIDI standard (format 1) : une piste par piste batterie ou instrument. */
 export function exportMidi(p: Project): Uint8Array {
-  const us = Math.round(60e6 / p.bpm);
-  const tracks = [chunk('MTrk', [...meta(0x03, text(p.name)), ...meta(0x51, [us >> 16, (us >> 8) & 255, us & 255]), ...meta(0x2f, [])])];
+  // Piste 0 : nom, tempo de départ, puis chaque changement de tempo à sa position.
+  const tempo = (bpm: number) => { const us = Math.round(60e6 / bpm); return [0xff, 0x51, 3, us >> 16, (us >> 8) & 255, us & 255]; };
+  const head = [...meta(0x03, text(p.name)), 0, ...tempo(p.bpm)]; let lastT = 0;
+  for (const m of p.tempos ?? []) { const tk = Math.round(m.s * TICK); head.push(...vlq(tk - lastT), ...tempo(m.bpm)); lastT = tk; }
+  const tracks = [chunk('MTrk', [...head, ...meta(0x2f, [])])];
   let ch = 0;
   for (const tr of p.tracks) {
     if (tr.type === 'audio') continue;
@@ -91,7 +94,7 @@ export function exportMidi(p: Project): Uint8Array {
 }
 
 /** Lit un fichier MIDI : renvoie le tempo et une piste par couple piste/canal contenant des notes. */
-export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Track[] } {
+export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s: number; bpm: number }[]; tracks: Track[] } {
   const d = new DataView(buf), u = new Uint8Array(buf);
   const tag = (o: number) => String.fromCharCode(...u.subarray(o, o + 4));
   if (tag(0) !== 'MThd') throw new Error('invalid');
@@ -100,6 +103,7 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Trac
   // Positions gardées au 1/24 de pas : triolets et triples-croches survivent à l'import.
   const toStep = (tick: number) => Math.round(tick / (div / 4) * 24) / 24;
   let o = 8 + d.getUint32(4), bpm: number | null = null;
+  const tempos: { s: number; bpm: number }[] = [];
   const out: Track[] = [];
   while (o + 8 <= u.length) {
     const id = tag(o), len = d.getUint32(o + 4), end = o + 8 + len; o += 8;
@@ -113,7 +117,11 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Trac
       if (st & 0x80) o++; else st = status;
       if (st === 0xff) {
         const type = u[o++], l = rv();
-        if (type === 0x51 && bpm === null) bpm = Math.round(60e6 / ((u[o] << 16) | (u[o + 1] << 8) | u[o + 2]));
+        if (type === 0x51) {
+          const v = Math.round(60e6 / ((u[o] << 16) | (u[o + 1] << 8) | u[o + 2]));
+          if (bpm === null && tick === 0) bpm = v; else if (v >= 40 && v <= 240) tempos.push({ s: Math.round(toStep(tick)), bpm: v });
+          if (bpm === null) bpm = v;
+        }
         if (type === 0x03) name = new TextDecoder().decode(u.subarray(o, o + l));
         o += l; continue;
       }
@@ -145,5 +153,5 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tracks: Trac
     }
   }
   if (!out.length) throw new Error('empty');
-  return { bpm: bpm && bpm >= 40 && bpm <= 240 ? bpm : null, tracks: out };
+  return { bpm: bpm && bpm >= 40 && bpm <= 240 ? bpm : null, tempos: tempos.filter(m => m.s > 0).sort((a, b) => a.s - b.s), tracks: out };
 }

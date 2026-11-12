@@ -39,8 +39,10 @@ export function renderLive(): HTMLElement {
     b.onkeyup = e => { if (e.key === ' ' || e.key === 'Enter') { e.stopPropagation(); set(false); } };
     return b;
   };
+  const lq = h('select', { 'aria-label': t('live.q'), title: t('live.qTip'), data: { role: 'liveq' } }, ...[[0, t('grid.bar')], [4, t('grid.beat')], [1, t('live.now')]].map(([v, l]) => h('option', { value: String(v), selected: p.liveQ === v }, String(l))));
+  lq.onchange = () => { p.liveQ = +lq.value; commit(); };
   const perf = h('div', { class: 'perf' },
-    h('h3', {}, t('live.perf')), filt,
+    h('h3', {}, t('live.perf')), h('label', { class: 'fld' }, t('live.q'), lq), filt,
     h('div', { class: 'fxgrid' }, fxBtn('echo'), fxBtn('reverb'), fxBtn('stut8'), fxBtn('stut16')),
     h('button', { class: 'pill', data: { act: 'filter0' }, onclick: () => { p.filter = 0; commit(); } }, t('live.filterReset')),
     h('button', { class: 'pill big', data: { act: 'tap' }, onclick: tapTempo }, `${t('top.tap')} · ${p.bpm} BPM`),

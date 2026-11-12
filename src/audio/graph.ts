@@ -1,5 +1,5 @@
 import { drumSample, sampleFor } from './banks';
-import { Clip, KITS, Project, Pt, SynthParams, Track, autoAt, stepDur as sd } from '../types';
+import { Clip, KITS, Project, Pt, SynthParams, Track, autoAt, durAt, stepDur as sd, timeOf } from '../types';
 
 export interface TrackNodes {
   input: GainNode; lp: BiquadFilterNode; hp: BiquadFilterNode; shaper: WaveShaperNode;
@@ -196,7 +196,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
 
   /** Automation : programme la rampe du pas `s` (instant `t`) vers le pas suivant. */
   applyAuto(p: Project, s: number, t: number) {
-    const d = sd(p.bpm);
+    const d = durAt(p, s);
     for (const tr of p.tracks) {
       const a = tr.auto, n = this.tracks.get(tr.id);
       if (!a || !n) continue;
@@ -429,18 +429,19 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
 // ---------- Séquenceur ----------
 
 /** Décalage de swing : les double-croches impaires sont retardées. */
-export const swingT = (p: Project, s: number, t: number) => t + (s % 2 ? p.swing * sd(p.bpm) * 0.5 : 0);
+export const swingT = (p: Project, s: number, t: number) => t + (s % 2 ? p.swing * durAt(p, s) * 0.5 : 0);
 
 /**
  * Programme ce qui démarre dans un clip. `rel` = pas écoulés depuis le début du clip,
  * `remain` = pas restants avant sa fin (ou avant une coupure de boucle).
  */
 function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNodes, c: Clip,
-  rel: number, remain: number, t: number, startAudio: boolean, onSrc?: (trackId: string, src: AudioBufferSourceNode) => void) {
-  const dur = sd(p.bpm);
+  rel: number, remain: number, t: number, startAudio: boolean, onSrc?: (trackId: string, src: AudioBufferSourceNode) => void,
+  /** Durée du pas courant, et temps réel écoulé depuis le début du clip / restant jusqu'à sa fin (le tempo peut changer en route). */
+  dur = sd(p.bpm), elapsedSec = rel * dur, remainSec = remain * dur) {
   if (tr.type === 'audio') {
     if (!startAudio) return;
-    const buf = c.bufferId ? buffers.get(c.bufferId) : undefined, off = c.offset + rel * dur;
+    const buf = c.bufferId ? buffers.get(c.bufferId) : undefined, off = c.offset + elapsedSec;
     if (!buf || off >= buf.duration || remain <= 0) return;
     const src = mix.reg(mix.ctx.createBufferSource()), g = mix.ctx.createGain();
     src.buffer = buf;
@@ -454,7 +455,7 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       g.gain.setValueAtTime(gAt(x0), t + (x0 - rel) * dur); g.gain.linearRampToValueAtTime(gAt(endRel), t + remain * dur);
     }
     src.connect(g).connect(n.input);
-    src.start(t, Math.max(0, off), remain * dur);
+    src.start(t, Math.max(0, off), remainSec);
     onSrc?.(tr.id, src);
     return;
   }
@@ -480,7 +481,8 @@ export function scheduleStep(mix: Mix, p: Project, buffers: Buffers, s: number, 
     for (const c of tr.clips) {
       if (s < c.start || s >= c.start + c.len) continue;
       const remain = Math.min(c.start + c.len, endLimit ?? Infinity) - s;
-      fireClip(mix, p, buffers, tr, n, c, s - c.start, remain, t, s === c.start || segStart);
+      fireClip(mix, p, buffers, tr, n, c, s - c.start, remain, t, s === c.start || segStart, undefined,
+        durAt(p, s), timeOf(p, s) - timeOf(p, c.start), timeOf(p, s + remain) - timeOf(p, s));
     }
   }
 }

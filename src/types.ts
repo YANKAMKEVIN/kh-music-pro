@@ -93,10 +93,30 @@ export interface Project {
   notes: string;                             // bloc-notes du projet (paroles, idées)
   punch: boolean;                            // enregistrement audio limité à la zone de boucle (punch-in / punch-out)
   buses: Track[];                            // bus de mixage : des tranches sans clip, où l'on envoie plusieurs pistes
+  tempos: { s: number; bpm: number }[];      // changements de tempo en cours de morceau (triés par position)
+  sig: number;                               // temps par mesure (signature x/4)
+  liveQ: number;                             // mode Live : calage du lancement des clips, en pas (0 = à la mesure)
   tracks: Track[];
 }
 
-export const BAR = 16;
+/** Longueur d'une mesure en pas. Suit la signature rythmique du projet ouvert (4/4 = 16 pas, 3/4 = 12…). */
+export let BAR = 16;
+export const setBar = (steps: number) => { BAR = steps; };
+
+/** Tempo en vigueur au pas `s` : le tempo de départ, puis les changements placés dans le morceau. */
+export function bpmAt(p: Project, s: number): number {
+  let b = p.bpm;
+  for (const m of p.tempos ?? []) { if (m.s <= s) b = m.bpm; else break; }
+  return b;
+}
+/** Durée d'un pas (double-croche) au pas `s`, en secondes. */
+export const durAt = (p: Project, s: number) => 15 / bpmAt(p, s);
+/** Temps écoulé depuis le début du morceau jusqu'au pas `s`, en tenant compte des changements de tempo. */
+export function timeOf(p: Project, s: number): number {
+  let t = 0, pos = 0, bpm = p.bpm;
+  for (const m of p.tempos ?? []) { if (m.s >= s) break; t += (m.s - pos) * 15 / bpm; pos = m.s; bpm = m.bpm; }
+  return t + (s - pos) * 15 / bpm;
+}
 
 /** Grilles du piano roll : taille d'une division, en pas (un pas = une double-croche). */
 export const GRIDS: Record<string, number> = { '16': 1, '32': 0.5, '8t': 4 / 3, '16t': 2 / 3, free: 1 / 6 };
@@ -222,7 +242,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [],
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, liveQ: 0,
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -232,7 +252,7 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= [];
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.liveQ ??= 0;
   for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; }
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4;

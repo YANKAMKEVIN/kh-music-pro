@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-177 cas réussis sur 177.
+182 cas réussis sur 182.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -181,3 +181,8 @@
 | EQ01 | Mixeur | Bande médium à fréquence réglable, et courbe d'égaliseur fidèle aux réglages | OK |
 | CP01 | Mixeur | Compresseur réglable : seuil et taux agissent, la réduction s'affiche en lecture | OK |
 | AU08 | Automation | Automatiser les envois de réverb et d'écho et le chorus | OK |
+| TP01 | Tempo | Un changement de tempo en cours de morceau s'entend au bon instant, à l'export comme en lecture | OK |
+| TP02 | Tempo | Poser, modifier et supprimer un changement de tempo depuis la règle | OK |
+| TP03 | Tempo | Les changements de tempo voyagent dans le fichier projet et dans le MIDI | OK |
+| SG01 | Signature | Passer en 3/4 : mesures de trois temps dans la règle, la boucle, les clips et les motifs | OK |
+| LQ01 | Live | Calage du lancement : à la mesure, au temps ou immédiat ; les chiffres lancent les scènes | OK |

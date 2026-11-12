@@ -1,4 +1,4 @@
-import { addMarker, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
+import { addMarker, addTempo, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -30,6 +30,8 @@ export function buildTop(onLang: () => void) {
   const snap = h('select', { id: 'snap', 'aria-label': t('top.gridTip') },
     h('option', { value: '16' }, t('grid.bar')), h('option', { value: '4' }, t('grid.beat')), h('option', { value: '1' }, '1/16'));
   snap.onchange = () => { S.snap = +snap.value; };
+  const sig = h('select', { id: 'sig', 'aria-label': t('top.sig'), title: t('top.sig'), data: { role: 'sig' } }, ...[2, 3, 4, 5, 6, 7].map(n => h('option', { value: String(n) }, `${n}/4`)));
+  sig.onchange = () => { S.project.sig = +sig.value; commit(); };
   const zoom = (f: number) => { S.px = clamp(S.px * f, 3, 44); emit(); };
   const pname = h('input', { id: 'pname', class: 'pname', 'aria-label': t('top.pname'), title: t('top.pname'), spellcheck: false });
   pname.onchange = () => { S.project.name = pname.value.trim() || t('proj.new'); commit(); };
@@ -56,6 +58,7 @@ export function buildTop(onLang: () => void) {
       h('label', {}, bpm, h('small', {}, 'BPM'))),
     h('div', { class: 'grp' },
       b('bTap', 'pill', 'Tap', t('top.tapTip'), tapTempo),
+      b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo), sig,
       tgl('bMetro', t('top.metro'), t('top.metroTip'), () => { S.project.metronome = !S.project.metronome; commit(); }),
       tgl('bCount', t('top.countIn'), t('top.countInTip'), () => { S.project.countIn = !S.project.countIn; commit(); }),
       tgl('bPunch', t('top.punch'), t('top.punchTip'), () => { S.project.punch = !S.project.punch; commit(); }),
@@ -94,6 +97,7 @@ export function renderTop() {
   $<HTMLInputElement>('loopS').value = String(p.loopStart + 1);
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
   $<HTMLSelectElement>('snap').value = String(S.snap);
+  $<HTMLSelectElement>('sig').value = String(p.sig);
   for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bPunch', p.punch], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {
     $(id).classList.toggle('on', on); $(id).setAttribute('aria-pressed', String(on));
   }
@@ -106,7 +110,7 @@ function buildHelp() {
     [k(t('help.key.space')), 'space'], [k(t('help.key.enter')), 'enter'], [k('R'), 'rec'], [`${k('L')} / ${k('M')}`, 'loop'],
     [`${k('Ctrl')}+${k('Z')} / ${k('Y')}`, 'undo'], [`${k('Ctrl')}+${k('D')}`, 'dup'], [`${k('Ctrl')}+${k('E')}`, 'split'],
     [k(t('help.key.del')), 'del'], [`${k('Ctrl')}+${k('S')}`, 'save'], [piano + '…', 'piano'],
-    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [k(t('help.key.shiftClick')), 'multi'], [k(t('help.key.shiftDrag')), 'looprule'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
+    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [`${k('1')}–${k('9')}`, 'scenes'], [k(t('help.key.shiftClick')), 'multi'], [k(t('help.key.shiftDrag')), 'looprule'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
   ];
   $('help').innerHTML = `
     <h2><span class="logo">KH</span> ${t('help.title')}</h2>

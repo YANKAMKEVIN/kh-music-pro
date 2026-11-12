@@ -462,4 +462,16 @@ const D: Record<string, [string, string, string]> = {
   'mix.gr': ['Réduction : {0} dB', 'Reduction: {0} dB', 'Reducción: {0} dB'],
   'mix.grTip': ['Niveau retiré par le compresseur en ce moment', 'Level currently being removed by the compressor', 'Nivel que el compresor está quitando ahora'],
   'auto.rev': ['Réverb', 'Reverb', 'Reverb'], 'auto.dly': ['Écho', 'Echo', 'Eco'], 'auto.chorus': ['Chorus', 'Chorus', 'Chorus'],
+
+  // ===== V13 =====
+  'tempo.add': ['Changer de tempo à partir de la mesure où se trouve la tête de lecture', 'Change tempo from the bar where the playhead is', 'Cambiar el tempo desde el compás donde está el cursor'],
+  'tempo.ask': ['Nouveau tempo (40 à 240 BPM)', 'New tempo (40 to 240 BPM)', 'Nuevo tempo (40 a 240 BPM)'],
+  'tempo.range': ['Le tempo doit être compris entre 40 et 240', 'The tempo must be between 40 and 240', 'El tempo debe estar entre 40 y 240'],
+  'tempo.start': ['Le tempo de départ se règle dans le champ BPM ; placez la tête de lecture plus loin pour un changement', 'The starting tempo is set in the BPM field; move the playhead further on for a change', 'El tempo inicial se ajusta en el campo BPM; mueve el cursor más adelante para un cambio'],
+  'tempo.tip': ['Changement de tempo — clic : modifier · clic droit : supprimer', 'Tempo change — click: edit · right-click: delete', 'Cambio de tempo — clic: editar · clic derecho: eliminar'],
+  'top.sig': ['Signature rythmique (temps par mesure)', 'Time signature (beats per bar)', 'Compás (pulsos por compás)'],
+  'live.q': ['Calage', 'Launch on', 'Lanzar en'],
+  'live.qTip': ['Moment où un clip lancé démarre : à la mesure, au temps, ou tout de suite', 'When a launched clip starts: on the bar, on the beat, or right away', 'Cuándo empieza un clip lanzado: en el compás, en el pulso o al instante'],
+  'live.now': ['Immédiat', 'Immediate', 'Inmediato'],
+  'help.k.scenes': ['Lancer une scène (onglet Live)', 'Launch a scene (Live tab)', 'Lanzar una escena (pestaña Live)'],
 };

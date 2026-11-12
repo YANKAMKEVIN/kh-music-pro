@@ -5,7 +5,7 @@ import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFi
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, inScale, newBus, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -188,6 +188,27 @@ export function applyMixPreset(tr: Track, key: string) {
   Object.assign(tr, p); commit(); toast(t('toast.presetApplied', t('mp.' + key), tr.name));
 }
 
+/** Demande un tempo (40 à 240) ; renvoie null si la saisie est annulée ou invalide. */
+function askTempo(current: number): number | null {
+  const v = Math.round(+(prompt(t('tempo.ask'), String(current)) ?? ''));
+  if (!v) return null;
+  if (v < 40 || v > 240) { toast(t('tempo.range'), 'error'); return null; }
+  return v;
+}
+/** Place un changement de tempo au début de la mesure où se trouve la tête de lecture. */
+export function addTempo() {
+  const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
+  if (s <= 0) return toast(t('tempo.start'));
+  const v = askTempo(bpmAt(p, s));
+  if (!v) return;
+  p.tempos = [...p.tempos.filter(m => m.s !== s), { s, bpm: v }].sort((a, b) => a.s - b.s); commit();
+}
+export function editTempo(s: number) {
+  const m = S.project.tempos.find(x => x.s === s), v = m && askTempo(m.bpm);
+  if (m && v) { m.bpm = v; commit(); }
+}
+export function removeTempo(s: number) { S.project.tempos = S.project.tempos.filter(m => m.s !== s); commit(); }
+
 export function addMarker() {
   const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
   if (p.markers.some(m => m.s === s)) return toast(t('toast.markerExists'));
@@ -358,7 +379,7 @@ export const pickAudio = (trackId?: string, start?: number) => pickFiles(fs => i
 export async function toggleRecord() {
   if (engine.recording) { engine.stop(); return; }
   const sel = findTrack(S.selTrack), p = S.project;
-  const preroll = p.countIn ? 16 * stepDur(p.bpm) : 0;
+  const preroll = p.countIn ? BAR * durAt(p, engine.pos) : 0;
   if (sel && sel.type !== 'audio') {
     await engine.recordMidi(sel.id, preroll);
     toast(t(sel.type === 'drums' ? 'toast.recPads' : 'toast.recNotes'));
@@ -429,7 +450,7 @@ export function exportMidiFile() {
 export async function importMidiFile(f: File) {
   try {
     const r = importMidi(await f.arrayBuffer()), p = S.project;
-    if (r.bpm && !contentEnd(p)) p.bpm = r.bpm;
+    if (r.bpm && !contentEnd(p)) { p.bpm = r.bpm; p.tempos = r.tempos; }
     p.tracks.push(...r.tracks); S.selTrack = r.tracks[0].id; S.selClip = r.tracks[0].clips[0].id;
     commit(); toast(t('toast.midiImported', r.tracks.length));
   } catch { toast(t('toast.badMidi'), 'error'); }

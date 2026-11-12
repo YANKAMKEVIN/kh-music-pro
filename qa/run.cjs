@@ -584,7 +584,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await menu('bLib'); text += await page.innerText('#lib'); await page.keyboard.press('Escape');
     await page.click('#menu summary'); text += await page.innerText('#top'); await page.click('#menu summary');
     const titles = await page.$$eval('[title], [aria-label]', els => els.map(e => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' | '));
-    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune|bus)\.[a-zA-Z0-9.]+/g);
+    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune|bus|tempo)\.[a-zA-Z0-9.]+/g);
     expect(!raw, `clés non traduites : ${raw && [...new Set(raw)].join(', ')}`);
     const miss = errors.slice(n0).filter(e => e.includes('i18n')); expect(!miss.length, miss.join(' ; '));
     if (code !== 'fr') expect(!/Éditeur|Supprimer|Enregistrer|Longueur/.test(text), 'du français subsiste');
@@ -886,9 +886,9 @@ test('E04', 'Passerelles', 'Exporter les pistes séparées : une archive ZIP val
 
 // ============ V3 : projet, robustesse, application installable ============
 test('P06', 'Projet', 'Un projet de la V2 s\'ouvre dans la V3 avec les nouveaux réglages par défaut', async () => {
-  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers', 'notes', 'target', 'width']) delete p[k]; delete p.buses; delete p.punch; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; delete t.out; delete t.eqMidF; delete t.compThr; delete t.compRatio; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers', 'notes', 'target', 'width']) delete p[k]; delete p.buses; delete p.punch; delete p.tempos; delete p.sig; delete p.liveQ; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; delete t.out; delete t.eqMidF; delete t.compThr; delete t.compRatio; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
   const f = path.join(TMP, 'v2.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(400);
-  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0 && t.out === '' && t.eqMidF === 1000 && t.compThr === -24 && t.compRatio === 4) && Array.isArray(p.buses) && p.punch === false && Array.isArray(p.markers), 'valeurs par défaut absentes');
+  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0 && t.out === '' && t.eqMidF === 1000 && t.compThr === -24 && t.compRatio === 4) && Array.isArray(p.buses) && p.punch === false && Array.isArray(p.tempos) && p.sig === 4 && p.liveQ === 0 && Array.isArray(p.markers), 'valeurs par défaut absentes');
   const a = await S(() => window.qa.stats(window.kh.S.project)), b = await S(() => window.qa.stats(window.kh.demoProject())); near(a.rms / b.rms, 1, 0.08, 'le projet doit sonner comme avant'); // la réverb est tirée au hasard à chaque rendu
 });
 test('X10', 'Robustesse', 'Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud', async () => {
@@ -1722,6 +1722,67 @@ test('AU08', 'Automation', 'Automatiser les envois de réverb et d\'écho et le 
   await autoOn(1, { rev: [{ s: 0, v: 0.7 }] }, 'rev'); const send = () => S(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).revSend.gain.value; });
   await page.keyboard.press('Space'); await sleep(600); const on = await send(); await page.keyboard.press('Space'); await sleep(300); const off = await send();
   near(on, 0.7, 0.03, 'en lecture, la courbe pilote l\'envoi'); near(off, 0, 0.03, 'à l\'arrêt, le réglage du mixeur reprend la main');
+});
+
+// ============ V13 : tempo, signature, Live ============
+test('TP01', 'Tempo', 'Un changement de tempo en cours de morceau s\'entend au bon instant, à l\'export comme en lecture', async () => {
+  const o = await S(() => { const p = window.qa.only(1, (p, t) => { p.bpm = 120; p.tempos = [{ s: 16, bpm: 240 }]; t.rev = 0; Object.assign(t.synth, { engine: 'sub', wave: 'sine', mix2: 0, cutoff: 12000, envAmt: 0, a: 0.002, d: 0.03, s: 0, r: 0.01, octave: 0, pitchEnv: 0 }); const c = t.clips[0]; c.len = 32; c.patLen = 32; c.notes = [0, 4, 8, 12, 16, 20, 24, 28].map(s => ({ p: 84, s, l: 0.2, v: 1 })); }); return window.qa.onsets(p); });
+  near(o.length, 8, 0, 'notes entendues'); const g = gaps(o);
+  for (let i = 0; i < 4; i++) near(g[i], 0.5, 0.004, `noire n° ${i + 1} à 120 BPM`); for (let i = 4; i < 7; i++) near(g[i], 0.25, 0.004, `noire n° ${i + 1} à 240 BPM`);
+  const t = await S(() => { const k = window.kh, p = k.demoProject(); p.bpm = 120; p.tempos = [{ s: 16, bpm: 240 }, { s: 48, bpm: 60 }]; return [k.timeOf(p, 16), k.timeOf(p, 32), k.timeOf(p, 48), k.timeOf(p, 52), k.bpmAt(p, 15), k.bpmAt(p, 16), k.bpmAt(p, 60)]; });
+  expect(t.join() === '2,3,4,5,120,240,60', `calcul du temps : ${t}`);
+  await S(() => { const p = window.kh.S.project; p.bpm = 120; p.loop = false; p.tempos = [{ s: 16, bpm: 240 }]; window.kh.commit(); });
+  await page.keyboard.press('Space'); await sleep(3150); const st = await S(() => window.kh.engine.currentStep()); await page.keyboard.press('Space');
+  near(st, 16 + (3.15 - 0.06 - 2) / 0.0625, 3.5, 'position après 3,15 s (2 s à 120 BPM puis 240 BPM)');
+  await S(() => window.kh.engine.seek(32)); await sleep(80); expect(await page.textContent('#time') === '0:03.0', `afficheur de temps : ${await page.textContent('#time')}`);
+  expect(await page.$eval('#bpm', e => e.value) === '240', 'l\'afficheur de tempo doit suivre la tête de lecture');
+});
+test('TP02', 'Tempo', 'Poser, modifier et supprimer un changement de tempo depuis la règle', async () => {
+  await page.click('#bTempoAdd'); expect((await page.textContent('#toast')).includes('départ') && (await proj()).tempos.length === 0, 'au tout début, le tempo se règle dans le champ BPM');
+  await S(() => window.kh.engine.seek(34)); dialogText = '90'; await page.click('#bTempoAdd'); await sleep(80);
+  let tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].s === 32 && tp[0].bpm === 90, `changement posé : ${JSON.stringify(tp)}`);
+  expect((await page.textContent('.tmark')).includes('90'), 'repère de tempo non affiché');
+  dialogText = '150'; await page.click('.tmark'); await sleep(80); expect((await proj()).tempos[0].bpm === 150, 'modification');
+  dialogText = '999'; await page.click('.tmark'); await sleep(80); expect((await proj()).tempos[0].bpm === 150 && (await page.textContent('#toast')).includes('40'), 'une valeur hors limites doit être refusée');
+  dialogText = undefined; await S(() => window.kh.engine.seek(64)); dialogText = '100'; await page.click('#bTempoAdd'); dialogText = undefined; await sleep(80);
+  near((await proj()).tempos.length, 2, 0, 'deux changements');
+  await page.click('.tmark >> nth=0', { button: 'right' }); tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].s === 64, 'suppression');
+  await page.keyboard.press('Control+z'); near((await proj()).tempos.length, 2, 0, 'annulation');
+});
+test('TP03', 'Tempo', 'Les changements de tempo voyagent dans le fichier projet et dans le MIDI', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 100; p.tempos = [{ s: 32, bpm: 140 }, { s: 64, bpm: 80 }]; window.kh.commit(); });
+  const m = await S(() => { const k = window.kh, r = k.importMidi(k.exportMidi(k.S.project).buffer); return { bpm: r.bpm, tempos: r.tempos }; });
+  expect(m.bpm === 100 && JSON.stringify(m.tempos) === '[{"s":32,"bpm":140},{"s":64,"bpm":80}]', `MIDI : ${JSON.stringify(m)}`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'tempo.khm'); await dl.saveAs(f);
+  await newBlank(); expect((await proj()).tempos.length === 0, 'nouveau projet sans changement de tempo'); await page.setInputFiles('#fProj', f); await sleep(400);
+  expect(JSON.stringify((await proj()).tempos) === '[{"s":32,"bpm":140},{"s":64,"bpm":80}]', 'changements perdus à la réouverture'); near(await page.$$eval('.tmark', e => e.length), 2, 0, 'repères affichés');
+  const st = await S(() => window.qa.stats(window.kh.S.project)); near(st.dur, 100.0 / 100 * 0 + (32 * 15 / 100 + 32 * 15 / 140 + 64 * 15 / 80) + 2.5, 0.05, 'durée de l\'export avec les changements de tempo');
+});
+test('SG01', 'Signature', 'Passer en 3/4 : mesures de trois temps dans la règle, la boucle, les clips et les motifs', async () => {
+  await page.selectOption('#sig', '3'); expect((await proj()).sig === 3 && await S(() => window.kh.bar()) === 12, 'signature non appliquée');
+  const r = await box('.ruler'), x2 = await page.$eval('.ruler span >> nth=1', e => e.getBoundingClientRect().left); near(x2 - r.x, 12 * 11, 1, 'position de la mesure 2 dans la règle');
+  await S(() => { const p = window.kh.S.project; p.bpm = 240; p.loop = true; p.loopStart = 0; p.loopLen = 1; window.kh.commit(); });
+  await page.keyboard.press('Space'); await sleep(1700); const st = await S(() => ({ playing: window.kh.engine.playing, s: window.kh.engine.currentStep() })); await page.keyboard.press('Space');
+  expect(st.playing && st.s < 12, `la boucle d'une mesure doit faire 12 pas (position ${st.s.toFixed(1)})`);
+  await S(() => { window.kh.S.project.tracks[1].clips = []; window.kh.commit(); }); const n = 1;
+  const l = await box(`.lane >> nth=${n}`); await page.mouse.dblclick(l.x + 11 * 12 * 2 + 20, l.y + 40); await sleep(150);
+  const c = (await proj()).tracks[n].clips[0]; expect(c.start === 24 && c.len === 12 && c.patLen === 12, `nouveau clip : ${JSON.stringify([c.start, c.len, c.patLen])}`);
+  await page.click(await clipSel(0, 0)); near(await page.$$eval('[data-role=length] option', e => +e[0].value), 12, 0, 'longueur d\'une mesure proposée');
+  await page.selectOption('#sig', '4'); expect(await S(() => window.kh.bar()) === 16, 'retour en 4/4');
+});
+test('LQ01', 'Live', 'Calage du lancement : à la mesure, au temps ou immédiat ; les chiffres lancent les scènes', async () => {
+  await S(() => { window.kh.S.project.bpm = 100; window.kh.commit(); }); await tab('live');
+  await page.selectOption('[data-role=liveq]', '4'); expect((await proj()).liveQ === 4, 'calage non enregistré');
+  await page.click('.lcell[data-clip] >> nth=0'); await sleep(900); const tid = await S(() => window.kh.S.project.tracks[1].id);
+  await page.click(`.lcell[data-track="${tid}"]`); await sleep(500);
+  const a = await page.evaluate(id => { const x = window.kh.engine.liveActive.get(id); return x ? x.since : -1; }, tid);
+  expect(a > 0 && a % 4 === 0, `au temps : départ au pas ${a}`); expect(a < 16, `le clip a attendu la mesure suivante (pas ${a}) au lieu du temps suivant`);
+  await page.selectOption('[data-role=liveq]', '1'); const before = await S(() => Math.floor(window.kh.engine.currentStep())); const t3 = await S(() => window.kh.S.project.tracks[2].id);
+  await page.click(`.lcell[data-track="${t3}"]`); await sleep(400); const b = await page.evaluate(id => { const x = window.kh.engine.liveActive.get(id); return x ? x.since : -1; }, t3);
+  expect(b >= before && b <= before + 3, `immédiat : demandé au pas ${before}, parti au pas ${b}`);
+  await S(() => window.kh.engine.stop()); await sleep(200); await page.keyboard.press('2'); await sleep(900);
+  const sc = await S(() => { const k = window.kh, x = k.engine.liveActive.get(k.S.project.tracks[0].id); return x && k.S.project.tracks[0].clips.find(c => c.id === x.clipId).name; });
+  expect(sc === 'Break', `la touche 2 doit lancer la scène 2 (clip actif : ${sc})`);
 });
 
 (async () => {

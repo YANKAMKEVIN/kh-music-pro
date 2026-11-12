@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.12)
+## Fonctions (v0.13)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -25,6 +25,8 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Enregistrement** : micro calé à l'échantillon près sur le transport, enregistrement de ce que vous jouez (notes, accords et pads) en boucle, décompte.
 - **Entrée audio** : choix du micro ou de la carte son, vumètre et gain d'entrée, écoute de contrôle.
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
+- **Tempo et mesure** : changements de tempo en cours de morceau (posés dans la règle, suivis à la lecture, à l'export et dans le MIDI), signature rythmique de 2/4 à 7/4.
+- **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9.
 - **Mixage avancé** : bus pour regrouper des pistes, bande médium à fréquence réglable avec courbe d'égaliseur visible, compresseur réglable (seuil, taux, réduction affichée), automation des envois de réverb et d'écho et du chorus.
 - **Prises multiples** : enregistrement audio en boucle (une prise par tour), choix de la prise, montage par scission ; **punch** sur la zone de boucle ; **correction de justesse** vers la gamme du projet.
 - **Vrais instruments** : 11 instruments enregistrés (piano à queue, guitares, basses, cordes, violoncelle, cuivres, saxophone, flûte, chœur) et une batterie acoustique, chargés à la demande.
@@ -55,7 +57,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 177 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 182 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -78,7 +80,7 @@ npm run desktop
 ```
 
 ouvre l'application dans une fenêtre de bureau (Electron). `npm run desktop:build` produit l'installateur de votre système dans `release/`.
-Sur GitHub, l'action **Version bureau** construit les installateurs Windows, macOS et Linux ; ils se téléchargent dans les *Artifacts* de l'exécution.
+Sur GitHub, l'action **Version bureau** construit les installateurs Windows, macOS (puces Apple et Intel) et Linux ; ils se téléchargent dans les *Artifacts* de l'exécution.
 Poser une étiquette de version (`git tag v0.8.0 && git push origin v0.8.0`) les publie dans la page **Releases** du dépôt.
 Ils ne sont pas signés : Windows et macOS afficheront un avertissement au premier lancement.
 

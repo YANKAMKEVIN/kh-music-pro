@@ -8,7 +8,7 @@ import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { S, buffers, commit, emit, findTrack, loadAutosave, onChange, onSelect, redo, resetHistory, undo } from './store';
-import { BAR, MIX_PRESETS, PRESETS, demoProject, makeSynth, newBus, setRes, stepDur, templateProject } from './types';
+import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, setBar, setRes, templateProject, timeOf } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
@@ -29,7 +29,7 @@ function renderPanel() {
   });
 }
 
-function renderAll() { engine.sync(); renderArr(); renderPanel(); renderTop(); }
+function renderAll() { setBar((S.project.sig || 4) * 4); engine.sync(); renderArr(); renderPanel(); renderTop(); }
 onChange(renderAll);
 onSelect(() => {
   refreshSelection();
@@ -72,6 +72,8 @@ addEventListener('keydown', e => {
   if (e.key === 'Enter' && el.tagName !== 'BUTTON') { engine.seek(0); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteClip(); return; }
   if (e.key === '?') { help.showModal(); return; }
+  // Onglet Live : les chiffres lancent les scènes.
+  if (S.tab === 'live' && /^Digit[1-9]$/.test(e.code)) { engine.launchScene(+e.code.slice(5) - 1); return; }
   const tr = findTrack(S.selTrack);
   if (tr?.type === 'synth') {
     if (e.code in PIANO) {
@@ -96,7 +98,9 @@ function frame() {
   const step = engine.currentStep(), p = S.project, live = engine.mode === 'live';
   const ph = document.getElementById('ph');
   if (ph) { ph.style.transform = `translateX(${(live ? engine.pos : step) * S.px}px)`; ph.style.opacity = live ? '.3' : '1'; }
-  const s = Math.floor(step + 1e-6), sec = step * stepDur(p.bpm);
+  const s = Math.floor(step + 1e-6), sec = live ? step * 15 / p.bpm : timeOf(p, step);
+  // Avec des changements de tempo, l'afficheur suit le tempo en vigueur sous la tête de lecture.
+  const bpmEl = $<HTMLInputElement>('bpm'); if (p.tempos.length && !live && document.activeElement !== bpmEl) bpmEl.value = String(bpmAt(p, step));
   $('pos').textContent = `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / 4) + 1}.${(s % 4) + 1}`;
   $('time').textContent = `${Math.floor(sec / 60)}:${(sec % 60).toFixed(1).padStart(4, '0')}`;
   document.body.classList.toggle('playing', engine.playing);
@@ -129,7 +133,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {
