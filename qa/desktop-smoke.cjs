@@ -14,7 +14,7 @@ const path = require('path');
       const k = window.kh, b = await k.renderOffline(k.S.project), d = b.getChannelData(0); let e = 0;
       for (const v of d) e += v * v;
       // Vrai instrument : les fichiers de sons embarqués doivent se charger aussi depuis l'application de bureau.
-      const pp = k.demoProject(); pp.tracks = [pp.tracks[3]]; pp.tracks[0].synth = { ...pp.tracks[0].synth, engine: 'multi', bank: 'piano', s: 1 };
+      const pp = k.demoProject(); pp.tracks = [pp.tracks[3]]; pp.tracks[0].synth = { ...pp.tracks[0].synth, engine: 'multi', bank: 'clavinet', s: 1 };
       const pb = await k.renderOffline(pp, false), pd = pb.getChannelData(0); let pe = 0; for (const v of pd) pe += v * v;
       return { piano: Math.sqrt(pe / pd.length), title: document.title, tracks: k.S.project.tracks.length, rms: Math.sqrt(e / d.length), dur: b.duration, node: typeof window.require };
     });

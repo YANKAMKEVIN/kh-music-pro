@@ -6,3 +6,9 @@ Instruments : FluidR3_GM, par Frank Wen. Licence Creative Commons Attribution 3.
 
 Batterie acoustique : Virtuosity Drums, par Versilian Studios. Licence CC0 1.0 (domaine public)
   (https://github.com/sfzinstruments/virtuosity_drums). Les sons ont été convertis en mono et normalisés.
+
+Extension généraliste V15 : 18 banques supplémentaires issues de FluidR3_GM,
+par Frank Wen (CC BY 3.0), fichiers MP3 non modifiés de midi-js-soundfonts.
+Source figée : https://github.com/gleitz/midi-js-soundfonts/tree/044fab8e1456bfafc5776e86dfd6bb8697149aef/FluidR3_GM
+Une note tous les trois demi-tons (MIDI 24 à 96), sélectionnée sans conversion.
+Les nappes et le chœur synthétique sont des timbres synthétiques échantillonnés.

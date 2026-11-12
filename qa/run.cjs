@@ -317,7 +317,7 @@ test('I02', 'Instruments', 'Choisir un son dans la liste change le moteur et l\'
   expect(!(await page.textContent('.synth')).includes('Étouffé'), 'les réglages détaillés devraient être repliés');
   await page.click('[data-act=synthopen]');
   expect((await page.textContent('.synth')).includes('Étouffé'), 'réglage propre au son absent');
-  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 8, 0, 'catégories');
+  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 15, 0, 'catégories');
 });
 test('I03', 'Piano roll', 'Ajouter une note d\'un clic', async () => {
   await page.click(await clipSel(1, 0)); const n0 = (await proj()).tracks[1].clips[0].notes.length;
@@ -913,8 +913,12 @@ test('W01', 'Application', 'Version construite : installable (manifeste) et util
     expect(up, 'le serveur de la version construite ne démarre pas'); await pg.waitForSelector('.clip');
     const m = await pg.evaluate(async () => { const href = document.querySelector('link[rel=manifest]').href, j = await (await fetch(href)).json(); await navigator.serviceWorker.ready; return { name: j.name, display: j.display, icons: j.icons.length }; });
     expect(m.name === 'KH Music Pro' && m.display === 'standalone' && m.icons > 0, 'manifeste incomplet');
+    await pg.evaluate(async () => { const k = window.kh; k.S.project.tracks[1].synth = k.makeSynth('r_clavinet'); k.commit(); await k.engine.prepare(); });
+    await pg.waitForFunction(async () => { const c = await caches.open('kh-music-pro-v3'); return (await c.keys()).filter(r => r.url.includes('/banks/clavinet/')).length === 25; });
     await sleep(1500); await ctx2.setOffline(true); await pg.reload(); await pg.waitForSelector('.clip', { timeout: 8000 });
     expect(await pg.evaluate(() => !!window.kh && document.querySelectorAll('.head').length === 5 && getComputedStyle(document.body).display === 'grid'), 'application incomplète hors-ligne');
+    const offline = await pg.evaluate(async () => { const k = window.kh; const p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; const b = await k.renderOffline(p, false), d = b.getChannelData(0); return { id: p.tracks[0].synth.preset, rms: Math.sqrt(d.reduce((s, v) => s + v * v, 0) / d.length) }; });
+    expect(offline.id === 'r_clavinet' && offline.rms > 0.005, `nouvel instrument muet hors-ligne : ${JSON.stringify(offline)}`);
   } finally { await ctx2.close(); try { process.kill(-srv.pid); } catch { /* déjà arrêté */ } }
 });
 
@@ -1548,12 +1552,12 @@ test('GR07', 'Grille fine', 'Mode Live, scission et copier/coller fonctionnent a
 });
 
 // ============ V10 : vrais instruments ============
-const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir'];
+const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir', 'r_honky', 'r_epiano', 'r_clavinet', 'r_drawbar', 'r_church', 'r_steel', 'r_overdrive', 'r_slap', 'r_violin', 'r_contrabass', 'r_trumpet', 'r_trombone', 'r_marimba', 'r_vibes', 'r_steelpan', 'r_air', 'r_cinema', 'r_synthchoir'];
 /** Piste instrument seule jouant un vrai instrument, sans réverb. */
 const realProj = (id, notes, len = 16) => page.evaluate(([id, notes, len]) => { const k = window.kh; return window.qa.only(1, (p, t) => { p.bpm = 120; t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = len; c.patLen = len; c.notes = notes; }); }, [id, notes, len]);
 
-test('RI01', 'Vrais instruments', 'Les 11 instruments enregistrés se chargent et produisent un signal propre', async () => {
-  const r = await S(async () => { const k = window.kh, out = {}; for (const id of Object.keys(k.PRESETS).filter(x => k.PRESETS[x].cat === 'real')) { const p = window.qa.only(1, (p, t) => { t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = [48, 60, 64, 67].map((n, i) => ({ p: n, s: i * 4, l: 4, v: 0.8 })); }); out[id] = await window.qa.stats(p); } return out; });
+test('RI01', 'Vrais instruments', 'Les 29 instruments enregistrés se chargent et produisent un signal propre', async () => {
+  const r = await S(async () => { const k = window.kh, out = {}; for (const id of Object.keys(k.PRESETS).filter(x => k.PRESETS[x].p.engine === 'multi')) { const p = window.qa.only(1, (p, t) => { t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = [48, 60, 64, 67].map((n, i) => ({ p: n, s: i * 4, l: 4, v: 0.8 })); }); out[id] = await window.qa.stats(p); } return out; });
   expect(Object.keys(r).join() === REAL.join(), `instruments : ${Object.keys(r)}`);
   for (const [id, s] of Object.entries(r)) { expect(s.bad === 0, `${id} : valeurs invalides`); expect(s.rms > 0.01, `${id} : inaudible (rms ${s.rms.toFixed(5)})`); expect(s.peak <= 0.97, `${id} : saturation (${s.peak})`); }
 });
@@ -1574,7 +1578,7 @@ test('RI03', 'Vrais instruments', 'Les notes partent à l\'heure (pas de retard 
 test('RI04', 'Vrais instruments', 'Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement', async () => {
   await page.click(await headSel(3)); await page.selectOption('[data-role=preset]', 'r_piano'); await sleep(500);
   const sp = (await proj()).tracks[3].synth; expect(sp.engine === 'multi' && sp.bank === 'piano', 'instrument non appliqué');
-  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 8, 0, 'catégories'); expect((await page.textContent('.synth')).includes('enregistré'), 'mention absente');
+  near(await page.$$eval('[data-role=preset] optgroup', e => e.length), 15, 0, 'catégories'); expect((await page.textContent('.synth')).includes('enregistré'), 'mention absente');
   await page.keyboard.down('a'); const on = await S(() => window.qa.level(300)); await page.keyboard.up('a'); expect(on > 0.1, `piano inaudible au clavier (${on})`);
   await sleep(700); await page.reload(); await page.waitForSelector('.clip');
   const r = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[3]]; return { bank: p.tracks[0].synth.bank, st: await window.qa.stats(p) }; });
@@ -1888,8 +1892,88 @@ test('LAT02', 'Latence', 'Le décalage d\'enregistrement recale réellement les 
   near(b - (a + c) / 2, 0.15, 0.05, `décalage appliqué (${a.toFixed(3)}, ${b.toFixed(3)}, ${c.toFixed(3)})`);
 });
 
+// ============ V15 : banque généraliste ============
+const NEW_BANK_PRESETS = ['r_honky', 'r_epiano', 'r_clavinet', 'r_drawbar', 'r_church', 'r_steel', 'r_overdrive', 'r_slap', 'r_violin', 'r_contrabass', 'r_trumpet', 'r_trombone', 'r_marimba', 'r_vibes', 'r_steelpan', 'r_air', 'r_cinema', 'r_synthchoir'];
+test('BN01', 'Banque généraliste', 'Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues', async () => {
+  await page.click(await headSel(1));
+  for (const lang of ['fr', 'en', 'es']) {
+    await page.evaluate(l => window.kh.setLang(l), lang);
+    const groups = await page.$$eval('[data-role=preset] optgroup', gs => gs.map(g => ({ label: g.label, ids: [...g.children].map(o => o.value), names: [...g.children].map(o => o.textContent) })));
+    expect(groups.length === 15 && groups.every(g => g.label && !g.label.startsWith('cat.')), `familles manquantes en ${lang}`);
+    const all = groups.flatMap(g => g.ids); expect(all.length === 53 && new Set(all).size === 53, `catalogue : ${all.length} en ${lang}`);
+    for (const id of NEW_BANK_PRESETS) {
+      const g = groups.find(g => g.ids.includes(id));
+      expect(g && g.names[g.ids.indexOf(id)] && !g.names[g.ids.indexOf(id)].startsWith('ins.'), `${id} non traduit en ${lang}`);
+    }
+  }
+  await S(() => window.kh.setLang('fr'));
+});
+test('BN02', 'Banque généraliste', 'Chaque nouveau son se choisit et se joue au clavier en direct', async () => {
+  await page.click(await headSel(1));
+  for (const id of NEW_BANK_PRESETS) {
+    await page.selectOption('[data-role=preset]', id);
+    expect(await S(() => window.kh.engine.prepare()), `${id} : chargement échoué`);
+    await sleep(850); // laisser finir la préécoute pour mesurer uniquement la note tenue
+    expect((await proj()).tracks[1].synth.preset === id, `${id} non appliqué`);
+    await page.keyboard.down('a'); const level = await S(() => window.qa.level(220)); await page.keyboard.up('a');
+    expect(level > 0.005, `${id} muet au clavier (${level})`);
+  }
+});
+test('BN03', 'Banque généraliste', 'Les banques sont chargées uniquement au choix du son et réutilisées ensuite', async () => {
+  await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
+  const urls = []; const onRequest = req => { if (req.url().includes('/banks/')) urls.push(req.url()); }; page.on('request', onRequest);
+  try {
+    await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'epiano'); await sleep(200);
+    expect(urls.length === 0, 'des échantillons sont chargés pour un son synthétisé');
+    await page.selectOption('[data-role=preset]', 'r_slap'); expect(await S(() => window.kh.engine.prepare()), 'chargement');
+    expect(urls.length === 25 && urls.every(u => u.includes('/slap_bass_1/')), `fichiers chargés : ${urls.length}`);
+    await page.selectOption('[data-role=preset]', 'epiano'); await page.selectOption('[data-role=preset]', 'r_slap');
+    await S(() => window.kh.engine.prepare()); await sleep(200); near(urls.length, 25, 0, 'pas de deuxième téléchargement');
+  } finally { page.off('request', onRequest); }
+});
+test('BN04', 'Banque généraliste', 'Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement', async () => {
+  await page.evaluate(ids => { const k = window.kh, p = k.S.project, base = JSON.stringify(p.tracks[1]);
+    p.tracks = ids.map((id, i) => { const t = JSON.parse(base); t.id = 'bank-track-' + i; t.name = id; t.synth = k.makeSynth(id); t.rev = 0;
+      t.clips = [{ id: 'bank-clip-' + i, name: id, start: i * 4, len: 4, offset: 0, patLen: 4, notes: [{ p: 60, s: 0, l: 2, v: 0.8 }] }]; return t; });
+    k.S.selTrack = p.tracks[0].id; k.S.selClip = p.tracks[0].clips[0].id; k.commit();
+  }, NEW_BANK_PRESETS);
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'banque-v15.khm'); await dl.saveAs(f);
+  const saved = JSON.parse(fs.readFileSync(f, 'utf8')); expect(saved.project.tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'fichier incomplet');
+  await newBlank(); await page.setInputFiles('#fProj', f);
+  await page.waitForFunction(() => window.kh.S.project.tracks.length === 18);
+  await sleep(800); await page.reload(); await page.waitForSelector('.clip');
+  expect((await proj()).tracks.map(t => t.synth.preset).join() === NEW_BANK_PRESETS.join(), 'les sons ne sont pas conservés');
+  const result = await S(() => window.qa.stats(window.kh.S.project)); expect(result.bad === 0 && result.rms > 0.005 && result.peak <= 0.97, `rendu du projet : ${JSON.stringify(result)}`);
+});
+test('BN05', 'Banque généraliste', 'Un nouveau son indisponible signale l’échec puis peut être rechargé', async () => {
+  await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
+  await page.route('**/banks/drawbar_organ/**', r => r.abort()); ignoreErr = /ERR_FAILED/;
+  try {
+    await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_drawbar');
+    expect(!(await S(() => window.kh.engine.prepare())), 'un chargement bloqué devrait échouer');
+    expect((await page.textContent('#toast')).includes('Impossible'), 'échec non signalé');
+  } finally { await page.unroute('**/banks/drawbar_organ/**'); }
+  await page.selectOption('[data-role=preset]', 'epiano'); await page.selectOption('[data-role=preset]', 'r_drawbar');
+  expect(await S(() => window.kh.engine.prepare()), 'la banque ne se recharge pas après échec');
+  await sleep(850); await page.keyboard.down('a'); const level = await S(() => window.qa.level(220)); await page.keyboard.up('a');
+  expect(level > 0.005, 'orgue muet après rétablissement');
+});
+test('BN06', 'Banque généraliste', 'Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await pg.tap('.head >> nth=1');
+    await pg.selectOption('[data-role=preset]', 'r_steelpan');
+    expect(await pg.evaluate(() => window.kh.engine.prepare()), 'chargement sur téléphone');
+    const b = await pg.locator('[data-role=preset]').boundingBox(); expect(b && b.x >= 0 && b.x + b.width <= 390, `sélecteur hors écran : ${JSON.stringify(b)}`);
+    expect(await pg.$eval('[data-role=preset]', e => e.selectedOptions[0].textContent === 'Steel drum'), 'son non sélectionné');
+    await pg.screenshot({ path: path.join(__dirname, 'shots/v15-phone.png') });
+  } finally { await ctx2.close(); }
+});
+
 (async () => {
-  browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
+  browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
   page = await ctx.newPage();
   page.on('pageerror', e => errors.push('PAGE ' + e.message));

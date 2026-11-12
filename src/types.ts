@@ -188,10 +188,28 @@ type P = Partial<Omit<SynthParams, 'preset'>>;
 /** Instrument échantillonné : l'enveloppe ne fait qu'adoucir l'attaque et la fin de la note. */
 const real = (bank: string, a = 0.002, r = 0.3): P => ({ engine: 'multi', bank, cutoff: 16000, reso: 0.5, envAmt: 0, a, d: 0.2, s: 1, r });
 const DEFS: [string, string, P][] = [
-  ['r_piano', 'real', real('piano', 0.002, 0.35)], ['r_nylon', 'real', real('nylon', 0.002, 0.4)], ['r_eguitar', 'real', real('eguitar', 0.002, 0.3)],
-  ['r_ebass', 'real', real('ebass', 0.002, 0.15)], ['r_abass', 'real', real('abass', 0.002, 0.2)],
-  ['r_strings', 'real', real('strings', 0.04, 0.4)], ['r_cello', 'real', real('cello', 0.02, 0.3)], ['r_brass', 'real', real('brass', 0.01, 0.2)],
-  ['r_sax', 'real', real('sax', 0.01, 0.2)], ['r_flute', 'real', real('flute', 0.01, 0.2)], ['r_choir', 'real', real('choir', 0.05, 0.5)],
+  ['r_piano', 'realKeys', real('piano', 0.002, 0.35)], ['r_nylon', 'realGuitar', real('nylon', 0.002, 0.4)], ['r_eguitar', 'realGuitar', real('eguitar', 0.002, 0.3)],
+  ['r_ebass', 'realBass', real('ebass', 0.002, 0.15)], ['r_abass', 'realBass', real('abass', 0.002, 0.2)],
+  ['r_strings', 'realStrings', real('strings', 0.04, 0.4)], ['r_cello', 'realStrings', real('cello', 0.02, 0.3)], ['r_brass', 'realBrass', real('brass', 0.01, 0.2)],
+  ['r_sax', 'realWind', real('sax', 0.01, 0.2)], ['r_flute', 'realWind', real('flute', 0.01, 0.2)], ['r_choir', 'realPad', real('choir', 0.05, 0.5)],
+  ['r_honky', 'realKeys', real('honky', 0.002, 0.35)],
+  ['r_epiano', 'realKeys', real('epiano', 0.002, 0.4)],
+  ['r_clavinet', 'realKeys', real('clavinet', 0.002, 0.15)],
+  ['r_drawbar', 'realKeys', real('drawbar', 0.008, 0.12)],
+  ['r_church', 'realKeys', real('church', 0.015, 0.5)],
+  ['r_steel', 'realGuitar', real('steel', 0.002, 0.3)],
+  ['r_overdrive', 'realGuitar', real('overdrive', 0.002, 0.2)],
+  ['r_slap', 'realBass', real('slap', 0.002, 0.15)],
+  ['r_violin', 'realStrings', real('violin', 0.025, 0.3)],
+  ['r_contrabass', 'realStrings', real('contrabass', 0.02, 0.3)],
+  ['r_trumpet', 'realBrass', real('trumpet', 0.01, 0.2)],
+  ['r_trombone', 'realBrass', real('trombone', 0.01, 0.2)],
+  ['r_marimba', 'realMallet', real('marimba', 0.002, 0.3)],
+  ['r_vibes', 'realMallet', real('vibes', 0.002, 0.8)],
+  ['r_steelpan', 'realMallet', real('steelpan', 0.002, 0.4)],
+  ['r_air', 'realPad', real('air', 0.15, 0.7)],
+  ['r_cinema', 'realPad', real('cinema', 0.12, 0.7)],
+  ['r_synthchoir', 'realPad', real('synthchoir', 0.08, 0.5)],
   ['epiano', 'keys', { engine: 'fm', ratio: 1, fmAmt: 1.6, fmDecay: 0.35, cutoff: 7000, reso: 0.5, envAmt: 0, a: 0.003, d: 1.2, s: 0.25, r: 0.35 }],
   ['keys', 'keys', { wave: 'triangle', wave2: 'sine', detune: 3, mix2: 0.6, cutoff: 3200, reso: 0.5, envAmt: 0.2, a: 0.004, d: 0.5, s: 0.3, r: 0.3 }],
   ['organ', 'keys', { wave: 'sine', wave2: 'sine', detune: 1200, mix2: 0.6, cutoff: 6000, reso: 0.5, envAmt: 0, a: 0.01, d: 0.1, s: 1, r: 0.08 }],
@@ -219,7 +237,7 @@ const DEFS: [string, string, P][] = [
 ];
 export const PRESETS: Record<string, { cat: string; p: Omit<SynthParams, 'preset'> }> =
   Object.fromEntries(DEFS.map(([id, cat, p]) => [id, { cat, p: { ...BASE, ...p } }]));
-export const CATS = ['real', 'keys', 'bass', 'lead', 'pad', 'plucked', 'bell', 'sampler'];
+export const CATS = ['realKeys', 'realGuitar', 'realBass', 'realStrings', 'realBrass', 'realWind', 'realMallet', 'realPad', 'keys', 'bass', 'lead', 'pad', 'plucked', 'bell', 'sampler'];
 export const makeSynth = (preset: string): SynthParams => ({ preset, ...(PRESETS[preset] ?? PRESETS.lead).p });
 
 export const uid = () => Math.random().toString(36).slice(2, 10);

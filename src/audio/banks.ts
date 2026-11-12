@@ -8,6 +8,24 @@ export interface Sample { buf: AudioBuffer; off: number; gain: number } // off =
 /** Identifiant de banque → dossier des fichiers. */
 export const BANKS: Record<string, string> = {
   piano: 'acoustic_grand_piano', nylon: 'acoustic_guitar_nylon', eguitar: 'electric_guitar_clean', ebass: 'electric_bass_finger', abass: 'acoustic_bass',
+  honky: 'honkytonk_piano',
+  epiano: 'electric_piano_1',
+  clavinet: 'clavinet',
+  drawbar: 'drawbar_organ',
+  church: 'church_organ',
+  steel: 'acoustic_guitar_steel',
+  overdrive: 'overdriven_guitar',
+  slap: 'slap_bass_1',
+  violin: 'violin',
+  contrabass: 'contrabass',
+  trumpet: 'trumpet',
+  trombone: 'trombone',
+  marimba: 'marimba',
+  vibes: 'vibraphone',
+  steelpan: 'steel_drums',
+  air: 'pad_7_halo',
+  cinema: 'fx_2_soundtrack',
+  synthchoir: 'synth_choir',
   strings: 'string_ensemble_1', cello: 'cello', brass: 'brass_section', sax: 'tenor_sax', flute: 'flute', choir: 'choir_aahs', drums: 'drums',
 };
 const NOTES = Array.from({ length: 25 }, (_, i) => 24 + i * 3), PADS = Array.from({ length: 16 }, (_, i) => i);

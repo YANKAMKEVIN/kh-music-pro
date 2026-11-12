@@ -100,3 +100,12 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
 - **En attente** : V14b (ci-dessus), et la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
+
+## 7. Extension généraliste V15 (branche v15-banque-generaliste)
+
+- Version 0.15.0 : 18 banques supplémentaires, 29 instruments échantillonnés au total et 24 sons existants (sampler compris), classés par famille dans le menu Son. Les identifiants existants et le format du projet sont conservés ; aucun nouveau champ à migrer.
+- 450 MP3 supplémentaires sélectionnés sans conversion dans FluidR3 GM / midi-js-soundfonts (CC BY 3.0), source figée au commit `044fab8e1456bfafc5776e86dfd6bb8697149aef`. Attribution dans `public/banks/CREDITS.txt` et l’aide.
+- Le script `tools/build-banks.sh` reconstruit aussi ces sons. Le chargement à la demande et le graphe commun à l’écoute et à l’export sont inchangés.
+- Les anciennes limites restent valables : une seule couche de vélocité, durée finie, pas de boucle de maintien. Le piano droit est un honky-tonk ; ne pas le présenter comme un piano droit neutre.
+- QA : six cas BN01–BN06 ajoutés (traductions/familles, clavier, chargement à la demande, fichier/rechargement, échec/réessai, téléphone) ; RI01 vérifie les 29 sons, W01 un nouvel instrument hors ligne et DK01 un nouvel instrument dans Electron.
+- Écoute humaine, micro et MIDI matériels, Windows/macOS réels : toujours à vérifier par le propriétaire.
