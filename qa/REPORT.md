@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-168 cas réussis sur 168.
+172 cas réussis sur 172.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -172,3 +172,7 @@
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
 | RI05 | Vrais instruments | Batterie acoustique : 16 sons enregistrés, à l'heure, différents des sons synthétisés | OK |
 | RI06 | Vrais instruments | Si les sons ne peuvent pas être chargés : message clair, rien ne plante, le reste joue | OK |
+| LT01 | Prises | Enregistrer en boucle : une prise par tour, alignées, à choisir ensuite ; scinder pour mêler deux prises | OK |
+| LT02 | Prises | Punch : seule la zone de boucle est réenregistrée, ce qui l'entoure est conservé | OK |
+| TN01 | Justesse | La correction ramène une note fausse sur la gamme, sans changer la durée ni abîmer le son | OK |
+| TN02 | Justesse | Bouton « Corriger » : le clip est accordé, le message le dit, l'annulation le rétablit ; un bruit est refusé | OK |

@@ -212,7 +212,7 @@ function laneDown(e: PointerEvent, tr: Track) {
   const grouped = S.selMore.size > 0 && (S.selMore.has(clip.id) || S.selClip === clip.id);
   if (!grouped) select(tr.id, clip.id);
   e.preventDefault();
-  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset }, r = el.getBoundingClientRect(), dur = stepDur(S.project.bpm);
+  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset, takes: clip.takes }, r = el.getBoundingClientRect(), dur = stepDur(S.project.bpm);
   const resize = e.clientX > r.right - 10, trim = !resize && e.clientX < r.left + 8 && r.width > 30;
   const buf = clip.bufferId ? buffers.get(clip.bufferId) : undefined;
   const maxLen = buf ? Math.ceil((buf.duration - clip.offset) / dur) : Infinity;
@@ -227,6 +227,7 @@ function laneDown(e: PointerEvent, tr: Track) {
       // Bord gauche : le début avance ou recule, le contenu reste en place sur la timeline.
       d = clamp(d, Math.max(-o.start, buf ? -Math.floor(o.offset / dur) : -o.start), o.len - Math.min(S.snap, o.len));
       clip.start = o.start + d; clip.len = o.len - d;
+      if (buf && o.takes) clip.takes = o.takes.map(x => x + d * dur);
       clip.offset = buf ? Math.max(0, o.offset + d * dur) : ((o.offset + d) % clip.patLen! + clip.patLen!) % clip.patLen!;
     } else {
       d = Math.max(-minStart, d); clip.start = o.start + d;

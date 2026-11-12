@@ -17,7 +17,11 @@ function wavFile(name, freq = 440, sec = 1) {
   const f = path.join(TMP, name); fs.writeFileSync(f, b); return f;
 }
 const TONE = wavFile('qa-tone.wav');
-const MIC = wavFile('qa-mic.wav', 440, 2); // son reçu par le micro simulé : un la à 440 Hz
+// Son reçu par le micro simulé : un la à 440 Hz, fort pendant une seconde puis faible pendant une seconde (pour vérifier le calage des prises).
+const MIC = (() => { const sr = 44100, n = sr * 2, b = Buffer.alloc(44 + n * 2); b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 440 * i / sr) * (i < sr ? 16000 : 5000)), 44 + i * 2);
+  const f = path.join(TMP, 'qa-mic.wav'); fs.writeFileSync(f, b); return f; })();
 
 // Outils injectés dans la page (analyse audio par rendu hors-ligne).
 const PAGE_HELPERS = () => {
@@ -72,7 +76,7 @@ async function reset() {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
-    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16' }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
+    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1 }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1;
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
@@ -570,7 +574,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await S(() => { const k = window.kh; k.S.project.tracks.forEach(t => { t.autoShow = 'vol'; }); k.commit(); }); text += await page.innerText('#arr');
     await page.click(await clipSel(0, 0)); await page.click('[data-view=pads]'); await page.click('.pad[data-pad="1"] [data-act=padfx]'); text += await page.innerText('#panel');
     await page.click('#bNotes'); text += await page.innerText('#notes'); await page.keyboard.press('Escape');
-    await S(() => { const k = window.kh; window.qa.sine('qa-sine'); const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-n', name: 'Son', start: 0, len: 8, offset: 0, bufferId: 'qa-sine', gain: 1 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-n'; k.learn.on = true; k.commit(); }); text += await page.innerText('#panel');
+    await S(() => { const k = window.kh; window.qa.sine('qa-sine'); const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-n', name: 'Son', start: 0, len: 8, offset: 0, bufferId: 'qa-sine', gain: 1, takes: [0, 0.2], take: 0 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-n'; k.learn.on = true; k.commit(); }); text += await page.innerText('#panel');
     await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'sampler'); text += await page.innerText('#panel');
     await page.selectOption('[data-role=preset]', 'r_piano'); await sleep(300); text += await page.innerText('#panel') + (await page.textContent('#toast'));
     await page.selectOption('[data-role=preset]', 'epiano'); await page.click('[data-act=okb]'); text += await page.innerText('#panel');
@@ -580,7 +584,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await menu('bLib'); text += await page.innerText('#lib'); await page.keyboard.press('Escape');
     await page.click('#menu summary'); text += await page.innerText('#top'); await page.click('#menu summary');
     const titles = await page.$$eval('[title], [aria-label]', els => els.map(e => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' | '));
-    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes)\.[a-zA-Z0-9.]+/g);
+    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune)\.[a-zA-Z0-9.]+/g);
     expect(!raw, `clés non traduites : ${raw && [...new Set(raw)].join(', ')}`);
     const miss = errors.slice(n0).filter(e => e.includes('i18n')); expect(!miss.length, miss.join(' ; '));
     if (code !== 'fr') expect(!/Éditeur|Supprimer|Enregistrer|Longueur/.test(text), 'du français subsiste');
@@ -1593,6 +1597,68 @@ test('RI06', 'Vrais instruments', 'Si les sons ne peuvent pas être chargés : m
     await page.keyboard.press('Space'); await sleep(900); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.2), 'les autres pistes ne jouent plus');
     await page.keyboard.press('Space'); const st = await S(() => window.qa.stats(window.kh.S.project)); expect(st.bad === 0 && st.rms > 0.02, 'export impossible');
   } finally { await page.unroute('**/banks/choir_aahs/**'); }
+});
+
+// ============ V11 : prises multiples, punch, justesse ============
+/** Niveau du son d'un clip à partir d'un décalage donné, sur 0,8 s. */
+const rmsAt = (ti, ci, offs) => page.evaluate(([ti, ci, offs]) => { const k = window.kh, c = k.S.project.tracks[ti].clips[ci], b = k.buffers.get(c.bufferId), d = b.getChannelData(0), sr = b.sampleRate; return offs.map(o => { let e = 0, n = 0; for (let i = Math.floor((o + 0.1) * sr); i < (o + 0.9) * sr && i < d.length; i++) { e += d[i] * d[i]; n++; } return Math.sqrt(e / Math.max(1, n)); }); }, [ti, ci, offs]);
+
+test('LT01', 'Prises', 'Enregistrer en boucle : une prise par tour, alignées, à choisir ensuite ; scinder pour mêler deux prises', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 240; p.loop = true; p.loopStart = 1; p.loopLen = 1; window.kh.commit(); });
+  await page.click(await headSel(4)); await page.keyboard.press('r'); await sleep(400);
+  expect(await S(() => window.kh.engine.recording === 'audio' && window.kh.engine.recMode === 'loop'), 'enregistrement en boucle non démarré');
+  await sleep(3500); expect(await S(() => window.kh.engine.currentStep() >= 16 && window.kh.engine.currentStep() < 32), 'la lecture ne tourne pas dans la zone de boucle');
+  await page.keyboard.press('Space'); await sleep(800);
+  const c = (await proj()).tracks[4].clips[0]; expect(c && c.start === 16 && c.len === 16, `clip mal placé ${c && [c.start, c.len]}`);
+  expect(c.takes && c.takes.length >= 3 && c.takes.length <= 4 && c.offset === c.takes[c.take], `prises : ${JSON.stringify(c.takes)}`);
+  for (let i = 1; i < c.takes.length; i++) near(c.takes[i] - c.takes[i - 1], 1, 0.001, 'une prise par tour de boucle (1 s)');
+  // Le micro simulé alterne une seconde forte et une seconde faible : deux prises consécutives doivent donc différer nettement.
+  const lv = await rmsAt(4, 0, c.takes.slice(0, 3)); const hi = Math.max(lv[0], lv[1]), lo = Math.min(lv[0], lv[1]);
+  expect(lo > 0.005 && hi > lo * 1.8, `les prises ne sont pas calées sur les tours (${lv.map(x => x.toFixed(3))})`); near(lv[2] / lv[0], 1, 0.15, 'la 3e prise retrouve le niveau de la 1re');
+  near(await page.$$eval('[data-take]', e => e.length), c.takes.length, 0, 'boutons de prise'); expect((await page.textContent('#toast')).includes('prise'), 'message');
+  await page.click('[data-take="0"]'); let d = (await proj()).tracks[4].clips[0]; expect(d.take === 0 && d.offset === c.takes[0], 'choix de la prise 1');
+  await S(() => window.kh.engine.seek(24)); await page.keyboard.press('Control+e');
+  const cl = (await proj()).tracks[4].clips; expect(cl.length === 2 && Math.abs(cl[1].takes[1] - cl[0].takes[1] - 0.5) < 0.001 && Math.abs(cl[1].offset - cl[0].offset - 0.5) < 0.001, 'après scission, les prises de la seconde moitié doivent rester alignées');
+  await page.click(await clipSel(4, 1)); await page.click('[data-take="1"]'); d = (await proj()).tracks[4].clips[1]; expect(d.take === 1 && (await proj()).tracks[4].clips[0].take === 0, 'une prise différente par moitié');
+});
+test('LT02', 'Prises', 'Punch : seule la zone de boucle est réenregistrée, ce qui l\'entoure est conservé', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 240; p.loop = true; p.loopStart = 1; p.loopLen = 1;
+    const b = new AudioBuffer({ length: 44100 * 4, numberOfChannels: 1, sampleRate: 44100 }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * 200 * i / 44100); k.buffers.set('qa-old', b);
+    const t = p.tracks[4]; t.clips = [{ id: 'old', name: 'Ancien', start: 0, len: 48, offset: 0, bufferId: 'qa-old', gain: 1 }]; k.S.selTrack = t.id; k.S.selClip = ''; k.commit(); });
+  await page.click('#bPunch'); expect((await proj()).punch && await page.getAttribute('#bPunch', 'aria-pressed') === 'true', 'punch non activé');
+  await page.keyboard.press('r'); await sleep(500); expect(await S(() => window.kh.engine.recMode === 'punch' && window.kh.engine.currentStep() < 16), 'le punch doit partir une mesure avant la zone');
+  await sleep(2600); expect(await S(() => !window.kh.engine.recording && !window.kh.engine.playing), 'le punch ne s\'arrête pas seul à la fin de la zone');
+  await sleep(500); const cl = (await proj()).tracks[4].clips.slice().sort((a, b) => a.start - b.start);
+  expect(cl.length === 3 && cl.map(c => [c.start, c.len].join(':')).join() === '0:16,16:16,32:16', `découpe ${cl.map(c => [c.start, c.len].join(':'))}`);
+  expect(cl[0].bufferId === 'qa-old' && cl[2].bufferId === 'qa-old' && cl[1].bufferId !== 'qa-old', 'la zone n\'a pas été remplacée par la nouvelle prise');
+  near(cl[2].offset, 2, 0.001, 'la suite de l\'ancien son doit reprendre au bon endroit (2 s)');
+  const lv = await S(() => { const k = window.kh, c = k.S.project.tracks[4].clips.find(x => x.bufferId !== 'qa-old'), d = k.buffers.get(c.bufferId).getChannelData(0); let e = 0, n = 0; for (let i = Math.floor(c.offset * 44100); i < (c.offset + 0.9) * 44100 && i < d.length; i++) { e += d[i] * d[i]; n++; } return Math.sqrt(e / n); });
+  expect(lv > 0.01, `la nouvelle prise est silencieuse (${lv})`); await page.keyboard.press('Control+z'); near((await proj()).tracks[4].clips.length, 1, 0, 'annulation du punch');
+});
+test('TN01', 'Justesse', 'La correction ramène une note fausse sur la gamme, sans changer la durée ni abîmer le son', async () => {
+  const r = await S(() => {
+    const k = window.kh, sr = 44100, mk = hz => { const b = new AudioBuffer({ length: sr * 2, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) { const t = i / sr; d[i] = 0.4 * (Math.sin(2 * Math.PI * hz * t) + 0.4 * Math.sin(4 * Math.PI * hz * t) + 0.2 * Math.sin(6 * Math.PI * hz * t)); } return b; };
+    const meas = b => { const d = b.getChannelData(0), i0 = sr; let e = 0, jump = 0; for (let i = sr * 0.3 | 0; i < sr * 1.7; i++) { e += d[i] * d[i]; jump = Math.max(jump, Math.abs(d[i] - d[i - 1])); } return { hz: k.detectPitch(d.slice(i0, i0 + 4096), sr), rms: Math.sqrt(e / (sr * 1.4)), jump, len: b.length }; };
+    const chrom = () => true, cMaj = m => [0, 2, 4, 5, 7, 9, 11].includes(((m % 12) + 12) % 12);
+    const full = k.tuneBuffer(mk(430), 1, chrom), halfT = k.tuneBuffer(mk(430), 0.5, chrom), ok = k.tuneBuffer(mk(440), 1, chrom), scale = k.tuneBuffer(mk(554.37), 1, cMaj), sil = k.tuneBuffer(new AudioBuffer({ length: sr, numberOfChannels: 1, sampleRate: sr }), 1, chrom);
+    return { src: meas(mk(430)), full: meas(full.out), half: meas(halfT.out), ok: meas(ok.out), scale: meas(scale.out), cents: full.meanCents, voiced: full.voiced, sil: sil.voiced };
+  });
+  const cents = (a, b) => 1200 * Math.log2(a / b);
+  near(cents(r.full.hz, 440), 0, 6, `note corrigée (${r.full.hz.toFixed(1)} Hz)`); near(cents(r.half.hz, 435), 0, 8, 'correction à 50 %'); near(cents(r.ok.hz, 440), 0, 3, 'une note juste ne doit pas bouger');
+  expect(Math.abs(cents(r.scale.hz, 523.25)) < 8 || Math.abs(cents(r.scale.hz, 587.33)) < 8, `do dièse en do majeur : ${r.scale.hz.toFixed(1)} Hz (attendu do ou ré)`);
+  near(r.full.len, r.src.len, 0, 'durée'); near(r.full.rms / r.src.rms, 1, 0.08, 'niveau'); expect(r.full.jump < r.src.jump * 1.6, `craquements (saut maximal ${r.full.jump.toFixed(3)} contre ${r.src.jump.toFixed(3)})`);
+  near(r.cents, 40, 5, 'écart moyen annoncé'); expect(r.voiced > 0.8 && r.sil === 0, 'détection des passages chantés');
+});
+test('TN02', 'Justesse', 'Bouton « Corriger » : le clip est accordé, le message le dit, l\'annulation le rétablit ; un bruit est refusé', async () => {
+  await S(() => { const k = window.kh, sr = 44100, b = new AudioBuffer({ length: sr, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0), n = new AudioBuffer({ length: sr, numberOfChannels: 1, sampleRate: sr }), e = n.getChannelData(0);
+    for (let i = 0; i < sr; i++) { d[i] = 0.4 * Math.sin(2 * Math.PI * 452 * i / sr); e[i] = Math.random() * 0.4 - 0.2; } k.buffers.set('qa-flat', b); k.buffers.set('qa-noise', n);
+    const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-clip', name: 'Voix', start: 0, len: 8, offset: 0, bufferId: 'qa-flat', gain: 1 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-clip'; k.commit(); });
+  await page.click('[data-act=tune]'); await sleep(300); expect((await page.textContent('#toast')).includes('Justesse'), `message : ${await page.textContent('#toast')}`);
+  const hz = await S(() => { const k = window.kh, c = k.S.project.tracks[4].clips[0], d = k.buffers.get(c.bufferId).getChannelData(0); return [c.bufferId, k.detectPitch(d.slice(20000, 24096), 44100)]; });
+  expect(hz[0] !== 'qa-flat', 'son non remplacé'); near(1200 * Math.log2(hz[1] / 440), 0, 6, 'clip accordé sur le la');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[4].clips[0].bufferId === 'qa-flat', 'annulation');
+  await S(() => { window.kh.S.project.tracks[4].clips[0].bufferId = 'qa-noise'; window.kh.commit(); }); await page.click('[data-act=tune]'); await sleep(200);
+  expect((await page.textContent('#toast')).includes('Aucune note') && (await proj()).tracks[4].clips[0].bufferId === 'qa-noise', 'un bruit ne doit pas être traité');
 });
 
 (async () => {

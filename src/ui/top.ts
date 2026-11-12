@@ -58,6 +58,7 @@ export function buildTop(onLang: () => void) {
       b('bTap', 'pill', 'Tap', t('top.tapTip'), tapTempo),
       tgl('bMetro', t('top.metro'), t('top.metroTip'), () => { S.project.metronome = !S.project.metronome; commit(); }),
       tgl('bCount', t('top.countIn'), t('top.countInTip'), () => { S.project.countIn = !S.project.countIn; commit(); }),
+      tgl('bPunch', t('top.punch'), t('top.punchTip'), () => { S.project.punch = !S.project.punch; commit(); }),
       tgl('bLoop', '⟲ ' + t('top.loop'), t('top.loopTip'), () => { S.project.loop = !S.project.loop; commit(); }),
       h('label', { class: 'mini-in' }, t('top.from'), num('loopS', t('top.loopS'), 1, 999, setLoop)),
       h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop)),
@@ -93,7 +94,7 @@ export function renderTop() {
   $<HTMLInputElement>('loopS').value = String(p.loopStart + 1);
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
   $<HTMLSelectElement>('snap').value = String(S.snap);
-  for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {
+  for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bPunch', p.punch], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {
     $(id).classList.toggle('on', on); $(id).setAttribute('aria-pressed', String(on));
   }
 }

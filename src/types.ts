@@ -23,6 +23,8 @@ export interface Clip {
   gain?: number;
   /** fondus d'entrée et de sortie, en pas (clips audio) */
   fadeIn?: number; fadeOut?: number;
+  /** Prises multiples (enregistrement en boucle) : décalage de chaque prise dans le son, et prise choisie. */
+  takes?: number[]; take?: number;
 }
 
 /** Point d'automation : s = position (pas), v = valeur (volume 0..1, pan et filtre -1..1). */
@@ -86,6 +88,7 @@ export interface Project {
   width: number;                             // largeur stéréo : 0 mono, 1 normale, 2 élargie
   target: number;                            // niveau d'export en LUFS, 0 = simple protection des crêtes
   notes: string;                             // bloc-notes du projet (paroles, idées)
+  punch: boolean;                            // enregistrement audio limité à la zone de boucle (punch-in / punch-out)
   tracks: Track[];
 }
 
@@ -210,7 +213,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '',
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false,
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -220,7 +223,7 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= '';
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false;
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0;
     if (tr.type === 'drums') {

@@ -3,8 +3,9 @@ import { t } from './i18n';
 import { allNotesOff } from './input';
 import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
 import { stretchBuffer } from './audio/stretch';
+import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, emptyDrums, inScale, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -62,7 +63,7 @@ function rewriteClip(fn: (src: Float32Array, dst: Float32Array) => void, after?:
 export function reverseClip() {
   rewriteClip((a, b) => { for (let i = 0, n = a.length; i < n; i++) b[i] = a[n - 1 - i]; }, (clip, buf) => {
     const lenSec = clip.len * stepDur(S.project.bpm);
-    clip.offset = Math.max(0, buf.duration - clip.offset - lenSec);
+    clip.offset = Math.max(0, buf.duration - clip.offset - lenSec); delete clip.takes; delete clip.take;
     [clip.fadeIn, clip.fadeOut] = [clip.fadeOut ?? 0, clip.fadeIn ?? 0];
   });
 }
@@ -85,7 +86,7 @@ export function stretchClip(pct: number, semis: number) {
   if (!f || !buf || (pct === 100 && !semis)) return;
   const r = pct / 100, clip = f.clip, id = uid(), out = stretchBuffer(buf, r, semis);
   addBuffer(id, out); clip.bufferId = id;
-  clip.offset *= r; clip.len = Math.max(1, Math.min(Math.round(clip.len * r), Math.ceil((out.duration - clip.offset) / stepDur(S.project.bpm))));
+  clip.offset *= r; if (clip.takes) clip.takes = clip.takes.map(x => x * r); clip.len = Math.max(1, Math.min(Math.round(clip.len * r), Math.ceil((out.duration - clip.offset) / stepDur(S.project.bpm))));
   clip.fadeIn = Math.round((clip.fadeIn ?? 0) * r); clip.fadeOut = Math.round((clip.fadeOut ?? 0) * r);
   S.stretch = { clip: '', pct: 100, semis: 0 };
   commit(); toast(t('toast.stretched'));
@@ -247,6 +248,38 @@ export function doublePattern() {
   commit();
 }
 
+/** Décale le point de lecture d'un clip audio dans son son (toutes ses prises suivent). */
+function shiftAudio(c: Clip, sec: number) { c.offset += sec; if (c.takes) c.takes = c.takes.map(x => x + sec); }
+
+/** Libère la zone [a, b[ d'une piste audio : les clips qui la recouvrent sont rognés, coupés en deux ou supprimés. */
+function clearZone(tr: Track, a: number, b: number) {
+  const dur = stepDur(S.project.bpm), out: Clip[] = [];
+  for (const c of tr.clips) {
+    const end = c.start + c.len;
+    if (end <= a || c.start >= b) { out.push(c); continue; }
+    if (c.start < a) { const left: Clip = JSON.parse(JSON.stringify(c)); left.id = c.id; left.len = a - c.start; left.fadeOut = 0; out.push(left); }
+    if (end > b) { const right: Clip = JSON.parse(JSON.stringify(c)); right.id = c.start < a ? uid() : c.id; shiftAudio(right, (b - c.start) * dur); right.start = b; right.len = end - b; right.fadeIn = 0; out.push(right); }
+  }
+  tr.clips = out;
+}
+
+/** Choisit la prise jouée par un clip enregistré en boucle. */
+export function chooseTake(i: number) {
+  const c = findClip(S.selClip)?.clip;
+  if (!c?.takes || i < 0 || i >= c.takes.length) return;
+  c.take = i; c.offset = c.takes[i]; commit();
+}
+
+/** Ramène le son du clip vers les notes de la gamme du projet (toutes les notes si la gamme est libre). */
+export function tuneClip(amount: number) {
+  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
+  if (!f || !buf || amount <= 0) return;
+  const p = S.project, r = tuneBuffer(buf, amount, m => inScale(p, m));
+  if (r.voiced < 0.02) return toast(t('toast.noPitch'), 'error');
+  const id = uid(); addBuffer(id, r.out); f.clip.bufferId = id;
+  commit(); toast(t('toast.tuned', Math.round(r.meanCents)));
+}
+
 export function splitClip() {
   const f = findClip(S.selClip);
   if (!f) return toast(t('toast.selectClip'));
@@ -254,14 +287,13 @@ export function splitClip() {
   if (at <= clip.start || at >= clip.start + clip.len) return toast(t('toast.playheadInside'));
   const right: Clip = JSON.parse(JSON.stringify(clip));
   right.id = uid(); right.start = at; right.len = clip.start + clip.len - at;
-  right.offset = track.type === 'audio'
-    ? clip.offset + (at - clip.start) * stepDur(S.project.bpm)
-    : (clip.offset + at - clip.start) % clip.patLen!;
+  if (track.type === 'audio') shiftAudio(right, (at - clip.start) * stepDur(S.project.bpm));
+  else right.offset = (clip.offset + at - clip.start) % clip.patLen!;
   clip.len = at - clip.start;
   track.clips.push(right); commit();
 }
 
-export function addAudioClip(buf: AudioBuffer, name: string, trackId?: string, start?: number, offset = 0) {
+export function addAudioClip(buf: AudioBuffer, name: string, trackId?: string, start?: number, offset = 0, extra: Partial<Clip> = {}, prepare?: (tr: Track) => void) {
   const id = uid(); addBuffer(id, buf);
   let tr = trackId ? findTrack(trackId) : findTrack(S.selTrack);
   if (!tr || tr.type !== 'audio') tr = S.project.tracks.find(x => x.type === 'audio' && !x.clips.length);
@@ -269,8 +301,9 @@ export function addAudioClip(buf: AudioBuffer, name: string, trackId?: string, s
   const st = start ?? Math.round(engine.currentStep());
   const clip: Clip = {
     id: uid(), name, start: st, offset, bufferId: id, gain: 1,
-    len: Math.max(1, Math.ceil((buf.duration - offset) / stepDur(S.project.bpm))),
+    len: Math.max(1, Math.ceil((buf.duration - offset) / stepDur(S.project.bpm))), ...extra,
   };
+  prepare?.(tr);
   tr.clips.push(clip); S.selTrack = tr.id; S.selClip = clip.id;
   commit();
 }
@@ -318,13 +351,31 @@ export async function toggleRecord() {
     toast(t(sel.type === 'drums' ? 'toast.recPads' : 'toast.recNotes'));
     return;
   }
+  // Punch : seule la zone de boucle est enregistrée. Boucle : une prise par tour. Sinon : une prise continue.
+  const mode = p.punch ? 'punch' : p.loop ? 'loop' : 'normal';
   try {
-    await engine.recordAudio((buf, start, off) => {
+    await engine.recordAudio((buf, start, off, m) => {
       if (!buf) return toast(t('toast.recEmpty'), 'error');
-      addAudioClip(buf, t('clip.take') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), sel?.id, start, off);
+      const name = t('clip.take') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const dur = stepDur(p.bpm), ls = p.loopStart * BAR, L = p.loopLen * BAR, Lsec = L * dur;
+      if (m === 'loop') {
+        const avail = buf.duration - off, full = Math.floor(avail / Lsec + 1e-3), n = full + (avail - full * Lsec > Lsec / 2 ? 1 : 0);
+        if (n >= 1) {
+          const takes = Array.from({ length: n }, (_, k) => off + k * Lsec), pick = Math.max(0, full - 1);
+          addAudioClip(buf, name, sel?.id, ls, takes[pick], { len: L, takes, take: pick }, tr => clearZone(tr, ls, ls + L));
+          return toast(t('toast.takes', n));
+        }
+      }
+      if (m === 'punch') {
+        const o = off + (ls - start) * dur;
+        if (o >= buf.duration - 0.05) return toast(t('toast.punchMissed'), 'error');
+        addAudioClip(buf, name, sel?.id, ls, o, { len: Math.max(1, Math.min(L, Math.round((buf.duration - o) / dur))) }, tr => clearZone(tr, ls, ls + L));
+        return toast(t('toast.punched'));
+      }
+      addAudioClip(buf, name, sel?.id, m === 'loop' ? ls : start, off);
       toast(t('toast.recDone'));
-    }, preroll);
-    toast(t('toast.recAudio'));
+    }, preroll, mode);
+    toast(t(mode === 'punch' ? 'toast.recPunch' : mode === 'loop' ? 'toast.recLoop' : 'toast.recAudio'));
   } catch { toast(t('toast.noMic'), 'error'); }
 }
 engine.onRecEnd = kind => { allNotesOff(); if (kind === 'midi') setTimeout(commit, 350); };

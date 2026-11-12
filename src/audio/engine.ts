@@ -8,7 +8,8 @@ import { BAR, Project, Track, contentEnd, stepDur } from '../types';
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
 
-export type RecDone = (buf: AudioBuffer | null, startStep: number, offsetSec: number) => void;
+export type RecMode = 'normal' | 'loop' | 'punch';
+export type RecDone = (buf: AudioBuffer | null, startStep: number, offsetSec: number, mode: RecMode) => void;
 
 class Engine {
   ctx = new AudioContext({ latencyHint: 'interactive' });
@@ -16,6 +17,8 @@ class Engine {
   playing = false;
   recording: false | 'audio' | 'midi' = false;
   recTrack = '';
+  /** Enregistrement audio : normal, en boucle (une prise par tour) ou limité à la zone de boucle (punch). */
+  recMode: RecMode = 'normal';
   mode: 'arr' | 'live' = 'arr';
   pos = 0;                 // tête de lecture de l'arrangement, à l'arrêt (en pas)
   /** Mode Live : clip actif et clip en attente par piste. */
@@ -40,7 +43,7 @@ class Engine {
   private workletReady?: Promise<void>;
   /** Entrée audio ouverte (micro ou carte son) : gain, vumètre et écoute de contrôle. */
   inp?: { stream: MediaStream; src: MediaStreamAudioSourceNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
-  private cap?: { temp: boolean; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone; inLat: number };
+  private cap?: { temp: boolean; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone; inLat: number; mode: RecMode };
 
   /** Signalé quand des sons d'instruments réels sont en cours de chargement, puis chargés ou en échec. */
   onBanks: (state: 'loading' | 'ready' | 'failed') => void = () => { };
@@ -132,7 +135,10 @@ class Engine {
       return;
     }
     const ls = p.loopStart * BAR, le = ls + p.loopLen * BAR;
-    const looping = p.loop && this.recording !== 'audio';
+    const looping = p.loop && (this.recording !== 'audio' || this.recMode === 'loop');
+    // Punch : la prise s'arrête d'elle-même juste après la fin de la zone (deux pas de marge, pour ne pas perdre la toute fin
+    // du son à cause du délai d'entrée de la carte son).
+    if (this.recording === 'audio' && this.recMode === 'punch' && this.currentStep() >= le + 2) { this.stop(); return; }
     const end = Math.max(contentEnd(p), BAR);
     if (!this.recording && !(looping && this.nextStep <= le) && this.currentStep() >= end) { this.stop(); this.pos = 0; return; }
     while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
@@ -204,7 +210,7 @@ class Engine {
   grid(): { s: number; t: number } | null {
     if (!this.playing || this.mode !== 'arr') return null;
     const p = S.project, le = (p.loopStart + p.loopLen) * BAR;
-    return { s: p.loop && this.recording !== 'audio' && this.nextStep === le ? p.loopStart * BAR : this.nextStep, t: this.nextTime };
+    return { s: p.loop && (this.recording !== 'audio' || this.recMode === 'loop') && this.nextStep === le ? p.loopStart * BAR : this.nextStep, t: this.nextTime };
   }
   /** Pad programmé à un instant précis (répétition de notes). */
   padAt(track: Track, row: number, t: number, vel = 1) {
@@ -252,17 +258,21 @@ class Engine {
   }
 
   /** Enregistre l'entrée audio, calée à l'échantillon près sur le transport. */
-  async recordAudio(done: RecDone, preroll: number) {
+  async recordAudio(done: RecDone, preroll: number, mode: RecMode = 'normal') {
     const temp = !this.inp;
     await this.openInput(S.inputDevice);
     const inp = this.inp!;
     if (this.playing) this.stop();
+    // En boucle, on part du début de la zone ; en punch, une mesure avant pour prendre son élan.
+    const ls = S.project.loopStart * BAR;
+    this.recMode = mode;
+    if (mode === 'loop') this.pos = ls; else if (mode === 'punch') this.pos = Math.max(0, ls - BAR);
     await this.ctx.resume();
     this.workletReady ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
     await this.workletReady;
     const node = new AudioWorkletNode(this.ctx, 'kh-rec', { numberOfInputs: 1, numberOfOutputs: 0 });
     const inLat = (inp.stream.getAudioTracks()[0]?.getSettings() as { latency?: number }).latency ?? 0;
-    const cap = { temp, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done, inLat };
+    const cap = { temp, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done, inLat, mode };
     node.port.onmessage = e => { if (cap.first < 0) cap.first = e.data.f; cap.chunks.push(e.data.ch); };
     inp.gain.connect(node);
     this.cap = cap; this.recording = 'audio';
@@ -278,7 +288,7 @@ class Engine {
     const inLat = cap.inLat;
     if (cap.temp) this.closeInput();
     const total = cap.chunks.reduce((n, c) => n + c[0].length, 0), sr = this.ctx.sampleRate;
-    if (!total) { cap.done(null, cap.startStep, 0); return; }
+    if (!total) { cap.done(null, cap.startStep, 0, cap.mode); return; }
     const nch = Math.min(2, cap.chunks[0].length);
     const buf = new AudioBuffer({ length: total, numberOfChannels: nch, sampleRate: sr });
     for (let c = 0; c < nch; c++) {
@@ -287,7 +297,7 @@ class Engine {
     }
     // Décalage entre le début de la capture et l'instant où le premier temps a été entendu.
     const off = (this.t0 - cap.first / sr) + (this.ctx.outputLatency || 0) + inLat;
-    cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)));
+    cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)), cap.mode);
   }
 
   // ---------- Effets de performance ----------

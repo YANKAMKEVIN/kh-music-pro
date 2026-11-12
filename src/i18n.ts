@@ -431,4 +431,21 @@ const D: Record<string, [string, string, string]> = {
   'toast.bankReady': ['Instrument prêt', 'Instrument ready', 'Instrumento listo'],
   'toast.bankFailed': ['Impossible de charger les sons de cet instrument (connexion requise la première fois)', 'Could not load this instrument\'s sounds (a connection is needed the first time)', 'No se pudieron cargar los sonidos de este instrumento (se necesita conexión la primera vez)'],
   'help.credits': ['Sons : FluidR3 GM de Frank Wen (CC BY 3.0) et Virtuosity Drums de Versilian Studios (CC0).', 'Sounds: FluidR3 GM by Frank Wen (CC BY 3.0) and Virtuosity Drums by Versilian Studios (CC0).', 'Sonidos: FluidR3 GM de Frank Wen (CC BY 3.0) y Virtuosity Drums de Versilian Studios (CC0).'],
+
+  // ===== V11 =====
+  'top.punch': ['Punch', 'Punch', 'Punch'],
+  'top.punchTip': ['Punch : l\'enregistrement audio ne garde que la zone de boucle et remplace ce qui s\'y trouvait', 'Punch: audio recording keeps only the loop zone and replaces what was there', 'Punch: la grabación de audio solo conserva la zona de bucle y reemplaza lo que había'],
+  'toast.recLoop': ['Enregistrement en boucle : une prise par tour (R ou Espace pour arrêter)', 'Loop recording: one take per pass (R or Space to stop)', 'Grabación en bucle: una toma por vuelta (R o Espacio para detener)'],
+  'toast.recPunch': ['Punch : l\'enregistrement démarre et s\'arrête tout seul sur la zone', 'Punch: recording starts and stops by itself on the zone', 'Punch: la grabación empieza y termina sola en la zona'],
+  'toast.takes': ['{0} prise(s) enregistrée(s) : choisissez la meilleure dans l\'éditeur', '{0} take(s) recorded: pick the best one in the editor', '{0} toma(s) grabada(s): elige la mejor en el editor'],
+  'toast.punched': ['Zone réenregistrée', 'Zone re-recorded', 'Zona regrabada'],
+  'toast.punchMissed': ['La prise s\'est arrêtée avant la zone de punch', 'The take stopped before the punch zone', 'La toma se detuvo antes de la zona de punch'],
+  'take.title': ['Prises', 'Takes', 'Tomas'],
+  'take.tip': ['Prise jouée par ce clip. Scindez le clip (Ctrl+E) pour choisir une prise différente par passage.', 'Take played by this clip. Split the clip (Ctrl+E) to pick a different take for each part.', 'Toma que reproduce este clip. Divide el clip (Ctrl+E) para elegir una toma distinta en cada parte.'],
+  'tune.title': ['Justesse', 'Tuning', 'Afinación'],
+  'tune.amount': ['Force', 'Strength', 'Fuerza'],
+  'act.tune': ['Corriger', 'Correct', 'Corregir'],
+  'tip.tune': ['Ramener la voix ou l\'instrument vers les notes de la gamme du projet', 'Pull the voice or instrument towards the notes of the project scale', 'Llevar la voz o el instrumento hacia las notas de la escala del proyecto'],
+  'toast.tuned': ['Justesse corrigée (écart moyen : {0} centièmes)', 'Tuning corrected (average offset: {0} cents)', 'Afinación corregida (desviación media: {0} cents)'],
+  'toast.noPitch': ['Aucune note nette détectée dans ce son', 'No clear note detected in this sound', 'No se detectó ninguna nota clara en este sonido'],
 };

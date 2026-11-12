@@ -1,4 +1,4 @@
-import { audioFiles, chopClip, chooseInput, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
+import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
@@ -463,12 +463,17 @@ function audioEditor(tr: Track, c: Clip) {
       slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct),
       slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec),
       slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec),
-      act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip)),
+      act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip),
+      (c.takes?.length ?? 0) > 1 && h('div', { class: 'segs', role: 'group', 'aria-label': t('take.title'), title: t('take.tip') },
+        ...c.takes!.map((_, i) => h('button', { class: 'seg' + (c.take === i ? ' on' : ''), data: { take: String(i) }, 'aria-pressed': String(c.take === i), onclick: () => chooseTake(i) }, `${t('clip.take')} ${i + 1}`)))),
     h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),
       slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true),
       h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
       slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true),
       act('stretch', '⏱', () => stretchClip(st.pct, st.semis)),
+      h('span', { class: 'sect' }, t('tune.title')),
+      slider(t('tune.amount'), 0.1, 1, 0.05, S.tuneAmt, v => { S.tuneAmt = v; }, pct, '', true),
+      act('tune', '🎤', () => tuneClip(S.tuneAmt)),
       h('span', { class: 'sect' }, t('chop.title')), chopMode,
       act('chop', '🔪', () => chopClip(+chopMode.value))),
     inputPanel(), cv, h('p', { class: 'tip pad-x' }, t('hint.audioClip')));
