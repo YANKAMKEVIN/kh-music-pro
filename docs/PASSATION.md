@@ -86,6 +86,16 @@ Le moteur audio vit dans le navigateur (Web Audio). Un plugin natif vit dans un 
 - **Étape 4** — pont avec l'application : choisir entre les pistes 2 et 3 selon ce que l'étape 3 a montré, et faire passer le son d'une piste par le plugin.
 - **À chaque étape** : noter le résultat chiffré dans ce document, et s'arrêter pour demander l'avis du propriétaire avant la suivante.
 
+### Résultats
+
+**Étape 0 — état des lieux (12/11/2026)**
+
+- Machine : MacBook Pro, Apple M3 (arm64), macOS 26.7 (25G229).
+- Outils : Xcode 26.6 (`/Applications/Xcode.app`), Swift 6.3.3, Node 26.9.0, npm 11.19.1.
+- Audio Units : seulement ceux d'Apple (23 effets, 3 instruments). Aucun AU ni VST3 tiers installé. Pour les étapes 2 et 3, `AUDelay` (`aufx dely appl`), `AUPeakLimiter` (`aufx lmtr appl`) ou `AUNBandEQ` (`aufx nbeq appl`) suffisent ; un plugin tiers gratuit sera à installer plus tard, avec l'accord du propriétaire, pour valider un cas réel.
+- Carte son : pas d'interface audio dédiée. Sortie par défaut : un adaptateur USB « USB-Audio-1.0 » (Yichip, 2 sorties et 1 entrée, 48 kHz). Entrée par défaut : le micro intégré du MacBook Pro. Les haut-parleurs intégrés sont aussi disponibles.
+- Conséquence : les mesures de latence (étapes 1 et 3) se feront avec ce matériel grand public. Elles serviront de comparaison entre le navigateur et le natif sur la même machine, mais pas de référence « studio ». L'objectif de 12 ms est à juger avec cette réserve.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
