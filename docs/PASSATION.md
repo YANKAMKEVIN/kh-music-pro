@@ -44,7 +44,10 @@ Principes à respecter :
 2. **Le vrai matériel** : micro, carte son et clavier MIDI n'ont été testés qu'en simulé.
 3. **Windows et macOS** : les installateurs se construisent ; seul celui de Linux est lancé automatiquement. Personne n'a ouvert le `.exe` ni le `.dmg`.
 4. **Un vrai téléphone** : la mise en page tactile est testée dans un navigateur qui simule un écran tactile.
-5. **Les plugins web tiers** : l'hôte n'est validé qu'avec le plugin d'exemple fourni (`public/wam/kh-tape`). Un essai avec des plugins de la communauté (paquet npm `wam-community` : burns-audio, wimmics) a été préparé puis refusé par la protection de la session cloud, car il exécute du code tiers. À refaire avec l'accord du propriétaire.
+5. **Les plugins web tiers** : essai fait avec l'accord du propriétaire sur huit plugins du paquet npm `wam-community` (version 0.4.9), servis depuis un dossier temporaire, sans les intégrer à l'application.
+   - **Fonctionnent entièrement** (chargement, interface, réglages lus, inclus à l'export) : burns-audio *Simple Delay*, *Simple Distortion*, *Simple EQ* ; wimmics *PingPongDelay*, *QuadraFuzz*.
+   - **Ne se chargent pas** : wimmics *graphicEqualizer*, *BigMuff*, *SmoothDelay* (plugins construits avec Faust). Ils réclament un fichier absent du paquet lui-même (`utils/sdk-parammgr/src/sdk/src/addFunctionModule.js`) : c'est un défaut de ce paquet, pas de l'hôte. À réessayer depuis leur site d'origine, inaccessible depuis la session cloud.
+   - Non vérifié : leur son à l'oreille, les plugins instruments, la version bureau.
 6. **La mesure de latence** : le chemin « clic non détecté » est testé ; une mesure réussie demande de vrais haut-parleurs et un vrai micro.
 7. **HawkScan** (analyse de sécurité demandée par un hook de session) : jamais lancé, faute de clé API. L'application n'a pas de serveur.
 
