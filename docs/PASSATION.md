@@ -269,6 +269,22 @@ Lecture :
 - Non vérifié : l'écoute à l'oreille (tenue à -100 dB pour ne rien faire entendre au bureau), l'enregistrement d'une vraie prise par ce chemin, un appareil de sortie différent de l'entrée avec une vraie dérive d'horloge (la sortie USB n'était plus branchée pendant les essais), et le changement d'appareil en cours de lecture (il coupe le son un instant : quelques blocs manqués, attendus).
 - Non-régression (13/11/2026, sur ce Mac) : `qa/au-bridge.cjs` (étape 4) OK par le nouveau chemin, sortie native à zéro ; `qa/desktop-smoke.cjs` OK ; campagne `qa/run.cjs` : 190/191, seul échec DK01 (Linux seulement, connu). RI05 est passé cette fois.
 
+**Séance d'écoute par le propriétaire (13/11/2026)**
+
+Application lancée en mode natif sur le profil normal par `qa/ecoute-native.cjs`, qui relève toutes les 5 s les incidents du chemin natif. Haut-parleurs et micro intégrés. Mac en usage normal : application Claude, Chrome et correcteur orthographique actifs (charge moyenne environ 4).
+
+- Durée : 2 h 34 d'application ouverte, dont environ 12 minutes de lecture (de 2 à 14 min), le reste à l'arrêt.
+- **À l'oreille : craquements entendus** par le propriétaire.
+- Relevé : **162 manques** à la carte son, **139 surcharges** Core Audio, **135 trous** de rendu (le plus long : 56 ms), 1 bloc perdu entre Web Audio et le natif. La plupart sont groupés entre la 10ᵉ et la 70ᵉ minute (72 manques entre 10 et 20 min, en pleine lecture) ; presque rien après la 100ᵉ.
+- **Les incidents arrivent aussi à l'arrêt.** Ils ne viennent donc pas de la charge de calcul de la démo, mais du rythme des fils audio. Pendant les incidents, le niveau du tampon de sortie saute (jusqu'à 7 106 échantillons au lieu de 384) et le calage d'horloge part en butée (±3 000 ppm) : Web Audio livre ses blocs par à-coups, puis rattrape.
+- Le pré-essai de 30 s du même jour avait déjà eu 12 manques et 2 surcharges ; le suivant, de 60 s, était propre. Les tenues de 5 minutes de l'étape 5 avaient été faites sur une machine plus calme.
+- **Pas de prise par ce chemin** : le son du micro n'a jamais été lu par l'application pendant la séance. L'enregistrement réel reste à faire.
+- **Défaut découvert** : en mode natif, le micro est capté en permanence, même sans enregistrer (pastille orange du Mac allumée tout le temps ; environ 375 blocs d'entrée par seconde jetés faute de lecteur). À corriger avant toute intégration : n'ouvrir l'entrée native que quand l'application en a besoin.
+
+Lecture :
+- **Le chemin natif de l'étape 5 n'est pas fiable en usage réel** : il tient sur une machine calme, pas sur un Mac occupé à autre chose. C'est le contraire de ce qu'on attend d'un chemin « plus professionnel ».
+- Cause non établie. Trois suspects, à départager en reproduisant sous une charge contrôlée : (1) le fil de calcul de Web Audio (Chromium), retardé par la charge, avec seulement 8 ms de réserve dans le tampon partagé ; (2) le fil natif lui-même ; (3) deux programmes qui se partagent le même appareil de sortie (Web Audio y envoie son signal infime pour garder l'horloge de la carte son). Une comparaison sous la même charge du navigateur seul, de l'hôte natif seul (`au-host rt`, étape 3) et du chemin de l'étape 5 dirait lequel décroche.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
@@ -281,6 +297,6 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En cours** : V14b (ci-dessus), étapes 0 à 4 faites le 12/11/2026 sur la branche `v14b-prototype-natif`. Décision attendue du propriétaire : s'arrêter là, chercher le plugin qui décroche (étape 3), ou faire prendre l'entrée et la sortie au natif pour gagner aussi la latence.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Décision attendue du propriétaire : chercher la cause des craquements (comparaison sous charge contrôlée), ou s'arrêter là et garder le prototype comme référence sans le fusionner.
 - **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
