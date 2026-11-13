@@ -5,7 +5,7 @@ const path = require('path');
 // Prototype V14b : KH_NATIVE=1 charge le pont Audio Unit natif (macOS). Il faut alors quitter le bac à sable
 // pour le script de préchargement et partager la mémoire avec l'AudioWorklet (SharedArrayBuffer).
 const NATIVE = process.env.KH_NATIVE === '1' && process.platform === 'darwin';
-if (NATIVE) app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
+if (NATIVE) app.commandLine.appendSwitch('enable-features', process.env.KH_RT === '1' ? 'SharedArrayBuffer,AudioWorkletRealtimeThread' : 'SharedArrayBuffer');
 
 function createWindow() {
   const win = new BrowserWindow({

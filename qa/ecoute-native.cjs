@@ -1,6 +1,7 @@
 /* Prototype V14b : séance d'écoute. Lance la version bureau en mode natif (profil normal, les projets sont gardés)
  * et note toutes les 5 s les incidents du chemin natif (manques, surcharges, trous), avec l'état de lecture.
- * S'arrête quand la fenêtre est fermée. Usage : node qa/ecoute-native.cjs > ecoute.log
+ * Témoin : les coupures que Chromium compte sur sa propre sortie pendant la même période (mêmes épisodes, autre chemin).
+ * S'arrête quand la fenêtre est fermée. Usage : node qa/ecoute-native.cjs > ecoute.log   (KH_RT=1 : calcul audio du navigateur en priorité temps réel)
  * Les débordements d'entrée ne sont pas des incidents : le micro est capté en permanence, même quand rien ne le lit. */
 const root = require('path').join(__dirname, '..');
 const { _electron: electron } = require('playwright');
@@ -23,11 +24,11 @@ const ts = () => { const s = Math.round((Date.now() - t0) / 1000); return `${Str
     await new Promise(r => setTimeout(r, 5000));
     let s;
     try {
-      s = await win.evaluate(() => ({ playing: window.kh.engine.playing, rec: !!window.kh.engine.recording, opts: window.kh.engine.native.opts, ...window.kh.engine.native.stats() }));
+      s = await win.evaluate(() => ({ playing: window.kh.engine.playing, rec: !!window.kh.engine.recording, opts: window.kh.engine.native.opts, ...window.kh.engine.native.stats(), web: window.kh.engine.ctx.playbackStats?.underrunEvents ?? 0 }));
     } catch { break; }
     const d = prev ? {
       manques: s.outUnderruns - prev.outUnderruns, surcharges: s.overloads - prev.overloads, trous: s.gaps - prev.gaps,
-      perdusSortie: s.outDropped - prev.outDropped, perdusEntree: s.inMissed - prev.inMissed, debordEntree: s.inOverflows - prev.inOverflows,
+      perdusSortie: s.outDropped - prev.outDropped, temoinNavigateur: s.web - prev.web, perdusEntree: s.inMissed - prev.inMissed, debordEntree: s.inOverflows - prev.inOverflows,
     } : {};
     const { debordEntree: _, ...graves } = d;
     const incident = Object.values(graves).some(v => v > 0);

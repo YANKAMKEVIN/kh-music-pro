@@ -3,7 +3,8 @@
  * Usage : node qa/native-io.cjs [secondes de tenue, 300 par défaut] [--mesure] [--cible=échantillons] [--cible-entree=échantillons]
  *   Sans --mesure, rien n'est entendu : la tenue joue la démo sur les haut-parleurs à -100 dB.
  *   Avec --mesure, des clics courts (2 kHz, 6 ms) sortent sur les haut-parleurs du Mac, au volume réglé par le propriétaire,
- *   et le micro intégré les capte. Le micro n'est jamais renvoyé vers les haut-parleurs (pas de larsen). */
+ *   et le micro intégré les capte. Le micro n'est jamais renvoyé vers les haut-parleurs (pas de larsen).
+ *   Avec --reduite, la fenêtre est réduite dans le Dock pendant la tenue (usage réel : on travaille dans une autre fenêtre). */
 const { _electron: electron } = require('playwright');
 const path = require('path');
 const args = process.argv.slice(2);
@@ -11,6 +12,7 @@ const HOLD = Number(args.find(a => /^\d+$/.test(a)) ?? 300);
 const MEASURE = args.includes('--mesure');
 const opt = k => Number(args.find(a => a.startsWith(`--${k}=`))?.split('=')[1]) || undefined;
 const OUT_T = opt('cible'), IN_T = opt('cible-entree');
+const MINI = args.includes('--reduite');
 
 (async () => {
   // Profil temporaire : le test ne touche pas aux projets enregistrés de l'application.
@@ -82,15 +84,20 @@ const OUT_T = opt('cible'), IN_T = opt('cible-entree');
     // Toujours à -100 dB : la tenue ne doit rien faire entendre, même après la mesure.
     await win.evaluate(() => { window.kh.engine.native.gain(1e-5); window.kh.S.project.loop = true; window.kh.commit(); });
     await win.click('#bPlay');
+    if (MINI) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
     await win.waitForTimeout(2000);
     await win.evaluate(() => window.kh.engine.native.resetStats());
+    // Témoin : Chromium compte les coupures de sa propre sortie (celle qui reçoit le signal infime), pendant la même tenue.
+    const web = () => win.evaluate(() => { const p = window.kh.engine.ctx.playbackStats; return p ? { ev: p.underrunEvents, ms: p.underrunDuration * 1000 } : { ev: NaN, ms: NaN }; });
+    const web0 = await web();
     const t0 = Date.now();
     let st, worstOut = 1e9, worstIn = 1e9;
     while (Date.now() - t0 < HOLD * 1000) {
       await new Promise(r => setTimeout(r, Math.min(30000, HOLD * 1000)));
       st = await win.evaluate(() => ({ playing: window.kh.engine.playing, ...window.kh.engine.native.stats() }));
+      const w = await web();
       worstOut = Math.min(worstOut, st.outMin); worstIn = Math.min(worstIn, st.inMin);
-      console.log(`  ${Math.round((Date.now() - t0) / 1000)} s : sortie niveau ${Math.round(st.outLevel)} (min ${Math.round(st.outMin)}, max ${Math.round(st.outMax)}), écart d'horloge ${st.outPpm.toFixed(0)} ppm, manques ${st.outUnderruns}, débordements ${st.outDropped} | entrée niveau ${Math.round(st.inLevel)} (min ${Math.round(st.inMin)}), ${st.inPpm.toFixed(0)} ppm, manques ${st.inMissed} | surcharges Core Audio ${st.overloads}, trous ${st.gaps}`);
+      console.log(`  ${Math.round((Date.now() - t0) / 1000)} s : sortie niveau ${Math.round(st.outLevel)} (min ${Math.round(st.outMin)}, max ${Math.round(st.outMax)}), écart d'horloge ${st.outPpm.toFixed(0)} ppm, manques ${st.outUnderruns}, débordements ${st.outDropped} | entrée niveau ${Math.round(st.inLevel)} (min ${Math.round(st.inMin)}), ${st.inPpm.toFixed(0)} ppm, manques ${st.inMissed} | surcharges Core Audio ${st.overloads}, trous ${st.gaps} | témoin navigateur : ${w.ev - web0.ev} coupures (${(w.ms - web0.ms).toFixed(0)} ms)`);
     }
     const tot = await win.evaluate(() => window.kh.engine.native.stats());
     check(st.playing, `${HOLD} s de lecture par le chemin natif (${tot.outBlocks} blocs écrits par Web Audio)`);

@@ -285,6 +285,33 @@ Lecture :
 - **Le chemin natif de l'étape 5 n'est pas fiable en usage réel** : il tient sur une machine calme, pas sur un Mac occupé à autre chose. C'est le contraire de ce qu'on attend d'un chemin « plus professionnel ».
 - Cause non établie. Trois suspects, à départager en reproduisant sous une charge contrôlée : (1) le fil de calcul de Web Audio (Chromium), retardé par la charge, avec seulement 8 ms de réserve dans le tampon partagé ; (2) le fil natif lui-même ; (3) deux programmes qui se partagent le même appareil de sortie (Web Audio y envoie son signal infime pour garder l'horloge de la carte son). Une comparaison sous la même charge du navigateur seul, de l'hôte natif seul (`au-host rt`, étape 3) et du chemin de l'étape 5 dirait lequel décroche.
 
+**Recherche de la cause des craquements (13 et 14/11/2026)**
+
+Charge contrôlée : 8 processus `yes` occupent les 8 cœurs du M3 à 100 % pendant la mesure. Tout est inaudible (-100 dB).
+
+| Essai | Résultat |
+|---|---|
+| Natif seul (`au-host stress 60 128 0`), 60 s sous charge | 2 surcharges, 1 trou (6 ms), toutes dans les 30 premières secondes |
+| Chemin de l'étape 5, 60 s sous charge (premier essai) | **16 manques**, 1 surcharge ; le tampon de sortie tombe à 22 puis remonte à 1 928 : Web Audio s'est arrêté environ 40 ms, puis a rattrapé |
+| Navigateur seul (version normale, compteur `playbackStats` de Chromium), 2 × 60 s sous charge | 1 coupure par essai (12 et 18 ms) |
+| Étape 5 + calcul audio du navigateur en priorité temps réel (`KH_RT=1`), 2 × 60 s sous charge | 0 / 0 / 0, tampon jamais sous 311 |
+| Même chose, 5 min sous charge | propre 2 min 30, puis 5 surcharges et 1 manque |
+| Série alternée, 3 × 2 min sans et avec `KH_RT=1`, sous charge | **tout à 0**, dans les deux cas |
+| Fenêtre réduite dans le Dock (`--reduite`), 2 min sans et avec `KH_RT=1` | 0 / 0 / 0 dans les deux cas |
+| 30 min la nuit, fenêtre réduite, sans `KH_RT`, avec témoin du navigateur | natif : 2 manques ; **témoin navigateur : 2 coupures au même instant** (1 411 s) |
+
+Le « témoin » : pendant une tenue de l'étape 5, Web Audio envoie toujours son signal infime à la sortie du navigateur (c'est ce qui cadence son calcul) ; Chromium compte les coupures de cette sortie (`ctx.playbackStats`). Les deux chemins subissent donc exactement les mêmes épisodes ; on peut voir lequel craque.
+
+Lecture :
+- **Ni la charge de calcul, ni la fenêtre cachée ne reproduisent les craquements de façon fiable.** Ils arrivent par épisodes ; entre deux épisodes, les deux chemins tiennent sans faute, même sous pleine charge.
+- **Pendant un épisode, le navigateur décroche aussi** (nuit du 13 au 14 : 2 manques natifs, 2 coupures du navigateur, au même moment). Sur une machine au calme, le chemin natif n'est donc pas plus fragile que le navigateur.
+- Les ~160 incidents de la séance d'écoute viennent de ce que faisait le Mac à ce moment-là (usage réel du propriétaire), qu'aucune charge artificielle n'a reproduit. Il reste à savoir si, dans ces conditions, le navigateur craquait autant que le natif : c'est ce que dira une seconde séance avec le témoin.
+- Priorité temps réel (`KH_RT=1`, réglage Chromium `AudioWorkletRealtimeThread`) : un seul essai montre un effet net (16 manques sans, 0 avec), les autres sont propres dans les deux cas. Effet possible, pas démontré. Le réglage reste une option d'essai, désactivée par défaut.
+
+Outils ajoutés : `qa/native-io.cjs --reduite` (fenêtre réduite) et le témoin dans son relevé ; `qa/ecoute-native.cjs` relève aussi le témoin ; `KH_RT=1` dans `electron/main.cjs` (mode natif seulement).
+
+Prochaine mesure proposée : une seconde séance d'usage réel (`KH_RT=1 node qa/ecoute-native.cjs`), où le propriétaire écoute et travaille comme d'habitude. Si le témoin craque autant que le natif, les craquements viennent du Mac et pas du chemin natif ; s'il reste propre, la réserve de 8 ms du chemin natif est trop juste pour l'usage réel (la passer à 16 ou 21 ms coûterait autant de millisecondes de latence).
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
@@ -297,6 +324,6 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Décision attendue du propriétaire : chercher la cause des craquements (comparaison sous charge contrôlée), ou s'arrêter là et garder le prototype comme référence sans le fusionner.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Prochaine étape proposée : seconde séance d'usage réel avec le témoin du navigateur (`KH_RT=1 node qa/ecoute-native.cjs`). Sinon, s'arrêter là et garder le prototype comme référence sans le fusionner.
 - **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
