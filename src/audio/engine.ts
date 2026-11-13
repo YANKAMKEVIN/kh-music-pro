@@ -3,6 +3,7 @@ import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
 import { S, buffers } from '../store';
+import { IoOptions, NativeIO, nativeName } from './native-io';
 import { BAR, Project, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
@@ -42,7 +43,11 @@ class Engine {
   private liveSrc = new Map<string, AudioBufferSourceNode[]>();
   private workletReady?: Promise<void>;
   /** Entrée audio ouverte (micro ou carte son) : gain, vumètre et écoute de contrôle. */
-  inp?: { stream: MediaStream; src: MediaStreamAudioSourceNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
+  inp?: { stream?: MediaStream; src: AudioNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
+  /** Prototype V14b : entrée et sortie de la carte son prises par le natif (version bureau, KH_NATIVE=1). */
+  native?: NativeIO;
+  /** Fin de chaîne : ce qui doit être entendu (le natif, ou la sortie de Web Audio). */
+  get out(): AudioNode { return this.native?.sink ?? this.ctx.destination; }
   private cap?: { temp: boolean; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone; inLat: number; mode: RecMode };
 
   /** Signalé quand des sons d'instruments réels sont en cours de chargement, puis chargés ou en échec. */
@@ -50,6 +55,17 @@ class Engine {
   constructor() { setDecoder(this.ctx); }
 
   sync() { this.mix.sync(S.project); }
+
+  /** Confie l'entrée et la sortie de la carte son au natif : Web Audio ne fait plus que le mixage. */
+  async useNative(opts: IoOptions = {}): Promise<NativeIO> {
+    if (this.native) { await this.native.configure(opts); return this.native; }
+    const io = await NativeIO.start(this.ctx, opts);
+    this.mix.limiter.disconnect(this.ctx.destination);
+    this.mix.limiter.connect(io.sink);
+    this.native = io;
+    if (this.inp) { const d = this.inp.device; this.closeInput(); await this.openInput(d); }
+    return io;
+  }
 
   /** Charge les instruments réels utilisés par le projet (sans attendre) ; prévient l'interface. */
   async prepare(p: Project = S.project): Promise<boolean> {
@@ -156,7 +172,7 @@ class Engine {
     const o = this.mix.reg(this.ctx.createOscillator()), g = this.ctx.createGain();
     o.frequency.value = accent ? 1600 : 1000;
     g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    o.connect(g).connect(this.ctx.destination); o.start(t); o.stop(t + 0.05);
+    o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.05);
   }
 
   // ---------- Mode Live ----------
@@ -237,11 +253,22 @@ class Engine {
     if (this.inp && this.inp.device === device) return;
     const gainVal = this.inp?.gain.gain.value ?? S.inputGain, monVal = this.inp?.mon.gain.value ?? 0;
     this.closeInput();
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: device ? { exact: device } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
+    let stream: MediaStream | undefined, src: AudioNode;
+    if (this.native) {
+      // Le micro arrive par le natif : on lui indique l'appareil choisi (par son nom), puis on lit son tampon.
+      const name = await nativeName(device, 'audioinput');
+      if ((this.native.opts.input ?? '') !== name) await this.native.configure({ input: name });
+      const s = this.native.source();
+      if (!s) throw new Error('no native input');
+      src = s;
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: device ? { exact: device } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      src = this.ctx.createMediaStreamSource(stream);
+    }
     await this.ctx.resume();
-    const src = this.ctx.createMediaStreamSource(stream), gain = this.ctx.createGain(), mon = this.ctx.createGain(), analyser = this.ctx.createAnalyser();
+    const gain = this.ctx.createGain(), mon = this.ctx.createGain(), analyser = this.ctx.createAnalyser();
     gain.gain.value = gainVal; mon.gain.value = monVal; analyser.fftSize = 2048;
     src.connect(gain); gain.connect(analyser); gain.connect(mon).connect(this.mix.master);
     this.inp = { stream, src, gain, mon, analyser, device };
@@ -249,7 +276,8 @@ class Engine {
   closeInput() {
     const i = this.inp;
     if (!i) return;
-    i.src.disconnect(); i.gain.disconnect(); i.mon.disconnect(); i.stream.getTracks().forEach(t => t.stop());
+    i.src.disconnect(); i.gain.disconnect(); i.mon.disconnect(); i.stream?.getTracks().forEach(t => t.stop());
+    if (i.src instanceof AudioWorkletNode) i.src.port.postMessage('stop');
     this.inp = undefined;
   }
   setInput(gain: number, monitor: boolean) {
@@ -271,7 +299,7 @@ class Engine {
     this.workletReady ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
     await this.workletReady;
     const node = new AudioWorkletNode(this.ctx, 'kh-rec', { numberOfInputs: 1, numberOfOutputs: 0 });
-    const inLat = (inp.stream.getAudioTracks()[0]?.getSettings() as { latency?: number }).latency ?? 0;
+    const inLat = this.latency().input;
     const cap = { temp, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done, inLat, mode };
     node.port.onmessage = e => { if (cap.first < 0) cap.first = e.data.f; cap.chunks.push(e.data.ch); };
     inp.gain.connect(node);
@@ -297,18 +325,22 @@ class Engine {
     }
     // Décalage entre le début de la capture et l'instant où le premier temps a été entendu.
     // Compensation automatique (latences annoncées par le système), plus le décalage réglé ou mesuré par l'utilisateur.
-    const off = (this.t0 - cap.first / sr) + (this.ctx.outputLatency || 0) + inLat + S.recOffsetMs / 1000;
+    const outLat = this.native ? this.native.latency().output : (this.ctx.outputLatency || 0);
+    const off = (this.t0 - cap.first / sr) + outLat + inLat + S.recOffsetMs / 1000;
     cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)), cap.mode);
   }
 
   // ---------- Sortie audio et latence ----------
   /** Latences annoncées par le système, en secondes, et fréquence d'échantillonnage. */
   latency(): { output: number; input: number; rate: number } {
-    const inLat = (this.inp?.stream.getAudioTracks()[0]?.getSettings() as { latency?: number } | undefined)?.latency ?? 0;
+    if (this.native) { const l = this.native.latency(); return { output: l.output, input: this.inp ? l.input : 0, rate: this.ctx.sampleRate }; }
+    const inLat = (this.inp?.stream?.getAudioTracks()[0]?.getSettings() as { latency?: number } | undefined)?.latency ?? 0;
     return { output: (this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0), input: inLat, rate: this.ctx.sampleRate };
   }
-  canSetOutput() { return typeof (this.ctx as unknown as { setSinkId?: unknown }).setSinkId === 'function'; }
+  canSetOutput() { return !!this.native || typeof (this.ctx as unknown as { setSinkId?: unknown }).setSinkId === 'function'; }
   async setOutput(id: string): Promise<boolean> {
+    // En mode natif, Web Audio reste sans sortie : c'est le natif qui change d'appareil.
+    if (this.native) { try { await this.native.configure({ output: await nativeName(id, 'audiooutput') }); return true; } catch { return false; } }
     try { await (this.ctx as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(id); return true; } catch { return false; }
   }
   /**
@@ -328,7 +360,7 @@ class Engine {
     inp.gain.connect(node);
     const t0 = this.ctx.currentTime + 0.25, o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.frequency.value = 2000; g.gain.setValueAtTime(0.6, t0); g.gain.setValueAtTime(0, t0 + 0.006);
-    g.gain.value = 0; o.connect(g).connect(this.ctx.destination); o.start(t0 - 0.01); o.stop(t0 + 0.02);
+    g.gain.value = 0; o.connect(g).connect(this.out); o.start(t0 - 0.01); o.stop(t0 + 0.02);
     await new Promise(r => setTimeout(r, 900));
     try { inp.gain.disconnect(node); } catch { /* entrée fermée */ }
     node.port.onmessage = null;

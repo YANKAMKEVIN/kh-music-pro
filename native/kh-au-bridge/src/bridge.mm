@@ -196,10 +196,13 @@ void List(const FunctionCallbackInfo<Value>& a) {
 
 }  // namespace
 
+void RegisterIO(Isolate* iso, Local<Object> exports, Local<Context> context);   // io.mm : entrée et sortie de la carte son
+
 NODE_MODULE_INIT(/* exports, module, context */) {
   Isolate* iso = Isolate::GetCurrent();
   auto add = [&](const char* n, FunctionCallback f) {
     exports->Set(context, String::NewFromUtf8(iso, n).ToLocalChecked(), FunctionTemplate::New(iso, f)->GetFunction(context).ToLocalChecked()).Check();
   };
   add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List);
+  RegisterIO(iso, exports, context);
 }

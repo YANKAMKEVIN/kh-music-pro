@@ -79,7 +79,8 @@ const HOLD = Number(process.argv[2] ?? 300);
     // 4. Temps réel : la même piste joue en boucle à travers le plugin, sans sortie audio.
     await win.evaluate(async () => {
       const k = window.kh, e = k.engine;
-      await e.ctx.setSinkId({ type: 'none' });
+      // Rien ne doit s'entendre : sortie native à zéro (étape 5) ou, sans elle, Web Audio sans sortie.
+      if (e.native) e.native.gain(0); else await e.ctx.setSinkId({ type: 'none' });
       const t = k.S.project.tracks.find(t => t.type === 'synth' && t.clips.length) ?? k.S.project.tracks[1];
       const i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'AULowpass'; i.p = { 0: 1000 }; t.inserts = [i];
       k.S.project.loop = true; k.commit();

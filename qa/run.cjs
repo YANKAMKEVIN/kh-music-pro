@@ -1887,6 +1887,14 @@ test('LAT02', 'Latence', 'Le décalage d\'enregistrement recale réellement les 
   const a = await take(0), b = await take(150), c = await take(0);
   near(b - (a + c) / 2, 0.15, 0.05, `décalage appliqué (${a.toFixed(3)}, ${b.toFixed(3)}, ${c.toFixed(3)})`);
 });
+test('LAT03', 'Latence', 'Sans le module natif (version web), le son entre et sort toujours par le navigateur', async () => {
+  const r = await S(async () => {
+    const k = window.kh, e = k.engine; await e.openInput('');
+    const res = { io: k.ioBridge(), native: !!e.native, out: e.out === e.ctx.destination, stream: !!e.inp?.stream, src: e.inp?.src instanceof MediaStreamAudioSourceNode, canSet: e.canSetOutput(), rate: e.latency().rate };
+    e.closeInput(); return res;
+  });
+  expect(r.io === null && !r.native && r.out && r.stream && r.src && r.canSet && r.rate > 0, `chemin du navigateur : ${JSON.stringify(r)}`);
+});
 
 (async () => {
   browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

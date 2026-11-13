@@ -217,6 +217,58 @@ Lecture :
 - **Ce pont ne réduit pas la latence de l'application** : le son entre et sort toujours par Web Audio (environ 110 ms aller-retour sur les haut-parleurs, étape 1). Il apporte l'accès aux plugins du Mac, pas la faible latence.
 - Pour gagner aussi la latence (environ 50 ms au lieu de 110 sur ce matériel, étape 3), il faudrait que le natif prenne aussi l'entrée et la sortie de la carte son, Web Audio ne faisant plus que le calcul du mixage. C'est faisable sans dupliquer le mixage, mais demande de caler deux horloges (Web Audio et carte son) : c'est la prochaine étape possible.
 
+**Étape 5 — entrée et sortie de la carte son par le natif (13/11/2026)**
+
+But : en mode `KH_NATIVE=1`, Web Audio ne fait plus que calculer le mixage ; le natif sort le son vers la carte son et capte le micro. **Le mixage n'est pas dupliqué** : il reste entièrement dans Web Audio, le natif ne fait que transporter le son (et les plugins AU de l'étape 4).
+
+Fonctionnement :
+- `native/kh-au-bridge/src/io.mm` (~400 lignes, même module) : deux unités Core Audio (`AUHAL`), une pour la sortie choisie, une pour l'entrée choisie (elles peuvent être deux appareils, donc deux horloges). API : `ioStart`, `ioStop`, `ioStats`, `ioArm` (mesure), `ioGain`, `ioDevices`.
+- `src/audio/native-io.ts` : en fin de chaîne, le limiteur du général ne va plus vers la sortie du navigateur mais vers un AudioWorklet (`kh-out`) qui écrit chaque bloc dans un tampon circulaire partagé (`SharedArrayBuffer`) ; le fil de la carte son le lit. En sens inverse, le natif écrit le micro dans un second tampon, qu'un AudioWorklet (`kh-in`) relit comme une source : l'enregistrement, le vumètre, l'accordeur et la mesure de latence s'en servent sans changement.
+- `engine.useNative()` est appelé au démarrage dès que le module est là. `engine.out` remplace `ctx.destination` partout. Le choix de la sortie (Réglages audio) et de l'entrée passe au natif par le nom de l'appareil. La compensation d'enregistrement utilise les latences du chemin natif.
+- **Calage des horloges** : chaque tampon a un niveau cible ; le natif mesure le niveau (moyenne sur 0,5 s) et lit ou écrit à un rapport 1 ± 0,3 % au plus (régulateur proportionnel + intégral, interpolation cubique) pour y rester. Mesuré : 0 à ±20 ppm quand Web Audio et la sortie suivent la même horloge.
+- Sans le module (version web, ou bureau sans `KH_NATIVE`), rien ne change : nouveau cas de QA **LAT03**.
+
+Ce que les essais ont appris (choix de l'horloge de Web Audio) :
+- **Piste envisagée, `setSinkId({ type: 'none' })`, écartée** : sans sortie, Chromium cadence le calcul avec une horloge logicielle qui livre les blocs par paquets (le tampon oscille sur ~650 échantillons) et s'arrête parfois plus de 20 ms (environ une fois par minute). Il fallait plus de 1 024 échantillons (21 ms) de réserve, et même ainsi un manque est apparu au bout de 98 s.
+- **Retenu** : Web Audio garde comme sortie le même appareil que le natif, mais n'y envoie qu'un signal infime (-180 dB, sinon Chromium repasse sur son horloge logicielle après un silence). Son calcul est alors cadencé par la carte son elle-même : le tampon n'oscille plus que d'un bloc (128 échantillons), sans aucun arrêt, et les deux côtés ont la même horloge. Ce n'est pas un changement d'architecture : Web Audio ne fait toujours que le calcul.
+- Niveau cible : 384 échantillons (8 ms) en sortie, 256 (5,3 ms) en entrée. À 256 en sortie, le résultat dépend de l'ordre dans lequel les fils de Chromium et du natif se réveillent à chaque cycle : parfois aucun manque en 2 minutes, parfois des centaines en 5 minutes. 384 garde une marge dans les deux cas.
+
+Pour essayer :
+
+```
+npm run build
+cd native/kh-au-bridge && npx node-gyp@11 rebuild --target=45.3.0 --arch=arm64 --dist-url=https://electronjs.org/headers && cd ../..
+node qa/native-io.cjs 300            # tenue de 5 minutes, rien ne s'entend (-100 dB)
+node qa/native-io.cjs 5 --mesure     # clics courts sur les haut-parleurs du Mac, micro intégré
+KH_NATIVE=1 npx electron .           # l'application, son par le natif
+```
+
+Tenue (`qa/native-io.cjs 300`) : démo en boucle, haut-parleurs du Mac à -100 dB (inaudible), micro ouvert sans écoute de contrôle.
+
+| Vérification | Résultat |
+|---|---|
+| Natif démarré avec l'application, mixage envoyé au natif, page sans `require` | oui |
+| 5 minutes de lecture | 113 851 blocs de Web Audio |
+| Manques à la carte son / surcharges Core Audio / trous de rendu | **0 / 0 / 0** |
+| Blocs perdus entre Web Audio et le natif (sortie, entrée) | **0 / 0** |
+| Niveau des tampons (sortie, entrée) | 311 à 470 (cible 384), 182 et plus (cible 256) |
+| Écart d'horloge corrigé | ±2 ppm |
+
+Aller-retour (`qa/native-io.cjs 5 --mesure`), même méthode qu'aux étapes 1 et 3 : clic à 2 kHz de 6 ms, haut-parleurs du Mac au volume laissé bas, micro intégré, jamais de micro vers les haut-parleurs. Deux séries de 6 clics, tous entendus ; le premier de chaque série sert de démarrage.
+
+| Mesure | Résultat (médiane) | Comparaison |
+|---|---|---|
+| Aller-retour dans l'application (clic joué par Web Audio, retrouvé dans le son du micro reçu par Web Audio : la mesure de l'étape 1) | **68,6 et 69,6 ms** (écart entre clics < 1,5 ms) | navigateur seul (étape 1) : 108 à 111 ms ; natif seul (étape 3) : ~50 ms |
+| Trajet natif, du son qui quitte le logiciel au son qui revient du micro (horloge de la machine, comme à l'étape 3) | **46,3 ms** | étape 3 : 46,4 ms |
+| Part des deux tampons partagés et du calcul de Web Audio | ~23 ms | tampons 8 + 5,3 ms, tampons de la carte son 2 × 2,7 ms, le reste dans le cycle de Web Audio |
+
+Lecture :
+- **La version bureau passe d'environ 110 ms à environ 69 ms d'aller-retour** sur ce matériel, sans craquement pendant 5 minutes et sans dupliquer le mixage. Elle gagne donc environ 40 ms sur les 60 que le natif seul pouvait gagner.
+- Les ~20 ms qui restent par rapport au natif seul sont le prix du pont : deux tampons partagés (13 ms) et le cycle de Web Audio. On pourrait en reprendre quelques-unes (cible d'entrée plus basse, tampon de la carte son à 64), au prix de la marge.
+- **L'objectif de 12 ms reste impossible avec le micro et les haut-parleurs intégrés** (46 ms de matériel, étape 3). Avec une interface audio, le même chemin donnerait environ 23 ms + la latence de l'interface : en dessous de 30 ms, toujours au-dessus de 12. Pour descendre sous 12 ms, il faudrait réduire les tampons partagés à un bloc, donc faire calculer Web Audio au rythme exact du natif : ce n'est pas possible avec Web Audio tel qu'il est.
+- Non vérifié : l'écoute à l'oreille (tenue à -100 dB pour ne rien faire entendre au bureau), l'enregistrement d'une vraie prise par ce chemin, un appareil de sortie différent de l'entrée avec une vraie dérive d'horloge (la sortie USB n'était plus branchée pendant les essais), et le changement d'appareil en cours de lecture (il coupe le son un instant : quelques blocs manqués, attendus).
+- Non-régression (13/11/2026, sur ce Mac) : `qa/au-bridge.cjs` (étape 4) OK par le nouveau chemin, sortie native à zéro ; `qa/desktop-smoke.cjs` OK ; campagne `qa/run.cjs` : 190/191, seul échec DK01 (Linux seulement, connu). RI05 est passé cette fois.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
