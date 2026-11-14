@@ -56,9 +56,10 @@ const N = 8192, HDR = 32;
 /**
  * Niveaux cibles des tampons partagés (essais de l'étape 5). Le niveau oscille d'un bloc de Web Audio (128) ; en sortie,
  * selon l'ordre dans lequel les fils de Chromium et du natif se réveillent à chaque cycle de la carte son, il peut perdre
- * un bloc de plus. 384 en sortie garde une marge dans les deux cas ; 256 suffit en entrée.
+ * un bloc de plus. 384 en sortie gardait une marge dans les deux cas sur une machine calme (768 retenu ensuite, voir plus bas) ; 256 suffit en entrée.
  */
-const OUT_TARGET = 384, IN_TARGET = 256;
+// Réserve de sortie : 768 échantillons (16 ms). À 384 (8 ms), les hoquets les plus longs du Mac la vidaient (séance du 14/11/2026).
+const OUT_TARGET = 768, IN_TARGET = 256;
 // En-tête partagé (Int32) : voir native/kh-au-bridge/src/io.mm.
 const WORKLET = `const N=${N},M=N-1;
 class KhOut extends AudioWorkletProcessor{
