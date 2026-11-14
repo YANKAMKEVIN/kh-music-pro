@@ -209,7 +209,7 @@ Ce que les essais ont appris en route :
 
 Non-régression de la version normale (13/11/2026, sur ce Mac) : `qa/desktop-smoke.cjs` OK ; campagne `qa/run.cjs` : 188/190. Les deux échecs ne viennent pas de V14b :
 - **DK01** appelle `xvfb-run`, qui n'existe que sous Linux : ce cas ne peut pas tourner sur un Mac (le test de la version bureau, lancé directement, passe).
-- **RI05** (pad 4 de la batterie acoustique « identique au son synthétisé ») est **instable** : il échoue aussi sur `main` sans les changements de V14b (1 réussite sur 3). L'écart mesuré entre les deux sons frôle le seuil de 3 %. À corriger à part (seuil du test, ou son du pad 4).
+- **RI05** (pad 4 de la batterie acoustique « identique au son synthétisé ») était **instable** : il échouait aussi sur `main` sans les changements de V14b (1 réussite sur 3), car les deux sons ont presque le même niveau. **Corrigé le 14/11/2026** : un son compte comme différent si son niveau **ou** son timbre (part d'aigus) s'écarte de plus de 3 %. 4 réussites sur 4. Campagne complète du 14/11 : 189/191 ; DK01 (Linux seulement) et T01, qui a échoué une fois (premier cas de la campagne, Mac chargé, niveau nul) puis réussi 3 fois sur 3.
 - Sur un Mac neuf, il faut d'abord `npx playwright install chromium`.
 
 Lecture :
@@ -310,7 +310,22 @@ Lecture :
 
 Outils ajoutés : `qa/native-io.cjs --reduite` (fenêtre réduite) et le témoin dans son relevé ; `qa/ecoute-native.cjs` relève aussi le témoin ; `KH_RT=1` dans `electron/main.cjs` (mode natif seulement).
 
-Prochaine mesure proposée : une seconde séance d'usage réel (`KH_RT=1 node qa/ecoute-native.cjs`), où le propriétaire écoute et travaille comme d'habitude. Si le témoin craque autant que le natif, les craquements viennent du Mac et pas du chemin natif ; s'il reste propre, la réserve de 8 ms du chemin natif est trop juste pour l'usage réel (la passer à 16 ou 21 ms coûterait autant de millisecondes de latence).
+**Seconde séance avec le témoin (14/11/2026, `KH_RT=1 node qa/ecoute-native.cjs`)** — premières 2 h 27, application **à l'arrêt** (propriétaire absent), Mac en usage ordinaire (télévision et autres appareils dans la pièce, sans effet sur ces compteurs qui mesurent le rythme de l'ordinateur, pas le son capté).
+
+| Tranche | Manques natifs | Surcharges Core Audio | Coupures du navigateur (témoin) |
+|---|---|---|---|
+| 0-90 min | 11 | 28 | 16 |
+| 90-105 min | **20** | 6 | 3 |
+| 105-147 min | 3 | 5 | 3 |
+| **Total** | **34** | **39** | **22** |
+
+- La plupart des incidents tombent **au même instant sur les deux chemins** : le Mac a des « hoquets » toutes les 5 à 7 minutes environ, qui touchent aussi le navigateur. La sortie normale du navigateur craquerait donc, elle aussi, sur ce Mac.
+- Le natif a en plus deux rafales qui lui sont propres (vers 71 min et de 99 min 43 à 100 min 08 : 19 manques en 25 s, 1 seule coupure du navigateur). La réserve de 8 ms est trop juste pour les hoquets les plus longs, que les tampons plus grands du navigateur encaissent.
+- Une campagne de QA complète a tourné pendant la séance (à partir de 147 min), comme charge supplémentaire.
+
+Lecture : les craquements ont deux sources. (1) Des hoquets du Mac, communs aux deux chemins, que le chemin natif ne peut pas supprimer. (2) Une réserve trop juste dans le chemin natif. Remède proposé pour (2) : passer la réserve de sortie de 384 à 768 échantillons (8 → 16 ms), soit environ 77 ms d'aller-retour au lieu de 69 (le navigateur : 110), puis refaire une séance avec le témoin.
+
+Prochaine mesure proposée (faite ci-dessus, à l'arrêt seulement) : une seconde séance d'usage réel (`KH_RT=1 node qa/ecoute-native.cjs`), où le propriétaire écoute et travaille comme d'habitude. Si le témoin craque autant que le natif, les craquements viennent du Mac et pas du chemin natif ; s'il reste propre, la réserve de 8 ms du chemin natif est trop juste pour l'usage réel (la passer à 16 ou 21 ms coûterait autant de millisecondes de latence).
 
 ### Critères de décision
 
@@ -324,6 +339,6 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Prochaine étape proposée : seconde séance d'usage réel avec le témoin du navigateur (`KH_RT=1 node qa/ecoute-native.cjs`). Sinon, s'arrêter là et garder le prototype comme référence sans le fusionner.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Prochaine étape proposée : réserve à 16 ms, puis séance avec écoute et vraie prise. Sinon, s'arrêter là et garder le prototype comme référence sans le fusionner.
 - **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
