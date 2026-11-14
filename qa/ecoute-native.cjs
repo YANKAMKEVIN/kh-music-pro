@@ -24,7 +24,7 @@ const ts = () => { const s = Math.round((Date.now() - t0) / 1000); return `${Str
     await new Promise(r => setTimeout(r, 5000));
     let s;
     try {
-      s = await win.evaluate(() => ({ playing: window.kh.engine.playing, rec: !!window.kh.engine.recording, opts: window.kh.engine.native.opts, ...window.kh.engine.native.stats(), web: window.kh.engine.ctx.playbackStats?.underrunEvents ?? 0 }));
+      s = await win.evaluate(() => ({ playing: window.kh.engine.playing, rec: !!window.kh.engine.recording, opts: window.kh.engine.native.opts, dev: { sortie: window.kh.engine.native.info.output, entree: window.kh.engine.native.info.input, ev: window.kh.engine.native.stats().devEvents }, toast: document.querySelector('#toast')?.textContent ?? '', ...window.kh.engine.native.stats(), web: window.kh.engine.ctx.playbackStats?.underrunEvents ?? 0 }));
     } catch { break; }
     const d = prev ? {
       manques: s.outUnderruns - prev.outUnderruns, surcharges: s.overloads - prev.overloads, trous: s.gaps - prev.gaps,
@@ -32,12 +32,12 @@ const ts = () => { const s = Math.round((Date.now() - t0) / 1000); return `${Str
     } : {};
     const { debordEntree: _, ...graves } = d;
     const incident = Object.values(graves).some(v => v > 0);
-    const devs = prev && (s.opts.output !== prev.opts.output || s.opts.input !== prev.opts.input);
+    const devs = prev && (s.dev.sortie !== prev.dev.sortie || s.dev.entree !== prev.dev.entree || s.dev.ev !== prev.dev.ev);
     if (!prev || incident || devs || s.playing !== prev.playing || ++quiet >= 12) {
       quiet = 0;
       console.log(ts(), s.playing ? 'lecture' : 'arrêt', incident ? 'INCIDENT ' + JSON.stringify(d) : 'propre',
         `| sortie ${Math.round(s.outLevel)} (min ${Math.round(s.outMin)}) ${s.outPpm.toFixed(0)} ppm | entrée ${Math.round(s.inLevel)} | trou max ${s.maxGapMs?.toFixed?.(1)} ms`,
-        devs ? `| appareils ${JSON.stringify(s.opts)}` : '');
+        devs ? `| appareils ${JSON.stringify(s.dev)} | message « ${s.toast} »` : '');
     }
     prev = s;
   }

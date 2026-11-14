@@ -369,6 +369,13 @@ Vérifications (`qa/native-io.cjs`, nouvelles étapes) :
 
 Non vérifié : le vrai débranchement et le vrai branchement d'écouteurs (le rabattement est testé en simulant un appareil disparu ; les événements de Core Audio et la reprise du contexte Web Audio après erreur ne peuvent être provoqués que par le propriétaire), et le micro des EarPods lui-même (testé à fréquences inversées, micro du Mac à 48 kHz dans un contexte à 44,1 kHz).
 
+**Essais du propriétaire après corrections (14/11/2026)**
+
+- **Micro à la demande, confirmé en vrai** : le micro du Mac s'ouvre pour la prise, puis se referme seul après « Prise enregistrée ». À l'ouverture du micro intégré, un manque natif et une rafale de 13 coupures du navigateur au même instant : ouvrir le micro intégré secoue brièvement la sortie intégrée du Mac (à confirmer).
+- **Application lancée avec les EarPods branchés** : elle démarre directement sur eux (sortie 44,1 kHz, réserve d'entrée 512 automatiquement).
+- **Débranchement en pleine lecture** : le son passe sur les haut-parleurs du Mac, message affiché, aucun blocage. **Rebranchement** : le son revient dans les EarPods, message affiché. Le propriétaire entend une coupure d'environ une seconde à chaque changement (attente de 300 ms après le dernier événement de Core Audio, guet toutes les 400 ms, puis réouverture des deux sorties) : à raccourcir.
+- **Micro des EarPods : pas encore essayé** après la correction (le propriétaire n'a pas refait de prise ; ses prises précédentes passaient par le micro du Mac).
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
