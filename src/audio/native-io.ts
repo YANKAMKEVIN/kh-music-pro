@@ -42,7 +42,7 @@ export interface IoStats {
 interface IoBridge {
   ioStart(sab: SharedArrayBuffer, o: IoOptions & { sampleRate: number }): IoInfo;
   ioStop(): void;
-  ioInput(name: string | null): Pick<IoInfo, 'input' | 'inChannels' | 'inDeclared' | 'inRate'>;
+  ioInput(name: string | null, inTarget?: number): Pick<IoInfo, 'input' | 'inChannels' | 'inDeclared' | 'inRate'>;
   ioStats(): Omit<IoStats, 'outBlocks' | 'outDropped' | 'inBlocks' | 'inMissed'> | null;
   ioArm(threshold: number): void;
   ioResetStats(): void;
@@ -115,18 +115,19 @@ export class NativeIO {
     this.timer = setInterval(() => {
       const n = this.br.ioStats()?.devEvents ?? this.seen;
       if (n !== this.seen) { this.seen = n; void this.recover(); }
-    }, 400);
+    }, 100);
     this.ctx.addEventListener('error', () => { if (this.timer) void this.recover(); });
   }
   /**
-   * Après un changement d'appareil : on laisse Core Audio finir (les événements arrivent en rafale), puis on redémarre.
+   * Après un changement d'appareil : on laisse Core Audio finir (les événements arrivent en rafale, 120 ms suffisent), puis on redémarre.
+   * Guet toutes les 100 ms : la coupure entendue au branchement des écouteurs dure ainsi le moins possible.
    * Si l'appareil choisi a disparu, on se rabat sur celui du système, pour la sortie comme pour l'entrée.
    */
   async recover(): Promise<IoInfo | undefined> {
     if (this.recovering) return;
     this.recovering = true;
     try {
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 120));
       this.seen = this.br.ioStats()?.devEvents ?? this.seen;
       const before = this.info;
       try { this.restart(); }
@@ -169,22 +170,27 @@ export class NativeIO {
   }
   /** Réserve d'entrée effective, en échantillons. */
   inTarget = IN_TARGET;
+  /**
+   * Réserve d'entrée voulue. Sortie à une autre fréquence que Web Audio (EarPods : 44,1 kHz) : Chromium rééchantillonne et
+   * livre ses blocs par paquets d'environ 250 échantillons ; 256 de réserve ne suffisent plus, 512 tiennent (essais du 14/11/2026).
+   */
+  private wantedIn(): number { return this.opts.inTarget ?? (this.info && this.info.outRate !== this.ctx.sampleRate ? 512 : IN_TARGET); }
   restart(): IoInfo {
-    const { clock: _, ...o } = this.opts, start = (inTarget: number) => {
-      this.inTarget = o.inTarget ?? inTarget;
-      this.info = this.br.ioStart(this.sab, { sampleRate: this.ctx.sampleRate, buffer: 128, outTarget: OUT_TARGET, ...o, inTarget: this.inTarget });
-    };
-    start(IN_TARGET);
-    // Sortie à une autre fréquence que Web Audio (EarPods : 44,1 kHz) : Chromium rééchantillonne et livre ses blocs par
-    // paquets d'environ 250 échantillons ; 256 de réserve d'entrée ne suffisent plus, 512 tiennent (essais du 14/11/2026).
-    if (this.info.outRate !== this.ctx.sampleRate && this.inTarget < 512 && o.inTarget === undefined) start(512);
+    const { clock: _, ...o } = this.opts;
+    this.inTarget = this.wantedIn();
+    this.info = this.br.ioStart(this.sab, { sampleRate: this.ctx.sampleRate, buffer: 128, outTarget: OUT_TARGET, ...o, inTarget: this.inTarget });
+    // La fréquence de la nouvelle sortie n'est connue qu'après coup : si la réserve doit changer, on ne rouvre que l'entrée
+    // (et seulement si elle est ouverte), sans redémarrer la sortie une seconde fois.
+    const want = this.wantedIn();
+    if (want !== this.inTarget) { this.inTarget = want; if (this.info.inChannels) this.info = { ...this.info, ...this.br.ioInput(this.opts.input ?? '', want) }; }
     return this.info;
   }
 
   /** Ouvre (nom de l'appareil, '' = celui du système) ou ferme (null) l'entrée seule, sans couper la sortie. */
   input(name: string | null): IoInfo {
     this.opts.input = name;
-    this.info = { ...this.info, inRate: undefined, ...this.br.ioInput(name) };
+    this.inTarget = this.wantedIn();
+    this.info = { ...this.info, inRate: undefined, ...this.br.ioInput(name, this.inTarget) };
     return this.info;
   }
 

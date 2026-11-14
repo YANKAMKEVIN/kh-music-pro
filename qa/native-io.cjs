@@ -63,12 +63,13 @@ const MINI = args.includes('--reduite');
       const io = window.kh.engine.native; let told = '';
       const prev = io.onDevices; io.onDevices = i => { told = i.output; prev(i); };
       io.opts.output = 'Appareil débranché'; io.info = { ...io.info, output: 'Appareil débranché' };
-      const info = await io.recover(); io.onDevices = prev;
-      return { output: info?.output, opt: io.opts.output, told, toast: document.querySelector('#toast')?.textContent ?? '', ev: typeof io.stats().devEvents };
+      const t0 = performance.now(), info = await io.recover(), ms = Math.round(performance.now() - t0); io.onDevices = prev;
+      return { ms, output: info?.output, opt: io.opts.output, told, toast: document.querySelector('#toast')?.textContent ?? '', ev: typeof io.stats().devEvents };
     });
     console.log('Rabattement :', JSON.stringify(fb));
     check(!!fb.output && fb.output !== 'Appareil débranché' && fb.opt === '', `sortie disparue : rabattu sur « ${fb.output} »`);
     check(fb.told === fb.output && /Appareil audio changé|Audio device changed|Dispositivo de audio/.test(fb.toast), 'la page est prévenue (message à l\'écran)');
+    check(fb.ms < 600, `rétablissement en ${fb.ms} ms (coupure entendue au changement d'appareil)`);
     check(fb.ev === 'number', 'les changements d\'appareils sont comptés par le natif');
 
     // Haut-parleurs et micro intégrés : le seul trajet que le micro entend (la sortie USB est un casque).

@@ -415,10 +415,14 @@ void IoStart(const FunctionCallbackInfo<Value>& a) {
   a.GetReturnValue().Set(r);
 }
 
-/** ioInput(nom | null) : ouvre (ou ferme) seulement l'entrée, sans toucher à la sortie → { input, inChannels, inDeclared, inRate }. */
+/**
+ * ioInput(nom | null, réserve?) : ouvre (ou ferme) seulement l'entrée, sans toucher à la sortie → { input, inChannels, inDeclared, inRate }.
+ * réserve : niveau cible du tampon d'entrée, en échantillons (sinon celui donné à ioStart).
+ */
 void IoInput(const FunctionCallbackInfo<Value>& a) {
   Isolate* iso = a.GetIsolate();
   if (!io) return err(iso, "entrée/sortie natives arrêtées");
+  if (a.Length() > 1 && a[1]->IsNumber()) io->si.target = a[1]->NumberValue(iso->GetCurrentContext()).FromMaybe(io->si.target);
   if (a.Length() < 1 || a[0]->IsNull() || a[0]->IsUndefined()) stopIn(io.get());
   else if (const char* e = startIn(io.get(), a[0]->IsString() ? str(iso, a[0]) : "")) return err(iso, e);
   Local<Object> r = Object::New(iso);

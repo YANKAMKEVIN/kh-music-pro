@@ -376,6 +376,8 @@ Non vérifié : le vrai débranchement et le vrai branchement d'écouteurs (le r
 - **Débranchement en pleine lecture** : le son passe sur les haut-parleurs du Mac, message affiché, aucun blocage. **Rebranchement** : le son revient dans les EarPods, message affiché. Le propriétaire entend une coupure d'environ une seconde à chaque changement (attente de 300 ms après le dernier événement de Core Audio, guet toutes les 400 ms, puis réouverture des deux sorties) : à raccourcir.
 - **Micro des EarPods : pas encore essayé** après la correction (le propriétaire n'a pas refait de prise ; ses prises précédentes passaient par le micro du Mac).
 
+**Coupure au changement d'appareil raccourcie (14/11/2026)** — guet toutes les 100 ms au lieu de 400, attente de 120 ms au lieu de 300 après le dernier événement de Core Audio, et plus de double démarrage de la sortie sur un appareil à 44,1 kHz : la réserve d'entrée est ajustée en rouvrant seulement l'entrée (`ioInput(nom, réserve)`), et seulement si elle est ouverte. Rétablissement mesuré (appareil disparu simulé) : **134 ms**, contre environ une seconde entendue avant. Le vrai branchement reste à réécouter par le propriétaire. Tenues de 30 s faites pendant une compilation Gradle d'un autre projet (charge 7,8) : ratés natifs **et** coupures du navigateur aux mêmes instants (jusqu'à 17), c'est-à-dire les hoquets du Mac déjà connus. QA : 190/191 (DK01, Linux) ; `qa/au-bridge.cjs` OK.
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
