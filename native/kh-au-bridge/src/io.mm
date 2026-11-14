@@ -68,6 +68,12 @@ struct IO {
   std::string outName, inName;
   int inCh = 1;
   float gain = 1;
+  UInt32 buffer = 128;
+  // Fréquence propre de chaque appareil : l'entrée de Core Audio ne convertit pas, le natif rééchantillonne (EarPods : 44,1 kHz).
+  double inRate = 48000, outRate = 48000;
+  // Changements d'appareils signalés par Core Audio (sortie ou entrée du système changée, appareil débranché) ;
+  // la page les voit dans ioStats et redémarre ce qu'il faut.
+  std::atomic<uint64_t> devEvents{0};
 
   // Sortie : position de lecture (entier qui boucle + fraction).
   uint32_t rInt = 0; double rFrac = 0; bool outOn = false;
@@ -203,8 +209,8 @@ OSStatus capture(void* ref, AudioUnitRenderActionFlags* fl, const AudioTimeStamp
   for (UInt32 k = 0; k < n; k++) {
     float x = s->inBuf[0][k];
     if (armed == 1) s->floor = std::max(s->floor, std::fabs(x));
-    else if (armed == 2 && std::fabs(x) > std::max(s->inMin, 5 * s->floor) && double(ts->mHostTime) / s->hostHz + k / s->sr > s->tOut) {
-      s->tIn = double(ts->mHostTime) / s->hostHz + k / s->sr; s->armed = armed = 3;
+    else if (armed == 2 && std::fabs(x) > std::max(s->inMin, 5 * s->floor) && double(ts->mHostTime) / s->hostHz + k / s->inRate > s->tOut) {
+      s->tIn = double(ts->mHostTime) / s->hostHz + k / s->inRate; s->armed = armed = 3;
     }
     for (int c = 0; c < s->inCh; c++) s->fifo[c][(s->fw + k) & FM] = s->inBuf[c][k];
   }
@@ -213,8 +219,9 @@ OSStatus capture(void* ref, AudioUnitRenderActionFlags* fl, const AudioTimeStamp
   int32_t used = int32_t(s->wIn - uint32_t(ld(&s->h[3])));
   if (used > int32_t(s->N / 2)) { s->inOver++; s->fr = double(s->fw) - 2; return noErr; }   // Web Audio ne lit plus (contexte suspendu)
   if (!s->inOn) { s->fr = double(s->fw) - n; s->inOn = true; }
-  s->si.update(used, n / s->sr);
-  double step = s->si.step, fr = s->fr;
+  s->si.update(used, n / s->inRate);
+  // Le micro avance à sa propre fréquence : on lit inRate / sr de ses échantillons par échantillon de Web Audio.
+  double step = s->si.step * (s->inRate / s->sr), fr = s->fr;
   while (fr + 2 < double(s->fw)) {
     uint64_t i = uint64_t(fr); float t = float(fr - double(i));
     for (int c = 0; c < s->inCh; c++) {
@@ -230,6 +237,7 @@ OSStatus capture(void* ref, AudioUnitRenderActionFlags* fl, const AudioTimeStamp
 
 void overload(IO* s) { s->overloads++; }
 OSStatus onOverload(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void* r) { overload(static_cast<IO*>(r)); return noErr; }
+OSStatus onDevice(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void* r) { static_cast<IO*>(r)->devEvents++; return noErr; }
 
 void err(Isolate* iso, const char* m) { iso->ThrowException(Exception::Error(String::NewFromUtf8(iso, m).ToLocalChecked())); }
 std::string str(Isolate* iso, Local<Value> v) { String::Utf8Value u(iso, v); return *u ? *u : ""; }
@@ -259,19 +267,91 @@ AudioUnit halUnit() {
   return c && AudioComponentInstanceNew(c, &u) == noErr ? u : nullptr;
 }
 
+double nominal(AudioDeviceID d) {
+  Float64 v = 0; UInt32 sz = 8; auto ra = addr(kAudioDevicePropertyNominalSampleRate);
+  AudioObjectGetPropertyData(d, &ra, 0, nullptr, &sz, &v);
+  return v > 0 ? v : 48000;
+}
+
+// Changements d'appareils : sortie ou entrée du système changée, sortie débranchée (l'entrée a son propre guet, dans startIn).
+void listenDevices(IO* s, bool on) {
+  auto f = on ? AudioObjectAddPropertyListener : AudioObjectRemovePropertyListener;
+  auto defOut = addr(kAudioHardwarePropertyDefaultOutputDevice), defIn = addr(kAudioHardwarePropertyDefaultInputDevice), alive = addr(kAudioDevicePropertyDeviceIsAlive);
+  f(kAudioObjectSystemObject, &defOut, onDevice, s);
+  f(kAudioObjectSystemObject, &defIn, onDevice, s);
+  if (s->outDev) f(s->outDev, &alive, onDevice, s);
+}
+
+// ---------- Entrée, ouverte seulement quand la page en a besoin (le micro du Mac n'est pas capté sinon) ----------
+void stopIn(IO* s) {
+  if (s->inU) {
+    AudioOutputUnitStop(s->inU); AudioUnitUninitialize(s->inU); AudioComponentInstanceDispose(s->inU);
+    s->inU = nullptr;
+  }
+  if (s->inDev) { auto alive = addr(kAudioDevicePropertyDeviceIsAlive); AudioObjectRemovePropertyListener(s->inDev, &alive, onDevice, s); }
+  s->inDev = 0; s->inName.clear();
+  free(s->inAbl); s->inAbl = nullptr;
+  st(&s->h[10], 0);
+}
+
+/** Ouvre l'entrée dont le nom contient `name` ('' = celle du système). Renvoie un message d'erreur, ou nullptr. */
+const char* startIn(IO* s, const std::string& name) {
+  stopIn(s);
+  s->inDev = findDev(name, true);
+  if (!s->inDev) return "entrée introuvable";
+  s->inName = devName(s->inDev);
+  s->inCh = std::max(1, std::min(2, channels(s->inDev, kAudioObjectPropertyScopeInput)));
+  s->inRate = nominal(s->inDev);
+  { auto ba = addr(kAudioDevicePropertyBufferFrameSize); AudioObjectSetPropertyData(s->inDev, &ba, 0, nullptr, 4, &s->buffer); }
+  for (int c = 0; c < 2; c++) { s->fifo[c].assign(16384, 0.f); s->inBuf[c].assign(MAXF, 0.f); }
+  s->inAbl = static_cast<AudioBufferList*>(calloc(1, sizeof(AudioBufferList) + sizeof(AudioBuffer) * 2));
+  s->inAbl->mNumberBuffers = UInt32(s->inCh);
+  for (int c = 0; c < s->inCh; c++) s->inAbl->mBuffers[c].mNumberChannels = 1;
+  s->inU = halUnit();
+  UInt32 on = 1, off = 0, maxf = MAXF;
+  auto fi = fmt(s->inRate, s->inCh);   // l'entrée de Core Audio ne convertit pas la fréquence : on prend celle de l'appareil
+  AURenderCallbackStruct icb{ capture, s };
+  if (!s->inU ||
+      AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &on, 4) ||
+      AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &off, 4) ||
+      AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &s->inDev, sizeof s->inDev) ||
+      AudioUnitSetProperty(s->inU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &fi, sizeof fi) ||
+      AudioUnitSetProperty(s->inU, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxf, 4) ||
+      AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &icb, sizeof icb) ||
+      AudioUnitInitialize(s->inU)) { stopIn(s); return "entrée impossible à ouvrir"; }
+  s->fw = 0; s->fr = 0; s->inOn = false; s->si.reset(s->si.target);
+  s->wIn = uint32_t(ld(&s->h[3]));
+  st(&s->h[2], int32_t(s->wIn));
+  st(&s->h[4], int32_t(s->si.target));
+  st(&s->h[10], s->inCh);
+  { auto alive = addr(kAudioDevicePropertyDeviceIsAlive); AudioObjectAddPropertyListener(s->inDev, &alive, onDevice, s); }
+  if (AudioOutputUnitStart(s->inU)) { stopIn(s); return "entrée impossible à démarrer"; }
+  return nullptr;
+}
+
 void stopIO() {
   if (!io) return;
   auto oa = addr(kAudioDeviceProcessorOverload);
+  listenDevices(io.get(), false);
+  stopIn(io.get());
   if (io->outU) { AudioOutputUnitStop(io->outU); AudioUnitUninitialize(io->outU); AudioComponentInstanceDispose(io->outU); }
-  if (io->inU) { AudioOutputUnitStop(io->inU); AudioUnitUninitialize(io->inU); AudioComponentInstanceDispose(io->inU); }
   if (io->outDev) AudioObjectRemovePropertyListener(io->outDev, &oa, onOverload, io.get());
-  free(io->inAbl);
   io.reset();
+}
+
+void setInputInfo(Isolate* iso, Local<Object> r) {
+  auto cx = iso->GetCurrentContext();
+  auto set = [&](const char* k, Local<Value> v) { r->Set(cx, String::NewFromUtf8(iso, k).ToLocalChecked(), v).Check(); };
+  bool in = io && io->inU;
+  set("input", in ? String::NewFromUtf8(iso, io->inName.c_str()).ToLocalChecked().As<Value>() : Null(iso).As<Value>());
+  set("inChannels", Integer::New(iso, in ? io->inCh : 0));
+  set("inDeclared", Number::New(iso, in ? declared(io->inDev, kAudioObjectPropertyScopeInput) / io->inRate : 0));
+  if (in) set("inRate", Number::New(iso, io->inRate));
 }
 
 /**
  * ioStart(sab, { sampleRate, output, input, buffer, outTarget, inTarget, gain }) → { output, input, inChannels, ... }
- * output / input : partie du nom de l'appareil ('' = celui du système ; input: null = pas d'entrée).
+ * output / input : partie du nom de l'appareil ('' = celui du système ; input: null ou absent = pas d'entrée).
  */
 void IoStart(const FunctionCallbackInfo<Value>& a) {
   Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
@@ -291,13 +371,14 @@ void IoStart(const FunctionCallbackInfo<Value>& a) {
   s->outRing[0] = f; s->outRing[1] = f + s->N; s->inRing[0] = f + 2 * s->N; s->inRing[1] = f + 3 * s->N;
   s->so.reset(num(iso, o, "outTarget", 384));
   s->si.reset(num(iso, o, "inTarget", 384));
-  UInt32 buffer = UInt32(num(iso, o, "buffer", 128));
+  s->buffer = UInt32(num(iso, o, "buffer", 128));
 
-  // Sortie.
+  // Sortie (le natif convertit lui-même vers la fréquence de l'appareil).
   s->outDev = findDev(text(iso, o, "output"), false);
   if (!s->outDev) return err(iso, "sortie introuvable");
   s->outName = devName(s->outDev);
-  { auto ba = addr(kAudioDevicePropertyBufferFrameSize); AudioObjectSetPropertyData(s->outDev, &ba, 0, nullptr, 4, &buffer); }
+  s->outRate = nominal(s->outDev);
+  { auto ba = addr(kAudioDevicePropertyBufferFrameSize); AudioObjectSetPropertyData(s->outDev, &ba, 0, nullptr, 4, &s->buffer); }
   s->outU = halUnit();
   auto f2 = fmt(s->sr, 2);
   AURenderCallbackStruct rcb{ render, s.get() };
@@ -306,58 +387,42 @@ void IoStart(const FunctionCallbackInfo<Value>& a) {
       AudioUnitSetProperty(s->outU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &f2, sizeof f2) ||
       AudioUnitSetProperty(s->outU, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &rcb, sizeof rcb) ||
       AudioUnitInitialize(s->outU)) { io = std::move(s); stopIO(); return err(iso, "sortie impossible à ouvrir"); }
-
-  // Entrée (facultative).
-  Local<Value> inV;
-  bool wantIn = o->Get(cx, String::NewFromUtf8Literal(iso, "input")).ToLocal(&inV) && !inV->IsNull();
-  if (wantIn) {
-    s->inDev = findDev(inV->IsString() ? str(iso, inV) : "", true);
-    if (!s->inDev) { io = std::move(s); stopIO(); return err(iso, "entrée introuvable"); }
-    s->inName = devName(s->inDev);
-    s->inCh = std::max(1, std::min(2, channels(s->inDev, kAudioObjectPropertyScopeInput)));
-    { auto ba = addr(kAudioDevicePropertyBufferFrameSize); AudioObjectSetPropertyData(s->inDev, &ba, 0, nullptr, 4, &buffer); }
-    for (int c = 0; c < 2; c++) { s->fifo[c].assign(16384, 0.f); s->inBuf[c].assign(MAXF, 0.f); }
-    s->inAbl = static_cast<AudioBufferList*>(calloc(1, sizeof(AudioBufferList) + sizeof(AudioBuffer) * 2));
-    s->inAbl->mNumberBuffers = UInt32(s->inCh);
-    for (int c = 0; c < s->inCh; c++) s->inAbl->mBuffers[c].mNumberChannels = 1;
-    s->inU = halUnit();
-    UInt32 on = 1, off = 0;
-    auto fi = fmt(s->sr, s->inCh);
-    AURenderCallbackStruct icb{ capture, s.get() };
-    UInt32 maxf = MAXF;
-    if (!s->inU ||
-        AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &on, 4) ||
-        AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &off, 4) ||
-        AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &s->inDev, sizeof s->inDev) ||
-        AudioUnitSetProperty(s->inU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &fi, sizeof fi) ||
-        AudioUnitSetProperty(s->inU, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxf, 4) ||
-        AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &icb, sizeof icb) ||
-        AudioUnitInitialize(s->inU)) {
-      io = std::move(s); stopIO(); return err(iso, "entrée impossible à ouvrir");
-    }
-  }
-  s->h[10] = wantIn ? s->inCh : 0;
-  st(&s->h[4], int32_t(s->si.target));
+  s->h[10] = 0;
   s->rInt = uint32_t(ld(&s->h[0]));
   st(&s->h[1], int32_t(s->rInt));   // le worklet voit tout de suite la place libre (sinon, tampon plein = blocage)
   s->wIn = uint32_t(ld(&s->h[3]));
   st(&s->h[2], int32_t(s->wIn));
+  st(&s->h[4], int32_t(s->si.target));
   auto oa = addr(kAudioDeviceProcessorOverload);
   AudioObjectAddPropertyListener(s->outDev, &oa, onOverload, s.get());
   io = std::move(s);
-  if (io->inU && AudioOutputUnitStart(io->inU)) { stopIO(); return err(iso, "entrée impossible à démarrer"); }
+  listenDevices(io.get(), true);
+
+  // Entrée (facultative).
+  Local<Value> inV;
+  if (o->Get(cx, String::NewFromUtf8Literal(iso, "input")).ToLocal(&inV) && !inV->IsNull() && !inV->IsUndefined()) {
+    if (const char* e = startIn(io.get(), inV->IsString() ? str(iso, inV) : "")) { stopIO(); return err(iso, e); }
+  }
   if (AudioOutputUnitStart(io->outU)) { stopIO(); return err(iso, "sortie impossible à démarrer"); }
 
   Local<Object> r = Object::New(iso);
   auto set = [&](const char* k, Local<Value> v) { r->Set(cx, String::NewFromUtf8(iso, k).ToLocalChecked(), v).Check(); };
   set("output", String::NewFromUtf8(iso, io->outName.c_str()).ToLocalChecked());
-  set("input", io->inU ? String::NewFromUtf8(iso, io->inName.c_str()).ToLocalChecked().As<Value>() : Null(iso).As<Value>());
-  set("inChannels", Integer::New(iso, io->inU ? io->inCh : 0));
-  set("outDeclared", Number::New(iso, declared(io->outDev, kAudioObjectPropertyScopeOutput) / io->sr));
-  set("inDeclared", Number::New(iso, io->inU ? declared(io->inDev, kAudioObjectPropertyScopeInput) / io->sr : 0));
-  { Float64 v = 0; UInt32 sz = 8; auto ra = addr(kAudioDevicePropertyNominalSampleRate); AudioObjectGetPropertyData(io->outDev, &ra, 0, nullptr, &sz, &v); set("outRate", Number::New(iso, v)); }
-  if (io->inU) { Float64 v = 0; UInt32 sz = 8; auto ra = addr(kAudioDevicePropertyNominalSampleRate); AudioObjectGetPropertyData(io->inDev, &ra, 0, nullptr, &sz, &v); set("inRate", Number::New(iso, v)); }
+  set("outDeclared", Number::New(iso, declared(io->outDev, kAudioObjectPropertyScopeOutput) / io->outRate));
+  set("outRate", Number::New(iso, io->outRate));
+  setInputInfo(iso, r);
   set("buffer", Integer::New(iso, int32_t(u32(io->outDev, kAudioDevicePropertyBufferFrameSize))));
+  a.GetReturnValue().Set(r);
+}
+
+/** ioInput(nom | null) : ouvre (ou ferme) seulement l'entrée, sans toucher à la sortie → { input, inChannels, inDeclared, inRate }. */
+void IoInput(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate();
+  if (!io) return err(iso, "entrée/sortie natives arrêtées");
+  if (a.Length() < 1 || a[0]->IsNull() || a[0]->IsUndefined()) stopIn(io.get());
+  else if (const char* e = startIn(io.get(), a[0]->IsString() ? str(iso, a[0]) : "")) return err(iso, e);
+  Local<Object> r = Object::New(iso);
+  setInputInfo(iso, r);
   a.GetReturnValue().Set(r);
 }
 
@@ -375,7 +440,7 @@ void IoStats(const FunctionCallbackInfo<Value>& a) {
   n("outLevel", s->so.avg); n("outMin", s->so.lo); n("outMax", s->so.hi); n("outTarget", s->so.target); n("outPpm", (s->so.step - 1) * 1e6);
   n("inCalls", double(s->inCalls)); n("inFrames", double(s->inFrames)); n("inOverflows", double(s->inOver));
   n("inLevel", s->si.avg); n("inMin", s->si.lo); n("inMax", s->si.hi); n("inTarget", s->si.target); n("inPpm", (s->si.step - 1) * 1e6);
-  n("armed", s->armed); n("tripMs", s->armed == 3 ? (s->tIn - s->tOut) * 1000 : -1); n("floor", s->floor);
+  n("devEvents", double(s->devEvents)); n("armed", s->armed); n("tripMs", s->armed == 3 ? (s->tIn - s->tOut) * 1000 : -1); n("floor", s->floor);
   a.GetReturnValue().Set(r);
 }
 
@@ -415,5 +480,5 @@ void RegisterIO(Isolate* iso, Local<Object> exports, Local<Context> context) {
     exports->Set(context, String::NewFromUtf8(iso, n).ToLocalChecked(), FunctionTemplate::New(iso, f)->GetFunction(context).ToLocalChecked()).Check();
   };
   add("ioStart", IoStart); add("ioStop", IoStop); add("ioStats", IoStats); add("ioArm", IoArm);
-  add("ioResetStats", IoResetStats); add("ioGain", IoGain); add("ioDevices", IoDevices);
+  add("ioResetStats", IoResetStats); add("ioInput", IoInput); add("ioGain", IoGain); add("ioDevices", IoDevices);
 }

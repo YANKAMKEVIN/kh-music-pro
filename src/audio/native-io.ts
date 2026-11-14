@@ -34,12 +34,15 @@ export interface IoStats {
   outLevel: number; outMin: number; outMax: number; outTarget: number; outPpm: number;
   inCalls: number; inFrames: number; inOverflows: number; inLevel: number; inMin: number; inMax: number; inTarget: number; inPpm: number;
   armed: number; tripMs: number; floor: number;
+  /** Changements d'appareils signalés par Core Audio (sortie ou entrée du système changée, appareil débranché). */
+  devEvents: number;
   /** Compteurs des worklets : blocs écrits, débordements du tampon de sortie, blocs lus, manques d'entrée. */
   outBlocks: number; outDropped: number; inBlocks: number; inMissed: number;
 }
 interface IoBridge {
   ioStart(sab: SharedArrayBuffer, o: IoOptions & { sampleRate: number }): IoInfo;
   ioStop(): void;
+  ioInput(name: string | null): Pick<IoInfo, 'input' | 'inChannels' | 'inDeclared' | 'inRate'>;
   ioStats(): Omit<IoStats, 'outBlocks' | 'outDropped' | 'inBlocks' | 'inMissed'> | null;
   ioArm(threshold: number): void;
   ioResetStats(): void;
@@ -95,15 +98,57 @@ export class NativeIO {
     const io = new NativeIO(ctx, br);
     await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
     io.sink = new AudioWorkletNode(ctx, 'kh-out', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit', processorOptions: { sab: io.sab } });
-    await io.configure({ output: '', input: '', ...opts });
+    // Pas d'entrée au départ : le micro n'est capté que quand la page l'ouvre (openInput), pas en permanence.
+    await io.configure({ output: '', input: null, ...opts });
+    io.watch();
     return io;
+  }
+
+  /** Prévenu quand le natif a dû changer d'appareil tout seul (sortie du système changée, appareil débranché). */
+  onDevices: (info: IoInfo) => void = () => { };
+  private seen = 0;
+  private recovering = false;
+  private timer?: ReturnType<typeof setInterval>;
+  /** Guette les changements d'appareils signalés par Core Audio, et l'erreur du contexte quand sa sortie disparaît. */
+  private watch() {
+    this.seen = this.br.ioStats()?.devEvents ?? 0;
+    this.timer = setInterval(() => {
+      const n = this.br.ioStats()?.devEvents ?? this.seen;
+      if (n !== this.seen) { this.seen = n; void this.recover(); }
+    }, 400);
+    this.ctx.addEventListener('error', () => { if (this.timer) void this.recover(); });
+  }
+  /**
+   * Après un changement d'appareil : on laisse Core Audio finir (les événements arrivent en rafale), puis on redémarre.
+   * Si l'appareil choisi a disparu, on se rabat sur celui du système, pour la sortie comme pour l'entrée.
+   */
+  async recover(): Promise<IoInfo | undefined> {
+    if (this.recovering) return;
+    this.recovering = true;
+    try {
+      await new Promise(r => setTimeout(r, 300));
+      this.seen = this.br.ioStats()?.devEvents ?? this.seen;
+      const before = this.info;
+      try { this.restart(); }
+      catch {
+        if (this.opts.output) this.opts.output = '';
+        try { this.restart(); }
+        catch { if (this.opts.input) this.opts.input = ''; try { this.restart(); } catch { this.opts.input = null; this.restart(); } }
+      }
+      // La sortie de Chromium qui cadence Web Audio a pu disparaître aussi (contexte en erreur) : on la rouvre.
+      await this.setClock(this.opts.clock === 'none' ? null : this.opts.output ?? '', true);
+      this.seen = this.br.ioStats()?.devEvents ?? this.seen;
+      if (before.output !== this.info.output || before.input !== this.info.input) this.onDevices(this.info);
+      return this.info;
+    } catch { return undefined; }
+    finally { this.recovering = false; }
   }
 
   /** Sortie du navigateur qui cadence Web Audio (partie de son libellé), ou null sans sortie. */
   clock: string | null | undefined;
   private keep?: ConstantSourceNode;
-  private async setClock(clock: string | null) {
-    if (clock === this.clock) return;
+  private async setClock(clock: string | null, force = false) {
+    if (clock === this.clock && !force) return;
     const c = this.ctx as unknown as { setSinkId(o: string | { type: 'none' }): Promise<void> };
     if (clock === null) { this.keep?.stop(); this.keep = undefined; await c.setSinkId({ type: 'none' }); }
     else {
@@ -122,9 +167,24 @@ export class NativeIO {
     await this.setClock(this.opts.clock === 'none' ? null : this.opts.output ?? '');
     return this.restart();
   }
+  /** Réserve d'entrée effective, en échantillons. */
+  inTarget = IN_TARGET;
   restart(): IoInfo {
-    const { clock: _, ...o } = this.opts;
-    this.info = this.br.ioStart(this.sab, { sampleRate: this.ctx.sampleRate, buffer: 128, outTarget: OUT_TARGET, inTarget: IN_TARGET, ...o });
+    const { clock: _, ...o } = this.opts, start = (inTarget: number) => {
+      this.inTarget = o.inTarget ?? inTarget;
+      this.info = this.br.ioStart(this.sab, { sampleRate: this.ctx.sampleRate, buffer: 128, outTarget: OUT_TARGET, ...o, inTarget: this.inTarget });
+    };
+    start(IN_TARGET);
+    // Sortie à une autre fréquence que Web Audio (EarPods : 44,1 kHz) : Chromium rééchantillonne et livre ses blocs par
+    // paquets d'environ 250 échantillons ; 256 de réserve d'entrée ne suffisent plus, 512 tiennent (essais du 14/11/2026).
+    if (this.info.outRate !== this.ctx.sampleRate && this.inTarget < 512 && o.inTarget === undefined) start(512);
+    return this.info;
+  }
+
+  /** Ouvre (nom de l'appareil, '' = celui du système) ou ferme (null) l'entrée seule, sans couper la sortie. */
+  input(name: string | null): IoInfo {
+    this.opts.input = name;
+    this.info = { ...this.info, inRate: undefined, ...this.br.ioInput(name) };
     return this.info;
   }
 
@@ -138,7 +198,7 @@ export class NativeIO {
   /** Latences du chemin natif, en secondes : sortie (tampon partagé + carte son), entrée (carte son + tampon partagé). */
   latency(): { output: number; input: number } {
     const sr = this.ctx.sampleRate, o = this.opts;
-    return { output: (o.outTarget ?? OUT_TARGET) / sr + this.info.outDeclared, input: this.info.inChannels ? (o.inTarget ?? IN_TARGET) / sr + this.info.inDeclared : 0 };
+    return { output: (o.outTarget ?? OUT_TARGET) / sr + this.info.outDeclared, input: this.info.inChannels ? this.inTarget / sr + this.info.inDeclared : 0 };
   }
 
   stats(): IoStats {
@@ -149,7 +209,8 @@ export class NativeIO {
   arm(threshold: number) { this.br.ioArm(threshold); }
   gain(g: number) { this.opts.gain = g; this.br.ioGain(g); }
   devices() { return this.br.ioDevices(); }
-  stop() { this.br.ioStop(); }
+  /** Arrête le natif et le guet des appareils (sinon un changement d'appareil le redémarrerait). */
+  stop() { clearInterval(this.timer); this.timer = undefined; this.br.ioStop(); }
 }
 
 /** Nom d'appareil natif correspondant à un identifiant du navigateur (son libellé, sans la parenthèse finale). */

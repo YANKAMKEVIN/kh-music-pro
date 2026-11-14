@@ -337,6 +337,38 @@ Prochaine mesure proposée (faite ci-dessus, à l'arrêt seulement) : une second
 - La version bureau en mode natif passe donc de 69 à 75 ms d'aller-retour, contre 110 ms pour le navigateur seul.
 - Troisième séance lancée ensuite avec cette réserve (`KH_RT=1 node qa/ecoute-native.cjs`), pour l'écoute et la vraie prise du propriétaire.
 
+**Troisième séance, avec le propriétaire (14/11/2026, 68 min)** — écoute aux EarPods (USB) puis vraie prise.
+
+- **La prise s'est bien passée** (avis du propriétaire) : enregistrement par le micro du Mac, en écoutant aux EarPods.
+- Quatre défauts du mode natif découverts en usage réel :
+  1. **Écouteurs branchés, son toujours dans les haut-parleurs** : le natif choisissait sa sortie au démarrage et ne suivait pas la sortie du système. Il fallait la choisir à la main (🔧).
+  2. **Micro des EarPods muet** : les EarPods tournent à 44,1 kHz, l'application à 48 kHz. Pour la sortie, Core Audio convertit, mais pas pour l'entrée : aucun son ne sortait du micro.
+  3. **Écouteurs débranchés en cours de lecture : application bloquée.** Le contexte Web Audio signale une erreur d'appareil, le natif reste accroché à l'appareil disparu, plus rien n'avance.
+  4. **Micro capté en permanence** (défaut déjà noté).
+- Une sourdine de macOS sur les EarPods a fait croire un moment que le son ne sortait plus : ce n'était pas l'application.
+
+**Corrections (14/11/2026)**
+
+- **Micro à la demande** : le natif démarre sans entrée ; `ioInput(nom | null)` ouvre ou ferme l'entrée seule, sans toucher à la sortie. `engine.openInput` l'ouvre, `closeInput` la referme (pastille orange éteinte quand l'application n'écoute pas le micro).
+- **Micro à une autre fréquence** : l'entrée est ouverte à la fréquence propre de l'appareil, et le natif la rééchantillonne vers celle de Web Audio (le régulateur existant, multiplié par le rapport des fréquences). Latences déclarées divisées par la fréquence de chaque appareil.
+- **Quand la sortie n'est pas à la fréquence de Web Audio** (EarPods), Chromium livre ses blocs par paquets d'environ 250 échantillons : la réserve d'entrée passe alors de 256 à 512 échantillons (256 vidait le tampon une fois toutes les 8 s environ ; 512 : aucun manque).
+- **Suivi des appareils** : le natif écoute Core Audio (sortie ou entrée du système changée, appareil débranché) et compte ces événements (`devEvents`). La page les surveille et redémarre le natif. Si l'appareil choisi a disparu, elle se rabat sur celui du système, rouvre la sortie de Chromium qui cadence Web Audio, et affiche « Appareil audio changé, le son passe maintenant par : … » (trois langues). L'erreur du contexte Web Audio déclenche le même rétablissement.
+
+Vérifications (`qa/native-io.cjs`, nouvelles étapes) :
+
+| Vérification | Résultat |
+|---|---|
+| Au démarrage, micro non capté (aucun appel d'entrée en 0,8 s) | oui |
+| Micro ouvert à la demande, puis refermé ; sortie jamais redémarrée, 0 manque pendant ce temps | oui |
+| Sortie choisie disparue : rabattu sur « Haut-parleurs MacBook Pro », message affiché | oui |
+| Micro à 48 kHz dans un contexte à 44,1 kHz, 8 s | 2 756 blocs (le bon rythme), 0 manque, tampon stable (min 301 pour 512) |
+| Tenue de 60 s | 0 manque, 0 surcharge, témoin du navigateur 0 |
+| Aller-retour (`--mesure`) | 73,7 ms, 6 clics sur 6 |
+| `qa/au-bridge.cjs`, `qa/desktop-smoke.cjs` | OK |
+| Campagne `qa/run.cjs` | 190/191 (DK01, Linux seulement) |
+
+Non vérifié : le vrai débranchement et le vrai branchement d'écouteurs (le rabattement est testé en simulant un appareil disparu ; les événements de Core Audio et la reprise du contexte Web Audio après erreur ne peuvent être provoqués que par le propriétaire), et le micro des EarPods lui-même (testé à fréquences inversées, micro du Mac à 48 kHz dans un contexte à 44,1 kHz).
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
@@ -349,6 +381,6 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance lancée pour l'écoute et la vraie prise. Sinon, s'arrêter là et garder le prototype comme référence sans le fusionner.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). À vérifier par le propriétaire : brancher et débrancher les écouteurs, enregistrer avec le micro des EarPods. Sinon, s'arrêter là et garder le prototype comme référence sans le fusionner.
 - **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.

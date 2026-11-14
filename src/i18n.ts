@@ -501,6 +501,7 @@ const D: Record<string, [string, string, string]> = {
   'aud.output': ['Sortie audio', 'Audio output', 'Salida de audio'],
   'aud.defaultOut': ['Sortie du système', 'System output', 'Salida del sistema'],
   'aud.outSet': ['Sortie audio changée', 'Audio output changed', 'Salida de audio cambiada'],
+  'aud.auto': ['Appareil audio changé, le son passe maintenant par :', 'Audio device changed, sound now goes through:', 'Dispositivo de audio cambiado, el sonido sale ahora por:'],
   'aud.outFail': ['Impossible d\'utiliser cette sortie', 'Could not use this output', 'No se pudo usar esta salida'],
   'aud.outUnsupported': ['Ce navigateur ne permet pas de choisir la sortie audio.', 'This browser cannot choose the audio output.', 'Este navegador no permite elegir la salida de audio.'],
   'aud.latency': ['Latence', 'Latency', 'Latencia'],

@@ -257,7 +257,7 @@ class Engine {
     if (this.native) {
       // Le micro arrive par le natif : on lui indique l'appareil choisi (par son nom), puis on lit son tampon.
       const name = await nativeName(device, 'audioinput');
-      if ((this.native.opts.input ?? '') !== name) await this.native.configure({ input: name });
+      this.native.input(name);
       const s = this.native.source();
       if (!s) throw new Error('no native input');
       src = s;
@@ -279,6 +279,8 @@ class Engine {
     i.src.disconnect(); i.gain.disconnect(); i.mon.disconnect(); i.stream?.getTracks().forEach(t => t.stop());
     if (i.src instanceof AudioWorkletNode) i.src.port.postMessage('stop');
     this.inp = undefined;
+    // Mode natif : on referme aussi le micro du côté de la carte son (sinon il reste capté, pastille orange allumée).
+    if (this.native && !i.stream) try { this.native.input(null); } catch { /* natif arrêté */ }
   }
   setInput(gain: number, monitor: boolean) {
     if (!this.inp) return;

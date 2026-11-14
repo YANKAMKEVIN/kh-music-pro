@@ -40,6 +40,37 @@ const MINI = args.includes('--reduite');
     check(env.toNative, 'le mixage de Web Audio part vers le natif, plus vers la sortie du navigateur');
     check(env.require === 'undefined', 'la page n\'a toujours pas accès à Node (require)');
 
+    // 1b. Le micro n'est capté que quand la page l'ouvre, et l'ouvrir ou le fermer ne coupe pas la sortie.
+    const mic = await win.evaluate(async () => {
+      const e = window.kh.engine, io = e.native, wait = ms => new Promise(r => setTimeout(r, ms)), st = () => io.stats();
+      const r = { start: io.info.input };
+      let a = st(); await wait(800); let b = st(); r.idle = b.inCalls - a.inCalls;
+      const calls0 = b.outCalls, under0 = b.outUnderruns;
+      await e.openInput(''); a = st(); await wait(800); b = st(); r.open = b.inCalls - a.inCalls; r.name = io.info.input;
+      e.closeInput(); await wait(200); a = st(); await wait(800); b = st(); r.closed = b.inCalls - a.inCalls; r.after = io.info.input;
+      // Une sortie redémarrée repartirait de zéro (nouveaux compteurs) : ses appels doivent seulement avoir augmenté.
+      r.outRuns = b.outCalls > calls0; r.outUnder = b.outUnderruns - under0;
+      return r;
+    });
+    console.log('Micro :', JSON.stringify(mic));
+    check(mic.start === null && mic.idle === 0, 'au démarrage, le micro n\'est pas capté');
+    check(mic.open > 0 && !!mic.name, `micro ouvert à la demande (« ${mic.name} »)`);
+    check(mic.closed === 0 && mic.after === null, 'micro refermé quand la page n\'en a plus besoin');
+    check(mic.outRuns, `ouvrir et fermer le micro ne redémarre pas la sortie (manques pendant ce temps : ${mic.outUnder})`);
+
+    // 1c. Appareil choisi disparu : le natif se rabat sur la sortie du système et prévient la page.
+    const fb = await win.evaluate(async () => {
+      const io = window.kh.engine.native; let told = '';
+      const prev = io.onDevices; io.onDevices = i => { told = i.output; prev(i); };
+      io.opts.output = 'Appareil débranché'; io.info = { ...io.info, output: 'Appareil débranché' };
+      const info = await io.recover(); io.onDevices = prev;
+      return { output: info?.output, opt: io.opts.output, told, toast: document.querySelector('#toast')?.textContent ?? '', ev: typeof io.stats().devEvents };
+    });
+    console.log('Rabattement :', JSON.stringify(fb));
+    check(!!fb.output && fb.output !== 'Appareil débranché' && fb.opt === '', `sortie disparue : rabattu sur « ${fb.output} »`);
+    check(fb.told === fb.output && /Appareil audio changé|Audio device changed|Dispositivo de audio/.test(fb.toast), 'la page est prévenue (message à l\'écran)');
+    check(fb.ev === 'number', 'les changements d\'appareils sont comptés par le natif');
+
     // Haut-parleurs et micro intégrés : le seul trajet que le micro entend (la sortie USB est un casque).
     const setup = await win.evaluate(async ([gain, o, i]) => {
       const e = window.kh.engine, io = e.native;
@@ -103,6 +134,21 @@ const MINI = args.includes('--reduite');
     check(st.playing, `${HOLD} s de lecture par le chemin natif (${tot.outBlocks} blocs écrits par Web Audio)`);
     check(tot.outUnderruns === 0 && tot.overloads === 0 && tot.gaps === 0, `aucun manque à la carte son (manques ${tot.outUnderruns}, surcharges Core Audio ${tot.overloads}, trous ${tot.gaps})`);
     check(tot.outDropped === 0 && tot.inMissed === 0, `aucun bloc perdu entre Web Audio et le natif (sortie ${tot.outDropped}, entrée ${tot.inMissed})`);
+    // 4. Micro à une autre fréquence que Web Audio (EarPods : 44,1 kHz) : contexte à 44,1 kHz, micro du Mac à 48 kHz.
+    const sr = await win.evaluate(async () => {
+      window.kh.engine.native.stop();   // le natif de l'application cède la place (sinon son guet le redémarrerait)
+      const C = window.kh.engine.native.constructor, ctx = new AudioContext({ sampleRate: 44100 }), wait = ms => new Promise(r => setTimeout(r, ms));
+      const io = await C.start(ctx, { output: 'Haut-parleurs', input: 'Micro', gain: 1e-5 });
+      const src = io.source(), g = new GainNode(ctx, { gain: 0 }); src.connect(g).connect(ctx.destination);
+      await wait(6000); io.resetStats(); const a = io.stats(); await wait(8000); const b = io.stats();
+      const r = { ctx: ctx.sampleRate, inRate: io.info.inRate, frames: b.inBlocks - a.inBlocks, missed: b.inMissed, level: Math.round(b.inLevel), lo: Math.round(b.inMin), ppm: Math.round(b.inPpm) };
+      io.stop(); await ctx.close(); return r;
+    });
+    console.log('Fréquences différentes :', JSON.stringify(sr));
+    check(sr.inRate === 48000 && sr.ctx === 44100, 'micro à 48 kHz relu dans un contexte à 44,1 kHz');
+    check(Math.abs(sr.frames * 128 / 8 - 44100) < 44100 * 0.02 && sr.missed === 0, `le micro arrive au bon rythme, sans manque (${sr.frames} blocs en 8 s, manques ${sr.missed})`);
+    check(Math.abs(sr.ppm) < 1000 && sr.lo > 0, `tampon d'entrée stable (niveau ${sr.level}, min ${sr.lo}, ${sr.ppm} ppm)`);
+
     check(!errors.length, `aucune erreur dans la page${errors.length ? ' : ' + errors.join(' | ') : ''}`);
     console.log(`  Niveaux les plus bas vus : sortie ${Math.round(worstOut)}, entrée ${Math.round(worstIn)} échantillons`);
   } finally { await app.close(); }

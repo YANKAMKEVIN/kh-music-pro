@@ -133,7 +133,10 @@ function onLang() { rebuild(); }
   rebuild();
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   // Prototype V14b (version bureau, KH_NATIVE=1) : la carte son passe par le natif, Web Audio ne fait que le mixage.
-  if (ioBridge()) engine.useNative().catch(e => console.warn('Entrée/sortie native indisponible :', e));
+  if (ioBridge()) engine.useNative().then(io => {
+    // Écouteurs branchés ou débranchés : le natif suit la sortie du système, ou s'y rabat si l'appareil choisi a disparu.
+    io.onDevices = info => { if (!io.opts.output) S.outputDevice = ''; toast(`${t('aud.auto')} ${info.output}`); };
+  }).catch(e => console.warn('Entrée/sortie native indisponible :', e));
   requestAnimationFrame(frame);
   try { if (!localStorage.getItem('kh-welcome')) { help.showModal(); localStorage.setItem('kh-welcome', '1'); } } catch { /* stockage désactivé */ }
 })();
