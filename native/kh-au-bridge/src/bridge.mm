@@ -49,6 +49,15 @@ OSStatus feed(void* ref, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UIn
   return noErr;
 }
 
+// Pause d'attente active : instruction propre à chaque puce (Apple ou Intel).
+inline void pause() {
+#if defined(__arm64__) || defined(__aarch64__)
+  __builtin_arm_yield();
+#else
+  __builtin_ia32_pause();
+#endif
+}
+
 void realtime() {
   // Même réglage que les fils audio de Core Audio : quantum court, garanti à chaque période.
   mach_timebase_info_data_t tb; mach_timebase_info(&tb);
@@ -66,7 +75,7 @@ void loop(Slot* s) {
     int32_t req = __atomic_load_n(&s->hdr[0], __ATOMIC_ACQUIRE);
     if (req == last) {
       // Attente active brève juste après un bloc (le suivant arrive dans ~2,7 ms), puis petits sommeils.
-      if (++idle < 2000) { __builtin_arm_yield(); continue; }
+      if (++idle < 2000) { pause(); continue; }
       usleep(50); continue;
     }
     idle = 0;

@@ -10,7 +10,8 @@
     "qa": "node qa/run.cjs",
     "qa:all": "bash qa/all.sh",
     "desktop": "npm run build && electron .",
-    "desktop:build": "npm run build && electron-builder --publish never"
+    "desktop:build": "npm run build && electron-builder --publish never",
+    "native": "bash scripts/build-native.sh"
   },
   "devDependencies": {
     "electron": "^45.3.0",
@@ -44,7 +45,13 @@
       "category": "public.app-category.music",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "KH Music Pro utilise le micro pour enregistrer vos prises."
-      }
+      },
+      "extraResources": [
+        {
+          "from": "native/kh-au-bridge/build/Release/kh_au_bridge.node",
+          "to": "native/kh_au_bridge.node"
+        }
+      ]
     },
     "win": {
       "target": "nsis"
