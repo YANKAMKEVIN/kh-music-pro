@@ -136,6 +136,21 @@ const HOLD = Number(process.argv[2] ?? 300);
     console.log('Interface :', JSON.stringify(ui));
     check(ui.url === 'aufx:dely:appl' && ui.title.includes('Delay') && ui.n >= 3, `effet « ${ui.title} » ajouté, ${ui.n} curseurs de réglage`);
     check(Math.abs(ui.saved - 0.5) < 0.001 && Math.abs(ui.native - ui.saved) < 1e-6 && ui.shown === '0.50 s', `curseur « Delay Time » : 0,5 s enregistré dans le projet et appliqué au plugin (lu : ${ui.native}, affiché ${ui.shown})`);
+    // Préréglage d'usine d'un vrai plugin : AUMatrixReverb, « Large Hall ».
+    await win.keyboard.press('Escape');
+    await win.evaluate(() => { const k = window.kh, t = k.S.project.tracks[0]; t.inserts = []; k.commit(); k.showRack(t.id); });
+    await win.selectOption('[data-role=fxadd]', 'au:aufx:mrev:appl');
+    await win.waitForSelector('#fx [data-role=aupreset]', { timeout: 5000 });
+    const names = await win.$$eval('#fx [data-role=aupreset] option', o => o.map(x => x.textContent));
+    const n = await win.$eval('#fx [data-role=aupreset]', s => [...s.options].find(o => o.textContent === 'Large Hall')?.value);
+    await win.selectOption('#fx [data-role=aupreset]', n); await win.waitForTimeout(200);
+    const pre = await win.evaluate(() => {
+      const k = window.kh, t = k.S.project.tracks[0], ins = t.inserts[0], inst = k.liveWams.get(t.id + ':' + ins.id);
+      const nat = k.auBridge().params(inst.auId), diff = nat.filter(p => Math.abs((ins.p[p.address] ?? NaN) - p.value) > 1e-6);
+      return { preset: ins.preset, n: Object.keys(ins.p).length, params: nat.length, diff: diff.map(p => p.name), changed: nat.filter(p => Math.abs(p.value - p.def) > 1e-6).length };
+    });
+    console.log('Préréglage :', JSON.stringify(pre));
+    check(names.length > 10 && pre.preset !== undefined && pre.n === pre.params && !pre.diff.length && pre.changed > 0, `AUMatrixReverb : ${names.length - 1} préréglages d'usine ; « Large Hall » chargé, ${pre.changed} réglages changés, recopiés dans le projet à l'identique`);
     check(!security.length, `aucun avertissement de sécurité d'Electron${security.length ? ' : ' + security[0] : ''}`);
     check(!errors.length, `aucune erreur dans la page${errors.length ? ' : ' + errors.join(' | ') : ''}`);
   } finally { await app.close(); }

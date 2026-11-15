@@ -46,25 +46,39 @@ function auBody(tr: Track, ins: Insert, body: HTMLElement) {
     const k = String(pr.address), cur = ins.p[k] ?? pr.value;
     // Réglage à choix avec des noms de valeurs : une liste ; marche/arrêt : un interrupteur.
     if (pr.unit === 1 && pr.values?.length) {
-      const sel = h('select', { 'aria-label': pr.name, onchange: () => { ins.p[k] = +sel.value; engine.sync(); commit(); } },
+      const sel = h('select', { 'aria-label': pr.name, onchange: () => { ins.p[k] = +sel.value; delete ins.preset; engine.sync(); commit(); } },
         ...pr.values.map((name, j) => h('option', { value: String(pr.min + j), selected: Math.round(cur) === pr.min + j }, name)));
       return h('label', { class: 'sl', data: { addr: k, kind: 'list' } }, h('span', { class: 'lb' }, pr.name), sel);
     }
     if (pr.unit === 2) {
       const on = cur >= 0.5;
-      const sw = h('button', { class: 'mini' + (on ? ' on solo' : ''), role: 'switch', 'aria-checked': String(on), 'aria-label': pr.name, onclick: () => { ins.p[k] = on ? 0 : 1; engine.sync(); commit(); } }, on ? t('au.on') : t('au.off'));
+      const sw = h('button', { class: 'mini' + (on ? ' on solo' : ''), role: 'switch', 'aria-checked': String(on), 'aria-label': pr.name, onclick: () => { ins.p[k] = on ? 0 : 1; delete ins.preset; engine.sync(); commit(); } }, on ? t('au.on') : t('au.off'));
       return h('div', { class: 'sl', data: { addr: k, kind: 'switch' } }, h('span', { class: 'lb' }, pr.name), sw);
     }
     const whole = pr.unit === 1 || pr.unit === 2 || pr.unit === 11 || pr.unit === 12;
     const step = whole ? 1 : (pr.max - pr.min) / 1000 || 0.001, val = ins.p[k] ?? pr.value;
     // Fréquences : curseur logarithmique (la course est en position 0 à 1, la valeur reste en Hz dans le projet).
     const sl = auLog(pr)
-      ? slider(pr.name, 0, 1, 0.001, auToPos(pr, val), x => { ins.p[k] = auFromPos(pr, x); }, x => auFmt(pr, auFromPos(pr, x)))
-      : slider(pr.name, pr.min, pr.max, step, val, v => { ins.p[k] = v; }, v => auFmt(pr, v));
+      ? slider(pr.name, 0, 1, 0.001, auToPos(pr, val), x => { ins.p[k] = auFromPos(pr, x); delete ins.preset; }, x => auFmt(pr, auFromPos(pr, x)))
+      : slider(pr.name, pr.min, pr.max, step, val, v => { ins.p[k] = v; delete ins.preset; }, v => auFmt(pr, v));
     sl.dataset.addr = k; sl.dataset.scale = auLog(pr) ? 'log' : 'lin';
     return sl;
   }));
-  const reset = h('button', { class: 'pill', data: { act: 'aureset' }, onclick: () => { ins.p = Object.fromEntries(inst.params.map(pr => [String(pr.address), pr.def])); commit(); } }, '↺ ' + t('au.reset'));
+  const reset = h('button', { class: 'pill', data: { act: 'aureset' }, onclick: () => { ins.p = Object.fromEntries(inst.params.map(pr => [String(pr.address), pr.def])); delete ins.preset; commit(); } }, '↺ ' + t('au.reset'));
+  // Préréglages d'usine : le plugin les charge, puis ses réglages sont recopiés dans le projet (écoute et export identiques).
+  if (inst.presets.length) {
+    const sel = h('select', { 'aria-label': t('au.preset'), data: { role: 'aupreset' } }, h('option', { value: '' }, t('au.presetNone')),
+      ...inst.presets.map(pr => h('option', { value: String(pr.number), selected: ins.preset === pr.number }, pr.name)));
+    sel.onchange = () => {
+      const n = Number(sel.value), name = sel.selectedOptions[0]?.textContent ?? '';
+      if (sel.value === '') return;
+      const vals = inst.preset(n);
+      if (!vals) { toast(t('au.presetFail'), 'error'); return; }
+      ins.p = Object.fromEntries(vals.map(pr => [String(pr.address), pr.value])); ins.preset = n;
+      commit(); toast(t('au.presetSet', name));
+    };
+    body.append(h('label', { class: 'fld' }, t('au.preset'), sel));
+  }
   body.append(grid, reset);
 }
 

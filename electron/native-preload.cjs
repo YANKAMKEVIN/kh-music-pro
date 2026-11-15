@@ -37,6 +37,8 @@ if (m) {
     open: (key, type, sub, man, sr, ch, max) => m.open(sab(key), str(type), str(sub), str(man), num(sr), num(ch), num(max)),
     setParam: (id, address, value) => m.setParam(num(id), num(address), num(value)),
     params: id => m.params(num(id)),
+    presets: id => m.presets(num(id)),
+    setPreset: (id, n) => m.setPreset(num(id), num(n)),
     info: id => m.info(num(id)),
     close: id => m.close(num(id)),
     ioStart: (key, o) => m.ioStart(sab(key), ioOpts(o)),

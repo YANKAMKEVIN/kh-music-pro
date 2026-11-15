@@ -69,9 +69,12 @@ const PAGE_HELPERS = () => {
         forget: k => { sabs.delete(k); calls.push(['forget']); },
         list: () => [{ type: 'aufx', subtype: 'lpas', manufacturer: 'appl', name: 'Apple: AULowpass' }, { type: 'aumu', subtype: 'dls ', manufacturer: 'appl', name: 'Apple: DLSMusicDevice' }, { type: 'aufx', subtype: 'dely', manufacturer: 'appl', name: 'Apple: AUDelay' }],
         open: (key, type, sub, man) => { if (f.failOpen) throw new Error('plugin introuvable'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); calls.push(['open', `${type}:${sub}:${man}`]); return ++f.n; },
-        setParam: (id, a, v) => calls.push(['set', id, a, v]),
-        params: () => [{ address: 0, name: 'Cutoff Frequency', min: 10, max: 22050, def: 6900, value: 6900, unit: 8 }, { address: 1, name: 'Resonance', min: -20, max: 40, def: 0, value: 0, unit: 13 },
-          { address: 2, name: 'Filter Type', min: 0, max: 2, def: 0, value: 0, unit: 1, values: ['Low Pass', 'Band Pass', 'High Pass'] }, { address: 3, name: 'Bypass', min: 0, max: 1, def: 0, value: 0, unit: 2 }],
+        setParam: (id, a, v) => { f.vals[a] = v; calls.push(['set', id, a, v]); },
+        vals: { 0: 6900, 1: 0, 2: 0, 3: 0 },
+        params: () => [{ address: 0, name: 'Cutoff Frequency', min: 10, max: 22050, def: 6900, unit: 8 }, { address: 1, name: 'Resonance', min: -20, max: 40, def: 0, unit: 13 },
+          { address: 2, name: 'Filter Type', min: 0, max: 2, def: 0, unit: 1, values: ['Low Pass', 'Band Pass', 'High Pass'] }, { address: 3, name: 'Bypass', min: 0, max: 1, def: 0, unit: 2 }].map(p => ({ ...p, value: f.vals[p.address] })),
+        presets: () => (f.noPresets ? [] : [{ number: 0, name: 'Small Room' }, { number: 1, name: 'Large Hall' }]),
+        setPreset: (id, n) => { if (n === 1) { f.vals = { 0: 1200, 1: 6, 2: 1, 3: 0 }; calls.push(['preset', id, n]); return true; } return false; },
         info: () => ({ name: 'Apple: AULowpass', latency: 0, tail: 0 }),
         close: id => calls.push(['close', id]),
         ioStart: (key, o) => { if (f.failStart) throw new Error('carte son refusée'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); f.running = true; calls.push(['ioStart']); return { output: 'Sortie de test', input: null, inChannels: 0, outDeclared: 0.01, inDeclared: 0, outRate: o.sampleRate, buffer: 128 }; },
@@ -2063,6 +2066,26 @@ test('MAC07', 'Plugins du Mac', 'Réglages à choix d\'un plugin du Mac : liste 
   expect((await insertsOf(1))[0].p['3'] === 1 && await page.$eval(sw, b => b.getAttribute('aria-checked') + ':' + b.textContent) === 'true:Activé', 'interrupteur au clavier');
   await page.keyboard.press('Escape'); await page.evaluate(() => window.kh.setLang('en')); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id));
   expect(await page.textContent(sw) === 'On', 'interrupteur en anglais');
+});
+
+test('MAC08', 'Plugins du Mac', 'Préréglages d\'usine d\'un plugin du Mac : en charger un recopie ses réglages dans le projet ; toucher un réglage repasse en réglages personnels ; annulable', async () => {
+  await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
+  await page.waitForSelector('#fx [data-role=aupreset]', { timeout: 5000 });
+  const opts = await page.$$eval('#fx [data-role=aupreset] option', o => o.map(x => x.textContent));
+  expect(opts.join() === '— Réglages personnels —,Small Room,Large Hall', `préréglages proposés : ${opts}`);
+  await page.selectOption('#fx [data-role=aupreset]', '1'); await sleep(150);
+  const a = (await insertsOf(1))[0];
+  expect(a.preset === 1 && a.p['0'] === 1200 && a.p['1'] === 6 && a.p['2'] === 1, `réglages du préréglage recopiés : ${JSON.stringify(a)}`);
+  expect((await page.textContent('#toast')).includes('Préréglage « Large Hall » chargé'), `message : ${await page.textContent('#toast')}`);
+  expect(await page.$eval('#fx [data-role=aupreset]', e => e.selectedOptions[0].textContent) === 'Large Hall' && await page.textContent('#fx [data-addr="0"] .val') === '1.20 kHz', 'affichage après chargement');
+  await setSlider('#fx', 'Resonance', 3); await sleep(100);
+  const b = (await insertsOf(1))[0];
+  expect(b.preset === undefined && await page.$eval('#fx [data-role=aupreset]', e => e.value) === '', 'toucher un réglage doit repasser en réglages personnels');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await sleep(150);
+  expect((await insertsOf(1))[0].preset === 1, 'annuler doit revenir au préréglage');
+  await S(() => { const k = window.kh; k.S.project.tracks[1].inserts = []; k.commit(); window.qa.fakeNative({ noPresets: true }); const i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
+  await page.waitForSelector('#fx [data-au=params]', { timeout: 5000 });
+  expect(!(await page.$('#fx [data-role=aupreset]')), 'sans préréglage d\'usine, pas de liste');
 });
 
 (async () => {

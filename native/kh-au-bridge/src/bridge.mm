@@ -219,6 +219,44 @@ void Params(const FunctionCallbackInfo<Value>& a) {
   a.GetReturnValue().Set(arr);
 }
 
+/** presets(id) → [{ number, name }] : préréglages d'usine du plugin (vide s'il n'en a pas). */
+void Presets(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
+  Local<Array> arr = Array::New(iso);
+  Slot* s = find(a);
+  CFArrayRef list = nullptr; UInt32 sz = sizeof list;
+  if (s && AudioUnitGetProperty(s->au, kAudioUnitProperty_FactoryPresets, kAudioUnitScope_Global, 0, &list, &sz) == noErr && list) {
+    for (CFIndex k = 0; k < CFArrayGetCount(list); k++) {
+      auto* pr = static_cast<const AUPreset*>(CFArrayGetValueAtIndex(list, k));
+      char nb[256] = "";
+      if (pr->presetName) CFStringGetCString(pr->presetName, nb, sizeof nb, kCFStringEncodingUTF8);
+      Local<Object> o = Object::New(iso);
+      o->Set(cx, String::NewFromUtf8Literal(iso, "number"), Number::New(iso, pr->presetNumber)).Check();
+      o->Set(cx, String::NewFromUtf8Literal(iso, "name"), String::NewFromUtf8(iso, nb).ToLocalChecked()).Check();
+      arr->Set(cx, uint32_t(k), o).Check();
+    }
+    CFRelease(list);
+  }
+  a.GetReturnValue().Set(arr);
+}
+
+/** setPreset(id, numéro) → true si le plugin a pris le préréglage d'usine (ses réglages changent : les relire par params). */
+void SetPreset(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
+  Slot* s = find(a);
+  bool ok = false;
+  CFArrayRef list = nullptr; UInt32 sz = sizeof list;
+  int32_t want = a[1]->Int32Value(cx).FromMaybe(-1);
+  if (s && AudioUnitGetProperty(s->au, kAudioUnitProperty_FactoryPresets, kAudioUnitScope_Global, 0, &list, &sz) == noErr && list) {
+    for (CFIndex k = 0; k < CFArrayGetCount(list) && !ok; k++) {
+      auto* pr = static_cast<const AUPreset*>(CFArrayGetValueAtIndex(list, k));
+      if (pr->presetNumber == want) ok = AudioUnitSetProperty(s->au, kAudioUnitProperty_PresentPreset, kAudioUnitScope_Global, 0, pr, sizeof(AUPreset)) == noErr;
+    }
+    CFRelease(list);
+  }
+  a.GetReturnValue().Set(ok);
+}
+
 /** close(id) */
 void Close(const FunctionCallbackInfo<Value>& a) {
   auto cx = a.GetIsolate()->GetCurrentContext();
@@ -259,6 +297,6 @@ NODE_MODULE_INIT(/* exports, module, context */) {
   auto add = [&](const char* n, FunctionCallback f) {
     exports->Set(context, String::NewFromUtf8(iso, n).ToLocalChecked(), FunctionTemplate::New(iso, f)->GetFunction(context).ToLocalChecked()).Check();
   };
-  add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List); add("params", Params);
+  add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List); add("params", Params); add("presets", Presets); add("setPreset", SetPreset);
   RegisterIO(iso, exports, context);
 }

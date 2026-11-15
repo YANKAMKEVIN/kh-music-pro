@@ -36,6 +36,8 @@ export interface Bridge {
   open(key: string, type: string, sub: string, man: string, sr: number, ch: number, max: number): number;
   setParam(id: number, address: number, value: number): void;
   params(id: number): AuParam[];
+  presets?(id: number): { number: number; name: string }[];
+  setPreset?(id: number, n: number): boolean;
   info(id: number): { name: string; latency: number; tail: number };
   close(id: number): void;
   list(): AuDesc[];
@@ -86,6 +88,10 @@ export type AuInstance = WamInstance & {
   params: AuParam[];
   /** Applique les réglages du projet (`p`, par adresse) qui ont changé depuis la dernière fois. */
   apply(p: Record<string, number>): void;
+  /** Préréglages d'usine du plugin (vide s'il n'en a pas). */
+  presets: { number: number; name: string }[];
+  /** Charge un préréglage d'usine ; renvoie les réglages qui en résultent (null en cas de refus). */
+  preset(n: number): AuParam[] | null;
 };
 
 /** Crée le plugin désigné par `url` (« aufx:lpas:appl ») sur ce contexte, temps réel ou rendu hors-ligne. */
@@ -112,8 +118,16 @@ export async function createAu(ctx: BaseAudioContext, url: string, params: Recor
   const info = br.info(id);
   let list: AuParam[] = [];
   try { list = br.params(id) ?? []; } catch { /* plugin sans liste de réglages */ }
+  let presets: { number: number; name: string }[] = [];
+  try { presets = br.presets?.(id) ?? []; } catch { /* plugin sans préréglages */ }
+  const preset = (n: number) => {
+    if (!br.setPreset?.(id, n)) return null;
+    const after = br.params(id) ?? [];
+    for (const p of after) sent[String(p.address)] = p.value;   // déjà dans le plugin : inutile de les renvoyer
+    return after;
+  };
   return {
-    audioNode: node, auId: id, info, descriptor: { name: info.name, vendor: man }, params: list, apply,
+    audioNode: node, auId: id, info, descriptor: { name: info.name, vendor: man }, params: list, apply, presets, preset,
     stats: () => new Promise(r => { node.port.onmessage = e => r(e.data); node.port.postMessage('stats'); }),
   };
 }
