@@ -44,7 +44,7 @@ class Engine {
   private workletReady?: Promise<void>;
   /** Entrée audio ouverte (micro ou carte son) : gain, vumètre et écoute de contrôle. */
   inp?: { stream?: MediaStream; src: AudioNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
-  /** Prototype V14b : entrée et sortie de la carte son prises par le natif (version bureau, KH_NATIVE=1). */
+  /** Moteur audio natif (version bureau macOS) : entrée et sortie de la carte son prises par Core Audio. */
   native?: NativeIO;
   /** Fin de chaîne : ce qui doit être entendu (le natif, ou la sortie de Web Audio). */
   get out(): AudioNode { return this.native?.sink ?? this.ctx.destination; }
@@ -65,6 +65,19 @@ class Engine {
     this.native = io;
     if (this.inp) { const d = this.inp.device; this.closeInput(); await this.openInput(d); }
     return io;
+  }
+  /** Rend l'entrée et la sortie au navigateur (réglage « moteur audio natif » désactivé, ou échec du natif). */
+  async stopNative(): Promise<void> {
+    const io = this.native;
+    if (!io) return;
+    const d = this.inp?.device;
+    if (this.inp) this.closeInput();
+    try { io.stop(); } catch { /* natif déjà arrêté */ }
+    try { this.mix.limiter.disconnect(io.sink); } catch { /* déjà débranché */ }
+    this.mix.limiter.connect(this.ctx.destination);
+    this.native = undefined;
+    await this.setOutput(S.outputDevice);
+    if (d !== undefined) await this.openInput(d).catch(() => undefined);
   }
 
   /** Charge les instruments réels utilisés par le projet (sans attendre) ; prévient l'interface. */

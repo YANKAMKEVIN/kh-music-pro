@@ -1,5 +1,5 @@
-/* Prototype V14b, étape 4 : pont Audio Unit dans la version bureau (macOS).
- * Prérequis : npm run build ; cd native/kh-au-bridge && npx node-gyp rebuild --target=<version d'Electron> --dist-url=https://electronjs.org/headers
+/* Plugins Audio Unit du Mac dans la version bureau (V14b) : pont natif, traitement exact, export, temps réel, interface.
+ * Prérequis : npm run build ; npm run native (module natif construit pour cette machine)
  * Usage : node qa/au-bridge.cjs [secondes de tenue, 300 par défaut]
  * Le temps réel tourne sans sortie audio (setSinkId « none ») : rien n'est joué sur les haut-parleurs. */
 const { _electron: electron } = require('playwright');
@@ -10,7 +10,7 @@ const HOLD = Number(process.argv[2] ?? 300);
   // Profil temporaire : le test ne touche pas aux projets enregistrés de l'application.
   const prof = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'kh-au-'));
   const app = await electron.launch({ args: [path.join(__dirname, '..', 'electron', 'main.cjs'), '--user-data-dir=' + prof], env: { ...process.env, KH_NATIVE: '1' } });
-  const errors = [];
+  const errors = [], security = [];
   let ok = true;
   const check = (c, m) => { console.log((c ? '  ok   ' : '  ÉCHEC ') + m); if (!c) ok = false; };
   try {
@@ -21,7 +21,11 @@ const HOLD = Number(process.argv[2] ?? 300);
     win.on('crash', () => console.log('!! page plantée à', when()));
     win.on('close', () => console.log('!! fenêtre fermée à', when()));
     app.process().on('exit', (code, sig) => console.log('!! processus Electron terminé à', when(), 'code', code, 'signal', sig));
-    win.on('console', m => { if ((m.type() === 'warning' || m.type() === 'error') && !m.text().includes('Electron Security Warning')) errors.push(m.text()); });
+    win.on('console', m => {
+      // L'avertissement sur l'absence de règle de contenu (CSP) existait déjà dans la version normale : seuls les autres comptent ici.
+      if (m.text().includes('Electron Security Warning')) { if (!m.text().includes('Content-Security-Policy')) security.push(m.text().split('\n')[0]); }
+      else if (m.type() === 'warning' || m.type() === 'error') errors.push(m.text());
+    });
     await win.waitForSelector('.clip', { timeout: 30000 });
     if (await win.$eval('#help', d => d.open)) await win.click('#help form button.accent');
 
@@ -30,6 +34,13 @@ const HOLD = Number(process.argv[2] ?? 300);
     console.log('Pont :', JSON.stringify(env));
     check(env.bridge && env.sab === 'function' && env.n > 0, 'pont natif chargé, mémoire partagée disponible, Audio Units listés');
     check(env.require === 'undefined', 'la page n\'a toujours pas accès à Node (require)');
+    const iso = await win.evaluate(() => ({ process: typeof window.process, module: typeof window.module, raw: Object.keys(window.khNative).includes('ioStart') && typeof window.khNative.ioStart === 'function' }));
+    check(iso.process === 'undefined' && iso.module === 'undefined' && iso.raw, 'isolation de contexte : ni process ni module dans la page, seulement les fonctions du pont');
+    const lpParams = await win.evaluate(async () => {
+      const c = new OfflineAudioContext(2, 128, 48000), au = await window.kh.createAu(c, 'aufx:lpas:appl', {});
+      const p = au.params; au.audioNode.destroy(); return p;
+    });
+    check(lpParams.length >= 2 && lpParams.some(p => /cutoff/i.test(p.name) && p.unit === 8), `réglages d'AULowpass lus dans le plugin : ${lpParams.map(p => p.name).join(', ')}`);
 
     // 2. Traitement exact, et retard ajouté par le pont (rendu hors-ligne, même chemin que l'export).
     const r = await win.evaluate(async () => {
@@ -101,6 +112,26 @@ const HOLD = Number(process.argv[2] ?? 300);
     }
     check(st.playing && st.n > HOLD * 300, `${HOLD} s de lecture à travers le plugin : ${st.n} blocs`);
     check(st.miss === 0, `blocs manqués (le plugin n'a pas répondu à temps) : ${st.miss}`);
+    await win.click('#bPlay');
+
+    // 5. Interface : chaîne d'effets d'une piste, groupe « Plugins du Mac », curseurs des réglages qui pilotent le vrai plugin.
+    await win.evaluate(() => { const k = window.kh, t = k.S.project.tracks[0]; t.inserts = []; k.commit(); k.showRack(t.id); });
+    const opts = await win.$$eval('[data-role=aulist] option', o => o.map(x => [x.value, x.textContent]));
+    check(opts.length >= 20 && opts.some(([v, n]) => v === 'au:aufx:dely:appl' && n === 'Delay'), `${opts.length} plugins du Mac proposés dans la chaîne d'effets (dont « Delay »)`);
+    await win.selectOption('[data-role=fxadd]', 'au:aufx:dely:appl');
+    await win.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+    const ui = await win.evaluate(async () => {
+      const k = window.kh, t = k.S.project.tracks[0], ins = t.inserts[0], inst = k.liveWams.get(t.id + ':' + ins.id) ?? [...k.liveWams.values()].find(w => w.descriptor?.name?.includes('AUDelay'));
+      const sl = [...document.querySelectorAll('#fx [data-au=params] .sl')], time = sl.find(l => /delay time/i.test(l.textContent)), r = time.querySelector('input');
+      r.value = '0.5'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(x => setTimeout(x, 200));
+      const v = k.auBridge().params(inst.auId).find(p => p.address === +time.dataset.addr).value;
+      return { title: document.querySelector('#fx .fxcard strong').textContent, n: sl.length, shown: time.querySelector('.val').textContent, saved: ins.p[time.dataset.addr], native: v, url: ins.url };
+    });
+    console.log('Interface :', JSON.stringify(ui));
+    check(ui.url === 'aufx:dely:appl' && ui.title.includes('Delay') && ui.n >= 3, `effet « ${ui.title} » ajouté, ${ui.n} curseurs de réglage`);
+    check(Math.abs(ui.saved - 0.5) < 0.001 && Math.abs(ui.native - ui.saved) < 1e-6 && ui.shown === '0.50 s', `curseur « Delay Time » : 0,5 s enregistré dans le projet et appliqué au plugin (lu : ${ui.native}, affiché ${ui.shown})`);
+    check(!security.length, `aucun avertissement de sécurité d'Electron${security.length ? ' : ' + security[0] : ''}`);
     check(!errors.length, `aucune erreur dans la page${errors.length ? ' : ' + errors.join(' | ') : ''}`);
   } finally { await app.close(); }
   console.log(ok ? 'Pont Audio Unit : OK' : 'Pont Audio Unit : ÉCHEC');

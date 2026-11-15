@@ -1,5 +1,5 @@
 /**
- * Entrée et sortie de la carte son par le natif (prototype V14b, version bureau macOS lancée avec KH_NATIVE=1).
+ * Entrée et sortie de la carte son par le natif (moteur audio natif de la version bureau macOS, V14b).
  *
  * Web Audio ne fait plus que calculer : le contexte n'a plus de sortie (setSinkId « none »), et un AudioWorklet en fin de
  * chaîne écrit le mixage dans un tampon circulaire partagé, que le module natif envoie à la carte son. Le micro arrive
@@ -7,7 +7,7 @@
  * Le natif cale les deux horloges (celle, logicielle, de Web Audio et celle de la carte son) en gardant chaque tampon
  * à un niveau cible par un très léger rééchantillonnage. Le mixage reste entièrement dans Web Audio.
  */
-import { auBridge } from './au';
+import { auBridge, shareSab } from './au';
 
 export interface IoOptions {
   /** Partie du nom de l'appareil de sortie ('' = celui du système). */
@@ -40,7 +40,8 @@ export interface IoStats {
   outBlocks: number; outDropped: number; inBlocks: number; inMissed: number;
 }
 interface IoBridge {
-  ioStart(sab: SharedArrayBuffer, o: IoOptions & { sampleRate: number }): IoInfo;
+  forget(key: string): void;
+  ioStart(key: string, o: IoOptions & { sampleRate: number }): IoInfo;
   ioStop(): void;
   ioInput(name: string | null, inTarget?: number): Pick<IoInfo, 'input' | 'inChannels' | 'inDeclared' | 'inRate'>;
   ioStats(): Omit<IoStats, 'outBlocks' | 'outDropped' | 'inBlocks' | 'inMissed'> | null;
@@ -89,6 +90,8 @@ export class NativeIO {
   sink!: AudioWorkletNode;
   info!: IoInfo;
   opts: IoOptions = {};
+  /** Clé sous laquelle la mémoire partagée a été confiée au pont. */
+  private key = '';
   private constructor(public ctx: AudioContext, private br: IoBridge) { this.h[7] = N; }
 
   static async start(ctx: AudioContext, opts: IoOptions = {}): Promise<NativeIO> {
@@ -96,10 +99,11 @@ export class NativeIO {
     if (!br) throw new Error('native audio i/o unavailable');
     if (typeof SharedArrayBuffer === 'undefined') throw new Error('SharedArrayBuffer unavailable');
     const io = new NativeIO(ctx, br);
+    io.key = await shareSab(io.sab);
     await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
     io.sink = new AudioWorkletNode(ctx, 'kh-out', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit', processorOptions: { sab: io.sab } });
     // Pas d'entrée au départ : le micro n'est capté que quand la page l'ouvre (openInput), pas en permanence.
-    await io.configure({ output: '', input: null, ...opts });
+    try { await io.configure({ output: '', input: null, ...opts }); } catch (e) { try { io.stop(); } catch { /* rien à arrêter */ } throw e; }
     io.watch();
     return io;
   }
@@ -178,7 +182,7 @@ export class NativeIO {
   restart(): IoInfo {
     const { clock: _, ...o } = this.opts;
     this.inTarget = this.wantedIn();
-    this.info = this.br.ioStart(this.sab, { sampleRate: this.ctx.sampleRate, buffer: 128, outTarget: OUT_TARGET, ...o, inTarget: this.inTarget });
+    this.info = this.br.ioStart(this.key, { sampleRate: this.ctx.sampleRate, buffer: 128, outTarget: OUT_TARGET, ...o, inTarget: this.inTarget });
     // La fréquence de la nouvelle sortie n'est connue qu'après coup : si la réserve doit changer, on ne rouvre que l'entrée
     // (et seulement si elle est ouverte), sans redémarrer la sortie une seconde fois.
     const want = this.wantedIn();
@@ -216,7 +220,10 @@ export class NativeIO {
   gain(g: number) { this.opts.gain = g; this.br.ioGain(g); }
   devices() { return this.br.ioDevices(); }
   /** Arrête le natif et le guet des appareils (sinon un changement d'appareil le redémarrerait). */
-  stop() { clearInterval(this.timer); this.timer = undefined; this.br.ioStop(); }
+  stop() {
+    clearInterval(this.timer); this.timer = undefined; this.br.ioStop(); this.br.forget(this.key);
+    this.keep?.stop(); this.keep = undefined; this.sink.port.postMessage('stop'); this.sink.disconnect();
+  }
 }
 
 /** Nom d'appareil natif correspondant à un identifiant du navigateur (son libellé, sans la parenthèse finale). */

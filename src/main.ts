@@ -3,6 +3,7 @@ import { copyClip, deleteClip, duplicateClip, pasteClip, saveFile, splitClip, to
 import { engine, lastRender, renderOffline } from './audio/engine';
 import { auBridge, createAu } from './audio/au';
 import { ioBridge } from './audio/native-io';
+import { initNative, setNativeEngine } from './ui/native';
 import { liveWams } from './audio/wam';
 import { lufs } from './audio/loudness';
 import { stretchBuffer } from './audio/stretch';
@@ -132,17 +133,14 @@ function onLang() { rebuild(); }
   initArrDrop(); initFileInputs();
   rebuild();
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
-  // Prototype V14b (version bureau, KH_NATIVE=1) : la carte son passe par le natif, Web Audio ne fait que le mixage.
-  if (ioBridge()) engine.useNative().then(io => {
-    // Écouteurs branchés ou débranchés : le natif suit la sortie du système, ou s'y rabat si l'appareil choisi a disparu.
-    io.onDevices = info => { if (!io.opts.output) S.outputDevice = ''; toast(`${t('aud.auto')} ${info.output}`); };
-  }).catch(e => console.warn('Entrée/sortie native indisponible :', e));
+  // Version bureau macOS : moteur audio natif, s'il a été activé dans les Réglages audio.
+  initNative();
   requestAnimationFrame(frame);
   try { if (!localStorage.getItem('kh-welcome')) { help.showModal(); localStorage.setItem('kh-welcome', '1'); } } catch { /* stockage désactivé */ }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, createAu, auBridge, ioBridge } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, createAu, auBridge, ioBridge, setNativeEngine } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -1,4 +1,4 @@
-/* Prototype V14b, étape 5 : entrée et sortie de la carte son par le natif (version bureau, macOS).
+/* V14b, étape 5 : entrée et sortie de la carte son par le natif (version bureau, macOS).
  * Prérequis : npm run build ; module natif construit (voir docs/PASSATION.md, section 5).
  * Usage : node qa/native-io.cjs [secondes de tenue, 300 par défaut] [--mesure] [--cible=échantillons] [--cible-entree=échantillons]
  *   Sans --mesure, rien n'est entendu : la tenue joue la démo sur les haut-parleurs à -100 dB.
@@ -71,6 +71,29 @@ const MINI = args.includes('--reduite');
     check(fb.told === fb.output && /Appareil audio changé|Audio device changed|Dispositivo de audio/.test(fb.toast), 'la page est prévenue (message à l\'écran)');
     check(fb.ms < 600, `rétablissement en ${fb.ms} ms (coupure entendue au changement d'appareil)`);
     check(fb.ev === 'number', 'les changements d\'appareils sont comptés par le natif');
+
+    // 1d. Réglage « moteur audio natif » des Réglages audio : on le désactive puis le réactive, à l'écran.
+    await win.click('#bAudio');
+    const sw = '#audio [data-act=native]';
+    await win.waitForSelector(sw, { timeout: 3000 });
+    const before = await win.$eval(sw, b => b.getAttribute('aria-checked'));
+    await win.click(sw);
+    await win.waitForFunction(s => document.querySelector(s)?.getAttribute('aria-checked') === 'false' && !document.querySelector(s).disabled, sw, { timeout: 5000 });
+    const off = await win.evaluate(() => {
+      const e = window.kh.engine;
+      return { native: !!e.native, out: e.out === e.ctx.destination, stats: window.kh.ioBridge().ioStats(), state: document.querySelector('[data-role=natstate]').textContent, lat: document.querySelector('[data-role=latinfo]').textContent, saved: localStorage.getItem('kh-native') };
+    });
+    await win.click(sw);
+    await win.waitForFunction(s => document.querySelector(s)?.getAttribute('aria-checked') === 'true' && !document.querySelector(s).disabled, sw, { timeout: 5000 });
+    const on = await win.evaluate(() => {
+      const e = window.kh.engine;
+      return { native: !!e.native, toNative: e.out === e.native?.sink, state: document.querySelector('[data-role=natstate]').textContent, lat: document.querySelector('[data-role=latinfo]').textContent, saved: localStorage.getItem('kh-native'), runs: (window.kh.ioBridge().ioStats()?.outCalls ?? 0) };
+    });
+    await win.keyboard.press('Escape');
+    console.log('Réglage :', JSON.stringify({ before, off, on }));
+    check(before === 'true', 'réglage présent dans les Réglages audio, activé');
+    check(!off.native && off.out && off.stats === null && off.saved === '0' && /navigateur/.test(off.state) && /navigateur/.test(off.lat), 'désactivé : le son repasse par le navigateur, natif arrêté, choix retenu');
+    check(on.native && on.toNative && on.saved === '1' && /Actif/.test(on.state) && /chemin natif/.test(on.lat), `réactivé : le mixage repart vers le natif (« ${on.state} »)`);
 
     // Haut-parleurs et micro intégrés : le seul trajet que le micro entend (la sortie USB est un casque).
     const setup = await win.evaluate(async ([gain, o, i]) => {

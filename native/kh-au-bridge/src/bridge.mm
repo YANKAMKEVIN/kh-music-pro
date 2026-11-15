@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 
 using namespace v8;
@@ -163,6 +164,37 @@ void Info(const FunctionCallbackInfo<Value>& a) {
   a.GetReturnValue().Set(o);
 }
 
+/** params(id) → [{ address, name, min, max, def, value, unit }] : réglages modifiables du plugin (portée globale) */
+void Params(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
+  Slot* s = find(a);
+  Local<Array> arr = Array::New(iso); uint32_t n = 0;
+  if (!s) { a.GetReturnValue().Set(arr); return; }
+  UInt32 sz = 0;
+  if (AudioUnitGetPropertyInfo(s->au, kAudioUnitProperty_ParameterList, kAudioUnitScope_Global, 0, &sz, nullptr) || !sz) { a.GetReturnValue().Set(arr); return; }
+  std::vector<AudioUnitParameterID> ids(sz / sizeof(AudioUnitParameterID));
+  if (AudioUnitGetProperty(s->au, kAudioUnitProperty_ParameterList, kAudioUnitScope_Global, 0, ids.data(), &sz)) { a.GetReturnValue().Set(arr); return; }
+  auto num = [&](Local<Object> o, const char* k, double v) { o->Set(cx, String::NewFromUtf8(iso, k).ToLocalChecked(), Number::New(iso, v)).Check(); };
+  for (AudioUnitParameterID id : ids) {
+    AudioUnitParameterInfo pi{}; UInt32 psz = sizeof pi;
+    if (AudioUnitGetProperty(s->au, kAudioUnitProperty_ParameterInfo, kAudioUnitScope_Global, id, &pi, &psz)) continue;
+    if (!(pi.flags & kAudioUnitParameterFlag_IsWritable)) continue;
+    char buf[256] = "";
+    if ((pi.flags & kAudioUnitParameterFlag_HasCFNameString) && pi.cfNameString) {
+      CFStringGetCString(pi.cfNameString, buf, sizeof buf, kCFStringEncodingUTF8);
+      if (pi.flags & kAudioUnitParameterFlag_CFNameRelease) CFRelease(pi.cfNameString);
+    } else strlcpy(buf, pi.name, sizeof buf);
+    AudioUnitParameterValue v = pi.defaultValue;
+    AudioUnitGetParameter(s->au, id, kAudioUnitScope_Global, 0, &v);
+    Local<Object> o = Object::New(iso);
+    num(o, "address", id);
+    o->Set(cx, String::NewFromUtf8Literal(iso, "name"), String::NewFromUtf8(iso, buf).ToLocalChecked()).Check();
+    num(o, "min", pi.minValue); num(o, "max", pi.maxValue); num(o, "def", pi.defaultValue); num(o, "value", v); num(o, "unit", pi.unit);
+    arr->Set(cx, n++, o).Check();
+  }
+  a.GetReturnValue().Set(arr);
+}
+
 /** close(id) */
 void Close(const FunctionCallbackInfo<Value>& a) {
   auto cx = a.GetIsolate()->GetCurrentContext();
@@ -203,6 +235,6 @@ NODE_MODULE_INIT(/* exports, module, context */) {
   auto add = [&](const char* n, FunctionCallback f) {
     exports->Set(context, String::NewFromUtf8(iso, n).ToLocalChecked(), FunctionTemplate::New(iso, f)->GetFunction(context).ToLocalChecked()).Check();
   };
-  add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List);
+  add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List); add("params", Params);
   RegisterIO(iso, exports, context);
 }

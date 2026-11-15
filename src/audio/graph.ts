@@ -1,6 +1,6 @@
 import { drumSample, sampleFor } from './banks';
 import { WamInstance, createWam, liveWams, wamKey } from './wam';
-import { createAu } from './au';
+import { AuInstance, auBridge, createAu } from './au';
 
 /** Plugin d'une chaîne d'effets : web (WAM) ou, dans la version bureau native, Audio Unit. */
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
@@ -158,13 +158,15 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const i of list) {
       let node = n.ins.get(i.id);
       if (!node) { node = this.buildInsert(i.type); n.ins.set(i.id, node); }
-      if (isPlugin(i) && !node.wam && !node.loading && this.live) {
+      // Plugin du Mac hors de la version bureau macOS : le son passe tel quel, sans essayer de le charger.
+      if (isPlugin(i) && !node.wam && !node.loading && this.live && (i.type !== 'au' || auBridge())) {
         node.loading = true;
         const made = node;
         createPlugin(this.ctx, i, i.state).then(inst => { this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true); },
           () => { this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
       }
       node.set(i, p, (prm, v) => this.set(prm, v));
+      if (i.type === 'au' && node.wam) (node.wam as AuInstance).apply(i.p);
     }
     if (n.insSig === sig) return;
     n.insIn.disconnect(); for (const node of n.ins.values()) node.out.disconnect();

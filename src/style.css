@@ -462,3 +462,8 @@ dialog form { gap: 8px; }
 .mini.rackb { margin-top: 4px; font-weight: 600; } .mini.rackb.has { border-color: var(--a1); color: var(--a1); }
 .latrow { font: 600 14px ui-monospace, monospace; color: var(--a1); margin: 4px 0; }
 #audio .fld { margin: 6px 0; } #audio .fld select { flex: 1; }
+/* Moteur audio natif (version bureau macOS) et plugins du Mac */
+.pill.switch { min-width: 132px; min-height: 44px; font-weight: 700; }
+.tip.err { color: var(--rec); }
+.natsec { border: 1px solid rgba(34, 211, 238, .25); border-radius: 12px; padding: 4px 12px 8px; margin: 8px 0; background: rgba(34, 211, 238, .04); }
+.fxcard .aupar { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
