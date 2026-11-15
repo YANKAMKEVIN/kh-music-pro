@@ -2324,6 +2324,25 @@ test('LH09', 'Notes longues', 'Une touche tenue pendant que l’écran se redess
   await fire('pointerdown', 'key'); await sleep(400); await fire('pointercancel', 'win'); await sleep(650); const off2 = await masterRms();
   expect(off1 < 0.0005 && off2 < 0.0005, `note bloquée (relâchée ${off1}, annulée ${off2})`);
 });
+test('LH10', 'Notes longues', 'Accords à un doigt depuis le clavier du piano roll, à la souris : la touche tenue joue tout l’accord, le relâchement le coupe', async () => {
+  await S(() => { const p = window.kh.S.project; p.key = 9; p.scale = 'minor'; window.kh.commit(); });
+  await page.click(await clipSel(1, 0)); await page.selectOption('[data-role=chord]', '3'); const b = await prKey(57);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(150);
+  const on = await S(() => window.kh.engine.voices.size); await page.mouse.up(); await sleep(100);
+  const off = await S(() => window.kh.engine.voices.size);
+  expect(on === 3 && off === 0, `voix : ${on} tenues, ${off} après relâchement`);
+});
+test('LH11', 'Notes longues', 'Enregistrer en jouant sur le clavier du piano roll à la souris : la note tenue est écrite avec sa durée', async () => {
+  await S(() => { const p = window.kh.S.project; p.loop = false; p.bpm = 120; window.kh.commit(); });
+  await page.click(await clipSel(1, 0)); const before = (await proj()).tracks[1].clips[0].notes.filter(n => n.p === 72).length;
+  const b = await prKey(72); await page.keyboard.press('r'); await sleep(400);
+  expect(await S(() => window.kh.engine.recording === 'midi'), 'enregistrement non démarré');
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(1000); await page.mouse.up(); await sleep(300);
+  await page.keyboard.press('Space'); await sleep(600);
+  const ns = (await proj()).tracks[1].clips.flatMap(c => c.notes || []).filter(n => n.p === 72);
+  const added = ns.length - before, longest = Math.max(...ns.map(n => n.l));
+  expect(added === 1 && longest >= 6, `notes ajoutées ${added}, durée la plus longue ${longest} pas (1 s à 120 = 8 pas)`);
+});
 test('SB01', 'Navigateur de sons', 'Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
   for (const lang of ['fr', 'en', 'es']) {
     await page.evaluate(l => window.kh.setLang(l), lang); await soundsOpen();

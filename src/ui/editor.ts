@@ -321,11 +321,14 @@ function pianoRoll(tr: Track, c: Clip) {
   for (let p = PMAX; p >= PMIN; p--) {
     keys.append(h('button', {
       class: 'key' + (isBlack(p) ? ' black' : '') + (p % 12 === 0 ? ' c' : '') + (scaled && (p - P.key) % 12 === 0 ? ' root' : ''), tabIndex: -1, 'aria-label': noteName(p), data: { p: String(p) },
-      // La touche joue tant qu'elle est tenue (souris ou doigt), comme une touche du clavier de l'ordinateur.
+      // La touche joue tant qu'elle est tenue (souris ou doigt), par le même chemin que le clavier de l'ordinateur
+      // et le MIDI : accords à un doigt, arpégiateur et enregistrement de ce que l'on joue s'appliquent.
       // Le relâchement est écouté sur la fenêtre : il arrive même si la touche a été redessinée ou quittée entre-temps.
       onpointerdown: (e: PointerEvent) => {
-        e.preventDefault(); engine.noteOn(tr, p);
-        const up = (u: PointerEvent) => { if (u.pointerId !== e.pointerId) return; engine.noteOff(tr, p); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+        e.preventDefault();
+        const live = S.selTrack === tr.id;
+        if (live) noteOn(p); else engine.noteOn(tr, p);
+        const up = (u: PointerEvent) => { if (u.pointerId !== e.pointerId) return; if (live) noteOff(p); else engine.noteOff(tr, p); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
         addEventListener('pointerup', up); addEventListener('pointercancel', up);
       },
     }, p % 12 === 0 ? noteName(p) : ''));
