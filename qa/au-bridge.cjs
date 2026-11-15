@@ -22,8 +22,8 @@ const HOLD = Number(process.argv[2] ?? 300);
     win.on('close', () => console.log('!! fenêtre fermée à', when()));
     app.process().on('exit', (code, sig) => console.log('!! processus Electron terminé à', when(), 'code', code, 'signal', sig));
     win.on('console', m => {
-      // L'avertissement sur l'absence de règle de contenu (CSP) existait déjà dans la version normale : seuls les autres comptent ici.
-      if (m.text().includes('Electron Security Warning')) { if (!m.text().includes('Content-Security-Policy')) security.push(m.text().split('\n')[0]); }
+      // Avertissements de sécurité d'Electron (isolation, règle de contenu…) et refus de la règle de contenu : aucun attendu.
+      if (m.text().includes('Electron Security Warning') || m.text().includes('Content Security Policy')) security.push(m.text().split('\n')[0]);
       else if (m.type() === 'warning' || m.type() === 'error') errors.push(m.text());
     });
     await win.waitForSelector('.clip', { timeout: 30000 });
@@ -162,7 +162,7 @@ const HOLD = Number(process.argv[2] ?? 300);
     });
     console.log('Préréglage :', JSON.stringify(pre));
     check(names.length > 10 && pre.preset !== undefined && pre.n === pre.params && !pre.diff.length && pre.changed > 0, `AUMatrixReverb : ${names.length - 1} préréglages d'usine ; « Large Hall » chargé, ${pre.changed} réglages changés, recopiés dans le projet à l'identique`);
-    check(!security.length, `aucun avertissement de sécurité d'Electron${security.length ? ' : ' + security[0] : ''}`);
+    check(!security.length, `aucun avertissement de sécurité d'Electron ni refus de la règle de contenu (CSP)${security.length ? ' : ' + security[0] : ''}`);
     check(!errors.length, `aucune erreur dans la page${errors.length ? ' : ' + errors.join(' | ') : ''}`);
   } finally { await app.close(); }
   console.log(ok ? 'Pont Audio Unit : OK' : 'Pont Audio Unit : ÉCHEC');
