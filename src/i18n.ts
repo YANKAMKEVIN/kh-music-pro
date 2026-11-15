@@ -514,6 +514,8 @@ const D: Record<string, [string, string, string]> = {
   'au.unavailable': ['Plugin du Mac indisponible ici : le son passe tel quel. Il fonctionne dans la version bureau sur Mac.', 'Mac plugin unavailable here: the sound passes through unchanged. It works in the desktop version on a Mac.', 'Plugin del Mac no disponible aquí: el sonido pasa tal cual. Funciona en la versión de escritorio en Mac.'],
   'au.noParams': ['Ce plugin n\'a pas de réglage.', 'This plugin has no settings.', 'Este plugin no tiene ajustes.'],
   'au.failed': ['Impossible de charger ce plugin du Mac ; le son passe sans lui', 'Could not load this Mac plugin; the sound passes through without it', 'No se pudo cargar este plugin del Mac; el sonido pasa sin él'],
+  'au.on': ['Activé', 'On', 'Activado'],
+  'au.off': ['Désactivé', 'Off', 'Desactivado'],
   'au.reset': ['Réglages d\'origine', 'Factory settings', 'Ajustes de fábrica'],
   'aud.title': ['Réglages audio', 'Audio settings', 'Ajustes de audio'],
   'aud.output': ['Sortie audio', 'Audio output', 'Salida de audio'],

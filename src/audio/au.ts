@@ -10,7 +10,9 @@
 import type { WamInstance } from './wam';
 
 /** Un réglage d'Audio Unit : adresse, nom, bornes, valeur par défaut et actuelle, unité (code Core Audio). */
-export interface AuParam { address: number; name: string; min: number; max: number; def: number; value: number; unit: number; flags?: number }
+export interface AuParam { address: number; name: string; min: number; max: number; def: number; value: number; unit: number; flags?: number;
+  /** Réglage à choix : nom de chaque valeur (de min à max), s'il les fournit. */
+  values?: string[] }
 /** Drapeau Core Audio kAudioUnitParameterFlag_DisplayLogarithmic. */
 const LOG_FLAG = 1 << 22;
 /**

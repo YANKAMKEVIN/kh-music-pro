@@ -43,7 +43,19 @@ function auBody(tr: Track, ins: Insert, body: HTMLElement) {
   if (!inst) { body.append(h('p', { class: 'tip', data: { wam: 'loading' } }, t('wam.loading'))); return; }
   if (!inst.params.length) { body.append(h('p', { class: 'tip', data: { au: 'noparams' } }, t('au.noParams'))); return; }
   const grid = h('div', { class: 'aupar', data: { au: 'params' } }, ...inst.params.map(pr => {
-    const k = String(pr.address), whole = pr.unit === 1 || pr.unit === 2 || pr.unit === 11 || pr.unit === 12;
+    const k = String(pr.address), cur = ins.p[k] ?? pr.value;
+    // Réglage à choix avec des noms de valeurs : une liste ; marche/arrêt : un interrupteur.
+    if (pr.unit === 1 && pr.values?.length) {
+      const sel = h('select', { 'aria-label': pr.name, onchange: () => { ins.p[k] = +sel.value; engine.sync(); commit(); } },
+        ...pr.values.map((name, j) => h('option', { value: String(pr.min + j), selected: Math.round(cur) === pr.min + j }, name)));
+      return h('label', { class: 'sl', data: { addr: k, kind: 'list' } }, h('span', { class: 'lb' }, pr.name), sel);
+    }
+    if (pr.unit === 2) {
+      const on = cur >= 0.5;
+      const sw = h('button', { class: 'mini' + (on ? ' on solo' : ''), role: 'switch', 'aria-checked': String(on), 'aria-label': pr.name, onclick: () => { ins.p[k] = on ? 0 : 1; engine.sync(); commit(); } }, on ? t('au.on') : t('au.off'));
+      return h('div', { class: 'sl', data: { addr: k, kind: 'switch' } }, h('span', { class: 'lb' }, pr.name), sw);
+    }
+    const whole = pr.unit === 1 || pr.unit === 2 || pr.unit === 11 || pr.unit === 12;
     const step = whole ? 1 : (pr.max - pr.min) / 1000 || 0.001, val = ins.p[k] ?? pr.value;
     // Fréquences : curseur logarithmique (la course est en position 0 à 1, la valeur reste en Hz dans le projet).
     const sl = auLog(pr)

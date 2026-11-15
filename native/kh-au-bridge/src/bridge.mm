@@ -199,6 +199,20 @@ void Params(const FunctionCallbackInfo<Value>& a) {
     Local<Object> o = Object::New(iso);
     num(o, "address", id);
     o->Set(cx, String::NewFromUtf8Literal(iso, "name"), String::NewFromUtf8(iso, buf).ToLocalChecked()).Check();
+    // Réglage à choix (kAudioUnitParameterUnit_Indexed) : noms des valeurs, s'il les fournit.
+    if (pi.unit == kAudioUnitParameterUnit_Indexed) {
+      CFArrayRef names = nullptr; UInt32 nsz = sizeof names;
+      if (AudioUnitGetProperty(s->au, kAudioUnitProperty_ParameterValueStrings, kAudioUnitScope_Global, id, &names, &nsz) == noErr && names) {
+        Local<Array> vs = Array::New(iso);
+        for (CFIndex k = 0; k < CFArrayGetCount(names); k++) {
+          char nb[256] = "";
+          CFStringGetCString((CFStringRef)CFArrayGetValueAtIndex(names, k), nb, sizeof nb, kCFStringEncodingUTF8);
+          vs->Set(cx, uint32_t(k), String::NewFromUtf8(iso, nb).ToLocalChecked()).Check();
+        }
+        CFRelease(names);
+        o->Set(cx, String::NewFromUtf8Literal(iso, "values"), vs).Check();
+      }
+    }
     num(o, "min", pi.minValue); num(o, "max", pi.maxValue); num(o, "def", pi.defaultValue); num(o, "value", v); num(o, "unit", pi.unit); num(o, "flags", double(pi.flags));
     arr->Set(cx, n++, o).Check();
   }

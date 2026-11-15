@@ -41,6 +41,11 @@ const HOLD = Number(process.argv[2] ?? 300);
       const p = au.params; au.audioNode.destroy(); return p;
     });
     check(lpParams.length >= 2 && lpParams.some(p => /cutoff/i.test(p.name) && p.unit === 8), `réglages d'AULowpass lus dans le plugin : ${lpParams.map(p => p.name).join(', ')}`);
+    const filt = await win.evaluate(async () => {
+      const c = new OfflineAudioContext(2, 128, 48000), au = await window.kh.createAu(c, 'aufx:filt:appl', {});
+      const p = au.params.find(x => x.name === 'Low Filter Type'); au.audioNode.destroy(); return p;
+    });
+    check(filt?.unit === 1 && filt.values?.join('/') === 'Low Shelf/High Pass', `réglage à choix d'AUFilter : « ${filt?.name} » = ${filt?.values?.join(' / ')}`);
 
     // 2. Traitement exact, et retard ajouté par le pont (rendu hors-ligne, même chemin que l'export).
     const r = await win.evaluate(async () => {

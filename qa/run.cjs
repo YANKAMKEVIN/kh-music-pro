@@ -70,7 +70,8 @@ const PAGE_HELPERS = () => {
         list: () => [{ type: 'aufx', subtype: 'lpas', manufacturer: 'appl', name: 'Apple: AULowpass' }, { type: 'aumu', subtype: 'dls ', manufacturer: 'appl', name: 'Apple: DLSMusicDevice' }, { type: 'aufx', subtype: 'dely', manufacturer: 'appl', name: 'Apple: AUDelay' }],
         open: (key, type, sub, man) => { if (f.failOpen) throw new Error('plugin introuvable'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); calls.push(['open', `${type}:${sub}:${man}`]); return ++f.n; },
         setParam: (id, a, v) => calls.push(['set', id, a, v]),
-        params: () => [{ address: 0, name: 'Cutoff Frequency', min: 10, max: 22050, def: 6900, value: 6900, unit: 8 }, { address: 1, name: 'Resonance', min: -20, max: 40, def: 0, value: 0, unit: 13 }],
+        params: () => [{ address: 0, name: 'Cutoff Frequency', min: 10, max: 22050, def: 6900, value: 6900, unit: 8 }, { address: 1, name: 'Resonance', min: -20, max: 40, def: 0, value: 0, unit: 13 },
+          { address: 2, name: 'Filter Type', min: 0, max: 2, def: 0, value: 0, unit: 1, values: ['Low Pass', 'Band Pass', 'High Pass'] }, { address: 3, name: 'Bypass', min: 0, max: 1, def: 0, value: 0, unit: 2 }],
         info: () => ({ name: 'Apple: AULowpass', latency: 0, tail: 0 }),
         close: id => calls.push(['close', id]),
         ioStart: (key, o) => { if (f.failStart) throw new Error('carte son refusée'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); f.running = true; calls.push(['ioStart']); return { output: 'Sortie de test', input: null, inChannels: 0, outDeclared: 0.01, inDeclared: 0, outRate: o.sampleRate, buffer: 128 }; },
@@ -1986,7 +1987,7 @@ test('MAC01', 'Plugins du Mac', 'Les plugins d\'effet du Mac sont proposés dans
   await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
   const ins = (await insertsOf(1))[0], card = await page.$eval('#fx .fxcard', c => ({ t: c.querySelector('strong').textContent, labels: [...c.querySelectorAll('[data-au=params] .lb')].map(e => e.textContent), vals: [...c.querySelectorAll('[data-au=params] .val')].map(e => e.textContent) }));
   expect(ins.type === 'au' && ins.url === 'aufx:lpas:appl' && ins.name === 'Lowpass', `effet ajouté : ${JSON.stringify(ins)}`);
-  expect(card.t === '1. 🍎 Lowpass' && card.labels.join() === 'Cutoff Frequency,Resonance' && card.vals.join() === '6.90 kHz,0.0 dB', `carte : ${JSON.stringify(card)}`);
+  expect(card.t === '1. 🍎 Lowpass' && card.labels.join() === 'Cutoff Frequency,Resonance,Filter Type,Bypass' && card.vals.join() === '6.90 kHz,0.0 dB', `carte : ${JSON.stringify(card)}`);
   expect(await S(() => window.khNative.calls.some(c => c[0] === 'open' && c[1] === 'aufx:lpas:appl')), 'le plugin doit être créé par le module natif');
 });
 test('MAC02', 'Plugins du Mac', 'Les curseurs d\'un plugin du Mac pilotent le plugin, s\'enregistrent dans le projet, s\'annulent et reviennent aux réglages d\'origine', async () => {
@@ -2002,7 +2003,7 @@ test('MAC02', 'Plugins du Mac', 'Les curseurs d\'un plugin du Mac pilotent le pl
   await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id)); await page.waitForSelector('#fx [data-act=aureset]');
   await setSlider('#fx', 'Resonance', 12); await page.click('#fx [data-act=aureset]'); await sleep(100);
   const p = (await insertsOf(1))[0].p; expect(p['0'] === 6900 && p['1'] === 0, `réglages d'origine : ${JSON.stringify(p)}`);
-  expect(await S(() => window.khNative.calls.filter(c => c[0] === 'set').slice(-2).map(c => c[3]).sort((a, b) => a - b).join()) === '0,6900', 'les réglages d\'origine doivent être renvoyés au plugin');
+  expect(await S(() => window.khNative.calls.filter(c => c[0] === 'set').slice(-4).some(c => c[2] === 0 && c[3] === 6900)), 'les réglages d\'origine doivent être renvoyés au plugin');
 });
 test('MAC03', 'Plugins du Mac', 'Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d\'erreur', async () => {
   await S(() => { const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; i.p = { 0: 300 }; k.S.project.tracks[1].inserts = [i]; k.commit(); }); await sleep(400);
@@ -2037,7 +2038,7 @@ test('MAC05', 'Plugins du Mac', 'Supprimer la piste ou ouvrir un autre projet li
 test('MAC06', 'Plugins du Mac', 'Fréquences d\'un plugin du Mac sur une échelle logarithmique : le milieu du curseur tombe vers 470 Hz, valeur lue au lecteur d\'écran', async () => {
   await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
   await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
-  const sc = await page.$$eval('#fx [data-au=params] .sl', l => l.map(e => e.dataset.scale + ':' + e.querySelector('input').value));
+  const sc = await page.$$eval('#fx [data-au=params] .sl', l => l.filter(e => e.querySelector('input')).map(e => e.dataset.scale + ':' + e.querySelector('input').value));
   expect(sc[0].startsWith('log:') && Math.abs(+sc[0].split(':')[1] - Math.log(690) / Math.log(2205)) < 0.002 && sc[1].startsWith('lin:'), `échelles : ${sc}`);
   await setSlider('#fx', 'Cutoff Frequency', 0.5); await sleep(100);
   const r = await page.$eval('#fx [data-addr="0"]', e => ({ v: e.querySelector('.val').textContent, aria: e.querySelector('input').getAttribute('aria-valuetext') }));
@@ -2046,6 +2047,22 @@ test('MAC06', 'Plugins du Mac', 'Fréquences d\'un plugin du Mac sur une échell
   expect(r.v === '470 Hz' && r.aria === '470 Hz', `affichage et lecteur d'écran : ${JSON.stringify(r)}`);
   await setSlider('#fx', 'Cutoff Frequency', 0); await sleep(50); expect((await insertsOf(1))[0].p['0'] === 10, 'bas du curseur : 10 Hz');
   await setSlider('#fx', 'Cutoff Frequency', 1); await sleep(50); expect((await insertsOf(1))[0].p['0'] === 22050, 'haut du curseur : 22 050 Hz');
+});
+
+test('MAC07', 'Plugins du Mac', 'Réglages à choix d\'un plugin du Mac : liste des valeurs par leur nom, interrupteur marche/arrêt au clavier', async () => {
+  await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
+  await page.waitForSelector('#fx [data-kind=list] select', { timeout: 5000 });
+  const opts = await page.$$eval('#fx [data-kind=list] option', o => o.map(x => x.textContent + '=' + x.value));
+  expect(opts.join() === 'Low Pass=0,Band Pass=1,High Pass=2', `valeurs proposées : ${opts}`);
+  await page.selectOption('#fx [data-kind=list] select', '2'); await sleep(100);
+  expect((await insertsOf(1))[0].p['2'] === 2 && await S(() => window.khNative.calls.some(c => c[0] === 'set' && c[2] === 2 && c[3] === 2)), 'choix « High Pass » non appliqué');
+  expect(await page.$eval('#fx [data-kind=list] select', e => e.selectedOptions[0].textContent) === 'High Pass', 'le choix doit rester affiché');
+  const sw = '#fx [data-kind=switch] button';
+  expect(await page.$eval(sw, b => b.getAttribute('role') + ':' + b.getAttribute('aria-checked') + ':' + b.textContent) === 'switch:false:Désactivé', 'interrupteur au départ');
+  await page.focus(sw); await page.keyboard.press('Enter'); await sleep(100);
+  expect((await insertsOf(1))[0].p['3'] === 1 && await page.$eval(sw, b => b.getAttribute('aria-checked') + ':' + b.textContent) === 'true:Activé', 'interrupteur au clavier');
+  await page.keyboard.press('Escape'); await page.evaluate(() => window.kh.setLang('en')); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id));
+  expect(await page.textContent(sw) === 'On', 'interrupteur en anglais');
 });
 
 (async () => {
