@@ -1,12 +1,13 @@
 # Document de passation — KH Music Pro
 
-Rédigé à la fin de la V14a, puis mis à jour pour la branche V15.1, pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
+Rédigé à la fin de la V14a, mis à jour pour la V15.1, puis pour la version 0.16.0 en ligne (15/11/2026), pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
 
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
-- **État de la branche d'essai `integration-v15-natif`** : réunion de la V15 (banque de sons, branche `v15-banque-generaliste`) et de la V14b (moteur natif et plugins du Mac, branche `v14b-prototype-natif`), version 0.16.0, 234 cas de QA. `main` en ligne : version 0.14, 190 cas. Voir la section « Branche d'essai » à la fin.
-- **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0.
+- **État** : version **0.16.0 en ligne** sur `main` depuis le 15/11/2026 (fusion de la V15, banque de sons, et de la V14b, moteur natif et plugins du Mac : PR #2). 239 cas de QA. Site : https://yankamkevin.github.io/kh-music-pro/ ; installable (PWA) ; installateurs Windows, macOS (Apple et Intel) et Linux dans la release v0.16.0. Installée sur le Mac du propriétaire (`/Applications/KH Music Pro.app`).
+- **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0, **v0.16.0** (15/11/2026). Les branches `v14b-prototype-natif`, `v15-banque-generaliste` et `integration-v15-natif` sont fusionnées : tout nouveau travail part de `main`.
+- **Prochaine étape** : la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5 et 9). Ses retours passent avant toute nouvelle fonction.
 - **Liste des fonctions** : section « Fonctions » du README.
 
 ## 2. Architecture
@@ -43,7 +44,7 @@ Principes à respecter :
 
 1. **L'écoute** : aucune oreille humaine n'a jugé les sons, les effets, le time-stretch, la correction de justesse ni le limiteur. Tout est validé par mesure (niveau, fréquence, instants).
 2. **Le vrai matériel** : micro, carte son et clavier MIDI n'ont été testés qu'en simulé.
-3. **Windows et macOS** : les installateurs se construisent ; seul celui de Linux est lancé automatiquement. Personne n'a ouvert le `.exe` ni le `.dmg`.
+3. **Windows et macOS** : les installateurs se construisent ; ceux de Linux et de macOS (puce Apple, avec le module natif) sont lancés automatiquement sur GitHub. La v0.16.0 pour puce Apple est installée et s'ouvre sur le Mac du propriétaire ; personne n'a ouvert le `.exe` ni l'installateur Intel sur une vraie machine.
 4. **Un vrai téléphone** : la mise en page tactile est testée dans un navigateur qui simule un écran tactile.
 5. **Les plugins web tiers** : l'hôte n'est validé qu'avec le plugin d'exemple fourni (`public/wam/kh-tape`). Un essai avec des plugins de la communauté (paquet npm `wam-community` : burns-audio, wimmics) a été préparé puis refusé par la protection de la session cloud, car il exécute du code tiers. À refaire avec l'accord du propriétaire.
 6. **La mesure de latence** : le chemin « clic non détecté » est testé ; une mesure réussie demande de vrais haut-parleurs et un vrai micro.
@@ -51,7 +52,7 @@ Principes à respecter :
 
 ## 4. Limites connues, assumées
 
-- Instruments enregistrés : une seule nuance, sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
+- Instruments enregistrés : une seule prise par note (les nuances sont imitées par un filtre, voir section 9), sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
 - Tempo : les clips audio ne suivent pas les changements de tempo ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
 - Signature : une seule pour tout le morceau, de 2/4 à 7/4.
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
@@ -434,9 +435,9 @@ Reste possible : fenêtres graphiques des plugins (vue Cocoa dans une fenêtre n
 
 1. **Écouter un plugin du Mac** : version bureau, 🧩 d'une piste → « 🍎 Plugins du Mac » → « MatrixReverb », préréglage « Large Hall », puis « Lowpass » en bougeant « Cutoff Frequency ». Le son change-t-il comme attendu, sans craquement ?
 2. **Moteur audio natif** : 🔧 Réglages audio → « ⚡ Moteur audio natif » : l'activer, jouer, enregistrer une prise, brancher puis débrancher les EarPods, le désactiver. Désactivé par défaut : faut-il l'activer par défaut sur Mac ?
-3. **Installateur** : ouvrir `release/KH Music Pro-0.15.0-arm64.dmg` (construit sur ce Mac), ou celui de l'action « Version bureau » sur GitHub. macOS affichera un avertissement (application non signée).
-4. **Numéro de version** : 0.15.0 a été choisi pour cette intégration ; à confirmer avant la release.
-5. **Fusion dans `main`** (met le site en ligne à jour, avec la règle de contenu) : seulement avec ton accord.
+3. ~~Installateur~~ : fait, v0.16.0 installée depuis la release (15/11/2026).
+4. ~~Numéro de version~~ : 0.16.0, validé par le propriétaire.
+5. ~~Fusion dans `main`~~ : faite le 15/11/2026 (PR #2).
 6. Le micro des EarPods : une prise reste à écouter (déjà noté plus haut).
 
 ### Critères de décision
@@ -450,9 +451,9 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 
 ## 6. Feuille de route
 
-- **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). Écouteurs vérifiés par le propriétaire (coupure courte) ; micro des EarPods ouvert, prise à écouter. **15/11 : intégré à l'interface de la version bureau** (réglage « moteur audio natif », plugins du Mac dans la chaîne d'effets, pont isolé, module dans l'installateur macOS) : version 0.15.0, à écouter puis à fusionner avec l'accord du propriétaire.
-- **En attente** : la phase de QA humaine annoncée par le propriétaire.
+- **Faites** : V1 à V13, V14a (chaînes d'effets, latence, plugins web), puis **0.16.0** (15/11/2026) = V14b + V15 à V15.2.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). Écouteurs vérifiés par le propriétaire (coupure courte) ; micro des EarPods ouvert, prise à écouter. **15/11 : intégré à l'interface de la version bureau** (réglage « moteur audio natif », plugins du Mac dans la chaîne d'effets, pont isolé, module dans l'installateur macOS) : **en ligne dans la version 0.16.0**, à écouter.
+- **En attente** : la phase de QA humaine du propriétaire (écoute, vrai matériel) ; décisions : batterie à plusieurs nuances (Virtuosity Drums, CC0) et moteur natif activé ou non par défaut sur Mac.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
 
 ## 7. Extension généraliste V15 (branche v15-banque-generaliste)
@@ -493,10 +494,10 @@ Travail fait sans le propriétaire, sur sa consigne de nuit : tout ce qui se vé
 3. **Les nuances** au clavier MIDI (ou en baissant la force des notes dans le piano roll) sur piano, guitare nylon, cuivres : jouer doucement doit sonner feutré, pas étouffé. Trop ? Pas assez ? Le réglage « Nuances » va de 0 à 100 % (70 % par défaut).
 4. **Les registres** : une gamme du grave à l'aigu sur piano, flûte, vibraphone : plus de note qui ressort ou disparaît ?
 5. **Décision** : télécharger les nuances réelles de la batterie Virtuosity Drums (CC0, quelques mégaoctets) pour une batterie qui change vraiment de timbre selon la force ?
-6. **Décision** : fusionner la V15 (v0.15.2) dans `main` pour la mettre en ligne, après ton écoute.
+6. ~~Fusion~~ : faite avec la V14b, version 0.16.0 en ligne (15/11/2026).
 
 
-## Branche d'essai : V15 + V14b réunies (15/11/2026)
+## 10. Branche d'essai : V15 + V14b réunies (15/11/2026), fusionnée
 
 Branche `integration-v15-natif` : la banque de sons V15 (`v15-banque-generaliste`, à `3155021`, avec les nuances V15.2) et le moteur natif V14b (`v14b-prototype-natif`, à `5967113`) réunis en un seul commit de fusion. Rien n'a été fusionné dans `main`, et les deux branches d'origine sont intactes.
 
@@ -520,6 +521,4 @@ Vérifications sur ce Mac :
 
 Non vérifié : l'écoute (sons V15 et plugins du Mac), les installateurs de cette branche, et une version Windows.
 
-Pour la suite, deux possibilités au choix du propriétaire :
-1. Fusionner `integration-v15-natif` dans `main` d'un coup (version 0.16.0) ;
-2. Ou fusionner d'abord une branche (par exemple la V15 en 0.15.x), puis l'autre en refaisant cette même réunion, déjà résolue ici.
+Décision du propriétaire : tout d'un coup. Fusionnée dans `main` le 15/11/2026 (PR #2, commit `e55983c`, QA et version bureau vertes sur GitHub), site mis en ligne, release **v0.16.0** créée avec ses quatre installateurs (Mac puce Apple, Mac Intel, Windows, Linux).
