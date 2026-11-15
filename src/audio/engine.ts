@@ -340,7 +340,8 @@ class Engine {
     }
     // Décalage entre le début de la capture et l'instant où le premier temps a été entendu.
     // Compensation automatique (latences annoncées par le système), plus le décalage réglé ou mesuré par l'utilisateur.
-    const outLat = this.native ? this.native.latency().output : (this.ctx.outputLatency || 0);
+    // Plus le retard de la compensation de latence des plugins : on entend le morceau d'autant plus tard.
+    const outLat = (this.native ? this.native.latency().output : (this.ctx.outputLatency || 0)) + this.mix.pdcMax;
     const off = (this.t0 - cap.first / sr) + outLat + inLat + S.recOffsetMs / 1000;
     cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)), cap.mode);
   }
@@ -448,7 +449,7 @@ export const engine = new Engine();
 
 // ---------- Export : rendu hors-ligne + encodage WAV ----------
 /** Ce que le dernier rendu n'a pas pu inclure. */
-export const lastRender = { wamFailed: 0 };
+export const lastRender = { wamFailed: 0, pdc: 0 };
 
 export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
   const end = contentEnd(p);
@@ -462,6 +463,11 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
   const out = await off.startRendering();
   mix.active.clear(); mix.disposePlugins();
+  // Compensation de latence des plugins : tout le mixage sort en retard de `pdcMax` ; on le ramène au début du fichier,
+  // pour que l'export (et les pistes séparées) reste calé sur la grille.
+  const shift = Math.round(mix.pdcMax * sr);
+  if (shift > 0) for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); d.copyWithin(0, shift); d.fill(0, d.length - shift); }
+  lastRender.pdc = mix.pdcMax;
   if (!normalize) return out;
   if (p.target < 0) {
     // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.

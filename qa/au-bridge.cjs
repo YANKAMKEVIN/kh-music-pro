@@ -92,6 +92,17 @@ const HOLD = Number(process.argv[2] ?? 300);
     check(Math.abs(ex.dryHf - ex.dry2Hf) < 0.5, `rendu sans plugin reproductible (${ex.dryHf.toFixed(1)} / ${ex.dry2Hf.toFixed(1)} dB)`);
     check(ex.failed === 0 && ex.dryHf - ex.wetHf > 6, `piste « ${ex.track} » à l'export : aigus ${ex.dryHf.toFixed(1)} → ${ex.wetHf.toFixed(1)} dB avec AULowpass 300 Hz`);
 
+    // 3b. Compensation de latence : AUPeakLimiter déclare 2 ms ; à l'export, la batterie doit rester à sa place.
+    const pdc = await win.evaluate(async () => {
+      const k = window.kh;
+      const mk = lim => { const p = k.demoProject(); p.tracks = [p.tracks[0]]; const t = p.tracks[0]; t.clips.length = 1; t.clips[0].start = 4; t.rev = 0; t.dly = 0; if (lim) { const i = k.newInsert('au'); i.url = 'aufx:lmtr:appl'; i.name = 'PeakLimiter'; t.inserts = [i]; } return p; };
+      const onset = async p => { const b = await k.renderOffline(p, false), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.02) return i / b.sampleRate; return -1; };
+      const a = await onset(mk(false)), b = await onset(mk(true));
+      return { a, b, pdc: k.lastRender.pdc, failed: k.lastRender.wamFailed };
+    });
+    console.log('Compensation :', JSON.stringify(pdc));
+    check(pdc.failed === 0 && Math.abs(pdc.pdc - 0.002) < 1e-4 && Math.abs(pdc.b - pdc.a) < 0.0002, `AUPeakLimiter (2 ms) : export calé à ${((pdc.b - pdc.a) * 1000).toFixed(2)} ms près (sans compensation : +2 ms)`);
+
     // 4. Temps réel : la même piste joue en boucle à travers le plugin, sans sortie audio.
     await win.evaluate(async () => {
       const k = window.kh, e = k.engine;

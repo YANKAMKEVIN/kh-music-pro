@@ -68,14 +68,15 @@ const PAGE_HELPERS = () => {
         calls, sabs, running: false, n: 0, ...opts,
         forget: k => { sabs.delete(k); calls.push(['forget']); },
         list: () => [{ type: 'aufx', subtype: 'lpas', manufacturer: 'appl', name: 'Apple: AULowpass' }, { type: 'aumu', subtype: 'dls ', manufacturer: 'appl', name: 'Apple: DLSMusicDevice' }, { type: 'aufx', subtype: 'dely', manufacturer: 'appl', name: 'Apple: AUDelay' }],
-        open: (key, type, sub, man) => { if (f.failOpen) throw new Error('plugin introuvable'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); calls.push(['open', `${type}:${sub}:${man}`]); return ++f.n; },
+        subs: {}, lat: {},
+        open: (key, type, sub, man) => { if (f.failOpen) throw new Error('plugin introuvable'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); calls.push(['open', `${type}:${sub}:${man}`]); f.subs[++f.n] = sub; return f.n; },
         setParam: (id, a, v) => { f.vals[a] = v; calls.push(['set', id, a, v]); },
         vals: { 0: 6900, 1: 0, 2: 0, 3: 0 },
         params: () => [{ address: 0, name: 'Cutoff Frequency', min: 10, max: 22050, def: 6900, unit: 8 }, { address: 1, name: 'Resonance', min: -20, max: 40, def: 0, unit: 13 },
           { address: 2, name: 'Filter Type', min: 0, max: 2, def: 0, unit: 1, values: ['Low Pass', 'Band Pass', 'High Pass'] }, { address: 3, name: 'Bypass', min: 0, max: 1, def: 0, unit: 2 }].map(p => ({ ...p, value: f.vals[p.address] })),
         presets: () => (f.noPresets ? [] : [{ number: 0, name: 'Small Room' }, { number: 1, name: 'Large Hall' }]),
         setPreset: (id, n) => { if (n === 1) { f.vals = { 0: 1200, 1: 6, 2: 1, 3: 0 }; calls.push(['preset', id, n]); return true; } return false; },
-        info: () => ({ name: 'Apple: AULowpass', latency: 0, tail: 0 }),
+        info: id => ({ name: 'Apple: AULowpass', latency: f.lat[f.subs[id]] ?? 0, tail: 0 }),
         close: id => calls.push(['close', id]),
         ioStart: (key, o) => { if (f.failStart) throw new Error('carte son refusée'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); f.running = true; calls.push(['ioStart']); return { output: 'Sortie de test', input: null, inChannels: 0, outDeclared: 0.01, inDeclared: 0, outRate: o.sampleRate, buffer: 128 }; },
         ioStop: () => { f.running = false; calls.push(['ioStop']); },
@@ -2086,6 +2087,36 @@ test('MAC08', 'Plugins du Mac', 'Préréglages d\'usine d\'un plugin du Mac : en
   await S(() => { const k = window.kh; k.S.project.tracks[1].inserts = []; k.commit(); window.qa.fakeNative({ noPresets: true }); const i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
   await page.waitForSelector('#fx [data-au=params]', { timeout: 5000 });
   expect(!(await page.$('#fx [data-role=aupreset]')), 'sans préréglage d\'usine, pas de liste');
+});
+
+test('MAC09', 'Plugins du Mac', 'Compensation de la latence déclarée par les plugins du Mac : les autres pistes et les bus sont retardés d\'autant, l\'export reste calé', async () => {
+  const r = await S(async () => {
+    const k = window.kh, f = window.qa.fakeNative(); f.lat = { lpas: 0.01, dely: 0.004 };
+    const p = k.S.project, au = sub => { const i = k.newInsert('au'); i.url = `aufx:${sub}:appl`; i.name = sub; return i; };
+    const bus = k.newBus(1); p.buses.push(bus);
+    p.tracks[1].inserts = [au('lpas')]; p.tracks[2].inserts = [au('dely')]; p.tracks[2].out = bus.id; p.tracks[3].out = bus.id; k.commit();
+    for (let i = 0; i < 50 && k.liveWams.size < 2; i++) await new Promise(r => setTimeout(r, 100));
+    const d = id => Math.round(k.engine.mix.tracks.get(id).pdc.delayTime.value * 1e4) / 10;
+    const live = { t: p.tracks.map(t => d(t.id)), bus: d(bus.id), max: k.engine.mix.pdcMax };
+    p.tracks[1].inserts[0].on = false; k.commit();
+    const off = { t: p.tracks.map(t => d(t.id)), bus: d(bus.id), max: k.engine.mix.pdcMax };
+    p.tracks[1].inserts[0].on = true; p.tracks[1].mute = true; k.commit();
+    const muted = k.engine.mix.pdcMax;
+    p.buses = []; for (const t of p.tracks) { t.inserts = []; t.out = ''; t.mute = false; } k.commit();
+    return { live, off, muted, n: k.liveWams.size };
+  });
+  expect(JSON.stringify(r.live.t) === '[10,0,0,4,10]' && r.live.bus === 6 && Math.abs(r.live.max - 0.01) < 1e-9, `retards (ms) avec plugins : ${JSON.stringify(r.live)}`);
+  expect(JSON.stringify(r.off.t) === '[4,4,0,4,4]' && r.off.bus === 0 && Math.abs(r.off.max - 0.004) < 1e-9, `retards (ms), plugin de 10 ms coupé : ${JSON.stringify(r.off)}`);
+  near(r.muted, 0.01, 1e-9, 'une piste muette compte toujours (couper une piste ne décale pas les autres)');
+  // Export : piste avec un plugin qui déclare 10 ms (le plugin simulé laisse passer le son sans retard) et piste sans plugin.
+  const ex = await S(async () => {
+    const k = window.kh; window.khNative.lat = { lpas: 0.01 };
+    const mk = withAu => { const p = window.qa.only(0, (_p, t) => { t.clips[0].start = 4; }); if (withAu) { const i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'lpas'; p.tracks[0].inserts = [i]; } return p; };
+    const a = (await window.qa.onsets(mk(false), 0.05))[0], b = (await window.qa.onsets(mk(true), 0.05))[0];
+    return { a, b, pdc: k.lastRender.pdc };
+  });
+  near(ex.pdc, 0.01, 1e-9, 'retard de compensation à l\'export');
+  near(ex.a - ex.b, 0.01, 0.0005, `export recalé sur la grille : le retard propre du plugin est retiré (${JSON.stringify(ex)})`);
 });
 
 (async () => {
