@@ -5,7 +5,7 @@ Rédigé à la fin de la V14a, puis mis à jour pour la branche V15.1, pour qu'u
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
-- **État de la branche v15-banque-generaliste** : version 0.15.1, 212 cas de QA validés. Installable (PWA), avec des installateurs Electron pour Windows, macOS (Apple et Intel) et Linux. Le site publié sur https://yankamkevin.github.io/kh-music-pro/ suit `main` ; cette branche attend les retours du propriétaire.
+- **État de la branche v15-banque-generaliste** : version 0.15.2, 224 cas de QA validés. Installable (PWA), avec des installateurs Electron pour Windows, macOS (Apple et Intel) et Linux. Le site publié sur https://yankamkevin.github.io/kh-music-pro/ suit `main` ; cette branche attend les retours du propriétaire.
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0.
 - **Liste des fonctions** : section « Fonctions » du README.
 
@@ -120,3 +120,24 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 - À apprécier par le propriétaire : qualité des raccords à l’oreille et confort de jeu, clavier MIDI réel, téléphone réel et ouverture des installateurs Windows/macOS.
 
 Validation V15.1 : compilation réussie ; 212/212 cas dans https://github.com/YANKAMKEVIN/kh-music-pro/actions/runs/43330407090. Installateurs dans https://github.com/YANKAMKEVIN/kh-music-pro/actions/runs/43330406587 ; le test Electron Linux vérifie le maintien après quatre secondes, la préécoute du navigateur et le retour du focus.
+
+## 9. V15.2 — nuances, raccords mesurés, registres égalisés (nuit du 15/11/2026)
+
+Travail fait sans le propriétaire, sur sa consigne de nuit : tout ce qui se vérifie par mesure. Aucune nouvelle source sonore : seulement les fichiers FluidR3 (CC BY 3.0) déjà présents.
+
+- **Nuances** (`SynthParams.touch`, 0 à 1) : `graph.ts` insère, pour le moteur « multi », un passe-bas dont la coupure suit la douceur de la note (`touchSoftness`, `touchCutoff`), relative à la hauteur (jamais sous le 3e harmonique), et allonge un peu l'attaque des notes douces (jusqu'à 15 ms). Même code à l'écoute et à l'export. `BASE.touch = 0` : un ancien projet sonne exactement pareil ; les préréglages enregistrés reçoivent `TOUCH_DEFAULT = 0.7`. Réglage « Nuances » dans l'éditeur, trois langues.
+- **Pourquoi pas de vraies couches de vélocité** : FluidR3 / midi-js-soundfonts n'a qu'une prise par note. La batterie Virtuosity Drums (CC0, déjà notée dans les crédits) existe en plusieurs nuances (`vl3`, `vl4`, `vl12`, `vl16`, `vl36`…), mais il faudrait télécharger de nouveaux fichiers : laissé à la décision du propriétaire. Le moteur prendrait plusieurs couches sans changer le format du projet.
+- **Raccords de boucle** (`sustain.ts`) : mesure de l'état V15.1 sur les 237 boucles : aucun clic, mais des bosses ou creux de niveau jusqu'à 8 dB pendant le fondu (sons imparfaitement en phase), et une marche à chaque tour sur les notes qui s'éteignent. Corrections : fondu porté de 40 à 100 ms ; niveau ramené tranche par tranche (5 ms) à la valeur attendue pendant le fondu ; gain progressif sur le corps de la boucle pour que la fin rejoigne le niveau du début (mesuré sur 250 ms, borné à ±6 dB). Une première version mesurait sur 40 ms et créait elle-même une rampe de 3 dB sur les cordes : corrigé et couvert par LP02.
+- **Registres** (`banks.ts`, `registerGains`, `noteLoudness` dans `loudness.ts`) : volume perçu (pondération K) de chaque note au chargement, comparé à la droite de tendance de l'instrument adoucie de moitié ; correction bornée à ±9 dB, puis la crête la plus forte est ramenée à 0,9 (crête désormais mesurée sur tous les échantillons et canaux, plus un sur huit). Écart maximal entre deux notes enregistrées voisines : 1,3 dB (11 dB avant, vibraphone). Les niveaux d'anciens projets changent donc légèrement : c'est voulu.
+- `window.kh.banks` expose le chargement et les mesures pour la QA.
+- QA : NU01–NU07 (timbre selon la force, nuances à zéro, ancien projet, réglage/annulation/fichier, trois langues, progression de la coupure, MIDI en direct), LP01–LP02 (237 raccords mesurés ; note tenue 10 s comparée à la variation naturelle de l'enregistrement), RG01–RG03 (voisines à moins de 2 dB sur 29 instruments, aucune saturation, gamme de trois octaves à l'export). LH02 compare désormais l'attaque sur 0,6 s (la boucle commence là).
+
+### À écouter / valider par Kevin au réveil
+
+1. **Le navigateur de sons et les 29 instruments** (V15.0 et V15.1, jamais écoutés) : qualité générale, notes qui sonnent faux ou bizarres, le « piano droit » qui est un honky-tonk.
+2. **Les notes longues** sur cordes, orgue d'église, violon, chœur : garder une touche 10 s ; plus de pulsation ni de « hoquet » à chaque tour ?
+3. **Les nuances** au clavier MIDI (ou en baissant la force des notes dans le piano roll) sur piano, guitare nylon, cuivres : jouer doucement doit sonner feutré, pas étouffé. Trop ? Pas assez ? Le réglage « Nuances » va de 0 à 100 % (70 % par défaut).
+4. **Les registres** : une gamme du grave à l'aigu sur piano, flûte, vibraphone : plus de note qui ressort ou disparaît ?
+5. **Décision** : télécharger les nuances réelles de la batterie Virtuosity Drums (CC0, quelques mégaoctets) pour une batterie qui change vraiment de timbre selon la force ?
+6. **Décision** : fusionner la V15 (v0.15.2) dans `main` pour la mettre en ligne, après ton écoute.
+

@@ -1345,8 +1345,9 @@ test('TU01', 'Accordeur', 'La détection de hauteur est juste : sinus, son riche
   expect(r.silence === 0 && r.noise === 0, `fausse note détectée (silence ${r.silence}, bruit ${r.noise})`);
 });
 test('TU02', 'Accordeur', 'Avec l\'entrée active, l\'accordeur affiche la note reçue ; il disparaît à la fermeture', async () => {
-  await page.click(await headSel(4)); expect(!(await page.$('.tuner')), 'accordeur visible sans entrée'); await page.click('[data-act=inopen]'); await sleep(300);
-  expect(await page.$('.tuner'), 'accordeur absent');
+  await page.click(await headSel(4)); expect(!(await page.$('.tuner')), 'accordeur visible sans entrée'); await page.click('[data-act=inopen]');
+  // L'entrée met parfois plus de 300 ms à s'ouvrir quand la machine est chargée : on attend l'accordeur jusqu'à 3 s.
+  expect(await page.waitForSelector('.tuner', { timeout: 3000 }).catch(() => null), 'accordeur absent');
   const note = await page.waitForFunction(() => { const t = document.querySelector('.tnote'); return t && t.textContent !== '—' ? t.textContent + '|' + document.querySelector('.tcents').textContent : false; }, null, { timeout: 6000, polling: 30 }).then(h => h.jsonValue()).catch(() => '');
   expect(/^La4\|[+-]?\d$/.test(note), `le la à 440 Hz du micro simulé n'est pas reconnu (« ${note} »)`);
   await page.click('[data-act=inopen]'); await sleep(150); expect(!(await page.$('.tuner')), 'accordeur resté affiché');
@@ -2024,7 +2025,8 @@ test('LH02', 'Notes longues', 'Le maintien conserve l’attaque originale et peu
     const yes = await heldProject(id), no = await heldProject(id, 60, false);
     const r = await page.evaluate(async ([a, b]) => {
       const x = await window.kh.renderOffline(a, false), y = await window.kh.renderOffline(b, false), X = x.getChannelData(0), Y = y.getChannelData(0); let delta = 0;
-      for (let i = 0; i < x.sampleRate; i++) delta = Math.max(delta, Math.abs(X[i] - Y[i]));
+      // L'attaque (avant le début de la boucle, 0,6 s après le départ du son) doit rester identique.
+      for (let i = 0; i < x.sampleRate * 0.6; i++) delta = Math.max(delta, Math.abs(X[i] - Y[i]));
       const rms = (d, sr) => { let e = 0; for (let i = sr * 7; i < sr * 8; i++) e += d[i] * d[i]; return Math.sqrt(e / sr); };
       return { delta, yes: rms(X, x.sampleRate), no: rms(Y, y.sampleRate) };
     }, [yes, no]);
@@ -2160,6 +2162,120 @@ test('SB10', 'Navigateur de sons', 'Changer de projet pendant l’ouverture ne p
   await soundsOpen(); await S(() => window.kh.createFromTemplate('empty')); const before = JSON.stringify(await proj());
   await page.click(soundRow('r_piano') + ' [data-act=sound-use]'); expect((await page.textContent('.sound-status')).includes('plus disponible'), 'piste disparue non signalée');
   expect(JSON.stringify(await proj()) === before, 'le nouveau projet a changé'); await closeSounds();
+});
+
+// ===== V15.2 : nuances, raccords de boucle mesurés, registres égalisés =====
+const touchProject = (id, vel, touch) => page.evaluate(([id, vel, touch]) => window.qa.only(1, (p, tr) => {
+  p.bpm = 120; p.loop = false; tr.rev = 0; tr.dly = 0; tr.chorus = 0; tr.synth = window.kh.makeSynth(id); tr.synth.hold = false; if (touch !== undefined) tr.synth.touch = touch;
+  tr.clips = [{ id: 'touch-note', name: id, start: 0, len: 16, offset: 0, patLen: 16, notes: [{ p: 60, s: 0, l: 4, v: vel }] }];
+}), [id, vel, touch]);
+const brightness = async p => { const [w] = await page.evaluate(p => window.qa.wins(p, [[0.02, 0.5]]), p); return { l: w.l, b: w.hf / Math.max(1e-9, w.l) }; };
+test('NU01', 'Nuances', 'Une note jouée doucement est plus sombre qu’une note jouée fort sur cinq instruments enregistrés', async () => {
+  for (const id of ['r_piano', 'r_clavinet', 'r_nylon', 'r_brass', 'r_strings']) {
+    const soft = await brightness(await touchProject(id, 0.25)), loud = await brightness(await touchProject(id, 1));
+    expect(soft.l < loud.l && soft.b < loud.b * 0.9, `${id} : doux ${JSON.stringify(soft)}, fort ${JSON.stringify(loud)}`);
+  }
+});
+test('NU02', 'Nuances', 'Nuances à zéro : la force ne change que le volume, pas le timbre', async () => {
+  const soft = await brightness(await touchProject('r_piano', 0.25, 0)), loud = await brightness(await touchProject('r_piano', 1, 0));
+  near(soft.b / loud.b, 1, 0.03, 'le timbre a changé sans nuances'); expect(soft.l < loud.l * 0.4, 'le volume doit suivre la force');
+});
+test('NU03', 'Nuances', 'Un ancien projet garde exactement son son : nuances à zéro après ouverture', async () => {
+  const data = await S(() => { const p = window.kh.demoProject(); p.name = 'Legacy touch'; p.tracks[1].synth = window.kh.makeSynth('r_piano'); delete p.tracks[1].synth.touch; p.tracks[1].clips[0].notes.forEach(n => { n.v = 0.3; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const f = path.join(TMP, 'legacy-touch.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await page.waitForFunction(() => window.kh.S.project.name === 'Legacy touch');
+  expect((await proj()).tracks[1].synth.touch === 0, 'un ancien projet a reçu des nuances');
+  expect(await S(() => window.kh.makeSynth('r_piano').touch) > 0, 'un nouvel instrument enregistré doit avoir des nuances');
+  expect(await S(() => window.kh.makeSynth('lead').touch) === 0, 'un son de synthèse ne doit pas changer');
+});
+test('NU04', 'Nuances', 'Le réglage Nuances s’affiche pour un instrument enregistré, s’annule et voyage dans le fichier', async () => {
+  await newBlank(); await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_piano');
+  const sel = 'input[aria-label="Nuances"]'; await page.waitForSelector(sel);
+  await page.$eval(sel, i => { i.value = '0.2'; i.dispatchEvent(new Event('input')); i.dispatchEvent(new Event('change')); });
+  near((await proj()).tracks[1].synth.touch, 0.2, 1e-6, 'réglage non appliqué');
+  await page.keyboard.press('Control+z'); near((await proj()).tracks[1].synth.touch, 0.7, 1e-6, 'annulation');
+  await page.keyboard.press('Control+Shift+z'); near((await proj()).tracks[1].synth.touch, 0.2, 1e-6, 'rétablissement');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const saved = path.join(TMP, 'touch.khm'); await dl.saveAs(saved);
+  near(JSON.parse(fs.readFileSync(saved, 'utf8')).project.tracks[1].synth.touch, 0.2, 1e-6, 'nuances absentes du fichier');
+  await page.selectOption('[data-role=preset]', 'lead'); expect(!(await page.$(sel)), 'le réglage ne concerne que les instruments enregistrés');
+});
+test('NU05', 'Nuances', 'Le réglage est traduit dans les trois langues', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_piano');
+  for (const [lang, label] of [['en', 'Dynamics'], ['es', 'Matices'], ['fr', 'Nuances']]) {
+    await page.evaluate(l => window.kh.setLang(l), lang); await page.click(await headSel(1));
+    expect(!!(await page.$(`input[aria-label="${label}"]`)), `${lang} : « ${label} » absent`);
+  }
+});
+test('NU06', 'Nuances', 'Le timbre s’ouvre progressivement avec la force et ne descend jamais sous le troisième harmonique', async () => {
+  const r = await S(() => { const k = window.kh.banks, p = { touch: 1 }, f = 65.4, cut = [0.1, 0.4, 0.7, 1].map(v => k.touchCutoff(k.touchSoftness(p, v), f)); return { cut, low: k.touchCutoff(1, f), off: k.touchSoftness({ touch: 0 }, 0.1) }; });
+  expect(r.cut.every((c, i) => !i || c > r.cut[i - 1]) && r.cut[3] === 18000 && r.low >= 65.4 * 3 && r.off === 0, JSON.stringify(r));
+});
+test('NU07', 'Nuances', 'Une touche jouée doucement au clavier MIDI sonne plus sombre en direct', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_piano'); await S(() => window.kh.engine.prepare()); await sleep(500);
+  const hit = async v => { await page.evaluate(v => window.kh.onMidi([0x90, 60, v]), v); await sleep(250); const r = await S(() => { const a = window.kh.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); let e = 0, hf = 0; for (let i = 1; i < d.length; i++) { e += d[i] * d[i]; hf += (d[i] - d[i - 1]) ** 2; } return { l: Math.sqrt(e / d.length), b: Math.sqrt(hf / Math.max(1e-12, e)) }; }); await S(() => window.kh.onMidi([0x80, 60, 0])); await sleep(700); return r; };
+  const soft = await hit(25), loud = await hit(127);
+  expect(soft.l > 0 && loud.l > soft.l && soft.b < loud.b, `doux ${JSON.stringify(soft)}, fort ${JSON.stringify(loud)}`);
+});
+test('LP01', 'Raccords de boucle', 'Les 237 boucles de maintien : ni clic ni saut de niveau au raccord, mesurés note par note', async () => {
+  const r = await S(async () => {
+    const k = window.kh.banks, res = [];
+    for (const id of k.SUSTAIN_BANKS) { await k.loadBank(id);
+      for (let m = 24; m <= 96; m += 3) { const x = k.sampleFor(id, m); if (!x || x.rate !== 1 || !x.s.held) continue;
+        const b = x.s.held.buf, sr = b.sampleRate, st = Math.round(x.s.held.loop.start * sr), en = Math.round(x.s.held.loop.end * sr), d = b.getChannelData(0);
+        const W = Math.round(Math.max(0.02 * sr, 3 * sr / (440 * 2 ** ((m - 69) / 12))));
+        const db = (get, a, z) => { let e = 0; for (let i = a; i < z; i++) { const v = get(i); e += v * v; } return 10 * Math.log10(e / (z - a) + 1e-20); };
+        const wrap = i => (i < 0 ? d[en + i] : d[st + i]);
+        let jw = 0; for (let o = -W; o <= 0; o += Math.round(W / 8)) jw = Math.max(jw, Math.abs(db(wrap, o, o + W) - db(wrap, o - W, o)));
+        let jn = 0; for (let o = st + W; o < en - W; o += Math.round(W / 2)) jn = Math.max(jn, Math.abs(db(i => d[i], o, o + W) - db(i => d[i], o - W, o)));
+        const dif = []; for (let i = st + 1; i < st + W; i++) dif.push(Math.abs(d[i] - d[i - 1])); dif.sort((a, z) => a - z);
+        res.push({ n: id + '/' + m, jump: jw - jn, click: Math.abs(d[st] - d[en - 1]) / (dif[Math.floor(dif.length * 0.99)] || 1e-9) });
+      } }
+    return res;
+  });
+  near(r.length, 237, 0, 'nombre de boucles');
+  const bad = r.filter(x => x.jump > 1.5 || x.click > 1.5); expect(!bad.length, 'raccords défaillants : ' + JSON.stringify(bad.slice(0, 5)));
+});
+test('LP02', 'Raccords de boucle', 'Une note tenue dix secondes ne varie pas plus que l’enregistrement d’origine, sans pulsation à chaque tour', async () => {
+  for (const id of ['r_choir', 'r_cello', 'r_strings', 'r_violin']) for (const midi of [36, 60, 84]) {
+    const p = await heldProject(id, midi);
+    const w = await page.evaluate(p => window.qa.wins(p, Array.from({ length: 32 }, (_, i) => [3 + i * 0.2, 3.2 + i * 0.2])), p);
+    const lv = w.map(x => 20 * Math.log10(x.l + 1e-9)); let jump = 0; for (let i = 1; i < lv.length; i++) jump = Math.max(jump, Math.abs(lv[i] - lv[i - 1]));
+    // Variation naturelle de l'enregistrement (vibrato, archet) sur sa partie tenue, mêmes tranches de 200 ms.
+    const nat = await page.evaluate(async ([bank, midi]) => { const k = window.kh.banks; await k.loadBank(bank); const x = k.sampleFor(bank, midi), b = x.s.buf, d = b.getChannelData(0), sr = b.sampleRate, lv = [];
+      for (let t = x.s.off + 0.6; t + 0.2 < x.s.off + 2.2; t += 0.1) { let e = 0; const i0 = Math.round(t * sr); for (let i = i0; i < i0 + 0.2 * sr; i++) e += d[i] * d[i]; lv.push(10 * Math.log10(e / (0.2 * sr) + 1e-20)); }
+      let m = 0; for (let i = 2; i < lv.length; i++) m = Math.max(m, Math.abs(lv[i] - lv[i - 2])); return m; }, [id.slice(2), midi]);
+    expect(jump < Math.max(3, nat + 1.5), `${id}/${midi} : saut de ${jump.toFixed(1)} dB entre deux tranches de 200 ms (enregistrement : ${nat.toFixed(1)} dB)`);
+  }
+});
+test('RG01', 'Registres', 'D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments', async () => {
+  const r = await S(async () => {
+    const k = window.kh.banks, out = {};
+    for (const id of Object.keys(k.BANKS)) { if (id === 'drums') continue; await k.loadBank(id); const row = [];
+      for (let m = 24; m <= 96; m += 3) { const x = k.sampleFor(id, m); if (x && x.rate === 1) row.push(k.noteLoudness(x.s.buf, x.s.off) + 20 * Math.log10(x.s.gain)); }
+      let jump = 0; for (let i = 1; i < row.length; i++) jump = Math.max(jump, Math.abs(row[i] - row[i - 1]));
+      out[id] = { jump, span: Math.max(...row) - Math.min(...row), n: row.length };
+    }
+    return out;
+  });
+  near(Object.keys(r).length, 29, 0, 'instruments');
+  const bad = Object.entries(r).filter(([, v]) => v.jump > 2 || v.span > 12 || v.n < 8); expect(!bad.length, JSON.stringify(bad));
+});
+test('RG02', 'Registres', 'Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle', async () => {
+  const r = await S(async () => {
+    const k = window.kh.banks, bad = [];
+    for (const id of Object.keys(k.BANKS)) { await k.loadBank(id);
+      for (let m = 24; m <= 96; m += 3) { const x = k.sampleFor(id, m); if (!x || x.rate !== 1) continue; const d = x.s.buf.getChannelData(0); let pk = 0; for (let i = 0; i < d.length; i += 4) pk = Math.max(pk, Math.abs(d[i])); if (pk * x.s.gain > 0.91) bad.push(id + '/' + m); } }
+    return bad;
+  });
+  expect(!r.length, 'crêtes au-delà de 0,9 : ' + r.join(', '));
+});
+test('RG03', 'Registres', 'Une gamme jouée sur trois octaves au piano reste régulière à l’export', async () => {
+  const p = await page.evaluate(() => window.qa.only(1, (p, tr) => {
+    p.bpm = 120; p.loop = false; tr.rev = 0; tr.dly = 0; tr.chorus = 0; tr.synth = window.kh.makeSynth('r_piano');
+    tr.clips = [{ id: 'scale', name: 'scale', start: 0, len: 80, offset: 0, patLen: 80, notes: Array.from({ length: 19 }, (_, i) => ({ p: 36 + i * 2, s: i * 4, l: 3, v: 0.8 })) }];
+  }));
+  const w = await page.evaluate(p => window.qa.wins(p, Array.from({ length: 19 }, (_, i) => [i * 0.5 + 0.01, i * 0.5 + 0.2])), p);
+  const lv = w.map(x => 20 * Math.log10(x.l + 1e-9)); let jump = 0; for (let i = 1; i < lv.length; i++) jump = Math.max(jump, Math.abs(lv[i] - lv[i - 1]));
+  expect(jump < 4, `écart de ${jump.toFixed(1)} dB entre deux notes voisines : ${lv.map(v => v.toFixed(1)).join(' ')}`);
 });
 
 (async () => {

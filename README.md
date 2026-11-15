@@ -14,7 +14,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.15.1)
+## Fonctions (v0.15.2)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -82,9 +82,16 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 - Les instruments compatibles nouvellement sélectionnés activent ce maintien par défaut. Un ancien projet sans ce réglage conserve sa durée précédente ; le bouton permet de l’activer explicitement. Le choix voyage dans le fichier `.khm`.
 - La boucle est calculée à partir d’une portion du son avec raccord de phase et fondu croisé. Le réalisme du maintien et l’équilibre des timbres restent à vérifier à l’oreille sur du matériel réel.
 
+## Nuances et sons plus réguliers (v0.15.2)
+
+- **Nuances**, dans les réglages d’un instrument enregistré : une note jouée doucement (clavier MIDI sensible au toucher, ou force réduite dans le piano roll) sonne plus feutrée et attaque un peu moins sec ; jouée fort, le son s’ouvre complètement. À zéro, la force ne change que le volume. Les nouveaux instruments enregistrés ont des nuances par défaut ; un ancien projet garde exactement son son.
+- Les sources libres utilisées n’ont qu’une prise par note : les nuances sont obtenues en assombrissant le timbre selon la force, relativement à la hauteur de la note. Sur des sons déjà doux (piano électrique, nappes), l’effet est discret.
+- **Registres égalisés** : le volume perçu de chaque note enregistrée est ramené vers la tendance de son instrument. Plus de note qui ressort ou disparaît par rapport à ses voisines (écart maximal mesuré : 1,3 dB entre deux notes enregistrées voisines, contre 11 dB avant), tout en gardant un grave plus rond et un aigu plus léger.
+- **Raccords des notes longues** : fondu de 100 ms, niveau corrigé pendant le fondu et compensation progressive sur toute la boucle. Plus de bosse ou de creux de niveau à chaque tour (jusqu’à 8 dB avant sur certaines notes), et aucun clic, mesurés sur les 237 boucles.
+
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 212 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 224 cas).
 Le plus simple, serveur compris :
 
 ```bash

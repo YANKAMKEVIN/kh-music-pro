@@ -2,7 +2,10 @@ import './style.css';
 import { copyClip, deleteClip, duplicateClip, pasteClip, saveFile, splitClip, toggleRecord } from './actions';
 import { engine, lastRender, renderOffline } from './audio/engine';
 import { liveWams } from './audio/wam';
-import { lufs } from './audio/loudness';
+import { lufs, noteLoudness } from './audio/loudness';
+import { BANKS, loadBank, sampleFor } from './audio/banks';
+import { SUSTAIN_BANKS } from './audio/sustain';
+import { touchCutoff, touchSoftness } from './audio/graph';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
@@ -135,7 +138,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, banks: { BANKS, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff } } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -52,6 +52,7 @@ export interface SynthParams {
   damp: number;                           // corde pincée
   bufferId?: string; sampleName?: string; root: number; // sampler
   hold: boolean;                         // boucle de maintien des instruments échantillonnés
+  touch: number;                          // nuances : jouer doucement assombrit le timbre (0 = volume seul)
   bank?: string;                          // instrument échantillonné (moteur « multi »)
 }
 
@@ -184,11 +185,13 @@ export const KITS: Record<string, { tune: number; dec: number }> = {
 
 const BASE: Omit<SynthParams, 'preset'> = {
   engine: 'sub', wave: 'sawtooth', wave2: 'square', detune: 8, mix2: 0.4, octave: 0, cutoff: 2600, reso: 2, envAmt: 0.3,
-  a: 0.005, d: 0.2, s: 0.6, r: 0.15, pitchEnv: 0, ratio: 1, fmAmt: 1.5, fmDecay: 0.3, damp: 0.5, root: 60, hold: false,
+  a: 0.005, d: 0.2, s: 0.6, r: 0.15, pitchEnv: 0, ratio: 1, fmAmt: 1.5, fmDecay: 0.3, damp: 0.5, root: 60, hold: false, touch: 0,
 };
 type P = Partial<Omit<SynthParams, 'preset'>>;
+/** Nuances des nouveaux instruments enregistrés ; les anciens projets gardent 0 (volume seul). */
+export const TOUCH_DEFAULT = 0.7;
 /** Instrument échantillonné : l'enveloppe ne fait qu'adoucir l'attaque et la fin de la note. */
-const real = (bank: string, a = 0.002, r = 0.3): P => ({ engine: 'multi', bank, hold: SUSTAIN_BANKS.has(bank), cutoff: 16000, reso: 0.5, envAmt: 0, a, d: 0.2, s: 1, r });
+const real = (bank: string, a = 0.002, r = 0.3): P => ({ engine: 'multi', bank, hold: SUSTAIN_BANKS.has(bank), touch: TOUCH_DEFAULT, cutoff: 16000, reso: 0.5, envAmt: 0, a, d: 0.2, s: 1, r });
 const DEFS: [string, string, P][] = [
   ['r_piano', 'realKeys', real('piano', 0.002, 0.35)], ['r_nylon', 'realGuitar', real('nylon', 0.002, 0.4)], ['r_eguitar', 'realGuitar', real('eguitar', 0.002, 0.3)],
   ['r_ebass', 'realBass', real('ebass', 0.002, 0.15)], ['r_abass', 'realBass', real('abass', 0.002, 0.2)],

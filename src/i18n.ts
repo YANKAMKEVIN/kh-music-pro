@@ -151,6 +151,7 @@ const D: Record<string, [string, string, string]> = {
   'syn.mix2': ['Mélange 2', 'Mix 2', 'Mezcla 2'], 'syn.detune': ['Désaccord', 'Detune', 'Desafinación'], 'syn.pitchEnv': ['Chute', 'Pitch drop', 'Caída'],
   'syn.ratio': ['Ratio FM', 'FM ratio', 'Ratio FM'], 'syn.fmAmt': ['Brillance', 'Brightness', 'Brillo'], 'syn.fmDecay': ['Déclin FM', 'FM decay', 'Caída FM'],
   'syn.damp': ['Étouffé', 'Damping', 'Apagado'],
+  'syn.touch': ['Nuances', 'Dynamics', 'Matices'],
   'syn.octave': ['Octave', 'Octave', 'Octava'], 'syn.cutoff': ['Filtre', 'Filter', 'Filtro'], 'syn.reso': ['Résonance', 'Resonance', 'Resonancia'], 'syn.envAmt': ['Env. filtre', 'Filter env.', 'Env. filtro'],
   'syn.a': ['Attaque', 'Attack', 'Ataque'], 'syn.d': ['Déclin', 'Decay', 'Caída'], 'syn.s': ['Maintien', 'Sustain', 'Sostenido'], 'syn.r': ['Relâche', 'Release', 'Relajación'],
   'smp.load': ['Charger un son', 'Load a sound', 'Cargar un sonido'],

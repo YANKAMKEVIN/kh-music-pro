@@ -190,7 +190,7 @@ function synthPanel(tr: Track, collapsible = false) {
     sp.engine === 'fm' ? [sl('ratio', 0.5, 8, 0.5, 'ratio', v => '×' + v), sl('fmAmt', 0, 6, 0.05, 'fmAmt', v => v.toFixed(1)), sl('fmDecay', 0.02, 2, 0.01, 'fmDecay', ms)]
       : sp.engine === 'pluck' ? [sl('damp', 0, 1, 0.01, 'damp', pct)]
         : sp.engine === 'sampler' ? [samplerBox(tr)]
-          : sp.engine === 'multi' ? [h('span', { class: 'tip real' }, '🎻 ' + t('syn.real'))]
+          : sp.engine === 'multi' ? [h('span', { class: 'tip real' }, '🎻 ' + t('syn.real')), sl('touch', 0, 1, 0.05, 'touch', pct)]
           : [wave('wave', t('syn.wave1')), wave('wave2', t('syn.wave2')), sl('mix2', 0, 1, 0.01, 'mix2', pct), sl('detune', 0, 50, 1, 'detune', v => v + ' ct'), sl('pitchEnv', 0, 24, 1, 'pitchEnv', v => v + ' st')];
   // Avec un clip ouvert, les réglages détaillés sont repliés pour laisser la place au piano roll.
   const open = !collapsible || S.synthOpen;

@@ -436,6 +436,12 @@ function pluckBuffer(ctx: BaseAudioContext, freq: number, damp: number): AudioBu
   return b;
 }
 
+/** Part de douceur d'une note (0 = jouée à fond ou nuances coupées, jusqu'à 1). */
+export const touchSoftness = (p: SynthParams, vel: number) => Math.max(0, Math.min(1, (p.touch ?? 0) * (1 - Math.min(1, vel))));
+/** Fréquence de coupure du timbre selon la douceur, relative à la note jouée : ouverte à fond,
+ * elle descend vers les premiers harmoniques quand on joue doucement, jamais sous le 3e. */
+export const touchCutoff = (soft: number, freq: number) => Math.min(18000, freq * Math.max(3, Math.pow(18000 / Math.max(20, freq), 1 - 1.3 * soft)));
+
 /**
  * Joue une note. `dur` en secondes pour une note programmée ; `null` pour une note tenue
  * (jeu en direct) : la voix renvoyée doit alors être relâchée avec `release()`.
@@ -445,7 +451,7 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   const freq = 440 * Math.pow(2, (midi - 69) / 12 + p.octave);
   const vca = c.createGain(), filt = c.createBiquadFilter();
   const srcs: AudioScheduledSourceNode[] = [];
-  let level = 0.15, startOff = 0;
+  let level = 0.15, startOff = 0, softAttack = 0;
 
   if (p.engine === 'fm') {
     const car = mix.reg(c.createOscillator()), mod = mix.reg(c.createOscillator()), mg = c.createGain();
@@ -463,7 +469,14 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
     if (!m) return;
     const s = mix.reg(c.createBufferSource()); s.buffer = p.hold && m.s.held ? m.s.held.buf : m.s.buf; s.playbackRate.value = m.rate;
     if (p.hold && m.s.held) { s.loop = true; s.loopStart = m.s.held.loop.start; s.loopEnd = m.s.held.loop.end; }
-    s.connect(filt); srcs.push(s); level = 0.5 * m.s.gain; startOff = m.s.off;
+    // Nuances : les sources n'ont qu'une couche par note ; une note jouée doucement est donc
+    // assombrie (moins d'harmoniques aigus) et attaquée un peu moins sec, comme un vrai instrument.
+    const soft = touchSoftness(p, vel);
+    if (soft > 0) {
+      const tone = c.createBiquadFilter(); tone.type = 'lowpass'; tone.Q.value = 0.5;
+      tone.frequency.value = touchCutoff(soft, freq); s.connect(tone).connect(filt); softAttack = soft * 0.015;
+    } else s.connect(filt);
+    srcs.push(s); level = 0.5 * m.s.gain; startOff = m.s.off;
   } else if (p.engine === 'sampler') {
     const buf = p.bufferId ? buffers?.get(p.bufferId) : undefined;
     if (!buf) return;
@@ -486,7 +499,7 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   filt.frequency.setValueAtTime(Math.min(18000, p.cutoff + p.envAmt * 9000), t);
   filt.frequency.setTargetAtTime(p.cutoff, t + p.a, Math.max(0.01, p.d / 3));
 
-  const peak = vel * level, sus = peak * p.s, a = Math.max(0.002, p.a), dk = Math.max(0.01, p.d / 3), rk = Math.max(0.01, p.r / 3);
+  const peak = vel * level, sus = peak * p.s, a = Math.max(0.002, p.a, softAttack), dk = Math.max(0.01, p.d / 3), rk = Math.max(0.01, p.r / 3);
   const g = vca.gain;
   g.setValueAtTime(0, t);
   filt.connect(vca).connect(dest);
