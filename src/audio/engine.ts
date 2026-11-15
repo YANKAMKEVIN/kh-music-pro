@@ -214,15 +214,25 @@ class Engine {
   // ---------- Jeu en direct ----------
   noteOn(track: Track, midi: number, vel = 0.8) {
     this.ctx.resume(); this.sync();
-    if (track.synth?.engine === 'multi' && track.synth.bank && !bankReady(track.synth.bank)) { this.loadBank(track.synth.bank); return; }
-    const n = this.mix.tracks.get(track.id), key = track.id + ':' + midi;
+    const key = track.id + ':' + midi;
+    // Instrument pas encore chargé : la touche reste en attente et sonne dès la fin du chargement, si elle est toujours tenue.
+    if (track.synth?.engine === 'multi' && track.synth.bank && !bankReady(track.synth.bank)) {
+      this.pendingOn.add(key);
+      this.loadBank(track.synth.bank).then(ok => { if (ok && this.pendingOn.delete(key)) this.noteOn(track, midi, vel); });
+      return;
+    }
+    this.pendingOn.delete(key);
+    const n = this.mix.tracks.get(track.id);
     if (!n || !track.synth) return;
     this.voices.get(key)?.release(this.ctx.currentTime);
     const v = playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.003, null, vel, buffers);
     if (v) this.voices.set(key, v);
   }
+  /** Touches tenues pendant le chargement de leur instrument. */
+  private pendingOn = new Set<string>();
   noteOff(track: Track, midi: number) {
     const key = track.id + ':' + midi;
+    this.pendingOn.delete(key);
     this.voices.get(key)?.release(this.ctx.currentTime); this.voices.delete(key);
   }
   previewNote(track: Track, midi: number, dur = 0.25) {

@@ -10,6 +10,9 @@ import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inSc
 import { ICON, drawFades, drawWave } from './arr';
 import { clamp, h, pct, slider, toast } from './dom';
 
+/** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
+const okbDown = new Map<number, number>();
+
 const RH = 16, SW = 28, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150;
 const SOLF = { fr: ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], es: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], en: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] };
 const isBlack = (p: number) => [1, 3, 6, 8, 10].includes(p % 12);
@@ -86,11 +89,14 @@ function padsView(tr: Track) {
         custom && h('button', { title: t('pad.reset'), 'aria-label': t('pad.reset'), data: { act: 'padreset' }, onclick: (e: Event) => { e.stopPropagation(); tr.pads![r] = null; commit(); } }, '↺')));
     pad.onpointerdown = e => {
       if ((e.target as HTMLElement).closest('.pact')) return;
-      e.preventDefault(); padHit(r, 1, tr); flashPad(r);
-      const up = () => { padRelease(r); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+      e.preventDefault(); padHit(r, 1, tr); flashPad(r); const id = e.pointerId;
+      // Seul le doigt qui a frappé ce pad arrête sa répétition : lever un autre doigt ne coupe pas les autres pads.
+      const up = (u: PointerEvent) => { if (u.pointerId !== id) return; padRelease(r); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
       addEventListener('pointerup', up); addEventListener('pointercancel', up);
     };
-    pad.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); padHit(r, 1, tr); flashPad(r); } };
+    // Au clavier : une frappe par appui (pas d'auto-répétition), et le relâchement arrête la répétition de notes.
+    pad.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) { padHit(r, 1, tr); flashPad(r); } } };
+    pad.onkeyup = e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); padRelease(r); } };
     pad.ondragover = e => { e.preventDefault(); pad.classList.add('over'); };
     pad.ondragleave = () => pad.classList.remove('over');
     pad.ondrop = e => { e.preventDefault(); e.stopPropagation(); pad.classList.remove('over'); const f = audioFiles(e.dataTransfer?.files)[0]; if (f) setSample(f); };
@@ -239,19 +245,23 @@ function screenKeys() {
     const i = whites.findIndex(w => w > m);
     el.append(h('div', { class: 'bk', data: { m: String(m) }, style: `left:calc(${i} * 100% / ${whites.length} - 100% / ${whites.length} * .3)` }));
   }
-  // Plusieurs doigts, et glissé d'une touche à l'autre.
-  const down = new Map<number, number>();
-  const at = (e: PointerEvent) => { const k = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-m]'); return k && el.contains(k) ? +k.dataset.m! : null; };
-  const mark = (m: number, on: boolean) => el.querySelector(`[data-m="${m}"]`)?.classList.toggle('on', on);
+  // Plusieurs doigts, et glissé d'une touche à l'autre. Les doigts posés sont gardés hors de l'élément,
+  // et suivis sur la fenêtre : un redessin pendant l'appui (enregistrement, bouton MIDI…) ne bloque plus de note.
+  const at = (e: PointerEvent) => { const k = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('.okb [data-m]'); return k ? +k.dataset.m! : null; };
+  const mark = (m: number, on: boolean) => document.querySelector(`.okb [data-m="${m}"]`)?.classList.toggle('on', on);
   const set = (id: number, m: number | null) => {
-    const cur = down.get(id);
+    const cur = okbDown.get(id);
     if (cur === m || (cur === undefined && m === null)) return;
-    if (cur !== undefined) { noteOff(cur); mark(cur, false); down.delete(id); }
-    if (m !== null && ![...down.values()].includes(m)) { noteOn(m, 0.8); mark(m, true); down.set(id, m); }
+    if (cur !== undefined) { noteOff(cur); mark(cur, false); okbDown.delete(id); }
+    if (m !== null && ![...okbDown.values()].includes(m)) { noteOn(m, 0.8); mark(m, true); okbDown.set(id, m); }
   };
-  el.onpointerdown = e => { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch { /* pointeur synthétique */ } set(e.pointerId, at(e)); };
-  el.onpointermove = e => { if (down.has(e.pointerId)) set(e.pointerId, at(e)); };
-  el.onpointerup = el.onpointercancel = e => set(e.pointerId, null);
+  for (const m of okbDown.values()) el.querySelector(`[data-m="${m}"]`)?.classList.add('on');
+  el.onpointerdown = e => {
+    e.preventDefault(); const id = e.pointerId; set(id, at(e));
+    const move = (u: PointerEvent) => { if (u.pointerId === id && okbDown.has(id)) set(id, at(u)); };
+    const up = (u: PointerEvent) => { if (u.pointerId !== id) return; set(id, null); removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+    addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+  };
   const oct = (d: number, label: string) => h('button', { class: 'pill', data: { act: d < 0 ? 'octdown' : 'octup' }, 'aria-label': t('help.k.octave') + ' ' + label, title: t('help.k.octave'), onclick: () => { kb.octave = clamp(kb.octave + d, -3, 3); emit(); } }, label);
   return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, oct(-1, '−'), el, oct(1, '+'));
 }
@@ -321,11 +331,14 @@ function pianoRoll(tr: Track, c: Clip) {
   for (let p = PMAX; p >= PMIN; p--) {
     keys.append(h('button', {
       class: 'key' + (isBlack(p) ? ' black' : '') + (p % 12 === 0 ? ' c' : '') + (scaled && (p - P.key) % 12 === 0 ? ' root' : ''), tabIndex: -1, 'aria-label': noteName(p), data: { p: String(p) },
-      // La touche joue tant qu'elle est tenue (souris ou doigt), comme une touche du clavier de l'ordinateur.
+      // La touche joue tant qu'elle est tenue (souris ou doigt), par le même chemin que le clavier de l'ordinateur
+      // et le MIDI : accords à un doigt, arpégiateur et enregistrement de ce que l'on joue s'appliquent.
       // Le relâchement est écouté sur la fenêtre : il arrive même si la touche a été redessinée ou quittée entre-temps.
       onpointerdown: (e: PointerEvent) => {
-        e.preventDefault(); engine.noteOn(tr, p);
-        const up = (u: PointerEvent) => { if (u.pointerId !== e.pointerId) return; engine.noteOff(tr, p); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+        e.preventDefault();
+        const live = S.selTrack === tr.id;
+        if (live) noteOn(p); else engine.noteOn(tr, p);
+        const up = (u: PointerEvent) => { if (u.pointerId !== e.pointerId) return; if (live) noteOff(p); else engine.noteOff(tr, p); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
         addEventListener('pointerup', up); addEventListener('pointercancel', up);
       },
     }, p % 12 === 0 ? noteName(p) : ''));

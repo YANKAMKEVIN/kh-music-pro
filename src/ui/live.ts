@@ -32,11 +32,22 @@ export function renderLive(): HTMLElement {
   // Effets momentanés : actifs tant que le bouton est maintenu.
   const fxBtn = (name: string) => {
     const b = h('button', { class: 'pill fx', data: { fx: name }, title: t('fx.tip') }, t('fx.' + name));
-    const set = (on: boolean) => { engine.fx(name, on); b.classList.toggle('on', on); };
-    b.onpointerdown = e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch { /* pointeur synthétique */ } set(true); };
-    b.onpointerup = b.onpointercancel = () => set(false);
-    b.onkeydown = e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); e.stopPropagation(); set(true); } };
-    b.onkeyup = e => { if (e.key === ' ' || e.key === 'Enter') { e.stopPropagation(); set(false); } };
+    // L'effet tenu est suivi hors du bouton : un redessin pendant l'appui (autre doigt, bouton MIDI) ne le laisse plus allumé.
+    const set = (on: boolean) => { engine.fx(name, on); document.querySelectorAll(`[data-fx="${name}"]`).forEach(x => x.classList.toggle('on', on)); };
+    if (engine.fxOn.has(name)) b.classList.add('on');
+    b.onpointerdown = e => {
+      e.preventDefault(); const id = e.pointerId; set(true);
+      const up = (u: PointerEvent) => { if (u.pointerId !== id) return; set(false); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+      addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    };
+    b.onkeydown = e => {
+      if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+        e.preventDefault(); e.stopPropagation(); set(true);
+        const up = (u: KeyboardEvent) => { if (u.key !== e.key) return; u.stopPropagation(); set(false); removeEventListener('keyup', up, true); removeEventListener('blur', off); };
+        const off = () => { set(false); removeEventListener('keyup', up, true); removeEventListener('blur', off); };
+        addEventListener('keyup', up, true); addEventListener('blur', off);
+      }
+    };
     return b;
   };
   const lq = h('select', { 'aria-label': t('live.q'), title: t('live.qTip'), data: { role: 'liveq' } }, ...[[0, t('grid.bar')], [4, t('grid.beat')], [1, t('live.now')]].map(([v, l]) => h('option', { value: String(v), selected: p.liveQ === v }, String(l))));

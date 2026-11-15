@@ -536,3 +536,24 @@ Correction (`src/ui/editor.ts`, `src/style.css`) :
 QA : LH07 (souris tenue 3,6 s puis relâchée), LH08 (doigt : pas de défilement, levé hors de la touche), LH09 (redessin pendant l'appui, geste annulé : aucune note bloquée). Version 0.16.1.
 
 Non vérifié : l'écoute par le propriétaire de cette correction, et un vrai téléphone.
+
+## 12. V16.2 — tournée « gestes de musicien » (15/11/2026)
+
+Suite au retour de la V16.1 (« il faut faire des QA poussées en amont »), chaque contrôle qui joue, enregistre ou modifie le son a été passé en revue avec la question : que se passe-t-il si on le tient, le glisse, le touche au doigt, l'utilise au clavier seul, sans MIDI ? Inventaire fait par lecture du code et de `qa/run.cjs` (ce qui était testé par un vrai geste et ce qui ne l'était pas), puis chaque défaut certain a reçu un cas de QA qui rejoue le geste, et une correction.
+
+Corrigé :
+- **Clavier du piano roll** : passe par le jeu en direct (`input.noteOn/noteOff`) quand sa piste est sélectionnée : accords à un doigt, arpégiateur et enregistrement de ce que l'on joue s'appliquent comme au clavier de l'ordinateur (LH10, LH11). La colonne des touches est en `touch-action: pan-y` : tenir une touche joue, glisser verticalement fait défiler le piano roll (régression de la V16.1, où plus rien ne défilait au doigt ; LH08 adapté).
+- **Clavier à l'écran 🎹** : les doigts posés sont gardés hors de l'élément (`okbDown`) et suivis sur la fenêtre : une touche tenue pendant un redessin (enregistrement, bouton MIDI) ne reste plus bloquée, arpégiateur compris (GE01).
+- **Effets momentanés du Live** : même principe ; un redessin pendant l'appui ne laisse plus l'effet allumé avec un bouton éteint ; au clavier, relâchement écouté sur la fenêtre, et perte du focus de la fenêtre = relâchement (GE02).
+- **Espace** : sur un bouton atteint par Tab, Espace actionne ce bouton (accessibilité) ; après un clic ou un doigt, Espace reste la lecture. `:focus-visible` ne convient pas (Chromium le rallume à chaque touche) : `main.ts` suit l'origine du focus (`focusByTab`) (GE03).
+- **Pads** : au clavier, une frappe par appui et la répétition de notes s'arrête au relâchement ; en multi-touch, lever un doigt n'arrête plus la répétition des autres pads (GE04).
+- **Première note d'un instrument pas encore chargé** : elle sonne dès la fin du chargement si la touche est toujours tenue (`engine.pendingOn`) ; `window.kh.banks.forgetBank` permet de rejouer un premier chargement en QA (GE05).
+- **Clavier seul** : après chaque réglage, l'écran redessiné remet le focus sur le même bouton ou curseur (`keepFocus` dans `main.ts`, signature data-*/aria-label/rang) ; avant, chaque flèche sur un curseur renvoyait le focus en haut de la page (GE06). Les champs texte et listes ne sont pas concernés, pour ne pas bloquer les raccourcis.
+
+Relevé mais non corrigé, à trancher par le propriétaire :
+1. **Séquenceur de batterie au doigt** : faire défiler la grille allume la case touchée au départ ; peindre plusieurs cases en glissant est impossible au doigt. Choix : la grille capte le doigt (peinture, mais défilement par une autre zone) ou elle défile (pas de peinture au doigt).
+2. **Double-clic dans le vide du piano roll** : crée puis supprime une note (rien ne reste) ; même chose pour l'automation. Un habitué d'Ableton peut être surpris.
+3. **Téléphone** : supprimer une note, créer un clip ou supprimer un point d'automation ne passe que par double-clic, clic droit ou Suppr. Il manque un geste tactile (appui long, ou bouton « supprimer » sur la sélection). À vérifier sur un vrai téléphone.
+4. **Glisser une note, la boucle, un clip, un point d'automation** : pas de gestion de `pointercancel` ni de filtre par doigt. Rare, mais un geste annulé par le système laisse le glissé branché.
+
+QA : LH10-LH11, GE01-GE06 ; 250 cas. Version 0.16.2. Non vérifié : un vrai téléphone, un lecteur d'écran réel, l'écoute.
