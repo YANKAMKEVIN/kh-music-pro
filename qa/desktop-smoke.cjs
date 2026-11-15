@@ -3,7 +3,9 @@
 const { _electron: electron } = require('playwright');
 const path = require('path');
 (async () => {
-  const app = await electron.launch({ args: [path.join(__dirname, '..', 'electron', 'main.cjs'), '--no-sandbox'] });
+  // Profil temporaire : le test part toujours du projet de démo, sans toucher aux projets enregistrés de l'application.
+  const prof = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'kh-smoke-'));
+  const app = await electron.launch({ args: [path.join(__dirname, '..', 'electron', 'main.cjs'), '--no-sandbox', '--user-data-dir=' + prof] });
   const errors = [];
   try {
     const win = await app.firstWindow();

@@ -1991,7 +1991,8 @@ test('MAC01', 'Plugins du Mac', 'Les plugins d\'effet du Mac sont proposés dans
 });
 test('MAC02', 'Plugins du Mac', 'Les curseurs d\'un plugin du Mac pilotent le plugin, s\'enregistrent dans le projet, s\'annulent et reviennent aux réglages d\'origine', async () => {
   await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
-  await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+  try { await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 }); }
+  catch { throw new Error('réglages non affichés : ' + JSON.stringify(await S(() => ({ open: document.querySelector('#fx').open, card: document.querySelector('#fx .fxcard')?.textContent, calls: window.khNative?.calls, live: window.kh.liveWams.size, toast: document.querySelector('#toast').textContent, ctx: window.kh.engine.ctx.state })))); }
   await setSlider('#fx', 'Cutoff Frequency', 1000); await sleep(100);
   const r = await S(() => ({ p: window.kh.S.project.tracks[1].inserts[0].p, set: window.khNative.calls.filter(c => c[0] === 'set').map(c => c.slice(2)) }));
   expect(Math.abs(r.p['0'] - 1000) < 25 && r.set.some(([a, v]) => a === 0 && Math.abs(v - r.p['0']) < 1e-9), `réglage envoyé au plugin et enregistré : ${JSON.stringify(r)}`);

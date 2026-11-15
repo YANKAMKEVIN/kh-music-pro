@@ -5,7 +5,7 @@ Rédigé à la fin de la V14a pour qu'une nouvelle session (notamment sur le Mac
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
-- **État** : version 0.14, 190 cas de QA verts. En ligne sur https://yankamkevin.github.io/kh-music-pro/, installable (PWA), et empaqueté pour le bureau (Electron) pour Windows, macOS (Apple et Intel) et Linux.
+- **État** : version 0.15 (branche `v14b-prototype-natif`, non fusionnée), 201 cas de QA ; `main` en ligne : version 0.14, 190 cas. En ligne sur https://yankamkevin.github.io/kh-music-pro/, installable (PWA), et empaqueté pour le bureau (Electron) pour Windows, macOS (Apple et Intel) et Linux.
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0.
 - **Liste des fonctions** : section « Fonctions » du README.
 
@@ -26,7 +26,8 @@ Tout tourne dans le navigateur, y compris dans la version bureau (Electron n'est
 | `src/actions.ts` | Toutes les actions de l'utilisateur |
 | `src/ui/*` | Arrangement, éditeurs, mixeur, Live, rack d'effets, fenêtres |
 | `src/i18n.ts` | Textes en français, anglais, espagnol |
-| `electron/main.cjs` | Fenêtre de la version bureau |
+| `electron/main.cjs`, `electron/native-preload.cjs` | Fenêtre de la version bureau ; pont isolé vers le module natif (macOS) |
+| `src/audio/au.ts`, `src/audio/native-io.ts`, `src/ui/native.ts` | Plugins Audio Unit du Mac, moteur audio natif et son réglage ; module dans `native/kh-au-bridge` (`npm run native`) |
 | `qa/run.cjs` | Campagne de QA ; `qa/desktop-smoke.cjs` pour la version bureau |
 
 Principes à respecter :
@@ -380,6 +381,45 @@ Non vérifié : le vrai débranchement et le vrai branchement d'écouteurs (le r
 
 **Réécoute par le propriétaire (15/11/2026)** — branchements et débranchements des EarPods en pleine lecture : le son suit à chaque fois, message affiché, et **« la coupure est beaucoup plus courte »**. Le **micro des EarPods** s'ouvre maintenant (entrée « Micro EarPods », tampon d'entrée à 472 pour une réserve de 512 sur une sortie à 44,1 kHz) ; la qualité d'une prise par ce micro reste à écouter.
 
+**Intégration dans l'interface de la version bureau (15/11/2026, version 0.15.0)**
+
+Le prototype ne s'activait qu'avec `KH_NATIVE=1`. Il est maintenant dans l'application, pour le propriétaire comme pour un utilisateur de l'installateur macOS.
+
+Ce que voit l'utilisateur (version bureau sur Mac, module natif présent ; ailleurs, rien ne change) :
+- **🔧 Réglages audio → « ⚡ Moteur audio natif »** : interrupteur (rôle `switch`, clavier et doigt), **désactivé par défaut**, choix retenu sur l'appareil (`localStorage` `kh-native`). La bascule se fait sans redémarrer : `engine.useNative()` / `engine.stopNative()` (nouveau), l'entrée ouverte est rouverte sur le nouveau chemin. La ligne de latence indique le chemin (« chemin natif » ou « navigateur »). En cas d'échec : message dans les réglages (`role=alert`) et à l'écran, et retour automatique au navigateur sur la sortie choisie. Code : `src/ui/native.ts`, `src/ui/audio.ts`.
+- **Chaîne d'effets → groupe « 🍎 Plugins du Mac »** : les Audio Units d'effet installés (`list`, type `aufx`), triés, nom court (« Apple: AUDelay » → « Delay »). Une fois ajouté, un curseur par réglage, lu dans le plugin (nouvelle fonction native `params` : adresse, nom, bornes, valeur par défaut et actuelle, unité Core Audio), affiché avec son unité (Hz, dB, %, s…), bouton « Réglages d'origine ». Les réglages sont enregistrés dans le projet (`p`, par adresse), annulables, et appliqués au plugin en direct (`AuInstance.apply`) comme à l'export. Les plugins du Mac marchent **même avec le moteur natif désactivé** : ils n'ont besoin que du module. Projet ouvert ailleurs (site, Windows) : mention « Plugin du Mac indisponible ici », le son passe tel quel, sans message d'erreur. Fenêtres graphiques des plugins : non reprises (curseurs génériques seulement).
+
+Sécurité de la fenêtre (solution publiable) :
+- **L'isolation de contexte reste active** ; la page n'a ni `require`, ni `process`, ni `module`. Le préchargement (`electron/native-preload.cjs`) expose par `contextBridge` une liste fermée de fonctions, avec contrôle du type des arguments.
+- La mémoire partagée (`SharedArrayBuffer`) **ne traverse pas `contextBridge`** (« An object could not be cloned », essayé). Contournement : la page la confie une fois par `window.postMessage({ khSab, key })`, le préchargement la garde sous cette clé et répond `{ khSabOk: key }` (`shareSab` dans `src/audio/au.ts`) ; les fonctions du pont reçoivent ensuite la clé (`open(key, …)`, `ioStart(key, …)`, `forget(key)`). Vérifié : une valeur écrite d'un côté est lue de l'autre (même processus, mémoire réellement partagée), et les mesures de l'étape 4 sont inchangées (0 échantillon de retard, 0 bloc manqué).
+- Seul le **bac à sable du préchargement** reste coupé (`sandbox: false`) : un préchargement en bac à sable ne peut pas charger de module natif. C'est la configuration habituelle d'une application Electron avec module natif ; la page, elle, reste isolée. Le préchargement n'est chargé que si le module existe (`electron/main.cjs`, chemin passé par `--kh-native=`). L'avertissement d'Electron sur l'isolation a disparu ; reste celui sur l'absence de règle de contenu (CSP), qui existait déjà dans la version normale (voir suite).
+- `KH_NATIVE=0` fait comme si le module était absent ; `KH_NATIVE=1` allume le moteur natif au démarrage sans passer par le réglage (scripts de vérification). `KH_RT=1` inchangé.
+
+Empaquetage :
+- `npm run native` (`scripts/build-native.sh`) construit le module pour les puces Apple **et** Intel, les réunit en un seul fichier (`lipo`) et le signe « ad hoc » (obligatoire sur puce Apple). Le code d'attente active n'utilise plus d'instruction propre à la puce Apple (`pause()`).
+- electron-builder le range dans `Contents/Resources/native/kh_au_bridge.node` (`build.mac.extraResources`), hors de l'archive de l'application.
+- GitHub (action « Version bureau ») : construction du module, puis `qa/packaged-mac.cjs` lance **l'application empaquetée** et vérifie module, isolation, AULowpass exact et bascule du moteur natif. Première exécution verte (le moteur natif y démarre sur « Apple Virtual Sound Device »). L'action se relance aussi quand le module, le script ou `package.json` changent.
+
+Vérifications :
+
+| Vérification | Résultat |
+|---|---|
+| `qa/au-bridge.cjs` : pont isolé, réglages d'AULowpass lus, 23 plugins proposés, « Delay » ajouté par l'interface, curseur « Delay Time » appliqué au vrai plugin | OK |
+| `qa/native-io.cjs` : réglage présent et activé (KH_NATIVE=1), désactivé à l'écran (natif arrêté, son au navigateur, choix retenu), réactivé ; tenue sans manque | OK |
+| `qa/packaged-mac.cjs --strict`, installateur puce Apple, sur ce Mac | OK (moteur natif sur « Haut-parleurs MacBook Pro ») |
+| Même chose, application Intel (`--mac dir --x64`), sous Rosetta | OK |
+| Campagne `qa/run.cjs` : nouveaux cas NAT01-05 (réglage, échec, choix retenu, langues) et MAC01-05 (liste, réglages, annulation, indisponible ici, échec, huit effets, libération) avec un module natif simulé dans le navigateur (`qa.fakeNative`) | **200/201** (DK01, Linux seulement) ; deux campagnes précédentes à 199/201 : MAC02 une fois (avant correction de la libération des plugins), R05 une fois (prise chronométrée, Mac chargé ; 3 réussites sur 3 seul) |
+| `qa/desktop-smoke.cjs` | OK, désormais sur un profil temporaire (le profil de développement avait un projet « Démo » vidé de ses clips, qui le faisait échouer) |
+
+Défauts trouvés et corrigés en route :
+- **Plugins jamais libérés à la suppression d'une piste** (ou à l'ouverture d'un autre projet) : un plugin du Mac continuait de tourner dans son fil natif. Désormais libérés ; un effet retiré pendant son chargement est libéré sans message d'échec (cas MAC05).
+- **Réglages audio vides pendant plusieurs secondes** dans la version bureau sur Mac : la première liste des sorties audio (`enumerateDevices`) met 1 à 4 s à venir. La fenêtre s'affiche maintenant tout de suite et la liste se remplit après, sans redessiner le reste (une mesure peut être en cours).
+- La campagne lance désormais Chromium avec `SharedArrayBuffer` activé (comme la version bureau en mode natif), pour les cas NAT et MAC.
+
+Non vérifié : **l'écoute d'un plugin du Mac à l'oreille** (à faire par le propriétaire : ajouter « Delay » ou « Lowpass » à une piste, moteur natif activé ou non) ; l'installateur sur un vrai Mac Intel (seulement sous Rosetta) ; l'ouverture du `.dmg` téléchargé depuis GitHub (avertissement de macOS attendu, application non signée) ; des plugins tiers (aucun installé) ; HawkScan (pas de clé API, application sans serveur).
+
+Suite possible : règle de contenu (CSP) pour la version bureau ; échelle logarithmique pour les réglages en Hz ; listes de valeurs des réglages à choix (`kAudioUnitParameterUnit_Indexed`) ; préréglages d'usine des plugins ; fenêtres graphiques des plugins (vue Cocoa dans une fenêtre native) ; compensation de la latence déclarée par un plugin (2 ms pour AUPeakLimiter).
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
@@ -392,6 +432,6 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). Écouteurs vérifiés par le propriétaire (coupure courte) ; micro des EarPods ouvert, prise à écouter. Sinon, s'arrêter là et garder le prototype comme référence sans le fusionner.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). Écouteurs vérifiés par le propriétaire (coupure courte) ; micro des EarPods ouvert, prise à écouter. **15/11 : intégré à l'interface de la version bureau** (réglage « moteur audio natif », plugins du Mac dans la chaîne d'effets, pont isolé, module dans l'installateur macOS) : version 0.15.0, à écouter puis à fusionner avec l'accord du propriétaire.
 - **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
