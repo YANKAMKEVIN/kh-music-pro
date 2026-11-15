@@ -2299,6 +2299,31 @@ test('LH06', 'Notes longues', 'L’export WAV contient la note longue et une fin
   let peak = 0; for (let i = 44; i + 1 < b.length; i += 2) peak = Math.max(peak, Math.abs(b.readInt16LE(i))); expect(peak < 32700, 'export saturé');
 });
 
+async function prKey(label) { await page.click(await clipSel(1, 0)); const k = page.locator(`.keys .key[data-p="${label}"]`); await k.scrollIntoViewIfNeeded(); return k.boundingBox(); }
+async function organOnTrack1() { await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.synth = k.makeSynth('r_drawbar'); tr.rev = 0; tr.dly = 0; k.commit(); }); await S(() => window.kh.engine.prepare()); await sleep(700); }
+test('LH07', 'Notes longues', 'Une touche du clavier du piano roll tenue à la souris joue tant qu’elle est enfoncée, puis s’arrête au relâchement', async () => {
+  await organOnTrack1(); const b = await prKey(60);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(3600); const on = await masterRms();
+  await page.mouse.up(); await sleep(650); const off = await masterRms();
+  expect(on > 0.001 && off < on * 0.03, `touche tenue ${on}, relâchée ${off}`);
+});
+test('LH08', 'Notes longues', 'Au doigt : la touche tenue joue, ne fait pas défiler la page et s’arrête même si le doigt glisse hors de la touche', async () => {
+  await organOnTrack1(); await prKey(60);
+  expect(await page.$eval('.keys .key[data-p="60"]', e => getComputedStyle(e).touchAction) === 'none', 'la touche laisse le doigt faire défiler la page');
+  const fire = (type, target) => page.evaluate(([type, target]) => { const el = target === 'key' ? document.querySelector('.keys .key[data-p="60"]') : document.body; el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true })); }, [type, target]);
+  await fire('pointerdown', 'key'); await sleep(3600); const on = await masterRms();
+  await fire('pointerup', 'body'); await sleep(650); const off = await masterRms();
+  expect(on > 0.001 && off < on * 0.03, `doigt tenu ${on}, levé ailleurs ${off}`);
+});
+test('LH09', 'Notes longues', 'Une touche tenue pendant que l’écran se redessine ne reste pas bloquée ; un geste annulé coupe aussi la note', async () => {
+  await organOnTrack1(); await prKey(60);
+  const fire = (type, target) => page.evaluate(([type, target]) => { const el = target === 'key' ? document.querySelector('.keys .key[data-p="60"]') : window; el.dispatchEvent(new PointerEvent(type, { pointerId: 9, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true })); }, [type, target]);
+  await fire('pointerdown', 'key'); await sleep(300); await S(() => window.kh.commit()); await sleep(300);
+  expect(await masterRms() > 0.001, 'la note s’est arrêtée au redessin');
+  await fire('pointerup', 'win'); await sleep(650); const off1 = await masterRms();
+  await fire('pointerdown', 'key'); await sleep(400); await fire('pointercancel', 'win'); await sleep(650); const off2 = await masterRms();
+  expect(off1 < 0.0005 && off2 < 0.0005, `note bloquée (relâchée ${off1}, annulée ${off2})`);
+});
 test('SB01', 'Navigateur de sons', 'Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
   for (const lang of ['fr', 'en', 'es']) {
     await page.evaluate(l => window.kh.setLang(l), lang); await soundsOpen();
