@@ -504,3 +504,10 @@ dialog form { gap: 8px; }
 .tip.err { color: var(--rec); }
 .natsec { border: 1px solid rgba(34, 211, 238, .25); border-radius: 12px; padding: 4px 12px 8px; margin: 8px 0; background: rgba(34, 211, 238, .04); }
 .fxcard .aupar { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
+
+/* V17 : versions du projet et message de récupération après une fermeture inattendue */
+.vrow { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 14px; }
+.vrow form { margin: 0; }
+dialog .plist li[data-ver] .lopen { height: auto; min-height: 42px; flex-wrap: wrap; padding: 6px 12px; }
+dialog.crash { max-width: 520px; }
+dialog [data-act=versnap] { margin-bottom: 10px; }

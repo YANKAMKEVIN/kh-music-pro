@@ -6,7 +6,7 @@ import { S, commit, emit, redo, undo } from '../store';
 import { clamp, h, toast } from './dom';
 import { keyLabel } from './editor';
 import { showAudio } from './audio';
-import { showLibrary } from './library';
+import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -42,7 +42,7 @@ export function buildTop(onLang: () => void) {
   const menu = h('details', { class: 'menu', id: 'menu' });
   const item = (id: string, label: string, fn: () => void) => h('button', { id, onclick: () => { menu.open = false; fn(); } }, label);
   menu.append(h('summary', { class: 'pill' }, t('top.project') + ' ▾'), h('div', { class: 'menu-list' },
-    item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bOpen', t('top.open'), () => $('fProj').click()),
+    item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bVersions', t('ver.menu'), showVersions), item('bOpen', t('top.open'), () => $('fProj').click()),
     item('bSave', t('top.save'), saveFile), item('bImport', t('top.import'), () => pickAudio()),
     item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()), h('hr', {}),
     item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile)));

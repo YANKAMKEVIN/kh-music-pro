@@ -103,6 +103,17 @@ const PAGE_HELPERS = () => {
 };
 
 const results = [];
+let ctx;
+/** Ouvre l'application dans un nouvel onglet du même profil (mêmes données enregistrées) ; sert aussi après un plantage simulé. */
+async function openPage(ready) {
+  page = ready || await ctx.newPage();
+  page.on('pageerror', e => errors.push('PAGE ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
+  page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
+  await page.addInitScript(PAGE_HELPERS);
+  await page.goto(BASE); await page.waitForSelector('.clip');
+  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+}
 let page, browser, dialogText, refuseConfirm = false, ignoreErr = null, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
@@ -2612,17 +2623,193 @@ test('RG03', 'Registres', 'Une gamme jouée sur trois octaves au piano reste ré
   expect(jump < 4, `écart de ${jump.toFixed(1)} dB entre deux notes voisines : ${lv.map(v => v.toFixed(1)).join(' ')}`);
 });
 
+// ============ Empreinte sonore de référence (V17) ============
+// Chaque projet type est exporté par le vrai bouton « Exporter » (même fichier WAV que l'utilisateur), puis mesuré
+// et comparé à son empreinte (qa/empreintes/*.json) : niveau, spectre, enveloppe, clics, coupures, saturation.
+// Les bruits (caisse claire, réverbération) tirent des nombres au hasard : on fixe la graine pendant l'export pour un rendu identique d'une fois sur l'autre.
+const EMP = require('./empreinte.cjs');
+async function exportPrint(name, build, arg, tol) {
+  await page.evaluate(build, arg);
+  await S(() => { const k = window.kh; k.resetHistory(); k.commit(); });
+  await S(() => { let a = 0x2545f491; window.__rnd ??= Math.random; Math.random = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; });
+  let dl;
+  try { [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('#bExport')]); }
+  finally { await S(() => { if (window.__rnd) Math.random = window.__rnd; }); }
+  const f = path.join(TMP, name + '.wav'); await dl.saveAs(f);
+  const r = EMP.check(name, EMP.readWav(fs.readFileSync(f)), tol);
+  expect(!r.problems.length, `${name} : ${r.problems.join(' ; ')}`);
+  return { ...r, file: f };
+}
+/** Projet de notes tenues : quatre instruments à maintien, l'un après l'autre, chacun huit secondes. */
+const HELD_PRINT = () => { const k = window.kh, p = k.templateProject('empty'), demo = k.demoProject(), base = demo.tracks.find(t => t.type === 'synth');
+  p.name = 'Notes tenues'; p.bpm = 120; p.loop = false; p.countIn = false;
+  p.tracks = [['r_strings', 60], ['r_church', 48], ['r_choir', 64], ['r_cello', 43]].map(([id, m], i) => { const tr = JSON.parse(JSON.stringify(base));
+    Object.assign(tr, { id: 'held' + i, name: id, rev: 0.15, dly: 0, chorus: 0, auto: {}, inserts: [], synth: k.makeSynth(id) });
+    tr.clips = [{ id: 'hc' + i, name: id, start: i * 72, len: 72, offset: 0, patLen: 72, notes: [{ p: m, s: 0, l: 64, v: 0.8 }, { p: m + 7, s: 16, l: 48, v: 0.6 }] }]; return tr; });
+  k.S.project = p; k.S.selTrack = p.tracks[0].id; k.S.selClip = p.tracks[0].clips[0].id; };
+test('EM01', 'Empreinte sonore', 'La démo exportée par le bouton Exporter garde son empreinte : niveau, spectre, enveloppe, ni clic, ni coupure, ni saturation', async () => {
+  const r = await exportPrint('demo', () => { const k = window.kh; k.S.project = k.demoProject(); k.S.project.countIn = false; });
+  expect(r.fp.dur > 10 && r.fp.lufs > -30, `export trop court ou trop faible : ${r.fp.dur} s, ${r.fp.lufs} LUFS`);
+});
+test('EM02', 'Empreinte sonore', 'Notes tenues (cordes, orgue d’église, chœur, violoncelle, huit secondes chacune) : empreinte conservée, aucun trou pendant la tenue', async () => {
+  const r = await exportPrint('notes-tenues', HELD_PRINT);
+  // En plus de la référence : chaque note reste présente sur toute sa tenue (aucune tranche de 250 ms ne tombe sous -45 dB).
+  for (let i = 0; i < 4; i++) { const a = Math.round((i * 9 + 0.3) * 4), b = Math.round((i * 9 + 7.7) * 4), seg = r.fp.env.slice(a, b), lo = Math.min(...seg);
+    expect(lo > -45, `instrument ${i + 1} : la tenue tombe à ${lo} dB entre ${(a / 4).toFixed(1)} et ${(b / 4).toFixed(1)} s`); }
+});
+for (const tpl of ['trap', 'house', 'lofi']) test('EM03-' + tpl, 'Empreinte sonore', `Le modèle « ${tpl} » exporté garde son empreinte`, async () => {
+  await exportPrint('modele-' + tpl, t => { const k = window.kh; k.S.project = k.templateProject(t); k.S.project.countIn = false; }, tpl);
+});
+test('EM04', 'Empreinte sonore', 'L’empreinte repère vraiment les défauts : un clic, une coupure de 30 ms, une saturation et une piste devenue muette sont signalés', async () => {
+  const r = await exportPrint('demo', () => { const k = window.kh; k.S.project = k.demoProject(); k.S.project.countIn = false; });
+  const a = EMP.readWav(fs.readFileSync(r.file)), sr = a.sr, copy = () => ({ sr, ch: a.ch.map(c => Float32Array.from(c)) });
+  // Défauts fabriqués dans le fichier exporté, au milieu du morceau.
+  const click = copy(), at = Math.round(sr * 5.37); for (const c of click.ch) { c[at] += 0.6; c[at + 1] -= 0.6; }   // hors des attaques de la batterie
+  const gap = copy(); for (const c of gap.ch) c.fill(0, sr * 6, sr * 6 + Math.round(sr * 0.03));
+  const sat = copy(); for (const c of sat.ch) for (let i = sr * 3; i < sr * 3 + 2000; i++) c[i] = Math.max(-1, Math.min(1, c[i] * 6));
+  const pb = (x, word) => { const l = EMP.compare(r.fp, EMP.fingerprint(x)); expect(l.some(m => m.includes(word)), `défaut non signalé (${word}) : ${l.join(' ; ') || 'aucun écart'}`); };
+  pb(click, 'clics'); pb(gap, 'coupures'); pb(sat, 'saturation');
+  expect(!EMP.compare(r.fp, EMP.fingerprint(copy())).length, 'le même fichier doit être conforme à lui-même');
+  // Une piste muette dans le projet : l'export change de niveau ou de spectre.
+  const muted = await page.evaluate(async () => { const k = window.kh, p = k.demoProject(); p.tracks[0].mute = true; const b = await k.renderOffline(p); return { sr: b.sampleRate, ch: [Array.from(b.getChannelData(0)), Array.from(b.getChannelData(1))] }; });
+  const l = EMP.compare(r.fp, EMP.fingerprint({ sr: muted.sr, ch: muted.ch.map(c => Float32Array.from(c)) }));
+  expect(l.length, 'une piste de batterie coupée n’a pas été remarquée');
+});
+test('EM05', 'Empreinte sonore', 'Geste réel dans la durée : une touche du piano roll tenue huit secondes à la souris sonne sans trou ni chute, puis s’arrête', async () => {
+  await organOnTrack1(); const b = await prKey(60);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down();
+  // Mesure toutes les 50 ms pendant la tenue (après l'attaque) : niveau du mixage principal.
+  const lv = await S(async () => { await new Promise(r => setTimeout(r, 600)); const a = window.kh.engine.mix.analyser, d = new Float32Array(a.fftSize), out = [];
+    for (let i = 0; i < 150; i++) { a.getFloatTimeDomainData(d); out.push(Math.sqrt(d.reduce((e, v) => e + v * v, 0) / d.length)); await new Promise(r => setTimeout(r, 50)); } return out; });
+  await page.mouse.up(); await sleep(650); const off = await masterRms();
+  const dbs = lv.map(v => 20 * Math.log10(v + 1e-9)), lo = Math.min(...dbs), hi = Math.max(...dbs); let jump = 0;
+  for (let i = 1; i < dbs.length; i++) jump = Math.max(jump, Math.abs(dbs[i] - dbs[i - 1]));
+  expect(lo > -50, `la note tenue tombe à ${lo.toFixed(1)} dB`); expect(hi - lo < 10, `niveau instable pendant la tenue : de ${lo.toFixed(1)} à ${hi.toFixed(1)} dB`);
+  expect(jump < 6, `saut de ${jump.toFixed(1)} dB entre deux mesures (trou ou hoquet)`); expect(off < lv[0] * 0.03, `la note ne s’arrête pas (${off})`);
+});
+
+// ============ Ne jamais perdre un morceau (V17) ============
+async function renameByTyping(name) { await page.click('#pname', { clickCount: 3 }); await page.keyboard.type(name); await page.keyboard.press('Tab'); }
+/** Plantage réel de l'onglet (le processus de la page est tué, sans fermeture propre), puis réouverture dans le même profil. */
+async function crashAndReopen() {
+  // L'onglet suivant est créé avant le plantage : le profil reste ouvert, comme une application qu'on relance.
+  const next = await ctx.newPage(), cdp = await page.context().newCDPSession(page);
+  cdp.send('Page.crash').catch(() => { /* la page meurt pendant l'appel : la réponse n'arrive jamais */ });
+  await sleep(1200); page.close().catch(() => { }); await sleep(200);
+  await openPage(next);
+}
+test('SV01', 'Sauvegarde', 'Plantage de l’onglet juste après une modification au clavier : le morceau revient tel quel, un message le dit et mène aux versions', async () => {
+  await renameByTyping('Morceau sauvé QA'); await sleep(900);   // la sauvegarde automatique part 0,5 s après la modification
+  await crashAndReopen();
+  await page.waitForSelector('dialog#crash[open]', { timeout: 5000 });
+  const txt = await page.textContent('dialog#crash');
+  expect(txt.includes('Morceau sauvé QA'), `le message ne nomme pas le morceau : ${txt}`);
+  expect((await proj()).name === 'Morceau sauvé QA', 'le morceau n’a pas été retrouvé');
+  expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'crashok', 'le focus doit être sur « Continuer »');
+  await page.click('dialog#crash [data-act=crashvers]');
+  await page.waitForSelector('#lib[open] [data-ver]');
+  const why = await page.textContent('#lib');
+  expect(why.includes('récupérée après une fermeture inattendue'), 'la version d’ouverture devrait être marquée « récupérée »');
+  await page.keyboard.press('Escape');
+});
+test('SV02', 'Sauvegarde', 'Une fermeture normale (rechargement) n’affiche pas de message de récupération', async () => {
+  await renameByTyping('Fermeture propre QA'); await sleep(900);
+  await page.reload(); await page.waitForSelector('.clip'); await sleep(600);
+  expect(!(await page.$('dialog#crash')), 'message de récupération affiché à tort');
+  expect((await proj()).name === 'Fermeture propre QA', 'morceau non retrouvé');
+});
+test('SV03', 'Sauvegarde', 'Versions : revenir à un état antérieur depuis le menu Projet, l’état remplacé reste gardé et Ctrl+Z annule la restauration', async () => {
+  await S(() => { window.kh.store.versioning.every = 0; });
+  try {
+    await renameByTyping('Version A'); await sleep(800);
+    await renameByTyping('Version B'); await sleep(800);
+    await menu('bVersions'); await page.waitForSelector('#lib[open] [data-ver]');
+    const rows = await page.$$eval('#lib [data-ver] strong + small', l => l.map(e => e.textContent));
+    const iA = rows.findIndex(r => r.startsWith('Version A'));
+    expect(iA > 0 && rows[0].startsWith('Version B'), `liste des versions inattendue : ${rows.join(' | ')}`);
+    await page.locator('#lib [data-act=verrestore]').nth(iA).click(); await sleep(400);
+    expect((await proj()).name === 'Version A', 'la version A n’a pas été restaurée');
+    expect(await page.$eval('#pname', e => e.value) === 'Version A', 'le nom affiché n’a pas suivi');
+    await page.keyboard.press('Control+z'); await sleep(200);
+    expect((await proj()).name === 'Version B', 'Ctrl+Z doit revenir à l’état d’avant la restauration');
+    const list = await S(() => window.kh.store.listVersions());
+    expect(list.some(v => v.name === 'Version B'), 'l’état remplacé doit rester parmi les versions');
+  } finally { await S(() => { window.kh.store.versioning.every = 120000; }); }
+});
+test('SV04', 'Sauvegarde', 'Au clavier seul : ouvrir les versions, garder une version, en restaurer une avec Tab et Entrée', async () => {
+  await S(() => { window.kh.store.versioning.every = 0; });
+  try {
+    await renameByTyping('Clavier A'); await sleep(800); await renameByTyping('Clavier B'); await sleep(800);
+    await S(() => window.kh.showVersions()); await page.waitForSelector('#lib[open] [data-act=versnap]');
+    expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'versnap', 'le focus doit arriver dans la liste des versions');
+    const n0 = (await S(() => window.kh.store.listVersions())).length;
+    await page.keyboard.press('Enter'); await page.waitForTimeout(400);
+    const n1 = (await S(() => window.kh.store.listVersions())).length;
+    expect(n1 === n0, 'rien n’a changé : aucune version en double ne doit être créée');   // état identique au dernier instantané
+    await page.focus('#lib [data-act=versnap]'); await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+    const target = await page.evaluate(() => document.activeElement?.closest('[data-ver]')?.querySelector('small')?.textContent ?? '');
+    expect(target.startsWith('Clavier A'), `Tab doit mener au bouton Restaurer de la version précédente (obtenu : ${target})`);
+    await page.keyboard.press('Enter'); await sleep(400);
+    expect((await proj()).name === 'Clavier A', 'restauration au clavier sans effet');
+  } finally { await S(() => { window.kh.store.versioning.every = 120000; }); }
+});
+test('SV05', 'Sauvegarde', 'Les versions anciennes sont éclaircies : seules les plus récentes restent, sans laisser de données orphelines', async () => {
+  const r = await S(async () => {
+    const st = window.kh.store, k = window.kh, v0 = { ...st.versioning };
+    Object.assign(st.versioning, { keep: 3, days: 2 });
+    try {
+      const ts = [];
+      for (let i = 0; i < 6; i++) { k.S.project.name = 'Éclairci ' + i; await st.snapshot('manual'); const l = await st.listVersions(); ts.push(l[l.length - 1].t); }
+      const list = await st.listVersions(); let gone = 0;
+      for (const t of ts.slice(0, 3)) { try { await st.restoreVersion(t); } catch { gone++; } }
+      return { n: list.length, names: list.map(v => v.name), gone };
+    } finally { Object.assign(st.versioning, { keep: v0.keep, days: v0.days }); }
+  });
+  expect(r.n === 3 && r.names.join() === 'Éclairci 3,Éclairci 4,Éclairci 5', `versions gardées : ${r.names.join(', ')}`);
+  expect(r.gone === 3, `${3 - r.gone} version(s) retirée(s) de la liste mais encore présentes dans le stockage`);
+});
+test('SV06', 'Sauvegarde', 'Sauvegarde automatique illisible au démarrage : la dernière version lisible est rouverte, avec le message de récupération', async () => {
+  await S(() => { window.kh.store.versioning.every = 0; });
+  await renameByTyping('Lisible QA'); await sleep(900);
+  await S(() => { window.kh.store.versioning.every = 120000; });
+  // Abîme la sauvegarde du projet courant, comme un disque plein ou une écriture interrompue.
+  await S(() => new Promise((ok, ko) => { const r = indexedDB.open('khmusicpro', 1); r.onsuccess = () => { const db = r.result, tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv');
+    st.get('current').onsuccess = e => { st.put('{"tracks": [ abîmé', 'proj:' + e.target.result); }; tx.oncomplete = () => { db.close(); ok(); }; tx.onerror = () => ko(tx.error); }; }));
+  await crashAndReopen();
+  await page.waitForSelector('dialog#crash[open]', { timeout: 5000 });
+  expect((await proj()).name === 'Lisible QA', `morceau rouvert : ${(await proj()).name}`);
+  await page.click('dialog#crash [data-act=crashok]');
+});
+test('SV07', 'Sauvegarde', 'Supprimer un projet de la bibliothèque supprime aussi ses versions', async () => {
+  const r = await S(async () => {
+    const k = window.kh, st = k.store; k.S.project.name = 'À supprimer QA'; await st.snapshot('manual'); await st.saveNow();
+    const pid = k.S.pid; k.createFromTemplate('empty'); await st.saveNow();
+    const before = (await st.listVersions(pid)).length;
+    return { pid, before };
+  });
+  expect(r.before >= 1, 'aucune version avant suppression');
+  await S(() => window.kh.showLibrary()); await page.waitForSelector(`#lib li[data-pid="${r.pid}"]`);
+  await page.click(`#lib li[data-pid="${r.pid}"] [data-act=libdel]`); await sleep(400);
+  const after = await page.evaluate(pid => window.kh.store.listVersions(pid), r.pid);
+  expect(!after.length, `il reste ${after.length} version(s)`);
+  await page.keyboard.press('Escape');
+});
+test('SV08', 'Sauvegarde', 'Versions et message de récupération traduits en anglais et en espagnol', async () => {
+  for (const [l, menuTxt, restore] of [['en', 'Song versions…', 'Restore'], ['es', 'Versiones de la canción…', 'Restaurar']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.textContent('#bVersions')).trim() === menuTxt, `menu en ${l}`);
+    await S(async () => { window.kh.store.versioning.every = 0; window.kh.S.project.name = 'Lang ' + Math.random(); window.kh.commit(); await window.kh.store.saveNow(); window.kh.store.versioning.every = 120000; });
+    await S(() => window.kh.showVersions()); await page.waitForSelector('#lib[open] [data-act=verrestore]');
+    expect((await page.textContent('#lib [data-act=verrestore]')).trim() === restore, `bouton Restaurer en ${l}`);
+    await page.keyboard.press('Escape');
+  }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
-  const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
-  page = await ctx.newPage();
-  page.on('pageerror', e => errors.push('PAGE ' + e.message));
-  page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
-  page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
-  await page.addInitScript(PAGE_HELPERS);
-  await page.goto(BASE); await page.waitForSelector('.clip');
-  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
+  await openPage();
 
   const only = process.argv[2];
   for (const c of cases) {
