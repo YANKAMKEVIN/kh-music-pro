@@ -27,7 +27,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Clips audio** : gain, fondus d'entrée et de sortie, inversion, normalisation, **étirement au tempo** sans changer la hauteur et **transposition** sans changer la durée.
 - **Chaîne d'effets** par tranche : écho, réverb, phaser, auto-pan, bande d'égaliseur, gain, à ajouter, ordonner et couper librement (jusqu'à huit).
 - **Plugins web** (Web Audio Modules) dans la chaîne d'effets, avec leur propre interface ; un plugin d'exemple est fourni. Un plugin venu d'un autre site demande un accord explicite.
-- **Plugins du Mac** (version bureau macOS) : les effets Audio Unit installés sur le Mac s'ajoutent à la chaîne d'effets, avec un curseur par réglage ; on les entend à l'écoute comme à l'export.
+- **Plugins du Mac** (version bureau macOS) : les effets Audio Unit installés sur le Mac s'ajoutent à la chaîne d'effets, avec leurs réglages (fréquences sur une échelle logarithmique, listes de choix, interrupteurs) et leurs préréglages d'usine ; on les entend à l'écoute comme à l'export, et leur latence est compensée.
 - **Réglages audio** : choix de la sortie, latence affichée, décalage d'enregistrement réglable ou mesuré. Sur Mac, dans la version bureau : **moteur audio natif** (son par Core Audio, environ 74 ms aller-retour au lieu de 110 sur les haut-parleurs du Mac), désactivé par défaut.
 - **Tempo et mesure** : changements de tempo en cours de morceau (posés dans la règle, suivis à la lecture, à l'export et dans le MIDI), signature rythmique de 2/4 à 7/4.
 - **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9.
@@ -61,7 +61,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 201 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 205 cas).
 Le plus simple, serveur compris :
 
 ```bash

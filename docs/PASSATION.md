@@ -5,7 +5,7 @@ Rédigé à la fin de la V14a pour qu'une nouvelle session (notamment sur le Mac
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
-- **État** : version 0.15 (branche `v14b-prototype-natif`, non fusionnée), 201 cas de QA ; `main` en ligne : version 0.14, 190 cas. En ligne sur https://yankamkevin.github.io/kh-music-pro/, installable (PWA), et empaqueté pour le bureau (Electron) pour Windows, macOS (Apple et Intel) et Linux.
+- **État** : version 0.15 (branche `v14b-prototype-natif`, non fusionnée), 205 cas de QA ; `main` en ligne : version 0.14, 190 cas. En ligne sur https://yankamkevin.github.io/kh-music-pro/, installable (PWA), et empaqueté pour le bureau (Electron) pour Windows, macOS (Apple et Intel) et Linux.
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0.
 - **Liste des fonctions** : section « Fonctions » du README.
 
@@ -418,7 +418,26 @@ Défauts trouvés et corrigés en route :
 
 Non vérifié : **l'écoute d'un plugin du Mac à l'oreille** (à faire par le propriétaire : ajouter « Delay » ou « Lowpass » à une piste, moteur natif activé ou non) ; l'installateur sur un vrai Mac Intel (seulement sous Rosetta) ; l'ouverture du `.dmg` téléchargé depuis GitHub (avertissement de macOS attendu, application non signée) ; des plugins tiers (aucun installé) ; HawkScan (pas de clé API, application sans serveur).
 
-Suite possible : règle de contenu (CSP) pour la version bureau ; échelle logarithmique pour les réglages en Hz ; listes de valeurs des réglages à choix (`kAudioUnitParameterUnit_Indexed`) ; préréglages d'usine des plugins ; fenêtres graphiques des plugins (vue Cocoa dans une fenêtre native) ; compensation de la latence déclarée par un plugin (2 ms pour AUPeakLimiter).
+**Suite faite dans la nuit du 15 au 16/11/2026** (consigne de nuit du propriétaire, transmise par la session « Avancer le projet au maximum ») — chaque point avec ses cas de QA, ses textes en trois langues, un commit poussé :
+
+1. **Échelle logarithmique** (`bc331ec`) : réglages en Hz, et ceux que le plugin déclare logarithmiques (`kAudioUnitParameterFlag_DisplayLogarithmic`, renvoyé par `params` dans `flags`), sur un curseur logarithmique quand la plage le permet (minimum positif, facteur 20 au moins). Le projet garde la valeur en Hz, à 4 chiffres significatifs. Tous les curseurs de l'application donnent maintenant leur valeur affichée aux lecteurs d'écran (`aria-valuetext`). Cas MAC06. Au passage : la fenêtre des effets « oubliait » parfois qu'elle était rouverte (événement de fermeture différé), cause de l'instabilité de MAC02 ; corrigé.
+2. **Réglages à choix** (`dc3d09b`) : `params` renvoie les noms des valeurs (`kAudioUnitProperty_ParameterValueStrings`) ; ils s'affichent en liste (ex. AUFilter « Low Filter Type » : Low Shelf / High Pass ; AUNBandEQ « Type » : 11 formes de filtre). Les réglages marche/arrêt (`Boolean`) deviennent un interrupteur (rôle `switch`). Cas MAC07 ; vérifié sur AUFilter dans `qa/au-bridge.cjs`.
+3. **Préréglages d'usine** (`cec7b54`) : nouvelles fonctions natives `presets` et `setPreset`. Liste « Préréglage d'usine » dans la carte de l'effet (AUMatrixReverb et AUReverb2 : 13 ; AUDistortion : 22 ; AUDynamicsProcessor : 6…). Le plugin charge le préréglage, puis tous ses réglages sont recopiés dans le projet (`p`), avec le numéro du préréglage (`Insert.preset`, champ facultatif) : écoute et export identiques, annulable. Toucher un réglage repasse en « Réglages personnels ». Cas MAC08 ; vérifié avec « Large Hall » d'AUMatrixReverb (13 réglages changés, recopiés à l'identique). Limite : un préréglage qui changerait un état interne non exposé en réglage ne serait pas reproduit à l'export (non constaté sur les plugins d'Apple).
+4. **Compensation de latence** (`3bd8f50`) : chaque tranche a un retard (`pdc`) après sa chaîne d'effets. Les pistes envoyées vers un bus sont calées entre elles à l'entrée du bus, puis bus et pistes directes sur le chemin le plus long. Une piste muette compte toujours. À l'export, tout le mixage est ramené au début du fichier (`lastRender.pdc`) ; à l'enregistrement, ce retard s'ajoute à la compensation des prises. Cas MAC09 (retards par piste et par bus, plugin coupé, piste muette, export) ; avec le vrai AUPeakLimiter (2 ms), l'export est calé à l'échantillon près. Limites : seuls les plugins du Mac déclarent une latence (les plugins web non) ; le clic de la mesure de latence et le métronome ne passent pas par le retard (écart égal à la latence du plugin, 2 ms pour le limiteur).
+5. **Règle de contenu (CSP)** (`71e5031`) : ajoutée à la version construite par `vite.config.ts` (site web **et** version bureau ; pas pendant le développement, à cause du rechargement à chaud). Elle autorise le code de l'application, les worklets et sons créés en mémoire (`blob:`), et, pour les plugins web d'un autre site acceptés par l'utilisateur, leur code et leurs fichiers en https. Elle interdit eval, objets intégrés, cadres et formulaires. Plus aucun avertissement de sécurité d'Electron. Vérifié : `qa/desktop-smoke.cjs` (avec le plugin web fourni), `qa/au-bridge.cjs`, `qa/native-io.cjs`, et une campagne complète **sur la version construite** (`vite preview`) : 203/205, sans aucun refus de la règle. Les deux échecs sont DK01 (Linux seulement) et RI06 : en version construite, le service hors ligne télécharge lui-même les sons, et le refus simulé par le test ne l'atteint pas ; ce n'est pas lié à la règle.
+
+Bilan de la nuit : campagne `npm run qa:all` **204/205** (DK01, Linux seulement) ; `npm run build` OK ; `qa/au-bridge.cjs`, `qa/native-io.cjs`, `qa/desktop-smoke.cjs` OK ; installateur `release/KH Music Pro-0.15.0-arm64.dmg` construit avec le module universel, `qa/packaged-mac.cjs --strict` OK.
+
+Reste possible : fenêtres graphiques des plugins (vue Cocoa dans une fenêtre native) ; latence des plugins web ; noms des réglages répétés d'AUNBandEQ (« Bypass », « Type »… une fois par bande, sans numéro de bande).
+
+### À valider par Kevin
+
+1. **Écouter un plugin du Mac** : version bureau, 🧩 d'une piste → « 🍎 Plugins du Mac » → « MatrixReverb », préréglage « Large Hall », puis « Lowpass » en bougeant « Cutoff Frequency ». Le son change-t-il comme attendu, sans craquement ?
+2. **Moteur audio natif** : 🔧 Réglages audio → « ⚡ Moteur audio natif » : l'activer, jouer, enregistrer une prise, brancher puis débrancher les EarPods, le désactiver. Désactivé par défaut : faut-il l'activer par défaut sur Mac ?
+3. **Installateur** : ouvrir `release/KH Music Pro-0.15.0-arm64.dmg` (construit sur ce Mac), ou celui de l'action « Version bureau » sur GitHub. macOS affichera un avertissement (application non signée).
+4. **Numéro de version** : 0.15.0 a été choisi pour cette intégration ; à confirmer avant la release.
+5. **Fusion dans `main`** (met le site en ligne à jour, avec la règle de contenu) : seulement avec ton accord.
+6. Le micro des EarPods : une prise reste à écouter (déjà noté plus haut).
 
 ### Critères de décision
 
