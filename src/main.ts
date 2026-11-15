@@ -1,6 +1,9 @@
 import './style.css';
 import { copyClip, deleteClip, duplicateClip, pasteClip, saveFile, splitClip, toggleRecord } from './actions';
 import { engine, lastRender, renderOffline } from './audio/engine';
+import { auBridge, createAu } from './audio/au';
+import { ioBridge } from './audio/native-io';
+import { initNative, setNativeEngine } from './ui/native';
 import { liveWams } from './audio/wam';
 import { lufs, noteLoudness } from './audio/loudness';
 import { BANKS, loadBank, sampleFor } from './audio/banks';
@@ -133,12 +136,14 @@ function onLang() { rebuild(); }
   initArrDrop(); initFileInputs();
   rebuild();
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
+  // Version bureau macOS : moteur audio natif, s'il a été activé dans les Réglages audio.
+  initNative();
   requestAnimationFrame(frame);
   try { if (!localStorage.getItem('kh-welcome')) { help.showModal(); localStorage.setItem('kh-welcome', '1'); } } catch { /* stockage désactivé */ }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, banks: { BANKS, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff } } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, banks: { BANKS, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

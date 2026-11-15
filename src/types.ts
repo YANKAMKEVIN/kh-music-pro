@@ -57,7 +57,7 @@ export interface SynthParams {
 }
 
 /** Effet ajouté dans la chaîne d'une tranche. `p` = réglages ; pour un plugin web : `url`, `name` et `state`. */
-export interface Insert { id: string; type: string; on: boolean; p: Record<string, number>; url?: string; name?: string; state?: unknown }
+export interface Insert { id: string; type: string; on: boolean; p: Record<string, number>; url?: string; name?: string; state?: unknown; preset?: number }  // preset : préréglage d'usine choisi (plugin du Mac)
 /** Effets disponibles : pour chaque réglage [clé, minimum, maximum, pas, valeur par défaut]. */
 export const FX: Record<string, [string, number, number, number, number][]> = {
   delay: [['time', 1, 8, 1, 3], ['fb', 0, 0.9, 0.01, 0.35], ['mix', 0, 1, 0.01, 0.3]],

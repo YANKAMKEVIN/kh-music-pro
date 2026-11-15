@@ -495,3 +495,9 @@ dialog form { gap: 8px; }
   .synth [data-act=sound-browser] { width: 44px; min-width: 44px; padding: 0; font-size: 0; }
   .synth [data-act=sound-browser]::before { content: '♫'; font-size: 20px; }
 }
+
+/* Moteur audio natif (version bureau macOS) et plugins du Mac */
+.pill.switch { min-width: 132px; min-height: 44px; font-weight: 700; }
+.tip.err { color: var(--rec); }
+.natsec { border: 1px solid rgba(34, 211, 238, .25); border-radius: 12px; padding: 4px 12px 8px; margin: 8px 0; background: rgba(34, 211, 238, .04); }
+.fxcard .aupar { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }

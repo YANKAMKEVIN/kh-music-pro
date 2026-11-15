@@ -5,7 +5,7 @@ Rédigé à la fin de la V14a, puis mis à jour pour la branche V15.1, pour qu'u
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
-- **État de la branche v15-banque-generaliste** : version 0.15.2, 224 cas de QA validés. Installable (PWA), avec des installateurs Electron pour Windows, macOS (Apple et Intel) et Linux. Le site publié sur https://yankamkevin.github.io/kh-music-pro/ suit `main` ; cette branche attend les retours du propriétaire.
+- **État de la branche d'essai `integration-v15-natif`** : réunion de la V15 (banque de sons, branche `v15-banque-generaliste`) et de la V14b (moteur natif et plugins du Mac, branche `v14b-prototype-natif`), version 0.16.0, 234 cas de QA. `main` en ligne : version 0.14, 190 cas. Voir la section « Branche d'essai » à la fin.
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0.
 - **Liste des fonctions** : section « Fonctions » du README.
 
@@ -26,7 +26,8 @@ Tout tourne dans le navigateur, y compris dans la version bureau (Electron n'est
 | `src/actions.ts` | Toutes les actions de l'utilisateur |
 | `src/ui/*` | Arrangement, éditeurs, mixeur, Live, rack d'effets, fenêtres |
 | `src/i18n.ts` | Textes en français, anglais, espagnol |
-| `electron/main.cjs` | Fenêtre de la version bureau |
+| `electron/main.cjs`, `electron/native-preload.cjs` | Fenêtre de la version bureau ; pont isolé vers le module natif (macOS) |
+| `src/audio/au.ts`, `src/audio/native-io.ts`, `src/ui/native.ts` | Plugins Audio Unit du Mac, moteur audio natif et son réglage ; module dans `native/kh-au-bridge` (`npm run native`) |
 | `qa/run.cjs` | Campagne de QA ; `qa/desktop-smoke.cjs` pour la version bureau |
 
 Principes à respecter :
@@ -86,6 +87,358 @@ Le moteur audio vit dans le navigateur (Web Audio). Un plugin natif vit dans un 
 - **Étape 4** — pont avec l'application : choisir entre les pistes 2 et 3 selon ce que l'étape 3 a montré, et faire passer le son d'une piste par le plugin.
 - **À chaque étape** : noter le résultat chiffré dans ce document, et s'arrêter pour demander l'avis du propriétaire avant la suivante.
 
+### Résultats
+
+**Étape 0 — état des lieux (12/11/2026)**
+
+- Machine : MacBook Pro, Apple M3 (arm64), macOS 26.7 (25G229).
+- Outils : Xcode 26.6 (`/Applications/Xcode.app`), Swift 6.3.3, Node 26.9.0, npm 11.19.1.
+- Audio Units : seulement ceux d'Apple (23 effets, 3 instruments). Aucun AU ni VST3 tiers installé. Pour les étapes 2 et 3, `AUDelay` (`aufx dely appl`), `AUPeakLimiter` (`aufx lmtr appl`) ou `AUNBandEQ` (`aufx nbeq appl`) suffisent ; un plugin tiers gratuit sera à installer plus tard, avec l'accord du propriétaire, pour valider un cas réel.
+- Carte son : pas d'interface audio dédiée. Sortie par défaut : un adaptateur USB « USB-Audio-1.0 » (Yichip, 2 sorties et 1 entrée, 48 kHz). Entrée par défaut : le micro intégré du MacBook Pro. Les haut-parleurs intégrés sont aussi disponibles.
+- Conséquence : les mesures de latence (étapes 1 et 3) se feront avec ce matériel grand public. Elles serviront de comparaison entre le navigateur et le natif sur la même machine, mais pas de référence « studio ». L'objectif de 12 ms est à juger avec cette réserve.
+
+**Étape 1 — latence de référence de la version bureau (12/11/2026)**
+
+Version bureau (Electron 45.3) lancée par un script Playwright, qui appelle `engine.latency()` puis cinq fois `engine.measureLatency()` (clic à 2 kHz joué, puis repéré au micro) pour chaque sortie. Entrée : micro intégré, sans annulation d'écho, réduction de bruit ni contrôle de gain. 48 kHz partout.
+
+| Sortie | Latence annoncée (base + sortie + entrée) | Aller-retour mesuré |
+|---|---|---|
+| Adaptateur USB « USB-Audio-1.0 » (12d1:3a06) | 5,3 + 13,0 + 2,7 = **21 ms** | clic non détecté (5 fois sur 5) |
+| Haut-parleurs du MacBook Pro | 5,3 + 28,0 + 2,7 = **36 ms** | **108 à 111 ms** (4 essais sur 5 ; le premier, raté, est le temps que l'entrée se lance) |
+
+Lecture :
+- La sortie USB n'est pas entendue par le micro : c'est sans doute un casque ou des écouteurs. C'est le chemin « clic non détecté » prévu, pas une panne. Pour mesurer cette sortie, il faudra un micro qui l'entende.
+- Sur les haut-parleurs, le trajet réel est environ **trois fois** ce que le système annonce : il manque environ 73 ms. Ils viennent du traitement des haut-parleurs intégrés et des tampons d'entrée de Chromium, que Web Audio ne déclare pas.
+- Le chemin navigateur est donc loin des 12 ms visées (au moins 21 ms annoncées, environ 110 ms réelles sur haut-parleurs). L'argument « latence native » tient. Reste à savoir, à l'étape 3, quelle part de ces 110 ms appartient au matériel (et ne disparaîtra pas en natif).
+- Pour refaire la mesure : `npm ci`, puis `node node_modules/electron/install.js` (npm 11 ne télécharge plus Electron tout seul), `npm run build`, et le script décrit ci-dessus (ou la fenêtre « Réglages audio », bouton de mesure).
+
+**Étape 2 — plus petit hôte Audio Unit (12/11/2026)**
+
+Outil en ligne de commande Swift dans `native/au-host` (paquet Swift, aucune dépendance). Il charge un AU par son identifiant (`AVAudioUnit.instantiate`), le branche dans un `AVAudioEngine` en rendu hors-ligne (blocs de 512 échantillons), traite un WAV et en écrit un autre. Il sait aussi lister les paramètres d'un plugin, générer des signaux de test et analyser un fichier (niveau par fréquence, pics).
+
+```
+cd native/au-host && swift build -c release
+.build/release/au-host params aufx lpas appl
+.build/release/au-host gen tones in.wav
+.build/release/au-host process aufx lpas appl in.wav out.wav 0=1000
+.build/release/au-host analyse out.wav 200 8000
+```
+
+| Plugin et réglage | Signal d'entrée | Résultat attendu | Résultat obtenu |
+|---|---|---|---|
+| AULowpass, coupure 1 kHz | 200 Hz + 8 kHz, chacun à -12 dBFS | 200 Hz intact, 8 kHz fortement atténué | 200 Hz : -11,9 dBFS ; 8 kHz : -49,8 dBFS (**-37,8 dB**) |
+| AUDelay, 250 ms, mix 50 %, sans réinjection | impulsion à 0,500 s | impulsion + écho 250 ms plus tard | pics à 0,5000 s et **0,7500 s** |
+| AUPeakLimiter, réglages d'usine | impulsion à 0,500 s | décalage égal à la latence déclarée (2 ms) | pic à **0,5020 s** |
+
+Lecture :
+- **Preuve faite** : un plugin AU installé sur le Mac traite le son, et le résultat est exactement celui attendu. Le limiteur montre en plus que l'hôte lit la latence déclarée par le plugin (2 ms), ce qu'il faudra compenser plus tard dans le mixage.
+- **Coût de calcul négligeable** : 3 s de son traitées en 0,6 à 2,4 ms, soit 1 600 à 5 000 fois le temps réel. Le calcul ne sera pas le facteur limitant ; la latence viendra des tampons et du matériel.
+- Limites : seuls des AU d'Apple ont été essayés (aucun plugin tiers installé), sans interface graphique de plugin, et sans VST3.
+
+**Étape 3 — hôte en temps réel sur la carte son (12/11/2026)**
+
+Méthode (`au-host rt`, fichier `native/au-host/Sources/RealTime.swift`) : pour éviter tout larsen au bureau, le micro n'est jamais renvoyé vers les haut-parleurs. Un clic à 2 kHz (6 ms) est produit en temps réel, passe ou non par un AU (AULowpass réglé à 18 kHz), sort sur les haut-parleurs du MacBook au volume laissé bas par le propriétaire, et le micro intégré l'enregistre. Les deux côtés sont datés avec l'horloge de la machine (`mHostTime`) ; l'écart est le trajet réel entre l'instant où le son quitte le logiciel et l'instant où il y revient. L'aller-retour d'une application (entrée → traitement → sortie) ajoute deux tampons. 8 clics par réglage ; le premier est souvent manqué (démarrage de l'entrée).
+
+| Tampon | Latence déclarée par Core Audio | Trajet mesuré (médiane) | Aller-retour d'une appli (mesuré + 2 tampons) |
+|---|---|---|---|
+| 512 (10,7 ms) | 69,7 ms | 46,4 ms | **67,7 ms** |
+| 256 (5,3 ms) | 59,1 ms | 46,4 ms | **57,1 ms** |
+| 128 (2,7 ms) | 53,7 ms | 46,3 ms | **51,7 ms** |
+| 64 (1,3 ms) | 51,1 ms | 46,5 ms | **49,1 ms** |
+| 32 (0,7 ms) | 49,7 ms | 46,4 ms | **47,7 ms** |
+
+- Avec ou sans plugin : aucune différence (écart < 0,2 ms). Écart entre clics : 0,1 à 0,7 ms.
+- Détail déclaré, en échantillons à 48 kHz : sortie = appareil 70 + marge 74 + flux **690** ; entrée = marge 50 + flux **1 439**. Le traitement du micro intégré (30 ms) et celui des haut-parleurs intégrés (14 ms) font à eux seuls environ 46 ms, quels que soient le logiciel et le tampon. La mesure le confirme : le trajet reste à 46,4 ms de 512 à 32.
+
+Tenue dans la durée (`au-host stress`) : chaîne de 8 AU d'Apple (NBandEQ → Lowpass → DynamicsProcessor → MatrixReverb → Delay → PeakLimiter → ParametricEQ → Hipass) sur les haut-parleurs, signal inaudible (-100 dBFS), 5 minutes. On compte les surcharges signalées par Core Audio et les trous dans la cadence de rendu.
+
+| Tampon | Surcharges | Trous de rendu |
+|---|---|---|
+| 64 (1,3 ms) | 2 (une au démarrage, une entre 280 et 310 s) | 1 (9,7 ms) |
+| 128 (2,7 ms) | 3 (vers 60, 120 et 270 s) | 3 (le plus long : 15,3 ms) |
+| 128, **sans aucun plugin** (contrôle) | 0 | 0 |
+
+- Les décrochages viennent bien de la chaîne de plugins, pas du système ni de l'hôte : sans plugin, 5 minutes parfaitement propres. Ils ne dépendent pas de la taille du tampon (plutôt plus nombreux à 128 qu'à 64), donc ce n'est pas un manque de puissance : 8 AU d'Apple sont très légers pour un M3. Hypothèse la plus probable : un plugin qui fait de temps en temps un travail lourd ou une allocation dans le fil audio (`AUMatrixReverb`, ancien, est le premier suspect). À vérifier en retirant les plugins un par un.
+- Le critère « sans craquement pendant 5 minutes » n'est donc **pas encore rempli** avec cette chaîne ; il l'est sans plugin.
+
+Lecture :
+- **En natif, sur le même matériel, l'aller-retour tombe d'environ 110 ms (navigateur, étape 1) à environ 50 ms.** Le natif gagne donc environ 60 ms.
+- **L'objectif de 12 ms est impossible avec le micro et les haut-parleurs intégrés**, quel que soit le logiciel : environ 46 ms sont dans le matériel et ses pilotes. Le critère « < 12 ms » ne peut se juger qu'avec une interface audio (ou un casque-micro USB), qui n'a pas ces traitements.
+- La sortie USB (Yichip) déclare 13 ms de sortie côté navigateur, contre 28 ms pour les haut-parleurs : c'est sur ce genre de matériel que l'écart entre navigateur et natif deviendra décisif. Mesure à refaire avec un micro qui l'entend, ou avec une interface qui a une boucle de retour.
+
+**Étape 4 — pont avec l'application (12/11/2026)**
+
+Choix : **piste 3**, un module natif chargé dans la version bureau. L'étape 3 a montré que le plugin lui-même ne coûte rien en latence ni en calcul ; tout se joue sur le pont, et un pont dans le même processus, par mémoire partagée, est le seul qui puisse ne rien ajouter.
+
+Fonctionnement :
+- `native/kh-au-bridge` : module Node natif (Objective-C++, ~200 lignes), construit contre les en-têtes d'Electron 45. Il crée l'Audio Unit et un fil à priorité temps réel qui le fait tourner. API : `open`, `setParam`, `info`, `close`, `list`.
+- `src/audio/au.ts` : un AudioWorklet écrit chaque bloc de 128 échantillons dans un `SharedArrayBuffer`, signale la demande, et attend la réponse du fil natif **dans le même bloc**. Le pont n'ajoute donc aucun retard. Si le natif ne répond pas en 3 ms, le bloc passe tel quel et il est compté comme manqué.
+- Vu du mixeur, un Audio Unit est un effet de la chaîne comme un plugin web : type `au`, `url: 'aufx:lpas:appl'`, paramètres par adresse dans `p`. Il prend la même place (`attachWam`, `loadWams`) et sert donc à l'écoute **et** à l'export, comme l'exige le principe « temps réel et export partagent le graphe ». Les instances créées pour un export sont libérées ensuite (`disposePlugins`).
+- Activé seulement par `KH_NATIVE=1` sur macOS : la fenêtre sort alors du bac à sable pour le script de préchargement (`electron/native-preload.cjs`), coupe l'isolation de contexte et active `SharedArrayBuffer`. La page n'a toujours pas accès à `require`. Sans cette variable, rien ne change. Ce réglage est à revoir avant toute version publiée (Electron affiche d'ailleurs son avertissement de sécurité dans ce mode).
+- **Aucun moteur de mixage dupliqué** : Web Audio mixe toujours ; le natif ne fait que les plugins. Le critère d'arrêt n'est pas atteint.
+
+Pour essayer :
+
+```
+npm run build
+cd native/kh-au-bridge && npx node-gyp@11 rebuild --target=45.3.0 --arch=arm64 --dist-url=https://electronjs.org/headers && cd ../..
+node qa/au-bridge.cjs 300        # vérifications automatiques, temps réel sans sortie audio
+KH_NATIVE=1 npx electron .       # l'application, avec le pont
+```
+
+Résultats (`qa/au-bridge.cjs`) :
+
+| Vérification | Résultat |
+|---|---|
+| Pont chargé, 23 Audio Units listés, page toujours sans `require` | oui |
+| AULowpass 1 kHz sur 200 Hz + 8 kHz (rendu hors-ligne) | 200 Hz : -11,9 dBFS ; 8 kHz : -49,8 dBFS, comme l'hôte Swift |
+| Retard ajouté par le pont (impulsion, passe-bas ouvert) | **0 échantillon** |
+| AUPeakLimiter | décalage de 96 échantillons = sa latence déclarée (2 ms) |
+| AUDelay 250 ms | écho à 36 001 (attendu 36 000 ± 1, même écart dans l'hôte Swift) |
+| Vraie piste du projet de démo, à l'export, avec AULowpass 300 Hz | aigus de -29,2 à -51,4 dB ; aucun échec |
+| Vraie piste (« Basse »), rendu sans plugin refait deux fois | identique (-54,3 / -54,3 dB) |
+| Même piste à l'export avec AULowpass 300 Hz | aigus de -54,3 à -63,5 dB ; aucun échec |
+| Lecture en boucle de la démo à travers le plugin, 5 minutes | **113 411 blocs, 0 manqué**, aucune erreur ni plantage |
+
+Le temps réel a tourné avec la sortie audio coupée (`setSinkId({ type: 'none' })`), pour ne rien jouer au bureau : la cadence est alors donnée par une horloge logicielle, pas par la carte son. L'attente du worklet est restée très courte (au plus environ 30 000 tours de boucle par bloc, sans jamais toucher la limite de 3 ms).
+
+Ce que les essais ont appris en route :
+- Fenêtre cachée : Chromium ralentit une page en arrière-plan, et avec la sortie coupée, l'horloge audio ralentit avec elle (5 minutes devenues 26, 8 327 blocs au lieu de 113 000). Le mode natif désactive donc ce ralentissement (`backgroundThrottling: false`), ce qui est de toute façon souhaitable pour une application audio.
+- Un premier essai s'est arrêté vers 4 min 30 sans rapport de plantage macOS ; l'essai surveillé suivant (fermeture de fenêtre, plantage de page, fin du processus) n'a rien montré d'anormal. Cause non établie ; fermeture manuelle de la fenêtre possible.
+- Les projets de la version bureau sont enregistrés : les premiers essais avaient laissé deux effets `au` dans le projet de démo du profil de développement (nettoyés depuis). Le test utilise désormais un profil temporaire (`--user-data-dir`).
+- Sans le pont (version normale), un effet `au` ne se charge pas et le son passe tel quel, comme un plugin web absent.
+
+Non-régression de la version normale (13/11/2026, sur ce Mac) : `qa/desktop-smoke.cjs` OK ; campagne `qa/run.cjs` : 188/190. Les deux échecs ne viennent pas de V14b :
+- **DK01** appelle `xvfb-run`, qui n'existe que sous Linux : ce cas ne peut pas tourner sur un Mac (le test de la version bureau, lancé directement, passe).
+- **RI05** (pad 4 de la batterie acoustique « identique au son synthétisé ») était **instable** : il échouait aussi sur `main` sans les changements de V14b (1 réussite sur 3), car les deux sons ont presque le même niveau. **Corrigé le 14/11/2026** : un son compte comme différent si son niveau **ou** son timbre (part d'aigus) s'écarte de plus de 3 %. 4 réussites sur 4. Campagne complète du 14/11 : 189/191 ; DK01 (Linux seulement) et T01, qui a échoué une fois (premier cas de la campagne, Mac chargé, niveau nul) puis réussi 3 fois sur 3. Seconde campagne (après la réserve à 16 ms) : 189/191, DK01 et **TU02** (accordeur, attente fixe de 300 ms trop courte quand le Mac est chargé) ; TU02 attend désormais l'accordeur jusqu'à 3 s, 4 réussites sur 4.
+- Sur un Mac neuf, il faut d'abord `npx playwright install chromium`.
+
+Lecture :
+- **On sait maintenant faire passer le son d'une piste de KH Music Pro dans un plugin Audio Unit du Mac**, à l'écoute comme à l'export, sans retard ajouté par le pont.
+- **Ce pont ne réduit pas la latence de l'application** : le son entre et sort toujours par Web Audio (environ 110 ms aller-retour sur les haut-parleurs, étape 1). Il apporte l'accès aux plugins du Mac, pas la faible latence.
+- Pour gagner aussi la latence (environ 50 ms au lieu de 110 sur ce matériel, étape 3), il faudrait que le natif prenne aussi l'entrée et la sortie de la carte son, Web Audio ne faisant plus que le calcul du mixage. C'est faisable sans dupliquer le mixage, mais demande de caler deux horloges (Web Audio et carte son) : c'est la prochaine étape possible.
+
+**Étape 5 — entrée et sortie de la carte son par le natif (13/11/2026)**
+
+But : en mode `KH_NATIVE=1`, Web Audio ne fait plus que calculer le mixage ; le natif sort le son vers la carte son et capte le micro. **Le mixage n'est pas dupliqué** : il reste entièrement dans Web Audio, le natif ne fait que transporter le son (et les plugins AU de l'étape 4).
+
+Fonctionnement :
+- `native/kh-au-bridge/src/io.mm` (~400 lignes, même module) : deux unités Core Audio (`AUHAL`), une pour la sortie choisie, une pour l'entrée choisie (elles peuvent être deux appareils, donc deux horloges). API : `ioStart`, `ioStop`, `ioStats`, `ioArm` (mesure), `ioGain`, `ioDevices`.
+- `src/audio/native-io.ts` : en fin de chaîne, le limiteur du général ne va plus vers la sortie du navigateur mais vers un AudioWorklet (`kh-out`) qui écrit chaque bloc dans un tampon circulaire partagé (`SharedArrayBuffer`) ; le fil de la carte son le lit. En sens inverse, le natif écrit le micro dans un second tampon, qu'un AudioWorklet (`kh-in`) relit comme une source : l'enregistrement, le vumètre, l'accordeur et la mesure de latence s'en servent sans changement.
+- `engine.useNative()` est appelé au démarrage dès que le module est là. `engine.out` remplace `ctx.destination` partout. Le choix de la sortie (Réglages audio) et de l'entrée passe au natif par le nom de l'appareil. La compensation d'enregistrement utilise les latences du chemin natif.
+- **Calage des horloges** : chaque tampon a un niveau cible ; le natif mesure le niveau (moyenne sur 0,5 s) et lit ou écrit à un rapport 1 ± 0,3 % au plus (régulateur proportionnel + intégral, interpolation cubique) pour y rester. Mesuré : 0 à ±20 ppm quand Web Audio et la sortie suivent la même horloge.
+- Sans le module (version web, ou bureau sans `KH_NATIVE`), rien ne change : nouveau cas de QA **LAT03**.
+
+Ce que les essais ont appris (choix de l'horloge de Web Audio) :
+- **Piste envisagée, `setSinkId({ type: 'none' })`, écartée** : sans sortie, Chromium cadence le calcul avec une horloge logicielle qui livre les blocs par paquets (le tampon oscille sur ~650 échantillons) et s'arrête parfois plus de 20 ms (environ une fois par minute). Il fallait plus de 1 024 échantillons (21 ms) de réserve, et même ainsi un manque est apparu au bout de 98 s.
+- **Retenu** : Web Audio garde comme sortie le même appareil que le natif, mais n'y envoie qu'un signal infime (-180 dB, sinon Chromium repasse sur son horloge logicielle après un silence). Son calcul est alors cadencé par la carte son elle-même : le tampon n'oscille plus que d'un bloc (128 échantillons), sans aucun arrêt, et les deux côtés ont la même horloge. Ce n'est pas un changement d'architecture : Web Audio ne fait toujours que le calcul.
+- Niveau cible : 384 échantillons (8 ms) en sortie, 256 (5,3 ms) en entrée. À 256 en sortie, le résultat dépend de l'ordre dans lequel les fils de Chromium et du natif se réveillent à chaque cycle : parfois aucun manque en 2 minutes, parfois des centaines en 5 minutes. 384 garde une marge dans les deux cas.
+
+Pour essayer :
+
+```
+npm run build
+cd native/kh-au-bridge && npx node-gyp@11 rebuild --target=45.3.0 --arch=arm64 --dist-url=https://electronjs.org/headers && cd ../..
+node qa/native-io.cjs 300            # tenue de 5 minutes, rien ne s'entend (-100 dB)
+node qa/native-io.cjs 5 --mesure     # clics courts sur les haut-parleurs du Mac, micro intégré
+KH_NATIVE=1 npx electron .           # l'application, son par le natif
+```
+
+Tenue (`qa/native-io.cjs 300`) : démo en boucle, haut-parleurs du Mac à -100 dB (inaudible), micro ouvert sans écoute de contrôle.
+
+| Vérification | Résultat |
+|---|---|
+| Natif démarré avec l'application, mixage envoyé au natif, page sans `require` | oui |
+| 5 minutes de lecture | 113 851 blocs de Web Audio |
+| Manques à la carte son / surcharges Core Audio / trous de rendu | **0 / 0 / 0** |
+| Blocs perdus entre Web Audio et le natif (sortie, entrée) | **0 / 0** |
+| Niveau des tampons (sortie, entrée) | 311 à 470 (cible 384), 182 et plus (cible 256) |
+| Écart d'horloge corrigé | ±2 ppm |
+
+Aller-retour (`qa/native-io.cjs 5 --mesure`), même méthode qu'aux étapes 1 et 3 : clic à 2 kHz de 6 ms, haut-parleurs du Mac au volume laissé bas, micro intégré, jamais de micro vers les haut-parleurs. Deux séries de 6 clics, tous entendus ; le premier de chaque série sert de démarrage.
+
+| Mesure | Résultat (médiane) | Comparaison |
+|---|---|---|
+| Aller-retour dans l'application (clic joué par Web Audio, retrouvé dans le son du micro reçu par Web Audio : la mesure de l'étape 1) | **68,6 et 69,6 ms** (écart entre clics < 1,5 ms) | navigateur seul (étape 1) : 108 à 111 ms ; natif seul (étape 3) : ~50 ms |
+| Trajet natif, du son qui quitte le logiciel au son qui revient du micro (horloge de la machine, comme à l'étape 3) | **46,3 ms** | étape 3 : 46,4 ms |
+| Part des deux tampons partagés et du calcul de Web Audio | ~23 ms | tampons 8 + 5,3 ms, tampons de la carte son 2 × 2,7 ms, le reste dans le cycle de Web Audio |
+
+Lecture :
+- **La version bureau passe d'environ 110 ms à environ 69 ms d'aller-retour** sur ce matériel, sans craquement pendant 5 minutes et sans dupliquer le mixage. Elle gagne donc environ 40 ms sur les 60 que le natif seul pouvait gagner.
+- Les ~20 ms qui restent par rapport au natif seul sont le prix du pont : deux tampons partagés (13 ms) et le cycle de Web Audio. On pourrait en reprendre quelques-unes (cible d'entrée plus basse, tampon de la carte son à 64), au prix de la marge.
+- **L'objectif de 12 ms reste impossible avec le micro et les haut-parleurs intégrés** (46 ms de matériel, étape 3). Avec une interface audio, le même chemin donnerait environ 23 ms + la latence de l'interface : en dessous de 30 ms, toujours au-dessus de 12. Pour descendre sous 12 ms, il faudrait réduire les tampons partagés à un bloc, donc faire calculer Web Audio au rythme exact du natif : ce n'est pas possible avec Web Audio tel qu'il est.
+- Non vérifié : l'écoute à l'oreille (tenue à -100 dB pour ne rien faire entendre au bureau), l'enregistrement d'une vraie prise par ce chemin, un appareil de sortie différent de l'entrée avec une vraie dérive d'horloge (la sortie USB n'était plus branchée pendant les essais), et le changement d'appareil en cours de lecture (il coupe le son un instant : quelques blocs manqués, attendus).
+- Non-régression (13/11/2026, sur ce Mac) : `qa/au-bridge.cjs` (étape 4) OK par le nouveau chemin, sortie native à zéro ; `qa/desktop-smoke.cjs` OK ; campagne `qa/run.cjs` : 190/191, seul échec DK01 (Linux seulement, connu). RI05 est passé cette fois.
+
+**Séance d'écoute par le propriétaire (13/11/2026)**
+
+Application lancée en mode natif sur le profil normal par `qa/ecoute-native.cjs`, qui relève toutes les 5 s les incidents du chemin natif. Haut-parleurs et micro intégrés. Mac en usage normal : application Claude, Chrome et correcteur orthographique actifs (charge moyenne environ 4).
+
+- Durée : 2 h 34 d'application ouverte, dont environ 12 minutes de lecture (de 2 à 14 min), le reste à l'arrêt.
+- **À l'oreille : craquements entendus** par le propriétaire.
+- Relevé : **162 manques** à la carte son, **139 surcharges** Core Audio, **135 trous** de rendu (le plus long : 56 ms), 1 bloc perdu entre Web Audio et le natif. La plupart sont groupés entre la 10ᵉ et la 70ᵉ minute (72 manques entre 10 et 20 min, en pleine lecture) ; presque rien après la 100ᵉ.
+- **Les incidents arrivent aussi à l'arrêt.** Ils ne viennent donc pas de la charge de calcul de la démo, mais du rythme des fils audio. Pendant les incidents, le niveau du tampon de sortie saute (jusqu'à 7 106 échantillons au lieu de 384) et le calage d'horloge part en butée (±3 000 ppm) : Web Audio livre ses blocs par à-coups, puis rattrape.
+- Le pré-essai de 30 s du même jour avait déjà eu 12 manques et 2 surcharges ; le suivant, de 60 s, était propre. Les tenues de 5 minutes de l'étape 5 avaient été faites sur une machine plus calme.
+- **Pas de prise par ce chemin** : le son du micro n'a jamais été lu par l'application pendant la séance. L'enregistrement réel reste à faire.
+- **Défaut découvert** : en mode natif, le micro est capté en permanence, même sans enregistrer (pastille orange du Mac allumée tout le temps ; environ 375 blocs d'entrée par seconde jetés faute de lecteur). À corriger avant toute intégration : n'ouvrir l'entrée native que quand l'application en a besoin.
+
+Lecture :
+- **Le chemin natif de l'étape 5 n'est pas fiable en usage réel** : il tient sur une machine calme, pas sur un Mac occupé à autre chose. C'est le contraire de ce qu'on attend d'un chemin « plus professionnel ».
+- Cause non établie. Trois suspects, à départager en reproduisant sous une charge contrôlée : (1) le fil de calcul de Web Audio (Chromium), retardé par la charge, avec seulement 8 ms de réserve dans le tampon partagé ; (2) le fil natif lui-même ; (3) deux programmes qui se partagent le même appareil de sortie (Web Audio y envoie son signal infime pour garder l'horloge de la carte son). Une comparaison sous la même charge du navigateur seul, de l'hôte natif seul (`au-host rt`, étape 3) et du chemin de l'étape 5 dirait lequel décroche.
+
+**Recherche de la cause des craquements (13 et 14/11/2026)**
+
+Charge contrôlée : 8 processus `yes` occupent les 8 cœurs du M3 à 100 % pendant la mesure. Tout est inaudible (-100 dB).
+
+| Essai | Résultat |
+|---|---|
+| Natif seul (`au-host stress 60 128 0`), 60 s sous charge | 2 surcharges, 1 trou (6 ms), toutes dans les 30 premières secondes |
+| Chemin de l'étape 5, 60 s sous charge (premier essai) | **16 manques**, 1 surcharge ; le tampon de sortie tombe à 22 puis remonte à 1 928 : Web Audio s'est arrêté environ 40 ms, puis a rattrapé |
+| Navigateur seul (version normale, compteur `playbackStats` de Chromium), 2 × 60 s sous charge | 1 coupure par essai (12 et 18 ms) |
+| Étape 5 + calcul audio du navigateur en priorité temps réel (`KH_RT=1`), 2 × 60 s sous charge | 0 / 0 / 0, tampon jamais sous 311 |
+| Même chose, 5 min sous charge | propre 2 min 30, puis 5 surcharges et 1 manque |
+| Série alternée, 3 × 2 min sans et avec `KH_RT=1`, sous charge | **tout à 0**, dans les deux cas |
+| Fenêtre réduite dans le Dock (`--reduite`), 2 min sans et avec `KH_RT=1` | 0 / 0 / 0 dans les deux cas |
+| 30 min la nuit, fenêtre réduite, sans `KH_RT`, avec témoin du navigateur | natif : 2 manques ; **témoin navigateur : 2 coupures au même instant** (1 411 s) |
+
+Le « témoin » : pendant une tenue de l'étape 5, Web Audio envoie toujours son signal infime à la sortie du navigateur (c'est ce qui cadence son calcul) ; Chromium compte les coupures de cette sortie (`ctx.playbackStats`). Les deux chemins subissent donc exactement les mêmes épisodes ; on peut voir lequel craque.
+
+Lecture :
+- **Ni la charge de calcul, ni la fenêtre cachée ne reproduisent les craquements de façon fiable.** Ils arrivent par épisodes ; entre deux épisodes, les deux chemins tiennent sans faute, même sous pleine charge.
+- **Pendant un épisode, le navigateur décroche aussi** (nuit du 13 au 14 : 2 manques natifs, 2 coupures du navigateur, au même moment). Sur une machine au calme, le chemin natif n'est donc pas plus fragile que le navigateur.
+- Les ~160 incidents de la séance d'écoute viennent de ce que faisait le Mac à ce moment-là (usage réel du propriétaire), qu'aucune charge artificielle n'a reproduit. Il reste à savoir si, dans ces conditions, le navigateur craquait autant que le natif : c'est ce que dira une seconde séance avec le témoin.
+- Priorité temps réel (`KH_RT=1`, réglage Chromium `AudioWorkletRealtimeThread`) : un seul essai montre un effet net (16 manques sans, 0 avec), les autres sont propres dans les deux cas. Effet possible, pas démontré. Le réglage reste une option d'essai, désactivée par défaut.
+
+Outils ajoutés : `qa/native-io.cjs --reduite` (fenêtre réduite) et le témoin dans son relevé ; `qa/ecoute-native.cjs` relève aussi le témoin ; `KH_RT=1` dans `electron/main.cjs` (mode natif seulement).
+
+**Seconde séance avec le témoin (14/11/2026, `KH_RT=1 node qa/ecoute-native.cjs`)** — premières 2 h 27, application **à l'arrêt** (propriétaire absent), Mac en usage ordinaire (télévision et autres appareils dans la pièce, sans effet sur ces compteurs qui mesurent le rythme de l'ordinateur, pas le son capté).
+
+| Tranche | Manques natifs | Surcharges Core Audio | Coupures du navigateur (témoin) |
+|---|---|---|---|
+| 0-90 min | 11 | 28 | 16 |
+| 90-105 min | **20** | 6 | 3 |
+| 105-147 min | 3 | 5 | 3 |
+| **Total** | **34** | **39** | **22** |
+
+- La plupart des incidents tombent **au même instant sur les deux chemins** : le Mac a des « hoquets » toutes les 5 à 7 minutes environ, qui touchent aussi le navigateur. La sortie normale du navigateur craquerait donc, elle aussi, sur ce Mac.
+- Le natif a en plus deux rafales qui lui sont propres (vers 71 min et de 99 min 43 à 100 min 08 : 19 manques en 25 s, 1 seule coupure du navigateur). La réserve de 8 ms est trop juste pour les hoquets les plus longs, que les tampons plus grands du navigateur encaissent.
+- Une campagne de QA complète a tourné pendant la séance (à partir de 147 min), comme charge supplémentaire.
+
+Lecture : les craquements ont deux sources. (1) Des hoquets du Mac, communs aux deux chemins, que le chemin natif ne peut pas supprimer. (2) Une réserve trop juste dans le chemin natif. Remède proposé pour (2) : passer la réserve de sortie de 384 à 768 échantillons (8 → 16 ms), soit environ 77 ms d'aller-retour au lieu de 69 (le navigateur : 110), puis refaire une séance avec le témoin.
+
+Prochaine mesure proposée (faite ci-dessus, à l'arrêt seulement) : une seconde séance d'usage réel (`KH_RT=1 node qa/ecoute-native.cjs`), où le propriétaire écoute et travaille comme d'habitude. Si le témoin craque autant que le natif, les craquements viennent du Mac et pas du chemin natif ; s'il reste propre, la réserve de 8 ms du chemin natif est trop juste pour l'usage réel (la passer à 16 ou 21 ms coûterait autant de millisecondes de latence).
+
+**Réserve de sortie à 16 ms (14/11/2026)** — `OUT_TARGET` passe de 384 à 768 échantillons dans `src/audio/native-io.ts` (seul le mode natif est concerné). La séance précédente a été arrêtée à 163 min, toujours à l'arrêt.
+
+| Vérification | Résultat |
+|---|---|
+| Tenue de 60 s (`KH_RT=1 node qa/native-io.cjs 60`) | **0 manque** ; 3 surcharges Core Audio au moment d'une coupure du témoin (hoquet du Mac, commun aux deux chemins) |
+| Aller-retour (`--mesure`, 6 clics) | **75,4 ms** (médiane ; écart entre clics < 2,5 ms) ; trajet natif 46,1 ms ; part des tampons et de Web Audio 29,3 ms |
+
+- La version bureau en mode natif passe donc de 69 à 75 ms d'aller-retour, contre 110 ms pour le navigateur seul.
+- Troisième séance lancée ensuite avec cette réserve (`KH_RT=1 node qa/ecoute-native.cjs`), pour l'écoute et la vraie prise du propriétaire.
+
+**Troisième séance, avec le propriétaire (14/11/2026, 68 min)** — écoute aux EarPods (USB) puis vraie prise.
+
+- **La prise s'est bien passée** (avis du propriétaire) : enregistrement par le micro du Mac, en écoutant aux EarPods.
+- Quatre défauts du mode natif découverts en usage réel :
+  1. **Écouteurs branchés, son toujours dans les haut-parleurs** : le natif choisissait sa sortie au démarrage et ne suivait pas la sortie du système. Il fallait la choisir à la main (🔧).
+  2. **Micro des EarPods muet** : les EarPods tournent à 44,1 kHz, l'application à 48 kHz. Pour la sortie, Core Audio convertit, mais pas pour l'entrée : aucun son ne sortait du micro.
+  3. **Écouteurs débranchés en cours de lecture : application bloquée.** Le contexte Web Audio signale une erreur d'appareil, le natif reste accroché à l'appareil disparu, plus rien n'avance.
+  4. **Micro capté en permanence** (défaut déjà noté).
+- Une sourdine de macOS sur les EarPods a fait croire un moment que le son ne sortait plus : ce n'était pas l'application.
+
+**Corrections (14/11/2026)**
+
+- **Micro à la demande** : le natif démarre sans entrée ; `ioInput(nom | null)` ouvre ou ferme l'entrée seule, sans toucher à la sortie. `engine.openInput` l'ouvre, `closeInput` la referme (pastille orange éteinte quand l'application n'écoute pas le micro).
+- **Micro à une autre fréquence** : l'entrée est ouverte à la fréquence propre de l'appareil, et le natif la rééchantillonne vers celle de Web Audio (le régulateur existant, multiplié par le rapport des fréquences). Latences déclarées divisées par la fréquence de chaque appareil.
+- **Quand la sortie n'est pas à la fréquence de Web Audio** (EarPods), Chromium livre ses blocs par paquets d'environ 250 échantillons : la réserve d'entrée passe alors de 256 à 512 échantillons (256 vidait le tampon une fois toutes les 8 s environ ; 512 : aucun manque).
+- **Suivi des appareils** : le natif écoute Core Audio (sortie ou entrée du système changée, appareil débranché) et compte ces événements (`devEvents`). La page les surveille et redémarre le natif. Si l'appareil choisi a disparu, elle se rabat sur celui du système, rouvre la sortie de Chromium qui cadence Web Audio, et affiche « Appareil audio changé, le son passe maintenant par : … » (trois langues). L'erreur du contexte Web Audio déclenche le même rétablissement.
+
+Vérifications (`qa/native-io.cjs`, nouvelles étapes) :
+
+| Vérification | Résultat |
+|---|---|
+| Au démarrage, micro non capté (aucun appel d'entrée en 0,8 s) | oui |
+| Micro ouvert à la demande, puis refermé ; sortie jamais redémarrée, 0 manque pendant ce temps | oui |
+| Sortie choisie disparue : rabattu sur « Haut-parleurs MacBook Pro », message affiché | oui |
+| Micro à 48 kHz dans un contexte à 44,1 kHz, 8 s | 2 756 blocs (le bon rythme), 0 manque, tampon stable (min 301 pour 512) |
+| Tenue de 60 s | 0 manque, 0 surcharge, témoin du navigateur 0 |
+| Aller-retour (`--mesure`) | 73,7 ms, 6 clics sur 6 |
+| `qa/au-bridge.cjs`, `qa/desktop-smoke.cjs` | OK |
+| Campagne `qa/run.cjs` | 190/191 (DK01, Linux seulement) |
+
+Non vérifié : le vrai débranchement et le vrai branchement d'écouteurs (le rabattement est testé en simulant un appareil disparu ; les événements de Core Audio et la reprise du contexte Web Audio après erreur ne peuvent être provoqués que par le propriétaire), et le micro des EarPods lui-même (testé à fréquences inversées, micro du Mac à 48 kHz dans un contexte à 44,1 kHz).
+
+**Essais du propriétaire après corrections (14/11/2026)**
+
+- **Micro à la demande, confirmé en vrai** : le micro du Mac s'ouvre pour la prise, puis se referme seul après « Prise enregistrée ». À l'ouverture du micro intégré, un manque natif et une rafale de 13 coupures du navigateur au même instant : ouvrir le micro intégré secoue brièvement la sortie intégrée du Mac (à confirmer).
+- **Application lancée avec les EarPods branchés** : elle démarre directement sur eux (sortie 44,1 kHz, réserve d'entrée 512 automatiquement).
+- **Débranchement en pleine lecture** : le son passe sur les haut-parleurs du Mac, message affiché, aucun blocage. **Rebranchement** : le son revient dans les EarPods, message affiché. Le propriétaire entend une coupure d'environ une seconde à chaque changement (attente de 300 ms après le dernier événement de Core Audio, guet toutes les 400 ms, puis réouverture des deux sorties) : à raccourcir.
+- **Micro des EarPods : pas encore essayé** après la correction (le propriétaire n'a pas refait de prise ; ses prises précédentes passaient par le micro du Mac).
+
+**Coupure au changement d'appareil raccourcie (14/11/2026)** — guet toutes les 100 ms au lieu de 400, attente de 120 ms au lieu de 300 après le dernier événement de Core Audio, et plus de double démarrage de la sortie sur un appareil à 44,1 kHz : la réserve d'entrée est ajustée en rouvrant seulement l'entrée (`ioInput(nom, réserve)`), et seulement si elle est ouverte. Rétablissement mesuré (appareil disparu simulé) : **134 ms**, contre environ une seconde entendue avant. Le vrai branchement reste à réécouter par le propriétaire. Tenues de 30 s faites pendant une compilation Gradle d'un autre projet (charge 7,8) : ratés natifs **et** coupures du navigateur aux mêmes instants (jusqu'à 17), c'est-à-dire les hoquets du Mac déjà connus. QA : 190/191 (DK01, Linux) ; `qa/au-bridge.cjs` OK.
+
+**Réécoute par le propriétaire (15/11/2026)** — branchements et débranchements des EarPods en pleine lecture : le son suit à chaque fois, message affiché, et **« la coupure est beaucoup plus courte »**. Le **micro des EarPods** s'ouvre maintenant (entrée « Micro EarPods », tampon d'entrée à 472 pour une réserve de 512 sur une sortie à 44,1 kHz) ; la qualité d'une prise par ce micro reste à écouter.
+
+**Intégration dans l'interface de la version bureau (15/11/2026, version 0.15.0)**
+
+Le prototype ne s'activait qu'avec `KH_NATIVE=1`. Il est maintenant dans l'application, pour le propriétaire comme pour un utilisateur de l'installateur macOS.
+
+Ce que voit l'utilisateur (version bureau sur Mac, module natif présent ; ailleurs, rien ne change) :
+- **🔧 Réglages audio → « ⚡ Moteur audio natif »** : interrupteur (rôle `switch`, clavier et doigt), **désactivé par défaut**, choix retenu sur l'appareil (`localStorage` `kh-native`). La bascule se fait sans redémarrer : `engine.useNative()` / `engine.stopNative()` (nouveau), l'entrée ouverte est rouverte sur le nouveau chemin. La ligne de latence indique le chemin (« chemin natif » ou « navigateur »). En cas d'échec : message dans les réglages (`role=alert`) et à l'écran, et retour automatique au navigateur sur la sortie choisie. Code : `src/ui/native.ts`, `src/ui/audio.ts`.
+- **Chaîne d'effets → groupe « 🍎 Plugins du Mac »** : les Audio Units d'effet installés (`list`, type `aufx`), triés, nom court (« Apple: AUDelay » → « Delay »). Une fois ajouté, un curseur par réglage, lu dans le plugin (nouvelle fonction native `params` : adresse, nom, bornes, valeur par défaut et actuelle, unité Core Audio), affiché avec son unité (Hz, dB, %, s…), bouton « Réglages d'origine ». Les réglages sont enregistrés dans le projet (`p`, par adresse), annulables, et appliqués au plugin en direct (`AuInstance.apply`) comme à l'export. Les plugins du Mac marchent **même avec le moteur natif désactivé** : ils n'ont besoin que du module. Projet ouvert ailleurs (site, Windows) : mention « Plugin du Mac indisponible ici », le son passe tel quel, sans message d'erreur. Fenêtres graphiques des plugins : non reprises (curseurs génériques seulement).
+
+Sécurité de la fenêtre (solution publiable) :
+- **L'isolation de contexte reste active** ; la page n'a ni `require`, ni `process`, ni `module`. Le préchargement (`electron/native-preload.cjs`) expose par `contextBridge` une liste fermée de fonctions, avec contrôle du type des arguments.
+- La mémoire partagée (`SharedArrayBuffer`) **ne traverse pas `contextBridge`** (« An object could not be cloned », essayé). Contournement : la page la confie une fois par `window.postMessage({ khSab, key })`, le préchargement la garde sous cette clé et répond `{ khSabOk: key }` (`shareSab` dans `src/audio/au.ts`) ; les fonctions du pont reçoivent ensuite la clé (`open(key, …)`, `ioStart(key, …)`, `forget(key)`). Vérifié : une valeur écrite d'un côté est lue de l'autre (même processus, mémoire réellement partagée), et les mesures de l'étape 4 sont inchangées (0 échantillon de retard, 0 bloc manqué).
+- Seul le **bac à sable du préchargement** reste coupé (`sandbox: false`) : un préchargement en bac à sable ne peut pas charger de module natif. C'est la configuration habituelle d'une application Electron avec module natif ; la page, elle, reste isolée. Le préchargement n'est chargé que si le module existe (`electron/main.cjs`, chemin passé par `--kh-native=`). L'avertissement d'Electron sur l'isolation a disparu ; reste celui sur l'absence de règle de contenu (CSP), qui existait déjà dans la version normale (voir suite).
+- `KH_NATIVE=0` fait comme si le module était absent ; `KH_NATIVE=1` allume le moteur natif au démarrage sans passer par le réglage (scripts de vérification). `KH_RT=1` inchangé.
+
+Empaquetage :
+- `npm run native` (`scripts/build-native.sh`) construit le module pour les puces Apple **et** Intel, les réunit en un seul fichier (`lipo`) et le signe « ad hoc » (obligatoire sur puce Apple). Le code d'attente active n'utilise plus d'instruction propre à la puce Apple (`pause()`).
+- electron-builder le range dans `Contents/Resources/native/kh_au_bridge.node` (`build.mac.extraResources`), hors de l'archive de l'application.
+- GitHub (action « Version bureau ») : construction du module, puis `qa/packaged-mac.cjs` lance **l'application empaquetée** et vérifie module, isolation, AULowpass exact et bascule du moteur natif. Première exécution verte (le moteur natif y démarre sur « Apple Virtual Sound Device »). L'action se relance aussi quand le module, le script ou `package.json` changent.
+
+Vérifications :
+
+| Vérification | Résultat |
+|---|---|
+| `qa/au-bridge.cjs` : pont isolé, réglages d'AULowpass lus, 23 plugins proposés, « Delay » ajouté par l'interface, curseur « Delay Time » appliqué au vrai plugin | OK |
+| `qa/native-io.cjs` : réglage présent et activé (KH_NATIVE=1), désactivé à l'écran (natif arrêté, son au navigateur, choix retenu), réactivé ; tenue sans manque | OK |
+| `qa/packaged-mac.cjs --strict`, installateur puce Apple, sur ce Mac | OK (moteur natif sur « Haut-parleurs MacBook Pro ») |
+| Même chose, application Intel (`--mac dir --x64`), sous Rosetta | OK |
+| Campagne `qa/run.cjs` : nouveaux cas NAT01-05 (réglage, échec, choix retenu, langues) et MAC01-05 (liste, réglages, annulation, indisponible ici, échec, huit effets, libération) avec un module natif simulé dans le navigateur (`qa.fakeNative`) | **200/201** (DK01, Linux seulement) ; deux campagnes précédentes à 199/201 : MAC02 une fois (avant correction de la libération des plugins), R05 une fois (prise chronométrée, Mac chargé ; 3 réussites sur 3 seul) |
+| `qa/desktop-smoke.cjs` | OK, désormais sur un profil temporaire (le profil de développement avait un projet « Démo » vidé de ses clips, qui le faisait échouer) |
+
+Défauts trouvés et corrigés en route :
+- **Plugins jamais libérés à la suppression d'une piste** (ou à l'ouverture d'un autre projet) : un plugin du Mac continuait de tourner dans son fil natif. Désormais libérés ; un effet retiré pendant son chargement est libéré sans message d'échec (cas MAC05).
+- **Réglages audio vides pendant plusieurs secondes** dans la version bureau sur Mac : la première liste des sorties audio (`enumerateDevices`) met 1 à 4 s à venir. La fenêtre s'affiche maintenant tout de suite et la liste se remplit après, sans redessiner le reste (une mesure peut être en cours).
+- La campagne lance désormais Chromium avec `SharedArrayBuffer` activé (comme la version bureau en mode natif), pour les cas NAT et MAC.
+
+Non vérifié : **l'écoute d'un plugin du Mac à l'oreille** (à faire par le propriétaire : ajouter « Delay » ou « Lowpass » à une piste, moteur natif activé ou non) ; l'installateur sur un vrai Mac Intel (seulement sous Rosetta) ; l'ouverture du `.dmg` téléchargé depuis GitHub (avertissement de macOS attendu, application non signée) ; des plugins tiers (aucun installé) ; HawkScan (pas de clé API, application sans serveur).
+
+**Suite faite dans la nuit du 15 au 16/11/2026** (consigne de nuit du propriétaire, transmise par la session « Avancer le projet au maximum ») — chaque point avec ses cas de QA, ses textes en trois langues, un commit poussé :
+
+1. **Échelle logarithmique** (`bc331ec`) : réglages en Hz, et ceux que le plugin déclare logarithmiques (`kAudioUnitParameterFlag_DisplayLogarithmic`, renvoyé par `params` dans `flags`), sur un curseur logarithmique quand la plage le permet (minimum positif, facteur 20 au moins). Le projet garde la valeur en Hz, à 4 chiffres significatifs. Tous les curseurs de l'application donnent maintenant leur valeur affichée aux lecteurs d'écran (`aria-valuetext`). Cas MAC06. Au passage : la fenêtre des effets « oubliait » parfois qu'elle était rouverte (événement de fermeture différé), cause de l'instabilité de MAC02 ; corrigé.
+2. **Réglages à choix** (`dc3d09b`) : `params` renvoie les noms des valeurs (`kAudioUnitProperty_ParameterValueStrings`) ; ils s'affichent en liste (ex. AUFilter « Low Filter Type » : Low Shelf / High Pass ; AUNBandEQ « Type » : 11 formes de filtre). Les réglages marche/arrêt (`Boolean`) deviennent un interrupteur (rôle `switch`). Cas MAC07 ; vérifié sur AUFilter dans `qa/au-bridge.cjs`.
+3. **Préréglages d'usine** (`cec7b54`) : nouvelles fonctions natives `presets` et `setPreset`. Liste « Préréglage d'usine » dans la carte de l'effet (AUMatrixReverb et AUReverb2 : 13 ; AUDistortion : 22 ; AUDynamicsProcessor : 6…). Le plugin charge le préréglage, puis tous ses réglages sont recopiés dans le projet (`p`), avec le numéro du préréglage (`Insert.preset`, champ facultatif) : écoute et export identiques, annulable. Toucher un réglage repasse en « Réglages personnels ». Cas MAC08 ; vérifié avec « Large Hall » d'AUMatrixReverb (13 réglages changés, recopiés à l'identique). Limite : un préréglage qui changerait un état interne non exposé en réglage ne serait pas reproduit à l'export (non constaté sur les plugins d'Apple).
+4. **Compensation de latence** (`3bd8f50`) : chaque tranche a un retard (`pdc`) après sa chaîne d'effets. Les pistes envoyées vers un bus sont calées entre elles à l'entrée du bus, puis bus et pistes directes sur le chemin le plus long. Une piste muette compte toujours. À l'export, tout le mixage est ramené au début du fichier (`lastRender.pdc`) ; à l'enregistrement, ce retard s'ajoute à la compensation des prises. Cas MAC09 (retards par piste et par bus, plugin coupé, piste muette, export) ; avec le vrai AUPeakLimiter (2 ms), l'export est calé à l'échantillon près. Limites : seuls les plugins du Mac déclarent une latence (les plugins web non) ; le clic de la mesure de latence et le métronome ne passent pas par le retard (écart égal à la latence du plugin, 2 ms pour le limiteur).
+5. **Règle de contenu (CSP)** (`71e5031`) : ajoutée à la version construite par `vite.config.ts` (site web **et** version bureau ; pas pendant le développement, à cause du rechargement à chaud). Elle autorise le code de l'application, les worklets et sons créés en mémoire (`blob:`), et, pour les plugins web d'un autre site acceptés par l'utilisateur, leur code et leurs fichiers en https. Elle interdit eval, objets intégrés, cadres et formulaires. Plus aucun avertissement de sécurité d'Electron. Vérifié : `qa/desktop-smoke.cjs` (avec le plugin web fourni), `qa/au-bridge.cjs`, `qa/native-io.cjs`, et une campagne complète **sur la version construite** (`vite preview`) : 203/205, sans aucun refus de la règle. Les deux échecs sont DK01 (Linux seulement) et RI06 : en version construite, le service hors ligne télécharge lui-même les sons, et le refus simulé par le test ne l'atteint pas ; ce n'est pas lié à la règle.
+
+Bilan de la nuit : campagne `npm run qa:all` **204/205** (DK01, Linux seulement) ; `npm run build` OK ; `qa/au-bridge.cjs`, `qa/native-io.cjs`, `qa/desktop-smoke.cjs` OK ; installateur `release/KH Music Pro-0.15.0-arm64.dmg` construit avec le module universel, `qa/packaged-mac.cjs --strict` OK.
+
+Reste possible : fenêtres graphiques des plugins (vue Cocoa dans une fenêtre native) ; latence des plugins web ; noms des réglages répétés d'AUNBandEQ (« Bypass », « Type »… une fois par bande, sans numéro de bande).
+
+### À valider par Kevin
+
+1. **Écouter un plugin du Mac** : version bureau, 🧩 d'une piste → « 🍎 Plugins du Mac » → « MatrixReverb », préréglage « Large Hall », puis « Lowpass » en bougeant « Cutoff Frequency ». Le son change-t-il comme attendu, sans craquement ?
+2. **Moteur audio natif** : 🔧 Réglages audio → « ⚡ Moteur audio natif » : l'activer, jouer, enregistrer une prise, brancher puis débrancher les EarPods, le désactiver. Désactivé par défaut : faut-il l'activer par défaut sur Mac ?
+3. **Installateur** : ouvrir `release/KH Music Pro-0.15.0-arm64.dmg` (construit sur ce Mac), ou celui de l'action « Version bureau » sur GitHub. macOS affichera un avertissement (application non signée).
+4. **Numéro de version** : 0.15.0 a été choisi pour cette intégration ; à confirmer avant la release.
+5. **Fusion dans `main`** (met le site en ligne à jour, avec la règle de contenu) : seulement avec ton accord.
+6. Le micro des EarPods : une prise reste à écouter (déjà noté plus haut).
+
 ### Critères de décision
 
 - **On continue** si un plugin AU traite le son d'une piste avec une latence aller-retour inférieure à 12 ms et sans craquement pendant 5 minutes.
@@ -98,7 +451,8 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 ## 6. Feuille de route
 
 - **Faites** : V1 à V13, puis V14a (chaînes d'effets, latence, plugins web).
-- **En attente** : V14b (ci-dessus), et la phase de QA humaine annoncée par le propriétaire.
+- **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). Écouteurs vérifiés par le propriétaire (coupure courte) ; micro des EarPods ouvert, prise à écouter. **15/11 : intégré à l'interface de la version bureau** (réglage « moteur audio natif », plugins du Mac dans la chaîne d'effets, pont isolé, module dans l'installateur macOS) : version 0.15.0, à écouter puis à fusionner avec l'accord du propriétaire.
+- **En attente** : la phase de QA humaine annoncée par le propriétaire.
 - **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
 
 ## 7. Extension généraliste V15 (branche v15-banque-generaliste)
@@ -141,3 +495,30 @@ Travail fait sans le propriétaire, sur sa consigne de nuit : tout ce qui se vé
 5. **Décision** : télécharger les nuances réelles de la batterie Virtuosity Drums (CC0, quelques mégaoctets) pour une batterie qui change vraiment de timbre selon la force ?
 6. **Décision** : fusionner la V15 (v0.15.2) dans `main` pour la mettre en ligne, après ton écoute.
 
+
+## Branche d'essai : V15 + V14b réunies (15/11/2026)
+
+Branche `integration-v15-natif` : la banque de sons V15 (`v15-banque-generaliste`, à `3155021`, avec les nuances V15.2) et le moteur natif V14b (`v14b-prototype-natif`, à `5967113`) réunis en un seul commit de fusion. Rien n'a été fusionné dans `main`, et les deux branches d'origine sont intactes.
+
+Conflits résolus (10 blocs, 8 fichiers, tous « garder les deux ») :
+- `package.json` : les deux branches se disaient 0.15 (0.15.2 et 0.15.0). La réunion passe en **0.16.0**, à confirmer par le propriétaire.
+- `src/main.ts` (point d'accès de test `window.kh`), `src/audio/engine.ts` (imports), `src/style.css` : union des deux côtés.
+- `qa/run.cjs` : Chromium lancé avec `SharedArrayBuffer` (V14b) **et** le chemin de navigateur réglable `KH_CHROMIUM_PATH` (V15).
+- `qa/desktop-smoke.cjs` : l'orgue tenu et le navigateur de sons (V15), plus le plugin web et la règle de contenu (V14b).
+- README et passation : nombre de cas et version.
+
+Vérifications sur ce Mac :
+
+| Vérification | Résultat |
+|---|---|
+| `npm run build` (types + version de production) | OK |
+| Campagne complète, serveur de développement | 1er passage 236/239 ; 2e passage **238/239** (seul DK01, qui ne tourne que sous Linux). Au 1er passage, T01 et MP01 avaient échoué ; ils passent seuls deux fois de suite et dans le 2e passage complet : instables selon l'ordre, pas cassés par la réunion. |
+| Campagne complète sur la version construite (règle de contenu active) | 235/239 : DK01, plus RI06, BN05 et SB09. Ces trois-là bloquent volontairement le chargement d'un son, mais le service hors ligne le sert depuis son cache ; même cause que RI06, déjà connue sur V14b. Aucun refus de la règle de contenu : les sons de la banque se chargent. |
+| `qa/desktop-smoke.cjs` (version bureau) | OK : orgue tenu, navigateur de sons, plugin web, règle de contenu, aucun avertissement |
+| `qa/au-bridge.cjs` (plugins du Mac, vrai module natif) | OK : réglages, préréglage « Large Hall », aucun refus de la règle de contenu |
+
+Non vérifié : l'écoute (sons V15 et plugins du Mac), les installateurs de cette branche, et une version Windows.
+
+Pour la suite, deux possibilités au choix du propriétaire :
+1. Fusionner `integration-v15-natif` dans `main` d'un coup (version 0.16.0) ;
+2. Ou fusionner d'abord une branche (par exemple la V15 en 0.15.x), puis l'autre en refaisant cette même réunion, déjà résolue ici.
