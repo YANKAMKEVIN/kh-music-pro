@@ -20,14 +20,20 @@ function refreshOuts() {
     const outs = l.filter(x => x.kind === 'audiooutput' && x.deviceId), sig = (a: MediaDeviceInfo[]) => a.map(o => o.deviceId + o.label).join('|');
     const changed = sig(outs) !== sig(outsCache);
     outsCache = outs;
-    if (changed && dlg().open) render();
+    if (changed && dlg().open) fillOuts();
   }, () => { /* liste indisponible */ }).finally(() => { listing = false; });
 }
 
+/** Remplit la liste des sorties sans redessiner le reste de la fenêtre (une mesure peut être en cours). */
+function fillOuts() {
+  const sel = dlg().querySelector<HTMLSelectElement>('[data-role=audout]');
+  if (!sel) return;
+  sel.replaceChildren(h('option', { value: '' }, t('aud.defaultOut')), ...outsCache.filter(o => o.deviceId !== 'default').map((o, i) => h('option', { value: o.deviceId, selected: S.outputDevice === o.deviceId }, o.label || `${t('aud.output')} ${i + 1}`)));
+}
+
 function render() {
-  const d = dlg(), lat = engine.latency(), outs = outsCache;
-  const out = h('select', { 'aria-label': t('aud.output'), data: { role: 'audout' }, disabled: !engine.canSetOutput() },
-    h('option', { value: '' }, t('aud.defaultOut')), ...outs.filter(o => o.deviceId !== 'default').map((o, i) => h('option', { value: o.deviceId, selected: S.outputDevice === o.deviceId }, o.label || `${t('aud.output')} ${i + 1}`)));
+  const d = dlg(), lat = engine.latency();
+  const out = h('select', { 'aria-label': t('aud.output'), data: { role: 'audout' }, disabled: !engine.canSetOutput() });
   out.onchange = async () => { if (await engine.setOutput(out.value)) { S.outputDevice = out.value; toast(t('aud.outSet')); } else toast(t('aud.outFail'), 'error'); render(); };
   const result = h('span', { class: 'lufs', role: 'status', data: { role: 'latresult' } }, '');
   const measure = h('button', { class: 'pill', data: { act: 'latmeasure' }, title: t('aud.measureTip') }, '📏 ' + t('aud.measure'));
@@ -71,6 +77,7 @@ function render() {
     h('div', { class: 'fxfoot' }, measure, result),
     h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close')))];
   d.replaceChildren(...kids.filter((k): k is HTMLElement => !!k));
+  fillOuts();
 }
 
 export function showAudio() { render(); refreshOuts(); if (!dlg().open) dlg().showModal(); }

@@ -58,6 +58,32 @@ const PAGE_HELPERS = () => {
       for (let i = 0; i < d.length; i++) { if (Math.abs(d[i]) > thr) { if (quiet >= gap * sr) out.push(i / sr); quiet = 0; } else quiet++; }
       return out;
     },
+    /**
+     * Module natif simulé (version bureau macOS) : mêmes fonctions que le pont d'electron/native-preload.cjs, sans son réel.
+     * `opts.failStart` : la carte son refuse de démarrer ; `opts.failOpen` : le plugin refuse de se créer.
+     */
+    fakeNative(opts = {}) {
+      const calls = [], sabs = new Set();
+      const f = {
+        calls, sabs, running: false, n: 0, ...opts,
+        forget: k => { sabs.delete(k); calls.push(['forget']); },
+        list: () => [{ type: 'aufx', subtype: 'lpas', manufacturer: 'appl', name: 'Apple: AULowpass' }, { type: 'aumu', subtype: 'dls ', manufacturer: 'appl', name: 'Apple: DLSMusicDevice' }, { type: 'aufx', subtype: 'dely', manufacturer: 'appl', name: 'Apple: AUDelay' }],
+        open: (key, type, sub, man) => { if (f.failOpen) throw new Error('plugin introuvable'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); calls.push(['open', `${type}:${sub}:${man}`]); return ++f.n; },
+        setParam: (id, a, v) => calls.push(['set', id, a, v]),
+        params: () => [{ address: 0, name: 'Cutoff Frequency', min: 10, max: 22050, def: 6900, value: 6900, unit: 8 }, { address: 1, name: 'Resonance', min: -20, max: 40, def: 0, value: 0, unit: 13 }],
+        info: () => ({ name: 'Apple: AULowpass', latency: 0, tail: 0 }),
+        close: id => calls.push(['close', id]),
+        ioStart: (key, o) => { if (f.failStart) throw new Error('carte son refusée'); if (!sabs.has(key)) throw new Error('mémoire partagée inconnue'); f.running = true; calls.push(['ioStart']); return { output: 'Sortie de test', input: null, inChannels: 0, outDeclared: 0.01, inDeclared: 0, outRate: o.sampleRate, buffer: 128 }; },
+        ioStop: () => { f.running = false; calls.push(['ioStop']); },
+        ioInput: n => ({ input: n, inChannels: 0, inDeclared: 0 }),
+        ioStats: () => (f.running ? { devEvents: 0, outCalls: 1 } : null),
+        ioArm() { }, ioResetStats() { }, ioGain() { }, ioDevices: () => [],
+      };
+      window.__fakeListen ??= e => { const w = window.khNative; if (w?.sabs && e.data?.khSab instanceof SharedArrayBuffer) { w.sabs.add(e.data.key); window.postMessage({ khSabOk: e.data.key }, '*'); } };
+      removeEventListener('message', window.__fakeListen); addEventListener('message', window.__fakeListen);
+      window.khNative = f;
+      return f;
+    },
     sine(id) {
       const b = new AudioBuffer({ length: 44100, numberOfChannels: 1, sampleRate: 44100 }), d = b.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 261.63 * i / 44100) * 0.5 * Math.exp(-i / 20000);
@@ -72,6 +98,8 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
 
 async function reset() {
+  // Module natif simulé (cas NAT et AU) : on le retire, moteur natif arrêté, choix oublié.
+  await page.evaluate(async () => { const k = window.kh; if (k.engine.native) await k.engine.stopNative(); delete window.khNative; try { localStorage.removeItem('kh-native'); } catch { } });
   await page.evaluate(() => {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
@@ -1898,8 +1926,116 @@ test('LAT03', 'Latence', 'Sans le module natif (version web), le son entre et so
   expect(r.io === null && !r.native && r.out && r.stream && r.src && r.canSet && r.rate > 0, `chemin du navigateur : ${JSON.stringify(r)}`);
 });
 
+// ---------- Moteur audio natif et plugins du Mac (version bureau macOS ; module natif simulé dans le navigateur) ----------
+const natSw = '#audio [data-act=native]';
+const waitSw = v => page.waitForFunction(([s, v]) => { const b = document.querySelector(s); return b && b.getAttribute('aria-checked') === v && !b.disabled; }, [natSw, v], { timeout: 5000 });
+test('NAT01', 'Moteur natif', 'Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac', async () => {
+  await page.click('#bAudio'); await sleep(200);
+  expect(!(await page.$('#audio [data-role=native]')), 'le réglage ne doit pas apparaître sans module natif');
+  expect(!/navigateur|chemin natif/.test(await page.textContent('[data-role=latinfo]')), 'la latence ne doit pas parler de chemin sans module natif');
+  await page.keyboard.press('Escape'); await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  expect(!(await page.$('[data-role=aulist]')), 'pas de groupe « Plugins du Mac » sans module natif');
+});
+test('NAT02', 'Moteur natif', 'Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu', async () => {
+  await S(() => { window.qa.fakeNative(); });
+  await page.click('#bAudio'); await page.waitForSelector(natSw);
+  const b0 = await page.$eval(natSw, b => ({ role: b.getAttribute('role'), on: b.getAttribute('aria-checked'), txt: b.textContent, state: document.querySelector('[data-role=natstate]').textContent, help: document.querySelector('[data-role=native]').textContent }));
+  expect(b0.role === 'switch' && b0.on === 'false' && b0.txt === 'Désactivé' && b0.state.includes('navigateur') && b0.help.includes('74 ms'), `état de départ : ${JSON.stringify(b0)}`);
+  expect((await page.textContent('[data-role=latinfo]')).includes('· navigateur'), 'la latence doit indiquer le chemin du navigateur');
+  await page.click(natSw); await waitSw('true');
+  const on = await S(() => { const e = window.kh.engine; return { native: !!e.native, out: e.out === e.native?.sink, state: document.querySelector('[data-role=natstate]').textContent, lat: document.querySelector('[data-role=latinfo]').textContent, saved: localStorage.getItem('kh-native'), toast: document.querySelector('#toast').textContent, calls: window.khNative.calls.map(c => c[0]) }; });
+  expect(on.native && on.out && on.saved === '1' && on.state === 'Actif : le son passe par Sortie de test.' && on.lat.includes('chemin natif') && on.calls.includes('ioStart'), `activé : ${JSON.stringify(on)}`);
+  expect(on.toast.includes('Moteur audio natif activé'), `message : ${on.toast}`);
+  await page.focus(natSw); await page.keyboard.press('Space'); await waitSw('false');
+  const off = await S(() => { const e = window.kh.engine; return { native: !!e.native, out: e.out === e.ctx.destination, saved: localStorage.getItem('kh-native'), stopped: window.khNative.calls.some(c => c[0] === 'ioStop'), running: window.khNative.running }; });
+  expect(!off.native && off.out && off.saved === '0' && off.stopped && !off.running, `désactivé au clavier : ${JSON.stringify(off)}`);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Space'); await sleep(500); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.05), 'le son ne passe plus par le navigateur après désactivation');
+});
+test('NAT03', 'Moteur natif', 'Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée', async () => {
+  await S(() => { window.qa.fakeNative({ failStart: true }); });
+  await page.click('#bAudio'); await page.waitForSelector(natSw); await page.click(natSw); await waitSw('false');
+  const r = await S(() => { const e = window.kh.engine; return { native: !!e.native, out: e.out === e.ctx.destination, err: document.querySelector('[data-role=naterr]')?.textContent ?? '', role: document.querySelector('[data-role=naterr]')?.getAttribute('role'), toast: document.querySelector('#toast').className + ' ' + document.querySelector('#toast').textContent, sink: e.ctx.sinkId }; });
+  expect(!r.native && r.out && r.sink === '', `le son doit rester au navigateur : ${JSON.stringify(r)}`);
+  expect(r.err === 'Le moteur natif n\'a pas pu démarrer (carte son refusée). Le son passe par le navigateur.' && r.role === 'alert', `message dans les réglages : ${r.err}`);
+  expect(r.toast.includes('error') && r.toast.includes('carte son refusée'), `message d'erreur : ${r.toast}`);
+  await S(() => { window.khNative.failStart = false; }); await page.click(natSw); await waitSw('true');
+  expect(!(await page.$('[data-role=naterr]')), 'le message d\'échec doit disparaître après un essai réussi');
+});
+test('NAT04', 'Moteur natif', 'Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul', async () => {
+  await S(() => { window.qa.fakeNative(); localStorage.setItem('kh-native', '1'); window.kh.initNative(); });
+  await page.waitForFunction(() => !!window.kh.engine.native, null, { timeout: 5000 });
+  await S(async () => { await window.kh.engine.stopNative(); localStorage.setItem('kh-native', '0'); window.kh.initNative(); }); await sleep(300);
+  expect(await S(() => !window.kh.engine.native), 'désactivé, il ne doit pas se rallumer au lancement');
+});
+test('NAT05', 'Moteur natif', 'Réglage et plugins du Mac en anglais et en espagnol', async () => {
+  await S(() => { window.qa.fakeNative(); });
+  for (const [l, title, off, grp] of [['en', 'Native audio engine', 'Off', 'Mac plugins'], ['es', 'Motor de audio nativo', 'Desactivado', 'Plugins del Mac']]) {
+    await page.evaluate(l2 => window.kh.setLang(l2), l); await page.click('#bAudio'); await page.waitForSelector(natSw);
+    const r = await page.$eval('#audio', d => ({ h: d.querySelector('[data-role=native] h3').textContent, sw: d.querySelector('[data-act=native]').textContent, label: d.querySelector('[data-act=native]').getAttribute('aria-label') }));
+    expect(r.h.includes(title) && r.sw === off && r.label === title, `${l} : ${JSON.stringify(r)}`);
+    await page.keyboard.press('Escape'); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id));
+    expect((await page.getAttribute('[data-role=aulist]', 'label')).includes(grp), `${l} : groupe des plugins du Mac`); await page.keyboard.press('Escape');
+  }
+});
+test('MAC01', 'Plugins du Mac', 'Les plugins d\'effet du Mac sont proposés dans la chaîne d\'effets, triés ; en ajouter un affiche ses réglages', async () => {
+  await S(() => { window.qa.fakeNative(); });
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  const opts = await page.$$eval('[data-role=aulist] option', o => o.map(x => [x.value, x.textContent]));
+  expect(JSON.stringify(opts) === JSON.stringify([['au:aufx:dely:appl', 'Delay'], ['au:aufx:lpas:appl', 'Lowpass']]), `plugins proposés (effets seulement, triés) : ${JSON.stringify(opts)}`);
+  await page.selectOption('[data-role=fxadd]', 'au:aufx:lpas:appl');
+  await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+  const ins = (await insertsOf(1))[0], card = await page.$eval('#fx .fxcard', c => ({ t: c.querySelector('strong').textContent, labels: [...c.querySelectorAll('[data-au=params] .lb')].map(e => e.textContent), vals: [...c.querySelectorAll('[data-au=params] .val')].map(e => e.textContent) }));
+  expect(ins.type === 'au' && ins.url === 'aufx:lpas:appl' && ins.name === 'Lowpass', `effet ajouté : ${JSON.stringify(ins)}`);
+  expect(card.t === '1. 🍎 Lowpass' && card.labels.join() === 'Cutoff Frequency,Resonance' && card.vals.join() === '6.90 kHz,0.0 dB', `carte : ${JSON.stringify(card)}`);
+  expect(await S(() => window.khNative.calls.some(c => c[0] === 'open' && c[1] === 'aufx:lpas:appl')), 'le plugin doit être créé par le module natif');
+});
+test('MAC02', 'Plugins du Mac', 'Les curseurs d\'un plugin du Mac pilotent le plugin, s\'enregistrent dans le projet, s\'annulent et reviennent aux réglages d\'origine', async () => {
+  await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
+  await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+  await setSlider('#fx', 'Cutoff Frequency', 1000); await sleep(100);
+  const r = await S(() => ({ p: window.kh.S.project.tracks[1].inserts[0].p, set: window.khNative.calls.filter(c => c[0] === 'set').map(c => c.slice(2)) }));
+  expect(Math.abs(r.p['0'] - 1000) < 25 && r.set.some(([a, v]) => a === 0 && Math.abs(v - r.p['0']) < 1e-9), `réglage envoyé au plugin et enregistré : ${JSON.stringify(r)}`);
+  expect((await page.textContent('#fx [data-addr="0"] .val')).endsWith('kHz') || (await page.textContent('#fx [data-addr="0"] .val')).endsWith('Hz'), 'valeur affichée en Hz');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await sleep(150);
+  expect((await insertsOf(1))[0].p['0'] === undefined, `annuler doit défaire le réglage : ${JSON.stringify((await insertsOf(1))[0].p)}`);
+  await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id)); await page.waitForSelector('#fx [data-act=aureset]');
+  await setSlider('#fx', 'Resonance', 12); await page.click('#fx [data-act=aureset]'); await sleep(100);
+  const p = (await insertsOf(1))[0].p; expect(p['0'] === 6900 && p['1'] === 0, `réglages d'origine : ${JSON.stringify(p)}`);
+  expect(await S(() => window.khNative.calls.filter(c => c[0] === 'set').slice(-2).map(c => c[3]).sort((a, b) => a - b).join()) === '0,6900', 'les réglages d\'origine doivent être renvoyés au plugin');
+});
+test('MAC03', 'Plugins du Mac', 'Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d\'erreur', async () => {
+  await S(() => { const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; i.p = { 0: 300 }; k.S.project.tracks[1].inserts = [i]; k.commit(); }); await sleep(400);
+  expect(!(await page.textContent('#toast')).includes('Impossible'), `aucun message d'échec attendu : ${await page.textContent('#toast')}`);
+  await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id));
+  expect((await page.textContent('#fx [data-au=unavailable]')).includes('indisponible ici'), 'mention « indisponible ici » absente');
+  expect((await page.textContent('#fx .fxcard strong')).includes('🍎 Lowpass'), 'le nom du plugin doit rester affiché');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Space'); await sleep(600);
+  expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.05), 'le son doit passer tel quel');
+});
+test('MAC04', 'Plugins du Mac', 'Plugin du Mac qui ne se charge pas : message clair, le son passe sans lui ; huit effets au plus', async () => {
+  await S(() => { window.qa.fakeNative({ failOpen: true }); });
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); await page.selectOption('[data-role=fxadd]', 'au:aufx:dely:appl'); await sleep(400);
+  expect((await page.textContent('#toast')).includes('Impossible de charger ce plugin du Mac'), `message : ${await page.textContent('#toast')}`);
+  await S(() => { window.khNative.failOpen = false; });
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; for (let i = 0; i < 7; i++) t.inserts.push(k.newInsert('gain')); k.commit(); });
+  expect((await insertsOf(1)).length === 8, 'huit effets attendus'); await page.selectOption('[data-role=fxadd]', 'au:aufx:lpas:appl'); await sleep(100);
+  expect((await insertsOf(1)).length === 8 && (await page.textContent('#toast')).length > 0, 'un neuvième effet doit être refusé');
+  await S(() => { window.kh.S.project.tracks[1].inserts = []; window.kh.commit(); });
+});
+
+test('MAC05', 'Plugins du Mac', 'Supprimer la piste ou ouvrir un autre projet libère ses plugins du Mac ; un effet retiré pendant son chargement n\'est pas signalé en échec', async () => {
+  await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); });
+  await page.waitForFunction(() => window.khNative.calls.some(c => c[0] === 'open'), null, { timeout: 5000 });
+  await S(() => { const k = window.kh; k.S.project.tracks.splice(1, 1); k.commit(); }); await sleep(250);
+  expect(await S(() => window.khNative.calls.some(c => c[0] === 'close') && window.kh.liveWams.size === 0), `plugin non libéré : ${JSON.stringify(await S(() => window.khNative.calls))}`);
+  await S(() => { const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:dely:appl'; i.name = 'Delay'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.S.project.tracks[1].inserts = []; k.commit(); }); await sleep(400);
+  expect(!(await page.textContent('#toast')).includes('Impossible'), `un effet retiré pendant son chargement ne doit pas être signalé en échec : ${await page.textContent('#toast')}`);
+  expect(await S(() => window.khNative.calls.filter(c => c[0] === 'close').length === 2), 'le plugin chargé après coup doit être libéré');
+});
+
 (async () => {
-  browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
+  // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
+  browser = await chromium.launch({ args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
   page = await ctx.newPage();
   page.on('pageerror', e => errors.push('PAGE ' + e.message));

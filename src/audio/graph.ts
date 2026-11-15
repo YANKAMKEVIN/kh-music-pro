@@ -162,8 +162,12 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       if (isPlugin(i) && !node.wam && !node.loading && this.live && (i.type !== 'au' || auBridge())) {
         node.loading = true;
         const made = node;
-        createPlugin(this.ctx, i, i.state).then(inst => { this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true); },
-          () => { this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
+        // L'effet a pu être retiré (ou la piste supprimée) pendant le chargement : on libère alors le plugin, sans rien signaler.
+        const gone = () => this.tracks.get(t.id)?.ins.get(i.id) !== made;
+        createPlugin(this.ctx, i, i.state).then(inst => {
+          if (gone()) { inst.audioNode.destroy?.(); return; }
+          this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true);
+        }, () => { if (!gone()) this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
       }
       node.set(i, p, (prm, v) => this.set(prm, v));
       if (i.type === 'au' && node.wam) (node.wam as AuInstance).apply(i.p);
@@ -290,6 +294,8 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     }
     for (const [id, n] of this.tracks) if (!p.tracks.some(t => t.id === id) && !busIds.has(id)) {
       n.pan.disconnect(); n.revSend.disconnect(); n.dlySend.disconnect(); this.tracks.delete(id);
+      // Piste supprimée (ou autre projet ouvert) : ses plugins sont libérés (un Audio Unit a un fil natif à arrêter).
+      for (const [iid, node] of n.ins) { node.out.disconnect(); node.wam?.audioNode.destroy?.(); liveWams.delete(wamKey(id, iid)); }
     }
   }
 
