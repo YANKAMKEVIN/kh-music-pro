@@ -6,6 +6,8 @@
 // une fois par window.postMessage({ khSab, key }), le préchargement la garde sous cette clé et confirme par { khSabOk: key }.
 // Les fonctions du pont reçoivent ensuite la clé à la place de la mémoire. La mémoire reste bien partagée (même processus).
 const { contextBridge } = require('electron');
+// Fichiers de projet (window.khFiles) : le même pont que hors module natif.
+require('./preload.cjs');
 
 const arg = process.argv.find(a => a.startsWith('--kh-native='));
 let m = null;

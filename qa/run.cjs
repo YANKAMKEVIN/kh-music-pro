@@ -94,6 +94,23 @@ const PAGE_HELPERS = () => {
       window.khNative = f;
       return f;
     },
+    /** Pont des fichiers de la version bureau simulé (electron/preload.cjs) : disque en mémoire, réponses des fenêtres réglables. */
+    fakeFiles() {
+      const f = {
+        disk: {}, recents: [], calls: [], next: { open: null, saveAs: null }, failSave: false, editedLog: [],
+        info: p => ({ path: p, name: p.split('/').pop().replace(/\.khm$/, '') }),
+        remember(p) { f.recents = [p, ...f.recents.filter(x => x !== p)].slice(0, 10); },
+        async open() { f.calls.push('open'); const p = f.next.open; if (!p) return null; f.remember(p); return { ...f.info(p), text: f.disk[p] }; },
+        async openRecent(p) { f.calls.push('openRecent'); if (!(p in f.disk)) { f.recents = f.recents.filter(x => x !== p); throw new Error('missing'); } f.remember(p); return { ...f.info(p), text: f.disk[p] }; },
+        async save(p, text) { f.calls.push('save'); if (f.failSave) throw new Error('disk full'); f.disk[p] = text; f.remember(p); return f.info(p); },
+        async saveAs(name, text) { f.calls.push('saveAs'); const p = f.next.saveAs; if (!p) return null; if (f.failSave) throw new Error('disk full'); f.disk[p] = text; f.remember(p); return f.info(p); },
+        async recent() { return f.recents.filter(p => p in f.disk).map(f.info); },
+        async clearRecent() { f.recents = []; return true; },
+        onOpen(fn) { f.sys = fn; }, edited(on) { f.editedLog.push(on); },
+      };
+      window.khFiles = f; window.kh.setLang('fr');
+      return f;
+    },
     sine(id) {
       const b = new AudioBuffer({ length: 44100, numberOfChannels: 1, sampleRate: 44100 }), d = b.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 261.63 * i / 44100) * 0.5 * Math.exp(-i / 20000);
@@ -121,6 +138,8 @@ const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu
 async function reset() {
   // Module natif simulé (cas NAT et AU) : on le retire, moteur natif arrêté, choix oublié.
   await page.evaluate(async () => { const k = window.kh; if (k.engine.native) await k.engine.stopNative(); delete window.khNative; try { localStorage.removeItem('kh-native'); } catch { } });
+  // Pont des fichiers simulé (cas DF) : retiré, menu reconstruit sans les commandes de la version bureau.
+  await page.evaluate(() => { if (window.khFiles) { delete window.khFiles; window.kh.S.file = { path: '', name: '' }; window.kh.setLang('fr'); } });
   await page.evaluate(() => {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
@@ -2803,6 +2822,221 @@ test('SV08', 'Sauvegarde', 'Versions et message de récupération traduits en an
     expect((await page.textContent('#lib [data-act=verrestore]')).trim() === restore, `bouton Restaurer en ${l}`);
     await page.keyboard.press('Escape');
   }
+});
+
+// ============ Fichiers de projet de la version bureau (V17) ============
+// Pont simulé dans le navigateur (qa.fakeFiles) ; le vrai pont, avec les fenêtres du système, est vérifié par qa/desktop-files.cjs.
+const DFS = () => page.evaluate(() => ({ calls: window.khFiles.calls, disk: Object.fromEntries(Object.entries(window.khFiles.disk).map(([k, v]) => [k, JSON.parse(v).project.name])), recents: window.khFiles.recents, edited: window.khFiles.editedLog, file: window.kh.S.file }));
+async function lastToast() { await sleep(150); return page.textContent('#toast'); }
+test('DF01', 'Fichiers', 'Navigateur : pas de commandes de la version bureau ; bureau : « Enregistrer sous… » et la liste des fichiers récents apparaissent dans le menu Projet', async () => {
+  await page.click('#menu summary');
+  expect(!(await page.$('#bSaveAs')) && !(await page.$('#recent')), 'commandes de la version bureau visibles dans le navigateur');
+  await page.keyboard.press('Escape'); await S(() => { document.getElementById('menu').open = false; });
+  await S(() => window.qa.fakeFiles());
+  await page.click('#menu summary'); await page.waitForSelector('#recent .mnone');
+  expect(await page.isVisible('#bSaveAs'), '« Enregistrer sous… » absent');
+  expect((await page.textContent('#recent')).includes('Aucun fichier récent'), 'liste des récents vide non annoncée');
+});
+test('DF02', 'Fichiers', 'Bureau : Cmd+S la première fois demande où enregistrer ; ensuite Cmd+S réécrit le même fichier sans rien demander, le titre suit', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); f.next.saveAs = '/Users/kh/Musique/Mon titre.khm'; });
+  await page.keyboard.press('Meta+s'); await sleep(300);
+  let r = await DFS();
+  expect(r.calls.join() === 'saveAs' && r.file.path === '/Users/kh/Musique/Mon titre.khm', `premier enregistrement : ${JSON.stringify(r)}`);
+  expect((await lastToast()).includes('Mon titre'), 'le message doit nommer le fichier');
+  expect((await page.title()).startsWith('Mon titre'), `titre de la fenêtre : ${await page.title()}`);
+  expect(r.edited.at(-1) === false, 'le document doit être marqué comme enregistré');
+  await renameByTyping('Titre modifié'); await sleep(100);
+  expect((await DFS()).edited.at(-1) === true, 'une modification doit marquer le document comme modifié');
+  await page.keyboard.press('Meta+s'); await sleep(300);
+  r = await DFS();
+  expect(r.calls.join() === 'saveAs,save', `Cmd+S doit réécrire sans fenêtre : ${r.calls.join()}`);
+  expect(r.disk['/Users/kh/Musique/Mon titre.khm'] === 'Titre modifié', 'le fichier n’a pas été mis à jour');
+  await page.keyboard.press('Meta+Shift+s'); await sleep(300);
+  expect((await DFS()).calls.at(-1) === 'saveAs', 'Cmd+Maj+S doit rouvrir la fenêtre « Enregistrer sous »');
+});
+test('DF03', 'Fichiers', 'Bureau : Cmd+O ouvre un projet du disque ; rouvrir le même fichier ne crée pas de doublon dans la bibliothèque ; annuler ne change rien', async () => {
+  await S(() => { const f = window.qa.fakeFiles(), p = window.kh.demoProject(); p.name = 'Depuis le disque';
+    f.disk['/Users/kh/Projets/Disque.khm'] = JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const before = await proj();
+  await page.keyboard.press('Meta+o'); await sleep(300);
+  expect((await proj()).name === before.name, 'une ouverture annulée ne doit rien changer');
+  await S(() => { window.khFiles.next.open = '/Users/kh/Projets/Disque.khm'; });
+  await menu('bOpen'); await sleep(500);
+  expect((await proj()).name === 'Depuis le disque', 'projet non ouvert');
+  const n1 = await S(() => window.kh.S.pid);
+  await S(() => window.kh.createFromTemplate('empty')); await sleep(200);
+  await page.keyboard.press('Meta+o'); await sleep(500);
+  const n2 = await S(() => window.kh.S.pid);
+  expect(n1 === n2, 'le même fichier rouvert doit reprendre le même projet de la bibliothèque');
+  expect((await DFS()).file.name === 'Disque', 'fichier lié non retenu');
+});
+test('DF04', 'Fichiers', 'Bureau : fichiers récents dans le menu, du plus récent au plus ancien ; un clic rouvre ; un fichier disparu est signalé et retiré', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); for (const n of ['Un', 'Deux', 'Trois']) { const p = window.kh.demoProject(); p.name = 'Récent ' + n; f.disk[`/m/${n}.khm`] = JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); f.recents.unshift(`/m/${n}.khm`); } });
+  await page.click('#menu summary'); await page.waitForSelector('#recent .rfile');
+  const names = await page.$$eval('#recent .rfile', l => l.map(e => e.textContent.replace('🎵 ', '')));
+  expect(names.join() === 'Trois,Deux,Un', `ordre des récents : ${names.join()}`);
+  await page.click('#recent .rfile[data-path="/m/Un.khm"]'); await sleep(400);
+  expect((await proj()).name === 'Récent Un', 'le fichier récent ne s’est pas ouvert');
+  await S(() => { delete window.khFiles.disk['/m/Deux.khm']; window.khFiles.recents.unshift('/m/Deux.khm'); window.khFiles.recent = async () => window.khFiles.recents.map(window.khFiles.info); });
+  await page.click('#menu summary'); await page.waitForSelector('#recent .rfile[data-path="/m/Deux.khm"]');
+  await page.click('#recent .rfile[data-path="/m/Deux.khm"]');
+  const msg = await lastToast();
+  expect(msg.includes('introuvable') && msg.includes('Deux'), `message attendu pour un fichier disparu : ${msg}`);
+  expect((await proj()).name === 'Récent Un', 'le projet ouvert ne doit pas changer');
+  expect(!(await DFS()).recents.includes('/m/Deux.khm'), 'le fichier disparu doit sortir de la liste');
+  await page.click('#menu summary'); await page.click('#bRecentClear'); await sleep(200);
+  expect((await page.textContent('#recent')).includes('Aucun fichier récent'), 'la liste ne s’est pas effacée');
+});
+test('DF05', 'Fichiers', 'Bureau : un échec d’écriture (disque plein, dossier protégé) est expliqué, le projet reste dans l’application', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); f.next.saveAs = '/protégé/x.khm'; f.failSave = true; });
+  await renameByTyping('Pas perdu'); await page.keyboard.press('Meta+s');
+  const msg = await lastToast();
+  expect(msg.includes('Impossible d') && msg.includes('reste gardé'), `message : ${msg}`);
+  expect((await proj()).name === 'Pas perdu' && !(await DFS()).file.path, 'le projet doit rester ouvert, sans fichier lié');
+});
+test('DF06', 'Fichiers', 'Bureau, au clavier seul : ouvrir le menu Projet, atteindre un fichier récent avec Tab et l’ouvrir avec Entrée', async () => {
+  await S(() => { const f = window.qa.fakeFiles(), p = window.kh.demoProject(); p.name = 'Au clavier'; f.disk['/k/Clavier.khm'] = JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); f.recents = ['/k/Clavier.khm']; });
+  await page.focus('#menu summary'); await page.keyboard.press('Enter'); await page.waitForSelector('#recent .rfile');
+  for (let i = 0; i < 20 && (await page.evaluate(() => document.activeElement?.className)) !== 'rfile'; i++) await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement?.dataset.path) === '/k/Clavier.khm', 'Tab n’atteint pas le fichier récent');
+  await page.keyboard.press('Enter'); await sleep(400);
+  expect((await proj()).name === 'Au clavier', 'Entrée n’a pas ouvert le fichier');
+});
+test('DF07', 'Fichiers', 'Fichier ouvert depuis le Finder (double-clic sur un .khm) : le projet s’ouvre et le fichier est lié', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); window.kh.listenSystemOpen(); const p = window.kh.demoProject(); p.name = 'Du Finder'; f.sys({ path: '/f/Finder.khm', name: 'Finder', text: JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }) }); });
+  await sleep(300);
+  expect((await proj()).name === 'Du Finder' && (await DFS()).file.path === '/f/Finder.khm', 'fichier du Finder non ouvert');
+});
+test('DF08', 'Fichiers', 'Commandes de fichiers traduites en anglais et en espagnol', async () => {
+  await S(() => window.qa.fakeFiles());
+  for (const [l, sa, rc] of [['en', 'Save as…', 'Recent files'], ['es', 'Guardar como…', 'Archivos recientes']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    await page.click('#menu summary'); await page.waitForSelector('#recent .mhead');
+    expect((await page.textContent('#bSaveAs')).trim() === sa && (await page.textContent('#recent .mhead')).trim() === rc, `libellés en ${l}`);
+    await S(() => { document.getElementById('menu').open = false; });
+  }
+});
+
+// ============ Gestes : glisser annulé, deuxième doigt, souris relâchée ailleurs (V17) ============
+// Un geste annulé par le système (pointercancel : appel, geste du système, doigt parti en défilement) remet tout comme avant ;
+// un deuxième doigt ne pilote pas le glissé du premier ; une souris relâchée hors de la fenêtre ne laisse pas le glissé accroché.
+/** Envoie un évènement de pointeur : sur l'élément `sel` (null = la fenêtre), au point (x, y). */
+const ptr = (type, sel, x, y, o = {}) => page.evaluate(([type, sel, x, y, o]) => {
+  const id = o.id ?? 11, el = sel ? document.querySelector(sel) : window, up = type === 'pointerup' || type === 'pointercancel';
+  el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: o.kind ?? 'touch', isPrimary: id === 11, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: up ? 0 : (o.buttons ?? 1), shiftKey: !!o.shift }));
+}, [type, sel, x, y, o]);
+const center = async sel => { const b = await box(sel); return [b.x + b.width / 2, b.y + b.height / 2]; };
+async function openSynthClip() { await page.click(await clipSel(1, 0)); await page.waitForSelector('.pr .note'); }
+const notes = () => S(() => JSON.parse(JSON.stringify(window.kh.S.project.tracks[1].clips[0].notes)));
+
+test('GD01', 'Gestes', 'Note glissée au doigt puis geste annulé par le système : la note revient, rien n’est enregistré, les mouvements suivants n’ont plus d’effet', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await ptr('pointerdown', '.pr .note[data-i="0"]', x, y); await ptr('pointermove', null, x + 120, y - 60);
+  expect(JSON.stringify(await notes()) !== JSON.stringify(n0), 'le glissé ne déplace pas la note');
+  await ptr('pointercancel', null, x + 120, y - 60);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'la note doit revenir à sa place après un geste annulé');
+  await ptr('pointermove', null, x + 200, y + 40); await ptr('pointermove', null, x + 220, y + 40, { kind: 'mouse', id: 1 });
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le glissé est resté branché après l’annulation');
+});
+test('GD02', 'Gestes', 'Deux doigts : un deuxième doigt qui bouge ou se lève ailleurs ne pilote ni ne termine le glissé de la note par le premier', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await ptr('pointerdown', '.pr .note[data-i="0"]', x, y);
+  await ptr('pointermove', null, x + 300, y + 100, { id: 12 }); await ptr('pointerup', null, x + 300, y + 100, { id: 12 });
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le deuxième doigt a déplacé la note');
+  await ptr('pointermove', null, x + 66, y, { id: 11 }); await ptr('pointerup', null, x + 66, y, { id: 11 }); await sleep(100);
+  const n1 = await notes();
+  expect(n1[0].s > n0[0].s && n1[0].p === n0[0].p, `le premier doigt doit toujours déplacer la note (${n0[0].s} → ${n1[0].s})`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le glissé terminé doit s’annuler en une fois');
+});
+test('GD03', 'Gestes', 'Poignée de durée et note en cours de création : un geste annulé ne change pas la durée et ne laisse pas de note', async () => {
+  await openSynthClip(); const n0 = await notes(), b = await box('.pr .note[data-i="0"]');
+  const hx = b.x + b.width - 2, hy = b.y + b.height / 2;
+  await ptr('pointerdown', '.pr .note[data-i="0"]', hx, hy); await ptr('pointermove', null, hx + 90, hy); await ptr('pointercancel', null, hx + 90, hy);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'durée modifiée malgré l’annulation');
+  // Création dans le vide : la note apparaît au toucher, puis disparaît si le geste est annulé.
+  const g = await box('.pr .pr-grid'), ex = g.x + g.width - 30, ey = g.y + 12;
+  await ptr('pointerdown', '.pr .pr-grid', ex, ey);
+  expect((await notes()).length === n0.length + 1, 'la note n’apparaît pas au toucher');
+  await ptr('pointercancel', null, ex, ey); await sleep(80);
+  expect((await notes()).length === n0.length, 'la note en cours de création doit disparaître');
+  expect(await page.$$eval('.pr .note.drag', l => l.length) === 0, 'une note reste marquée « en glissé »');
+});
+test('GD04', 'Gestes', 'Vélocité glissée puis geste annulé : les forces de frappe reviennent ; un deuxième doigt ne les change pas', async () => {
+  await openSynthClip(); const n0 = await notes(), v = await box('.vel'), x = v.x + n0[0].s * (v.width / (await S(() => window.kh.S.project.tracks[1].clips[0].patLen))) + 6;
+  await ptr('pointerdown', '.vel', x, v.y + 2);
+  const top = (await notes())[0].v;
+  expect(top > 0.95 && top !== n0[0].v, `la vélocité ne suit pas le doigt (${n0[0].v} → ${top})`);
+  await ptr('pointermove', null, x, v.y + v.height - 4, { id: 12 });
+  expect((await notes())[0].v === top, 'un deuxième doigt a changé la vélocité');
+  await ptr('pointercancel', null, x, v.y + 4); await sleep(80);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'vélocités non rétablies après annulation');
+});
+test('GD05', 'Gestes', 'Boucle tracée dans la règle (Maj+glisser) puis geste annulé : la boucle reste comme avant', async () => {
+  const p0 = await S(() => ({ loop: window.kh.S.project.loop, s: window.kh.S.project.loopStart, l: window.kh.S.project.loopLen }));
+  const r = await box('.ruler'), bar = await S(() => window.kh.bar() * window.kh.S.px);
+  await ptr('pointerdown', '.ruler', r.x + bar * 6 + 4, r.y + 5, { kind: 'mouse', id: 1, shift: true });
+  await ptr('pointermove', null, r.x + bar * 9 + 4, r.y + 5, { kind: 'mouse', id: 1 });
+  expect(await S(() => window.kh.S.project.loopStart) === 6, 'le tracé ne suit pas');
+  await ptr('pointercancel', null, r.x + bar * 9 + 4, r.y + 5, { kind: 'mouse', id: 1 }); await sleep(80);
+  const p1 = await S(() => ({ loop: window.kh.S.project.loop, s: window.kh.S.project.loopStart, l: window.kh.S.project.loopLen }));
+  expect(JSON.stringify(p1) === JSON.stringify(p0), `boucle modifiée : ${JSON.stringify(p0)} → ${JSON.stringify(p1)}`);
+  expect(await page.$$eval('.ruler .loopr', l => l.length) === (p0.loop ? 1 : 0), 'la zone dessinée reste affichée');
+});
+test('GD06', 'Gestes', 'Clip glissé vers une autre piste puis geste annulé : il revient à sa place et sur sa piste', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.tracks.splice(2, 0, JSON.parse(JSON.stringify(p.tracks[1]))); p.tracks[2].id = 'copie'; p.tracks[2].clips = []; k.commit(); });
+  const sel = await clipSel(1, 0), id = await S(() => window.kh.S.project.tracks[1].clips[0].id), st0 = await S(() => window.kh.S.project.tracks[1].clips[0].start);
+  const [x, y] = await center(sel), lane2 = await box('.lane[data-id="copie"]');
+  await ptr('pointerdown', sel, x, y); await ptr('pointermove', null, x + 200, lane2.y + lane2.height / 2);
+  expect(await page.$(`.lane[data-id="copie"] .clip[data-id="${id}"]`), 'le clip ne suit pas le doigt vers l’autre piste');
+  await ptr('pointercancel', null, x + 200, lane2.y + lane2.height / 2); await sleep(120);
+  const r = await S(() => ({ n1: window.kh.S.project.tracks[1].clips.length, n2: window.kh.S.project.tracks[2].clips.length, st: window.kh.S.project.tracks[1].clips[0]?.start }));
+  expect(r.n2 === 0 && r.st === st0, `clip pas revenu : ${JSON.stringify(r)}`);
+  expect(await page.$(`.lane[data-id="${await S(() => window.kh.S.project.tracks[1].id)}"] .clip[data-id="${id}"]`), 'l’affichage n’a pas remis le clip sur sa piste');
+});
+test('GD07', 'Gestes', 'Point d’automation créé ou déplacé au doigt puis geste annulé : la courbe revient comme avant', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.autoShow = 'vol'; tr.auto = { vol: [{ s: 8, v: 0.5 }] }; k.commit(); });
+  const lane = `.alane[data-auto="${await S(() => window.kh.S.project.tracks[1].id)}"]`;
+  const [x, y] = await center(lane + ' .apt');
+  await ptr('pointerdown', lane + ' .apt', x, y); await ptr('pointermove', null, x + 80, y - 10); await ptr('pointercancel', null, x + 80, y - 10); await sleep(80);
+  let a = await S(() => window.kh.S.project.tracks[1].auto.vol);
+  expect(a.length === 1 && a[0].s === 8 && a[0].v === 0.5, `point déplacé malgré l’annulation : ${JSON.stringify(a)}`);
+  const lb = await box(lane);
+  await ptr('pointerdown', lane, lb.x + 300, lb.y + 10); await ptr('pointercancel', null, lb.x + 300, lb.y + 10); await sleep(80);
+  a = await S(() => window.kh.S.project.tracks[1].auto.vol);
+  expect(a.length === 1, `le point en cours de création doit disparaître : ${JSON.stringify(a)}`);
+});
+test('GD08', 'Gestes', 'Séparation du panneau du bas : un deuxième doigt ne la déplace pas, un geste annulé la libère', async () => {
+  const [x, y] = await center('#split'), h0 = await page.$eval('#panel', e => e.getBoundingClientRect().height);
+  await ptr('pointerdown', '#split', x, y); await ptr('pointermove', null, x, y - 300, { id: 12 });
+  expect(Math.abs(await page.$eval('#panel', e => e.getBoundingClientRect().height) - h0) < 2, 'le deuxième doigt a déplacé la séparation');
+  await ptr('pointermove', null, x, y - 60); const h1 = await page.$eval('#panel', e => e.getBoundingClientRect().height);
+  expect(h1 > h0 + 30, 'le premier doigt ne déplace pas la séparation');
+  await ptr('pointercancel', null, x, y - 60); await ptr('pointermove', null, x, y - 250);
+  expect(Math.abs(await page.$eval('#panel', e => e.getBoundingClientRect().height) - h1) < 2, 'la séparation suit encore après l’annulation');
+});
+test('GD09', 'Gestes', 'Souris relâchée hors de la fenêtre pendant le glissé d’une note : le glissé se termine, il est enregistré et s’annule, la souris ne traîne plus la note', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 66, y, { steps: 4 });
+  // Le relâchement a eu lieu hors de la fenêtre : la souris revient bouton relevé, sans évènement de relâchement.
+  await ptr('pointermove', null, x + 70, y, { kind: 'mouse', id: 1, buttons: 0 }); await sleep(80);
+  const n1 = await notes();
+  expect(n1[0].s > n0[0].s, 'le déplacement fait avant le relâchement doit être gardé');
+  await ptr('pointermove', null, x + 300, y + 80, { kind: 'mouse', id: 1, buttons: 0 });
+  expect(JSON.stringify(await notes()) === JSON.stringify(n1), 'la note suit encore la souris bouton relevé');
+  await page.mouse.up();
+  await page.keyboard.press('Control+z'); await sleep(80);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le glissé doit s’annuler par Ctrl+Z');
+});
+test('GD10', 'Gestes', 'Sans incident, rien ne change : glisser une note et un clip à la souris déplace et s’annule comme avant', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await drag(x, y, 66, 0); const n1 = await notes();
+  expect(n1[0].s > n0[0].s, 'la note ne se déplace plus à la souris');
+  const sel = await clipSel(0, 0), st0 = await S(() => window.kh.S.project.tracks[0].clips[0].start), [cx, cy] = await center(sel);
+  await drag(cx, cy, await S(() => window.kh.bar() * window.kh.S.px * 2), 0);
+  expect(await S(() => window.kh.S.project.tracks[0].clips[0].start) === st0 + await S(() => window.kh.bar() * 2), 'le clip ne se déplace plus à la souris');
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await sleep(80);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0) && await S(() => window.kh.S.project.tracks[0].clips[0].start) === st0, 'annulation incomplète');
 });
 
 (async () => {

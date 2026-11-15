@@ -2,7 +2,7 @@ import { analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
+import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
@@ -525,10 +525,60 @@ export async function analyzeMix(): Promise<string> {
   } catch { toast(t('toast.emptyProject'), 'error'); return ''; }
 }
 
-export async function saveFile() {
+/** Version bureau (electron/preload.cjs) : fichiers de projet sur le disque. Absent dans le navigateur. */
+export interface DeskFile { path: string; name: string; text?: string }
+export interface DeskFiles {
+  open(): Promise<DeskFile | null>; openRecent(path: string): Promise<DeskFile>;
+  save(path: string, text: string): Promise<DeskFile>; saveAs(name: string, text: string): Promise<DeskFile | null>;
+  recent(): Promise<DeskFile[]>; clearRecent(): Promise<boolean>; onOpen(fn: (f: DeskFile) => void): void; edited(on: boolean): void;
+}
+export const deskFiles = (): DeskFiles | null => (window as unknown as { khFiles?: DeskFiles }).khFiles ?? null;
+
+/** Enregistrer : dans la version bureau, réécrit le fichier du projet (ou demande où l'enregistrer la première fois) ; dans le navigateur, télécharge le .khm. */
+export async function saveFile(): Promise<void> {
+  const d = deskFiles();
+  if (d && S.file.path) {
+    await saveWamStates();
+    try { linkFile(await d.save(S.file.path, serializeProject())); setDirty(false); toast(t('file.saved', S.file.name)); }
+    catch { toast(t('file.saveFail'), 'error'); }
+    return;
+  }
+  if (d) return saveFileAs();
   await saveWamStates();
   download(new Blob([serializeProject()], { type: 'application/json' }), safeName() + '.khm');
   toast(t('toast.saved'));
+}
+/** Enregistrer sous : fenêtre du système, dossier et nom au choix (version bureau). Dans le navigateur : comme Enregistrer. */
+export async function saveFileAs(): Promise<void> {
+  const d = deskFiles();
+  if (!d) return saveFile();
+  await saveWamStates();
+  try {
+    const f = await d.saveAs(S.project.name || 'Projet', serializeProject());
+    if (!f) return;
+    linkFile(f); setDirty(false); toast(t('file.saved', f.name));
+  } catch { toast(t('file.saveFail'), 'error'); }
+}
+function openText(f: DeskFile) {
+  engine.stop(); loadProjectFile(f.text ?? '', pidOfFile(f.path)); linkFile(f); setDirty(false);
+  toast(t('file.opened', f.name)); engine.prepare();
+}
+/** Ouvrir : fenêtre du système dans la version bureau, sélecteur de fichier dans le navigateur. */
+export async function openProjectFile() {
+  const d = deskFiles();
+  if (!d) { document.getElementById('fProj')?.click(); return; }
+  try { const f = await d.open(); if (f) openText(f); }
+  catch { toast(t('toast.badProject'), 'error'); }
+}
+export async function openRecentFile(path: string, name: string) {
+  const d = deskFiles(); if (!d) return;
+  let f: DeskFile;
+  try { f = await d.openRecent(path); } catch { toast(t('file.missing', name), 'error'); return; }
+  try { openText(f); } catch { toast(t('toast.badProject'), 'error'); }
+}
+/** Fichier .khm ouvert depuis le Finder (double-clic, glisser sur le Dock). */
+export function listenSystemOpen() {
+  deskFiles()?.onOpen(f => { try { openText(f); } catch { toast(t('toast.badProject'), 'error'); } });
 }
 
 export async function openFile(f: File) {

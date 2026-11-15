@@ -1,5 +1,5 @@
 import './style.css';
-import { copyClip, deleteClip, duplicateClip, pasteClip, saveFile, splitClip, toggleRecord } from './actions';
+import { copyClip, deleteClip, duplicateClip, listenSystemOpen, openProjectFile, pasteClip, saveFile, saveFileAs, splitClip, toggleRecord } from './actions';
 import { engine, lastRender, renderOffline } from './audio/engine';
 import { auBridge, createAu } from './audio/au';
 import { ioBridge } from './audio/native-io';
@@ -17,7 +17,7 @@ import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelea
 import { S, buffers, commit, crash, emit, findTrack, listVersions, loadAutosave, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
 import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
-import { clamp, h, toast } from './ui/dom';
+import { clamp, followDrag, h, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
 import { flashPad, notesKey, renderEditor, updateEditorPlayhead, updateTuner } from './ui/editor';
 import { refreshRack, showRack } from './ui/rack';
@@ -72,8 +72,7 @@ $('split').onpointerdown = e => {
   e.preventDefault();
   const main = document.querySelector('main') as HTMLElement;
   const mv = (ev: PointerEvent) => { main.style.gridTemplateRows = `1fr ${clamp(innerHeight - ev.clientY, 140, innerHeight - 220)}px`; };
-  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
-  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  followDrag(e, mv, () => { });
 };
 
 // ---------- Clavier ----------
@@ -92,7 +91,7 @@ addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (el.tagName !== 'INPUT' && notesKey(e)) { e.preventDefault(); return; }
   if (mod) {
-    const fn = ({ z: e.shiftKey ? redo : undo, y: redo, d: duplicateClip, e: splitClip, s: saveFile } as Record<string, () => void>)[k];
+    const fn = ({ z: e.shiftKey ? redo : undo, y: redo, d: duplicateClip, e: splitClip, s: e.shiftKey ? saveFileAs : saveFile, o: openProjectFile } as Record<string, () => void>)[k];
     if (fn) { e.preventDefault(); fn(); }
     else if (k === 'c' && !getSelection()?.toString()) { if (copyClip()) e.preventDefault(); }
     else if (k === 'v') { if (pasteClip()) e.preventDefault(); }
@@ -175,7 +174,7 @@ function crashNotice() {
   resetHistory();
   S.selTrack = S.project.tracks[0]?.id ?? '';
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
-  initArrDrop(); initFileInputs();
+  initArrDrop(); initFileInputs(); listenSystemOpen();
   rebuild();
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   // Version bureau macOS : moteur audio natif, s'il a été activé dans les Réglages audio.
@@ -189,7 +188,7 @@ function crashNotice() {
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, store: { versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, store: { versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

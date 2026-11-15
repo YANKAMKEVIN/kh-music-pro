@@ -15,6 +15,9 @@ export interface Clip {
   len: number;
   /** décalage dans le contenu : en pas pour les motifs, en secondes pour l'audio */
   offset: number;
+  /** Audio (V17) : le clip suit le tempo du morceau ; `srcBpm` = tempo auquel le son tombe juste sur la grille. */
+  warp?: boolean;
+  srcBpm?: number;
   patLen?: number;
   /** Batterie : nombre de cases par pas (1 = doubles-croches, 2 = triples-croches, 0,75 = triolets de croches, 1,5 = triolets de doubles). */
   res?: number;
@@ -127,6 +130,8 @@ export function bpmAt(p: Project, s: number): number {
   for (const m of p.tempos ?? []) { if (m.s <= s) b = m.bpm; else break; }
   return b;
 }
+/** Secondes de son (dans le fichier) par pas, pour un clip audio : fixe s'il suit le tempo, sinon celle du tempo du morceau. */
+export const srcStep = (p: Project, c: Clip) => (c.warp && c.srcBpm ? 15 / c.srcBpm : 15 / p.bpm);
 /** Durée d'un pas (double-croche) au pas `s`, en secondes. */
 export const durAt = (p: Project, s: number) => 15 / bpmAt(p, s);
 /** Temps écoulé depuis le début du morceau jusqu'au pas `s`, en tenant compte des changements de tempo. */

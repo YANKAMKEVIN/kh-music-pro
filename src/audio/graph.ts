@@ -6,7 +6,8 @@ import { AuInstance, auBridge, createAu } from './au';
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
 const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
   i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
-import { Clip, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, durAt, stepDur as sd, timeOf } from '../types';
+import { Clip, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, bpmAt, durAt, stepDur as sd, timeOf } from '../types';
+import { stretchBuffer } from './stretch';
 
 export interface TrackNodes {
   input: GainNode; lp: BiquadFilterNode; hp: BiquadFilterNode; shaper: WaveShaperNode;
@@ -583,6 +584,30 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
 
 // ---------- Séquenceur ----------
 
+// ---------- Clips audio qui suivent le tempo (V17) ----------
+// Pour chaque tempo rencontré, le son du clip est étiré sans changer de hauteur (WSOLA, stretch.ts) dans le rapport
+// tempo d'origine / tempo joué. Les versions étirées sont gardées en mémoire (les plus anciennes sont oubliées au-delà de 24).
+const warpCache = new Map<string, AudioBuffer>();
+export function warped(buf: AudioBuffer, id: string, ratio: number): AudioBuffer {
+  if (Math.abs(ratio - 1) < 1e-4) return buf;
+  const key = `${id}|${ratio.toFixed(5)}|${buf.length}`;
+  let b = warpCache.get(key);
+  if (!b) {
+    b = stretchBuffer(buf, ratio, 0); warpCache.set(key, b);
+    if (warpCache.size > 24) warpCache.delete(warpCache.keys().next().value!);
+  }
+  return b;
+}
+/** Prépare d'avance les versions étirées dont le morceau aura besoin (évite un calcul au moment de jouer). */
+export function warmWarp(p: Project, buffers: Buffers) {
+  const bpms = new Set([p.bpm, ...(p.tempos ?? []).map(m => m.bpm)]);
+  for (const tr of p.tracks) if (tr.type === 'audio') for (const c of tr.clips) {
+    const buf = c.warp && c.srcBpm && c.bufferId ? buffers.get(c.bufferId) : undefined;
+    if (buf) for (const b of bpms) warped(buf, c.bufferId!, c.srcBpm! / b);
+  }
+}
+export const warpCacheSize = () => warpCache.size;
+
 /** Décalage de swing : les double-croches impaires sont retardées. */
 export const swingT = (p: Project, s: number, t: number) => t + (s % 2 ? p.swing * durAt(p, s) * 0.5 : 0);
 
@@ -593,13 +618,15 @@ export const swingT = (p: Project, s: number, t: number) => t + (s % 2 ? p.swing
 function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNodes, c: Clip,
   rel: number, remain: number, t: number, startAudio: boolean, onSrc?: (trackId: string, src: AudioBufferSourceNode) => void,
   /** Durée du pas courant, et temps réel écoulé depuis le début du clip / restant jusqu'à sa fin (le tempo peut changer en route). */
-  dur = sd(p.bpm), elapsedSec = rel * dur, remainSec = remain * dur) {
+  dur = sd(p.bpm), elapsedSec = rel * dur, remainSec = remain * dur,
+  /** Pas absolu (arrangement) : le tempo peut changer en cours de clip. Absent en mode Live (tempo fixe). */
+  abs?: number) {
   if (tr.type === 'audio') {
     if (!startAudio) return;
-    const buf = c.bufferId ? buffers.get(c.bufferId) : undefined, off = c.offset + elapsedSec;
+    const warp = !!(c.warp && c.srcBpm);
+    const buf = c.bufferId ? buffers.get(c.bufferId) : undefined, off = c.offset + (warp ? rel * 15 / c.srcBpm! : elapsedSec);
     if (!buf || off >= buf.duration || remain <= 0) return;
     const src = mix.reg(mix.ctx.createBufferSource()), g = mix.ctx.createGain();
-    src.buffer = buf;
     // Fondus : gain en fonction de la position dans le clip (en pas).
     const full = c.gain ?? 1, fi = Math.min(c.fadeIn ?? 0, c.len), fo = Math.min(c.fadeOut ?? 0, c.len - fi), endRel = rel + remain;
     const gAt = (x: number) => full * Math.max(0, Math.min(1, fi > 0 ? x / fi : 1, fo > 0 ? (c.len - x) / fo : 1));
@@ -609,9 +636,37 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       const x0 = Math.max(rel, c.len - fo);
       g.gain.setValueAtTime(gAt(x0), t + (x0 - rel) * dur); g.gain.linearRampToValueAtTime(gAt(endRel), t + remain * dur);
     }
-    src.connect(g).connect(n.input);
-    src.start(t, Math.max(0, off), remainSec);
-    onSrc?.(tr.id, src);
+    g.connect(n.input);
+    if (!warp) {
+      src.buffer = buf; src.connect(g);
+      src.start(t, Math.max(0, off), remainSec);
+      onSrc?.(tr.id, src);
+      return;
+    }
+    // Le clip suit le tempo : une portion par tempo traversé, chacune lue dans la version étirée correspondante,
+    // avec un fondu enchaîné de 10 ms aux changements de tempo.
+    const segs: [number, number, number][] = [];
+    if (abs === undefined) segs.push([rel, rel + remain, p.bpm]);
+    else for (let x = abs, end = abs + remain; x < end - 1e-9;) {
+      const nxt = (p.tempos ?? []).find(m => m.s > x + 1e-9)?.s ?? Infinity, x1 = Math.min(end, nxt);
+      segs.push([x - c.start, x1 - c.start, bpmAt(p, x)]); x = x1;
+    }
+    const X = 0.005;
+    let tt = t;
+    segs.forEach(([r0, r1, B], i) => {
+      const ratio = c.srcBpm! / B, sb = warped(buf, c.bufferId!, ratio), so = c.offset + r0 * 15 / c.srcBpm!, d = (r1 - r0) * 15 / B;
+      if (so < buf.duration) {
+        const first = i === 0, last = i === segs.length - 1, s2 = first ? src : mix.reg(mix.ctx.createBufferSource()), sg = mix.ctx.createGain();
+        s2.buffer = sb;
+        const a = first ? tt : tt - X, b = last ? tt + d : tt + d + X;
+        if (!first) { sg.gain.setValueAtTime(0, a); sg.gain.linearRampToValueAtTime(1, a + 2 * X); }
+        if (!last) { sg.gain.setValueAtTime(1, b - 2 * X); sg.gain.linearRampToValueAtTime(0, b); }
+        s2.connect(sg).connect(g);
+        s2.start(Math.max(0, a), Math.max(0, so * ratio - (first ? 0 : X)), b - a);
+        onSrc?.(tr.id, s2);
+      }
+      tt += d;
+    });
     return;
   }
   const local = (rel + c.offset) % c.patLen!;
@@ -637,7 +692,7 @@ export function scheduleStep(mix: Mix, p: Project, buffers: Buffers, s: number, 
       if (s < c.start || s >= c.start + c.len) continue;
       const remain = Math.min(c.start + c.len, endLimit ?? Infinity) - s;
       fireClip(mix, p, buffers, tr, n, c, s - c.start, remain, t, s === c.start || segStart, undefined,
-        durAt(p, s), timeOf(p, s) - timeOf(p, c.start), timeOf(p, s + remain) - timeOf(p, s));
+        durAt(p, s), timeOf(p, s) - timeOf(p, c.start), timeOf(p, s + remain) - timeOf(p, s), s);
     }
   }
 }

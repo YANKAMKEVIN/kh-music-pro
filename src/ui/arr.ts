@@ -1,9 +1,9 @@
 import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, importFiles, moveTrack, pickAudio, removeTempo, selectedClips } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
-import { S, buffers, commit, emit, findTrack, select } from '../store';
+import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
 import { AUTO, AutoParam, BAR, Clip, Pt, Track, TrackType, contentEnd, newPatternClip, stepDur } from '../types';
-import { clamp, h } from './dom';
+import { clamp, followDrag, h } from './dom';
 
 export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
@@ -165,8 +165,7 @@ function alane(tr: Track, total: number) {
       const s = clamp(Math.round((ev.clientX - r.left) / px), lo, hi), v = autoV(prm, ev.clientY - r.top);
       if (s !== pt.s || v !== pt.v) { pt.s = s; pt.v = v; changed = true; draw(); }
     };
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (changed) commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    followDrag(e, mv, () => { if (changed) commit(); }, revert);
   };
   return el;
 }
@@ -241,11 +240,11 @@ function laneDown(e: PointerEvent, tr: Track) {
     if (over && tt && tt.type === tr.type && tt !== target) { target = tt; over.append(el); changed = true; }
   };
   const up = () => {
-    removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
     if (target !== tr) { tr.clips.splice(tr.clips.indexOf(clip), 1); target.clips.push(clip); S.selTrack = target.id; }
     if (changed) commit();
   };
-  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  // Geste annulé : le clip (et ceux qui le suivaient) reviennent à leur place, sur leur piste.
+  followDrag(e, mv, up, () => { revert(); if (target !== tr) emit(); });
 }
 
 export function renderArr() {
@@ -279,9 +278,7 @@ export function renderArr() {
     const b0 = bar(e.clientX), zone = ruler.querySelector<HTMLElement>('.loopr') ?? ruler.appendChild(h('div', { class: 'loopr' }));
     const set = (x: number) => { const b1 = bar(x); p.loop = true; p.loopStart = Math.min(b0, b1); p.loopLen = Math.abs(b1 - b0) + 1; zone.style.cssText = `left:${p.loopStart * BAR * px}px;width:${p.loopLen * BAR * px}px`; };
     set(e.clientX);
-    const mv = (ev: PointerEvent) => set(ev.clientX);
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    followDrag(e, ev => set(ev.clientX), () => commit(), revert);
   };
   lanes.append(ruler);
 

@@ -1,7 +1,7 @@
 import { ensureBanks, loadBank, setDecoder, usedBanks, bankReady } from './banks';
 import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
-import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
+import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT, warmWarp, warpCacheSize } from './graph';
 import { S, buffers } from '../store';
 import { IoOptions, NativeIO, nativeName } from './native-io';
 import { BAR, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
@@ -54,7 +54,7 @@ class Engine {
   onBanks: (state: 'loading' | 'ready' | 'failed') => void = () => { };
   constructor() { setDecoder(this.ctx); }
 
-  sync() { this.mix.sync(S.project); }
+  sync() { this.mix.sync(S.project); warmWarp(S.project, buffers); }
 
   /** Confie l'entrée et la sortie de la carte son au natif : Web Audio ne fait plus que le mixage. */
   async useNative(opts: IoOptions = {}): Promise<NativeIO> {

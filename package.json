@@ -55,6 +55,14 @@
     },
     "win": {
       "target": "nsis"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": "khm",
+        "name": "KH Music Pro",
+        "description": "Projet KH Music Pro",
+        "role": "Editor"
+      }
+    ]
   }
 }

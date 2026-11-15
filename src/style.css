@@ -511,3 +511,8 @@ dialog form { gap: 8px; }
 dialog .plist li[data-ver] .lopen { height: auto; min-height: 42px; flex-wrap: wrap; padding: 6px 12px; }
 dialog.crash { max-width: 520px; }
 dialog [data-act=versnap] { margin-bottom: 10px; }
+/* V17 : fichiers récents dans le menu Projet (version bureau) */
+.recent { display: grid; gap: 2px; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.recent .mhead, .recent .mnone { color: var(--dim, #8a93b8); padding: 4px 12px; font-size: 12px; }
+.recent .rfile { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent .rclear { font-size: 12px; opacity: .8; }

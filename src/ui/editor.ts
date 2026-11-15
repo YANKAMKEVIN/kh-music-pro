@@ -5,10 +5,10 @@ import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
-import { S, commit, emit, findClip, findTrack } from '../store';
+import { S, commit, emit, findClip, findTrack, revert } from '../store';
 import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, stepDur } from '../types';
 import { ICON, drawFades, drawWave } from './arr';
-import { clamp, h, pct, slider, toast } from './dom';
+import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
 const okbDown = new Map<number, number>();
@@ -160,8 +160,7 @@ function drumEditor(tr: Track, c: Clip | null) {
     const v = e.shiftKey || e.button === 2 ? (cur === 0.5 ? 1 : 0.5) : cur ? 0 : 1;
     setCell(el, v);
     const mv = (ev: PointerEvent) => { const x = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.cell'); if (x && grid.contains(x)) setCell(x, v); };
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    followDrag(e, mv, () => commit());
   };
   grid.oncontextmenu = e => e.preventDefault();
   grid.onkeydown = e => {
@@ -366,11 +365,11 @@ function pianoRoll(tr: Track, c: Clip) {
       let x1 = x0, y1 = y0;
       const mv = (ev: PointerEvent) => { x1 = ev.clientX - r.left; y1 = ev.clientY - r.top; box.style.cssText = `left:${Math.min(x0, x1)}px;top:${Math.min(y0, y1)}px;width:${Math.abs(x1 - x0)}px;height:${Math.abs(y1 - y0)}px`; };
       const up = () => {
-        removeEventListener('pointermove', mv); removeEventListener('pointerup', up); box.remove();
+        box.remove();
         const sa = Math.min(x0, x1) / SW, sb = Math.max(x0, x1) / SW, pa = PMAX - Math.floor(Math.max(y0, y1) / RH), pb = PMAX - Math.floor(Math.min(y0, y1) / RH);
         selNotes = new Set(c.notes!.filter(n => n.s < sb && n.s + n.l > sa && n.p >= pa && n.p <= pb)); refreshSel();
       };
-      addEventListener('pointermove', mv); addEventListener('pointerup', up);
+      followDrag(e, mv, up, () => box.remove());   // annulé : la sélection ne change pas
       return;
     }
     if (el) {
@@ -405,10 +404,11 @@ function pianoRoll(tr: Track, c: Clip) {
     const group = [...selNotes].filter(n => c.notes!.includes(n)).map(n => ({ n, o: { ...n }, el: n === note ? node : grid.querySelector<HTMLElement>(`.note[data-i="${c.notes!.indexOf(n)}"]`) }));
     const created = !o.l || resize && !(e.target as HTMLElement).closest('.note');
     const up = () => {
-      removeEventListener('pointermove', mv); removeEventListener('pointerup', up); lastLen = note.l; node.classList.remove('drag');
+      lastLen = note.l; node.classList.remove('drag');
       if (created || note.l !== o.l || group.some(g => g.n.s !== g.o.s || g.n.p !== g.o.p)) commit();
     };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    // Geste annulé : notes remises comme avant (une note qu'on était en train de créer disparaît).
+    followDrag(e, mv, up, () => { node.classList.remove('drag'); selNotes.clear(); revert(); });
   };
 
   // Vélocité : une barre par note, à régler en glissant.
@@ -427,8 +427,7 @@ function pianoRoll(tr: Track, c: Clip) {
       });
     };
     apply(e);
-    const up = () => { removeEventListener('pointermove', apply); removeEventListener('pointerup', up); if (changed) commit(); };
-    addEventListener('pointermove', apply); addEventListener('pointerup', up);
+    followDrag(e, apply, () => { if (changed) commit(); }, revert);
   };
   const scroll = h('div', { class: 'pr' }, h('div', { class: 'pr-inner' }, keys, grid),
     h('div', { class: 'vel-row' }, h('div', { class: 'vel-lbl', title: t('tip.velocity') }, t('ed.velocity')), vel));

@@ -19,7 +19,32 @@ export const S = {
   synthOpen: false, // réglages détaillés de l'instrument dépliés dans le piano roll
   px: 11,     // pixels par pas dans l'arrangement
   snap: 4,    // grille magnétique, en pas
+  file: { path: '', name: '' }, // version bureau : fichier .khm lié au projet ouvert ('' = aucun)
 };
+
+// ---------- Version bureau : fichier .khm lié à chaque projet de la bibliothèque (V17) ----------
+/** Fichier du disque lié au projet `pid` (enregistré ou ouvert depuis ce fichier). */
+export function fileOf(pid: string): { path: string; name: string } {
+  try { const v = JSON.parse(localStorage.getItem('kh-file:' + pid) || 'null'); if (v && typeof v.path === 'string') return { path: v.path, name: String(v.name || '') }; } catch { /* ignore */ }
+  return { path: '', name: '' };
+}
+export function linkFile(f: { path: string; name: string }) {
+  S.file = { path: f.path, name: f.name };
+  document.title = (f.path ? f.name : S.project.name) + ' — KH Music Pro';
+  try { localStorage.setItem('kh-file:' + S.pid, JSON.stringify(S.file)); } catch { /* stockage désactivé */ }
+}
+/** Projet de la bibliothèque déjà lié à ce fichier (pour ne pas créer un doublon à chaque ouverture). */
+export function pidOfFile(path: string): string {
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith('kh-file:') && fileOf(k.slice(8)).path === path) return k.slice(8); } catch { /* ignore */ }
+  return '';
+}
+/** Changements non enregistrés dans le fichier lié (version bureau : point dans le bouton de fermeture du Mac). */
+export const fileState = { dirty: false };
+const desk = () => (window as unknown as { khFiles?: { edited(on: boolean): void } }).khFiles;
+export function setDirty(on: boolean) {
+  if (fileState.dirty === on) return;
+  fileState.dirty = on; desk()?.edited(on && !!S.file.path);
+}
 
 export const buffers = new Map<string, AudioBuffer>();
 
@@ -43,13 +68,15 @@ export function resetHistory() { hist = [JSON.stringify(S.project)]; hi = 0; }
 export function commit() {
   hist = hist.slice(0, hi + 1); hist.push(JSON.stringify(S.project));
   if (hist.length > 150) hist.shift();
-  hi = hist.length - 1; autosave(); emit();
+  hi = hist.length - 1; setDirty(true); autosave(); emit();
 }
 function travel(d: number) {
   if (hi + d < 0 || hi + d >= hist.length) return;
   hi += d; S.project = JSON.parse(hist[hi]); autosave(); emit();
 }
 export const undo = () => travel(-1);
+/** Abandonne les modifications en cours non validées (glissé annulé par le système) : retour au dernier état enregistré dans l'historique. */
+export function revert() { if (hi >= 0 && JSON.stringify(S.project) !== hist[hi]) { S.project = JSON.parse(hist[hi]); emit(); } }
 export const redo = () => travel(1);
 
 export const findTrack = (id: string): Track | undefined => S.project.tracks.find(t => t.id === id);
@@ -201,7 +228,7 @@ export async function loadAutosave(): Promise<boolean> {
     library = (await idbGet<LibEntry[]>('lib')) ?? [];
     let id = await idbGet<string>('current'), json = id ? await idbGet<string>('proj:' + id) : undefined;
     if (!json) { json = await idbGet<string>('project'); id = uid(); } // sauvegarde d'une version antérieure
-    S.pid = id || uid();
+    S.pid = id || uid(); S.file = fileOf(S.pid);
     if (!json) return false;
     let p: Project;
     try { p = migrate(JSON.parse(json)); }
@@ -221,6 +248,7 @@ export async function loadAutosave(): Promise<boolean> {
 
 function install(p: Project, id: string) {
   S.project = p; S.pid = id; S.selTrack = ''; S.selClip = ''; lastSnap = ''; versioning.last = Date.now();
+  S.file = fileOf(id); setDirty(false);
   resetHistory(); autosave(); emit();
 }
 /** Démarre un nouveau projet ; le précédent reste dans la bibliothèque. */
@@ -270,12 +298,15 @@ export function serializeProject(): string {
   return JSON.stringify({ format: 'kh-music-pro', version: 1, project: S.project, buffers: bufs });
 }
 
-export function loadProjectFile(text: string) {
+/** Charge un fichier .khm ; `pid` : projet de la bibliothèque à réutiliser (même fichier rouvert). */
+export function loadProjectFile(text: string, pid = '') {
   const data = JSON.parse(text);
   if (data.format !== 'kh-music-pro' || !data.project?.tracks) throw new Error('invalid');
   for (const [id, r] of Object.entries<{ sr: number; ch: string[] }>(data.buffers ?? {})) {
     addBuffer(id, fromRaw({ sr: r.sr, ch: r.ch.map(unb64) }));
   }
   saveNow().catch(() => { });
-  install(migrate(data.project), uid());
+  if (pid && !library.some(x => x.id === pid)) pid = '';
+  install(migrate(data.project), pid || uid());
+  snapshot('open').catch(() => { });
 }
