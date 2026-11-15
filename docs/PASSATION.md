@@ -516,6 +516,7 @@ Vérifications sur ce Mac :
 | Campagne complète sur la version construite (règle de contenu active) | 235/239 : DK01, plus RI06, BN05 et SB09. Ces trois-là bloquent volontairement le chargement d'un son, mais le service hors ligne le sert depuis son cache ; même cause que RI06, déjà connue sur V14b. Aucun refus de la règle de contenu : les sons de la banque se chargent. |
 | `qa/desktop-smoke.cjs` (version bureau) | OK : orgue tenu, navigateur de sons, plugin web, règle de contenu, aucun avertissement |
 | `qa/au-bridge.cjs` (plugins du Mac, vrai module natif) | OK : réglages, préréglage « Large Hall », aucun refus de la règle de contenu |
+| `qa/native-io.cjs` (moteur audio natif : interrupteur, bascule, tenue) | OK, aucun bloc manqué |
 
 Non vérifié : l'écoute (sons V15 et plugins du Mac), les installateurs de cette branche, et une version Windows.
 
