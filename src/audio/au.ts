@@ -10,7 +10,18 @@
 import type { WamInstance } from './wam';
 
 /** Un réglage d'Audio Unit : adresse, nom, bornes, valeur par défaut et actuelle, unité (code Core Audio). */
-export interface AuParam { address: number; name: string; min: number; max: number; def: number; value: number; unit: number }
+export interface AuParam { address: number; name: string; min: number; max: number; def: number; value: number; unit: number; flags?: number }
+/** Drapeau Core Audio kAudioUnitParameterFlag_DisplayLogarithmic. */
+const LOG_FLAG = 1 << 22;
+/**
+ * Réglage à parcourir sur une échelle logarithmique : fréquences (Hz) et réglages que le plugin déclare logarithmiques,
+ * quand la plage le permet (minimum positif, au moins un facteur 20). Un curseur linéaire de 10 Hz à 22 kHz rendrait
+ * tout le grave et le médium inaccessibles (moins de 5 % de la course sous 1 kHz).
+ */
+export const auLog = (p: AuParam) => p.min > 0 && p.max / p.min >= 20 && (p.unit === 8 || ((p.flags ?? 0) & LOG_FLAG) !== 0);
+/** Position (0 à 1) sur le curseur logarithmique, et valeur correspondante (4 chiffres significatifs). */
+export const auToPos = (p: AuParam, v: number) => Math.min(1, Math.max(0, Math.log(Math.max(v, p.min) / p.min) / Math.log(p.max / p.min)));
+export const auFromPos = (p: AuParam, x: number) => Math.min(p.max, Math.max(p.min, Number((p.min * Math.pow(p.max / p.min, x)).toPrecision(4))));
 export interface AuDesc { type: string; subtype: string; manufacturer: string; name: string }
 
 /**

@@ -25,7 +25,9 @@ export function slider(label: string, min: number, max: number, step: number, va
   const out = h('span', { class: 'val' }, fmt(value));
   const inp = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': label });
   inp.value = String(value);
-  inp.oninput = () => { const v = +inp.value; set(v); out.textContent = fmt(v); engine.sync(); };
+  // Valeur lue par les lecteurs d'écran : celle affichée (unité comprise), pas la position brute du curseur.
+  inp.setAttribute('aria-valuetext', fmt(value));
+  inp.oninput = () => { const v = +inp.value; set(v); out.textContent = fmt(v); inp.setAttribute('aria-valuetext', out.textContent); engine.sync(); };
   if (!transient) inp.onchange = () => commit(); // `transient` : réglage d'interface, hors projet et hors annulation
   return h('label', { class: 'sl ' + cls }, h('span', { class: 'lb' }, label), inp, out);
 }

@@ -1993,7 +1993,7 @@ test('MAC02', 'Plugins du Mac', 'Les curseurs d\'un plugin du Mac pilotent le pl
   await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
   try { await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 }); }
   catch { throw new Error('réglages non affichés : ' + JSON.stringify(await S(() => ({ open: document.querySelector('#fx').open, card: document.querySelector('#fx .fxcard')?.textContent, calls: window.khNative?.calls, live: window.kh.liveWams.size, toast: document.querySelector('#toast').textContent, ctx: window.kh.engine.ctx.state })))); }
-  await setSlider('#fx', 'Cutoff Frequency', 1000); await sleep(100);
+  await setSlider('#fx', 'Cutoff Frequency', 0.598); await sleep(100);   // curseur logarithmique : position 0,598 ≈ 1 kHz
   const r = await S(() => ({ p: window.kh.S.project.tracks[1].inserts[0].p, set: window.khNative.calls.filter(c => c[0] === 'set').map(c => c.slice(2)) }));
   expect(Math.abs(r.p['0'] - 1000) < 25 && r.set.some(([a, v]) => a === 0 && Math.abs(v - r.p['0']) < 1e-9), `réglage envoyé au plugin et enregistré : ${JSON.stringify(r)}`);
   expect((await page.textContent('#fx [data-addr="0"] .val')).endsWith('kHz') || (await page.textContent('#fx [data-addr="0"] .val')).endsWith('Hz'), 'valeur affichée en Hz');
@@ -2032,6 +2032,20 @@ test('MAC05', 'Plugins du Mac', 'Supprimer la piste ou ouvrir un autre projet li
   await S(() => { const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:dely:appl'; i.name = 'Delay'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.S.project.tracks[1].inserts = []; k.commit(); }); await sleep(400);
   expect(!(await page.textContent('#toast')).includes('Impossible'), `un effet retiré pendant son chargement ne doit pas être signalé en échec : ${await page.textContent('#toast')}`);
   expect(await S(() => window.khNative.calls.filter(c => c[0] === 'close').length === 2), 'le plugin chargé après coup doit être libéré');
+});
+
+test('MAC06', 'Plugins du Mac', 'Fréquences d\'un plugin du Mac sur une échelle logarithmique : le milieu du curseur tombe vers 470 Hz, valeur lue au lecteur d\'écran', async () => {
+  await S(() => { window.qa.fakeNative(); const k = window.kh, i = k.newInsert('au'); i.url = 'aufx:lpas:appl'; i.name = 'Lowpass'; k.S.project.tracks[1].inserts = [i]; k.commit(); k.showRack(k.S.project.tracks[1].id); });
+  await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+  const sc = await page.$$eval('#fx [data-au=params] .sl', l => l.map(e => e.dataset.scale + ':' + e.querySelector('input').value));
+  expect(sc[0].startsWith('log:') && Math.abs(+sc[0].split(':')[1] - Math.log(690) / Math.log(2205)) < 0.002 && sc[1].startsWith('lin:'), `échelles : ${sc}`);
+  await setSlider('#fx', 'Cutoff Frequency', 0.5); await sleep(100);
+  const r = await page.$eval('#fx [data-addr="0"]', e => ({ v: e.querySelector('.val').textContent, aria: e.querySelector('input').getAttribute('aria-valuetext') }));
+  const p = (await insertsOf(1))[0].p['0'];
+  near(p, Math.sqrt(10 * 22050), 1, 'valeur au milieu du curseur (moyenne géométrique de 10 Hz et 22 kHz)');
+  expect(r.v === '470 Hz' && r.aria === '470 Hz', `affichage et lecteur d'écran : ${JSON.stringify(r)}`);
+  await setSlider('#fx', 'Cutoff Frequency', 0); await sleep(50); expect((await insertsOf(1))[0].p['0'] === 10, 'bas du curseur : 10 Hz');
+  await setSlider('#fx', 'Cutoff Frequency', 1); await sleep(50); expect((await insertsOf(1))[0].p['0'] === 22050, 'haut du curseur : 22 050 Hz');
 });
 
 (async () => {

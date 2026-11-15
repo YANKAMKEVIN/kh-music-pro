@@ -173,7 +173,8 @@ void Info(const FunctionCallbackInfo<Value>& a) {
   a.GetReturnValue().Set(o);
 }
 
-/** params(id) → [{ address, name, min, max, def, value, unit }] : réglages modifiables du plugin (portée globale) */
+/** params(id) → [{ address, name, min, max, def, value, unit, flags }] : réglages modifiables du plugin (portée globale).
+ *  flags : drapeaux Core Audio (kAudioUnitParameterFlag_DisplayLogarithmic = affichage logarithmique, etc.). */
 void Params(const FunctionCallbackInfo<Value>& a) {
   Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
   Slot* s = find(a);
@@ -198,7 +199,7 @@ void Params(const FunctionCallbackInfo<Value>& a) {
     Local<Object> o = Object::New(iso);
     num(o, "address", id);
     o->Set(cx, String::NewFromUtf8Literal(iso, "name"), String::NewFromUtf8(iso, buf).ToLocalChecked()).Check();
-    num(o, "min", pi.minValue); num(o, "max", pi.maxValue); num(o, "def", pi.defaultValue); num(o, "value", v); num(o, "unit", pi.unit);
+    num(o, "min", pi.minValue); num(o, "max", pi.maxValue); num(o, "def", pi.defaultValue); num(o, "value", v); num(o, "unit", pi.unit); num(o, "flags", double(pi.flags));
     arr->Set(cx, n++, o).Check();
   }
   a.GetReturnValue().Set(arr);

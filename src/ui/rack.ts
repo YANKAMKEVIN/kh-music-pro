@@ -1,5 +1,5 @@
 import { addAu, addInsert, addWam, moveInsert, removeInsert, saveWamStates } from '../actions';
-import { AuInstance, AuParam, auBridge, auList, auName } from '../audio/au';
+import { AuInstance, AuParam, auBridge, auFromPos, auList, auLog, auName, auToPos } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
@@ -44,9 +44,12 @@ function auBody(tr: Track, ins: Insert, body: HTMLElement) {
   if (!inst.params.length) { body.append(h('p', { class: 'tip', data: { au: 'noparams' } }, t('au.noParams'))); return; }
   const grid = h('div', { class: 'aupar', data: { au: 'params' } }, ...inst.params.map(pr => {
     const k = String(pr.address), whole = pr.unit === 1 || pr.unit === 2 || pr.unit === 11 || pr.unit === 12;
-    const step = whole ? 1 : (pr.max - pr.min) / 1000 || 0.001;
-    const sl = slider(pr.name, pr.min, pr.max, step, ins.p[k] ?? pr.value, v => { ins.p[k] = v; }, v => auFmt(pr, v));
-    sl.dataset.addr = k;
+    const step = whole ? 1 : (pr.max - pr.min) / 1000 || 0.001, val = ins.p[k] ?? pr.value;
+    // Fréquences : curseur logarithmique (la course est en position 0 à 1, la valeur reste en Hz dans le projet).
+    const sl = auLog(pr)
+      ? slider(pr.name, 0, 1, 0.001, auToPos(pr, val), x => { ins.p[k] = auFromPos(pr, x); }, x => auFmt(pr, auFromPos(pr, x)))
+      : slider(pr.name, pr.min, pr.max, step, val, v => { ins.p[k] = v; }, v => auFmt(pr, v));
+    sl.dataset.addr = k; sl.dataset.scale = auLog(pr) ? 'log' : 'lin';
     return sl;
   }));
   const reset = h('button', { class: 'pill', data: { act: 'aureset' }, onclick: () => { ins.p = Object.fromEntries(inst.params.map(pr => [String(pr.address), pr.def])); commit(); } }, '↺ ' + t('au.reset'));
@@ -99,7 +102,8 @@ function render() {
 export function showRack(trackId: string) {
   current = trackId; render();
   const d = dlg();
-  d.onclose = () => { saveWamStates(); current = ''; };
+  // L'événement de fermeture arrive en différé : s'il suit une réouverture immédiate, la fenêtre est de nouveau ouverte, on l'ignore.
+  d.onclose = () => { if (d.open) return; saveWamStates(); current = ''; };
   if (!d.open) d.showModal();
 }
 /** À appeler quand le projet change : met à jour la fenêtre si elle est ouverte. */
