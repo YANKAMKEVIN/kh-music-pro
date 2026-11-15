@@ -320,8 +320,14 @@ function pianoRoll(tr: Track, c: Clip) {
   const grid = h('div', { class: 'pr-grid ed-grid', style: `width:${W}px;height:${rows * RH}px;--sw:${SW}px;--rh:${RH}px;--gw:${G * SW}px` });
   for (let p = PMAX; p >= PMIN; p--) {
     keys.append(h('button', {
-      class: 'key' + (isBlack(p) ? ' black' : '') + (p % 12 === 0 ? ' c' : '') + (scaled && (p - P.key) % 12 === 0 ? ' root' : ''), tabIndex: -1, 'aria-label': noteName(p),
-      onpointerdown: () => engine.previewNote(tr, p),
+      class: 'key' + (isBlack(p) ? ' black' : '') + (p % 12 === 0 ? ' c' : '') + (scaled && (p - P.key) % 12 === 0 ? ' root' : ''), tabIndex: -1, 'aria-label': noteName(p), data: { p: String(p) },
+      // La touche joue tant qu'elle est tenue (souris ou doigt), comme une touche du clavier de l'ordinateur.
+      // Le relâchement est écouté sur la fenêtre : il arrive même si la touche a été redessinée ou quittée entre-temps.
+      onpointerdown: (e: PointerEvent) => {
+        e.preventDefault(); engine.noteOn(tr, p);
+        const up = (u: PointerEvent) => { if (u.pointerId !== e.pointerId) return; engine.noteOff(tr, p); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+        addEventListener('pointerup', up); addEventListener('pointercancel', up);
+      },
     }, p % 12 === 0 ? noteName(p) : ''));
     if (scaled ? !inScale(P, p) : isBlack(p)) grid.append(h('div', { class: 'blk' + (scaled ? ' oos' : ''), style: `top:${(PMAX - p) * RH}px` }));
     if (p % 12 === 0) grid.append(h('div', { class: 'oct', style: `top:${(PMAX - p + 1) * RH}px` }));

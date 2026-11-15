@@ -522,3 +522,17 @@ Vérifications sur ce Mac :
 Non vérifié : l'écoute (sons V15 et plugins du Mac), les installateurs de cette branche, et une version Windows.
 
 Décision du propriétaire : tout d'un coup. Fusionnée dans `main` le 15/11/2026 (PR #2, commit `e55983c`, QA et version bureau vertes sur GitHub), site mis en ligne, release **v0.16.0** créée avec ses quatre installateurs (Mac puce Apple, Mac Intel, Windows, Linux).
+
+## 11. V16.1 — touches tenues à l'écran (15/11/2026)
+
+Premier retour d'écoute du propriétaire sur la 0.16.0 : les instruments « s'entendent plutôt bien », mais « les touches longues font juste un bruit bref ». Il jouait sans clavier MIDI, en cliquant sur le **clavier dessiné à gauche du piano roll**. Ces touches jouaient toujours une note d'un quart de seconde (`engine.previewNote`), même tenues : les notes longues ne pouvaient donc pas s'y entendre. Les touches de l'ordinateur (Q, S, D…) et le MIDI, eux, tenaient déjà la note (LH03).
+
+Correction (`src/ui/editor.ts`, `src/style.css`) :
+- La touche joue tant qu'elle est tenue, à la souris comme au doigt (`engine.noteOn` à l'appui, `noteOff` au relâchement).
+- Le relâchement est écouté sur toute la fenêtre, avec le même identifiant de pointeur : la note s'arrête même si le doigt glisse hors de la touche ou si l'écran se redessine pendant l'appui. Un geste annulé par le système (`pointercancel`) coupe aussi la note.
+- `touch-action: none` et pas de menu d'appui long sur les touches : au doigt, tenir une touche ne fait plus défiler la page (ce qui aurait coupé la note).
+- Chaque touche porte `data-p` (sa hauteur MIDI) pour la QA.
+
+QA : LH07 (souris tenue 3,6 s puis relâchée), LH08 (doigt : pas de défilement, levé hors de la touche), LH09 (redessin pendant l'appui, geste annulé : aucune note bloquée). Version 0.16.1.
+
+Non vérifié : l'écoute par le propriétaire de cette correction, et un vrai téléphone.
