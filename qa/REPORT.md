@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-190 cas réussis sur 190.
+223 cas réussis sur 224 (sur le Mac, 15/11/2026). DK01 ne tourne que sous Linux (`xvfb-run`) ; il est vérifié par GitHub Actions. TU02, instable quand la machine est chargée, attend désormais l'accordeur jusqu'à 3 s et a été rejoué avec succès.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -148,10 +148,10 @@
 | SP01 | Mixeur | L'analyseur de spectre s'anime pendant la lecture et retombe à l'arrêt | OK |
 | MOD01 | Mixage | Chorus, trémolo et lo-fi : réglables et audibles au rendu | OK |
 | TU01 | Accordeur | La détection de hauteur est juste : sinus, son riche en harmoniques, silence et bruit | OK |
-| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
+| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK (rejoué) |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
-| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : spawnSync xvfb-run ENOENT |
 | CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
 | CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
@@ -166,7 +166,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 11 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI01 | Vrais instruments | Les 29 instruments enregistrés se chargent et produisent un signal propre | OK |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -194,3 +194,37 @@
 | WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
 | LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
 | LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
+| BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | OK |
+| BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | OK |
+| BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | OK |
+| BN04 | Banque généraliste | Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement | OK |
+| BN05 | Banque généraliste | Un nouveau son indisponible signale l’échec puis peut être rechargé | OK |
+| BN06 | Banque généraliste | Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt | OK |
+| LH01 | Notes longues | Les dix instruments à maintien restent audibles dans trois registres après huit secondes | OK |
+| LH02 | Notes longues | Le maintien conserve l’attaque originale et peut être désactivé sans prolonger le son | OK |
+| LH03 | Notes longues | Une touche tenue joue au-delà de la durée du fichier et s’arrête quand elle est relâchée | OK |
+| LH04 | Notes longues | Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier | OK |
+| LH05 | Notes longues | Arrêter le transport coupe aussi les voix bouclées sans note bloquée | OK |
+| LH06 | Notes longues | L’export WAV contient la note longue et une fin silencieuse sans saturation | OK |
+| SB01 | Navigateur de sons | Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
+| SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
+| SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
+| SB05 | Navigateur de sons | Choisir un instrument est annulable et conserve les sons personnels du sampler | OK |
+| SB06 | Navigateur de sons | La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste | OK |
+| SB07 | Navigateur de sons | Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt | OK |
+| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | OK |
+| SB09 | Navigateur de sons | Une préécoute indisponible signale l’échec puis fonctionne après réessai | OK |
+| SB10 | Navigateur de sons | Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste | OK |
+| NU01 | Nuances | Une note jouée doucement est plus sombre qu’une note jouée fort sur cinq instruments enregistrés | OK |
+| NU02 | Nuances | Nuances à zéro : la force ne change que le volume, pas le timbre | OK |
+| NU03 | Nuances | Un ancien projet garde exactement son son : nuances à zéro après ouverture | OK |
+| NU04 | Nuances | Le réglage Nuances s’affiche pour un instrument enregistré, s’annule et voyage dans le fichier | OK |
+| NU05 | Nuances | Le réglage est traduit dans les trois langues | OK |
+| NU06 | Nuances | Le timbre s’ouvre progressivement avec la force et ne descend jamais sous le troisième harmonique | OK |
+| NU07 | Nuances | Une touche jouée doucement au clavier MIDI sonne plus sombre en direct | OK |
+| LP01 | Raccords de boucle | Les 237 boucles de maintien : ni clic ni saut de niveau au raccord, mesurés note par note | OK |
+| LP02 | Raccords de boucle | Une note tenue dix secondes ne varie pas plus que l’enregistrement d’origine, sans pulsation à chaque tour | OK |
+| RG01 | Registres | D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments | OK |
+| RG02 | Registres | Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle | OK |
+| RG03 | Registres | Une gamme jouée sur trois octaves au piano reste régulière à l’export | OK |

@@ -6,12 +6,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=public/banks; TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-GM=https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM
+# Version figée pour reconstruire les mêmes échantillons.
+GM=https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/044fab8e1456bfafc5776e86dfd6bb8697149aef/FluidR3_GM
 VD=https://raw.githubusercontent.com/sfzinstruments/virtuosity_drums/master/Samples
 NAMES=(C Db D Eb E F Gb G Ab A Bb B)
 
 # Une note tous les trois demi-tons, de do1 à do7 : les notes intermédiaires sont obtenues par transposition.
-for inst in acoustic_grand_piano acoustic_guitar_nylon electric_guitar_clean electric_bass_finger acoustic_bass string_ensemble_1 cello brass_section tenor_sax flute choir_aahs; do
+for inst in acoustic_grand_piano acoustic_guitar_nylon electric_guitar_clean electric_bass_finger acoustic_bass string_ensemble_1 cello brass_section tenor_sax flute choir_aahs \
+  honkytonk_piano electric_piano_1 clavinet drawbar_organ church_organ acoustic_guitar_steel overdriven_guitar slap_bass_1 violin contrabass trumpet trombone marimba vibraphone steel_drums pad_7_halo fx_2_soundtrack synth_choir; do
   mkdir -p "$OUT/$inst"
   for midi in $(seq 24 3 96); do
     name="${NAMES[$((midi % 12))]}$((midi / 12 - 1))"
@@ -57,5 +59,12 @@ Instruments : FluidR3_GM, par Frank Wen. Licence Creative Commons Attribution 3.
 
 Batterie acoustique : Virtuosity Drums, par Versilian Studios. Licence CC0 1.0 (domaine public)
   (https://github.com/sfzinstruments/virtuosity_drums). Les sons ont été convertis en mono et normalisés.
+Extension généraliste V15 : 18 banques supplémentaires issues de FluidR3_GM,
+par Frank Wen (CC BY 3.0), fichiers MP3 non modifiés de midi-js-soundfonts.
+Source figée : https://github.com/gleitz/midi-js-soundfonts/tree/044fab8e1456bfafc5776e86dfd6bb8697149aef/FluidR3_GM
+Une note tous les trois demi-tons (MIDI 24 à 96), sélectionnée sans conversion.
+Les nappes et le chœur synthétique sont des timbres synthétiques échantillonnés.
+La lecture des instruments à maintien adapte une copie du son en mémoire
+(raccord de phase et fondu croisé) ; les fichiers MP3 sources restent inchangés.
 TXT
 du -sh "$OUT"

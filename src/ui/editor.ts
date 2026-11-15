@@ -1,3 +1,5 @@
+import { SUSTAIN_BANKS } from '../audio/sustain';
+import { chooseSound, showSounds } from './sounds';
 import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
@@ -174,12 +176,7 @@ function synthPanel(tr: Track, collapsible = false) {
     for (const [id, def] of Object.entries(PRESETS)) if (def.cat === cat) grp.append(h('option', { value: id, selected: sp.preset === id }, t('ins.' + id)));
     preset.append(grp);
   }
-  preset.onchange = () => {
-    const keep = { bufferId: sp.bufferId, sampleName: sp.sampleName, root: sp.root };
-    tr.synth = { ...makeSynth(preset.value), ...keep }; commit();
-    const bank = tr.synth.engine === 'multi' ? tr.synth.bank : undefined;
-    if (bank) engine.loadBank(bank).then(ok => { if (ok) engine.previewNote(tr, 60 + kb.octave * 12); }); else engine.previewNote(tr, 60 + kb.octave * 12);
-  };
+  preset.onchange = () => { chooseSound(tr.id, preset.value); };
   const wave = (key: 'wave' | 'wave2', label: string) => {
     const s = h('select', { 'aria-label': label });
     for (const v of ['sine', 'triangle', 'sawtooth', 'square']) s.append(h('option', { value: v, selected: sp[key] === v }, t('wave.' + v)));
@@ -193,11 +190,16 @@ function synthPanel(tr: Track, collapsible = false) {
     sp.engine === 'fm' ? [sl('ratio', 0.5, 8, 0.5, 'ratio', v => '×' + v), sl('fmAmt', 0, 6, 0.05, 'fmAmt', v => v.toFixed(1)), sl('fmDecay', 0.02, 2, 0.01, 'fmDecay', ms)]
       : sp.engine === 'pluck' ? [sl('damp', 0, 1, 0.01, 'damp', pct)]
         : sp.engine === 'sampler' ? [samplerBox(tr)]
-          : sp.engine === 'multi' ? [h('span', { class: 'tip real' }, '🎻 ' + t('syn.real'))]
+          : sp.engine === 'multi' ? [h('span', { class: 'tip real' }, '🎻 ' + t('syn.real')), sl('touch', 0, 1, 0.05, 'touch', pct)]
           : [wave('wave', t('syn.wave1')), wave('wave2', t('syn.wave2')), sl('mix2', 0, 1, 0.01, 'mix2', pct), sl('detune', 0, 50, 1, 'detune', v => v + ' ct'), sl('pitchEnv', 0, 24, 1, 'pitchEnv', v => v + ' st')];
   // Avec un clip ouvert, les réglages détaillés sont repliés pour laisser la place au piano roll.
   const open = !collapsible || S.synthOpen;
   const head = [h('label', { class: 'fld big' }, t('syn.sound'), preset),
+    h('button', { class: 'pill', 'aria-label': t('sounds.browse'), title: t('sounds.browse'), data: { act: 'sound-browser' }, onclick: () => showSounds(tr.id) }, t('sounds.browse')),
+    sp.engine === 'multi' && !!sp.bank && SUSTAIN_BANKS.has(sp.bank) && h('button', {
+      class: 'pill' + (sp.hold ? ' on' : ''), 'aria-pressed': String(!!sp.hold), title: t('syn.holdTip'), data: { act: 'sustain' },
+      onclick: () => { sp.hold = !sp.hold; commit(); },
+    }, '∞ ' + t('syn.hold')),
     collapsible && h('button', { class: 'pill' + (open ? ' on' : ''), data: { act: 'synthopen' }, 'aria-expanded': String(open), title: t('syn.settingsTip'), onclick: () => { S.synthOpen = !S.synthOpen; emit(); } }, `🎚 ${t('syn.settings')} ${open ? '▴' : '▾'}`),
     h('button', { class: 'pill' + (S.kbShow ? ' on' : ''), data: { act: 'okb' }, 'aria-pressed': String(S.kbShow), title: t('okb.tip'), onclick: () => { S.kbShow = !S.kbShow; emit(); } }, '🎹 ' + t('okb.title')),
     collapsible && h('span', { class: 'tip' }, t('hint.pianoRoll'))];

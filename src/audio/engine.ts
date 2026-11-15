@@ -3,7 +3,8 @@ import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
 import { S, buffers } from '../store';
-import { BAR, Project, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
+import { IoOptions, NativeIO, nativeName } from './native-io';
+import { BAR, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
@@ -42,7 +43,11 @@ class Engine {
   private liveSrc = new Map<string, AudioBufferSourceNode[]>();
   private workletReady?: Promise<void>;
   /** Entrée audio ouverte (micro ou carte son) : gain, vumètre et écoute de contrôle. */
-  inp?: { stream: MediaStream; src: MediaStreamAudioSourceNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
+  inp?: { stream?: MediaStream; src: AudioNode; gain: GainNode; mon: GainNode; analyser: AnalyserNode; device: string };
+  /** Moteur audio natif (version bureau macOS) : entrée et sortie de la carte son prises par Core Audio. */
+  native?: NativeIO;
+  /** Fin de chaîne : ce qui doit être entendu (le natif, ou la sortie de Web Audio). */
+  get out(): AudioNode { return this.native?.sink ?? this.ctx.destination; }
   private cap?: { temp: boolean; node: AudioWorkletNode; chunks: Float32Array[][]; first: number; startStep: number; done: RecDone; inLat: number; mode: RecMode };
 
   /** Signalé quand des sons d'instruments réels sont en cours de chargement, puis chargés ou en échec. */
@@ -50,6 +55,30 @@ class Engine {
   constructor() { setDecoder(this.ctx); }
 
   sync() { this.mix.sync(S.project); }
+
+  /** Confie l'entrée et la sortie de la carte son au natif : Web Audio ne fait plus que le mixage. */
+  async useNative(opts: IoOptions = {}): Promise<NativeIO> {
+    if (this.native) { await this.native.configure(opts); return this.native; }
+    const io = await NativeIO.start(this.ctx, opts);
+    this.mix.limiter.disconnect(this.ctx.destination);
+    this.mix.limiter.connect(io.sink);
+    this.native = io;
+    if (this.inp) { const d = this.inp.device; this.closeInput(); await this.openInput(d); }
+    return io;
+  }
+  /** Rend l'entrée et la sortie au navigateur (réglage « moteur audio natif » désactivé, ou échec du natif). */
+  async stopNative(): Promise<void> {
+    const io = this.native;
+    if (!io) return;
+    const d = this.inp?.device;
+    if (this.inp) this.closeInput();
+    try { io.stop(); } catch { /* natif déjà arrêté */ }
+    try { this.mix.limiter.disconnect(io.sink); } catch { /* déjà débranché */ }
+    this.mix.limiter.connect(this.ctx.destination);
+    this.native = undefined;
+    await this.setOutput(S.outputDevice);
+    if (d !== undefined) await this.openInput(d).catch(() => undefined);
+  }
 
   /** Charge les instruments réels utilisés par le projet (sans attendre) ; prévient l'interface. */
   async prepare(p: Project = S.project): Promise<boolean> {
@@ -156,7 +185,7 @@ class Engine {
     const o = this.mix.reg(this.ctx.createOscillator()), g = this.ctx.createGain();
     o.frequency.value = accent ? 1600 : 1000;
     g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    o.connect(g).connect(this.ctx.destination); o.start(t); o.stop(t + 0.05);
+    o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.05);
   }
 
   // ---------- Mode Live ----------
@@ -201,6 +230,34 @@ class Engine {
     const n = this.mix.tracks.get(track.id);
     if (n && track.synth) playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.005, dur, 0.8, buffers);
   }
+  private auditionToken = 0;
+  private auditionGain?: GainNode;
+  private auditionVoice?: Voice;
+  private auditionTimer = 0;
+  /** Préécoute indépendante de la piste : ne change ni le projet ni le transport. */
+  async audition(sp: SynthParams, midi = 60): Promise<boolean> {
+    this.stopAudition(); const token = this.auditionToken;
+    await this.ctx.resume();
+    if (sp.engine === 'multi' && sp.bank && !await this.loadBank(sp.bank)) return false;
+    if (token !== this.auditionToken) return false;
+    this.sync();
+    const gain = this.ctx.createGain(); gain.gain.value = 0.65; gain.connect(this.mix.master);
+    const voice = playNote(this.mix, gain, sp, midi, this.ctx.currentTime + 0.005, null, 0.8, buffers);
+    if (!voice) { gain.disconnect(); return false; }
+    this.auditionGain = gain; this.auditionVoice = voice;
+    this.auditionTimer = window.setTimeout(() => this.stopAudition(), 1200);
+    return true;
+  }
+  stopAudition() {
+    this.auditionToken++; clearTimeout(this.auditionTimer);
+    const gain = this.auditionGain; this.auditionGain = undefined;
+    if (gain) {
+      const now = this.ctx.currentTime; gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now); gain.gain.linearRampToValueAtTime(0, now + 0.02);
+      this.auditionVoice?.release(now); window.setTimeout(() => gain.disconnect(), 60);
+    }
+    this.auditionVoice = undefined;
+  }
   /** Note programmée à un instant précis (arpégiateur). */
   playAt(track: Track, midi: number, t: number, dur: number, vel = 0.8) {
     const n = this.mix.tracks.get(track.id);
@@ -237,11 +294,22 @@ class Engine {
     if (this.inp && this.inp.device === device) return;
     const gainVal = this.inp?.gain.gain.value ?? S.inputGain, monVal = this.inp?.mon.gain.value ?? 0;
     this.closeInput();
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: device ? { exact: device } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
+    let stream: MediaStream | undefined, src: AudioNode;
+    if (this.native) {
+      // Le micro arrive par le natif : on lui indique l'appareil choisi (par son nom), puis on lit son tampon.
+      const name = await nativeName(device, 'audioinput');
+      this.native.input(name);
+      const s = this.native.source();
+      if (!s) throw new Error('no native input');
+      src = s;
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: device ? { exact: device } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      src = this.ctx.createMediaStreamSource(stream);
+    }
     await this.ctx.resume();
-    const src = this.ctx.createMediaStreamSource(stream), gain = this.ctx.createGain(), mon = this.ctx.createGain(), analyser = this.ctx.createAnalyser();
+    const gain = this.ctx.createGain(), mon = this.ctx.createGain(), analyser = this.ctx.createAnalyser();
     gain.gain.value = gainVal; mon.gain.value = monVal; analyser.fftSize = 2048;
     src.connect(gain); gain.connect(analyser); gain.connect(mon).connect(this.mix.master);
     this.inp = { stream, src, gain, mon, analyser, device };
@@ -249,8 +317,11 @@ class Engine {
   closeInput() {
     const i = this.inp;
     if (!i) return;
-    i.src.disconnect(); i.gain.disconnect(); i.mon.disconnect(); i.stream.getTracks().forEach(t => t.stop());
+    i.src.disconnect(); i.gain.disconnect(); i.mon.disconnect(); i.stream?.getTracks().forEach(t => t.stop());
+    if (i.src instanceof AudioWorkletNode) i.src.port.postMessage('stop');
     this.inp = undefined;
+    // Mode natif : on referme aussi le micro du côté de la carte son (sinon il reste capté, pastille orange allumée).
+    if (this.native && !i.stream) try { this.native.input(null); } catch { /* natif arrêté */ }
   }
   setInput(gain: number, monitor: boolean) {
     if (!this.inp) return;
@@ -271,7 +342,7 @@ class Engine {
     this.workletReady ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
     await this.workletReady;
     const node = new AudioWorkletNode(this.ctx, 'kh-rec', { numberOfInputs: 1, numberOfOutputs: 0 });
-    const inLat = (inp.stream.getAudioTracks()[0]?.getSettings() as { latency?: number }).latency ?? 0;
+    const inLat = this.latency().input;
     const cap = { temp, node, chunks: [] as Float32Array[][], first: -1, startStep: Math.floor(this.pos), done, inLat, mode };
     node.port.onmessage = e => { if (cap.first < 0) cap.first = e.data.f; cap.chunks.push(e.data.ch); };
     inp.gain.connect(node);
@@ -297,18 +368,23 @@ class Engine {
     }
     // Décalage entre le début de la capture et l'instant où le premier temps a été entendu.
     // Compensation automatique (latences annoncées par le système), plus le décalage réglé ou mesuré par l'utilisateur.
-    const off = (this.t0 - cap.first / sr) + (this.ctx.outputLatency || 0) + inLat + S.recOffsetMs / 1000;
+    // Plus le retard de la compensation de latence des plugins : on entend le morceau d'autant plus tard.
+    const outLat = (this.native ? this.native.latency().output : (this.ctx.outputLatency || 0)) + this.mix.pdcMax;
+    const off = (this.t0 - cap.first / sr) + outLat + inLat + S.recOffsetMs / 1000;
     cap.done(buf, cap.startStep, Math.max(0, Math.min(off, buf.duration - 0.01)), cap.mode);
   }
 
   // ---------- Sortie audio et latence ----------
   /** Latences annoncées par le système, en secondes, et fréquence d'échantillonnage. */
   latency(): { output: number; input: number; rate: number } {
-    const inLat = (this.inp?.stream.getAudioTracks()[0]?.getSettings() as { latency?: number } | undefined)?.latency ?? 0;
+    if (this.native) { const l = this.native.latency(); return { output: l.output, input: this.inp ? l.input : 0, rate: this.ctx.sampleRate }; }
+    const inLat = (this.inp?.stream?.getAudioTracks()[0]?.getSettings() as { latency?: number } | undefined)?.latency ?? 0;
     return { output: (this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0), input: inLat, rate: this.ctx.sampleRate };
   }
-  canSetOutput() { return typeof (this.ctx as unknown as { setSinkId?: unknown }).setSinkId === 'function'; }
+  canSetOutput() { return !!this.native || typeof (this.ctx as unknown as { setSinkId?: unknown }).setSinkId === 'function'; }
   async setOutput(id: string): Promise<boolean> {
+    // En mode natif, Web Audio reste sans sortie : c'est le natif qui change d'appareil.
+    if (this.native) { try { await this.native.configure({ output: await nativeName(id, 'audiooutput') }); return true; } catch { return false; } }
     try { await (this.ctx as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(id); return true; } catch { return false; }
   }
   /**
@@ -328,7 +404,7 @@ class Engine {
     inp.gain.connect(node);
     const t0 = this.ctx.currentTime + 0.25, o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.frequency.value = 2000; g.gain.setValueAtTime(0.6, t0); g.gain.setValueAtTime(0, t0 + 0.006);
-    g.gain.value = 0; o.connect(g).connect(this.ctx.destination); o.start(t0 - 0.01); o.stop(t0 + 0.02);
+    g.gain.value = 0; o.connect(g).connect(this.out); o.start(t0 - 0.01); o.stop(t0 + 0.02);
     await new Promise(r => setTimeout(r, 900));
     try { inp.gain.disconnect(node); } catch { /* entrée fermée */ }
     node.port.onmessage = null;
@@ -401,7 +477,7 @@ export const engine = new Engine();
 
 // ---------- Export : rendu hors-ligne + encodage WAV ----------
 /** Ce que le dernier rendu n'a pas pu inclure. */
-export const lastRender = { wamFailed: 0 };
+export const lastRender = { wamFailed: 0, pdc: 0 };
 
 export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
   const end = contentEnd(p);
@@ -414,7 +490,12 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
   const out = await off.startRendering();
-  mix.active.clear();
+  mix.active.clear(); mix.disposePlugins();
+  // Compensation de latence des plugins : tout le mixage sort en retard de `pdcMax` ; on le ramène au début du fichier,
+  // pour que l'export (et les pistes séparées) reste calé sur la grille.
+  const shift = Math.round(mix.pdcMax * sr);
+  if (shift > 0) for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); d.copyWithin(0, shift); d.fill(0, d.length - shift); }
+  lastRender.pdc = mix.pdcMax;
   if (!normalize) return out;
   if (p.target < 0) {
     // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.

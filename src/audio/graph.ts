@@ -1,5 +1,11 @@
 import { drumSample, sampleFor } from './banks';
 import { WamInstance, createWam, liveWams, wamKey } from './wam';
+import { AuInstance, auBridge, createAu } from './au';
+
+/** Plugin d'une chaîne d'effets : web (WAM) ou, dans la version bureau native, Audio Unit. */
+const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
+const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
+  i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
 import { Clip, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, durAt, stepDur as sd, timeOf } from '../types';
 
 export interface TrackNodes {
@@ -9,6 +15,8 @@ export interface TrackNodes {
   revSend: GainNode; dlySend: GainNode; analyser?: AnalyserNode; compOn?: boolean; driveVal?: number; duckAmt: number;
   outId?: string;
   insIn: GainNode; insOut: GainNode; ins: Map<string, InsNode>; insSig?: string;
+  /** Compensation de latence : retard ajouté après la chaîne d'effets, pour rester calé sur la tranche la plus en retard. */
+  pdc: DelayNode;
   crush: WaveShaperNode; crushIn: GainNode; crushOut: GainNode; crushVal?: number; chWet: GainNode; trem: GainNode; tremDepth: GainNode; tremLfo: OscillatorNode;
 }
 /** Un effet de la chaîne : on y entre par `in`, on en sort par `out` ; `set` applique ses réglages. */
@@ -152,33 +160,76 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const i of list) {
       let node = n.ins.get(i.id);
       if (!node) { node = this.buildInsert(i.type); n.ins.set(i.id, node); }
-      if (i.type === 'wam' && i.url && !node.wam && !node.loading && this.live) {
+      // Plugin du Mac hors de la version bureau macOS : le son passe tel quel, sans essayer de le charger.
+      if (isPlugin(i) && !node.wam && !node.loading && this.live && (i.type !== 'au' || auBridge())) {
         node.loading = true;
         const made = node;
-        createWam(this.ctx, i.url, i.state).then(inst => { this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst); this.onWam?.(t.id, i.id, true); },
-          () => { this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
+        // L'effet a pu être retiré (ou la piste supprimée) pendant le chargement : on libère alors le plugin, sans rien signaler.
+        const gone = () => this.tracks.get(t.id)?.ins.get(i.id) !== made;
+        createPlugin(this.ctx, i, i.state).then(inst => {
+          if (gone()) { inst.audioNode.destroy?.(); return; }
+          this.attachWam(made, inst); liveWams.set(wamKey(t.id, i.id), inst);
+          if (this.lastProject) this.compensate(this.lastProject);
+          this.onWam?.(t.id, i.id, true);
+        }, () => { if (!gone()) this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
       }
       node.set(i, p, (prm, v) => this.set(prm, v));
+      if (i.type === 'au' && node.wam) (node.wam as AuInstance).apply(i.p);
     }
     if (n.insSig === sig) return;
     n.insIn.disconnect(); for (const node of n.ins.values()) node.out.disconnect();
     active.reduce<AudioNode>((a, i) => { const node = n.ins.get(i.id)!; a.connect(node.in); return node.out; }, n.insIn).connect(n.insOut);
     n.insSig = sig;
   }
+  private lastProject?: Project;
+  /** Retard ajouté à tout le mixage par la compensation (latence du chemin le plus long), en secondes. */
+  pdcMax = 0;
+  /** Latence déclarée par les plugins actifs d'une tranche (plugins du Mac ; les plugins web n'en déclarent pas). */
+  private stripLatency(t: Track, n: TrackNodes): number {
+    let l = 0;
+    for (const i of t.inserts ?? []) if (i.on && i.type === 'au') l += (n.ins.get(i.id)?.wam as AuInstance | undefined)?.info.latency ?? 0;
+    return l;
+  }
+  /**
+   * Compensation de la latence des plugins (comme dans les logiciels de studio) : un plugin qui déclare une latence
+   * (AUPeakLimiter : 2 ms) retarde sa tranche ; les autres tranches sont retardées d'autant pour que tout reste calé.
+   * Pistes envoyées vers un bus : calées entre elles à l'entrée du bus, puis le bus est calé avec le reste.
+   * Une piste coupée (muet) compte toujours : couper une piste ne décale pas les autres. Écoute et export identiques.
+   */
+  private compensate(p: Project) {
+    const busIds = new Set(p.buses.map(b => b.id)), lat = new Map<string, number>(), busIn = new Map<string, number>();
+    for (const t of [...p.buses, ...p.tracks]) { const n = this.tracks.get(t.id); if (n) lat.set(t.id, this.stripLatency(t, n)); }
+    for (const b of p.buses) busIn.set(b.id, 0);
+    for (const t of p.tracks) if (busIds.has(t.out)) busIn.set(t.out, Math.max(busIn.get(t.out)!, lat.get(t.id) ?? 0));
+    let max = 0;
+    for (const t of p.tracks) if (!busIds.has(t.out)) max = Math.max(max, lat.get(t.id) ?? 0);
+    for (const b of p.buses) max = Math.max(max, busIn.get(b.id)! + (lat.get(b.id) ?? 0));
+    const put = (id: string, d: number) => { const n = this.tracks.get(id); if (n && Math.abs(n.pdc.delayTime.value - d) > 1e-7) n.pdc.delayTime.value = Math.max(0, Math.min(1, d)); };
+    for (const t of p.tracks) put(t.id, busIds.has(t.out) ? busIn.get(t.out)! - (lat.get(t.id) ?? 0) : max - (lat.get(t.id) ?? 0));
+    for (const b of p.buses) put(b.id, max - busIn.get(b.id)! - (lat.get(b.id) ?? 0));
+    this.pdcMax = max;
+  }
+
   /** Prévenu quand un plugin web a fini de se charger (ou a échoué). */
   onWam?: (trackId: string, insertId: string, ok: boolean) => void;
 
   /** Rendu hors-ligne : crée les plugins web sur ce contexte, avec l'état de ceux en service. Renvoie le nombre d'échecs. */
+  /** Après un rendu hors-ligne : libère les plugins créés pour lui (les Audio Units ont un fil natif à arrêter). */
+  disposePlugins() {
+    for (const n of this.tracks.values()) for (const node of n.ins.values()) node.wam?.audioNode.destroy?.();
+  }
+
   async loadWams(p: Project): Promise<number> {
     let failed = 0;
     for (const t of [...p.buses, ...p.tracks]) for (const i of t.inserts ?? []) {
       const node = this.tracks.get(t.id)?.ins.get(i.id);
-      if (i.type !== 'wam' || !i.url || !i.on || !node) continue;
+      if (!isPlugin(i) || !i.on || !node) continue;
       try {
         const live = liveWams.get(wamKey(t.id, i.id)), state = live?.audioNode.getState ? await live.audioNode.getState() : i.state;
-        this.attachWam(node, await createWam(this.ctx, i.url, state));
+        this.attachWam(node, await createPlugin(this.ctx, i, state));
       } catch { failed++; }
     }
+    this.compensate(p);   // les plugins du rendu sont chargés : leurs latences sont connues
     return failed;
   }
 
@@ -201,7 +252,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       input: c.createGain(), lp: c.createBiquadFilter(), hp: c.createBiquadFilter(), shaper: c.createWaveShaper(),
       low: c.createBiquadFilter(), mid: c.createBiquadFilter(), high: c.createBiquadFilter(),
       comp: c.createDynamicsCompressor(), makeup: c.createGain(), fader: c.createGain(), auto: c.createGain(), duck: c.createGain(), pan: c.createStereoPanner(),
-      insIn: c.createGain(), insOut: c.createGain(), ins: new Map(),
+      insIn: c.createGain(), insOut: c.createGain(), ins: new Map(), pdc: c.createDelay(1),
       revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0,
       crush: c.createWaveShaper(), crushIn: c.createGain(), crushOut: c.createGain(), chWet: c.createGain(), trem: c.createGain(), tremDepth: c.createGain(), tremLfo: c.createOscillator(),
     };
@@ -226,7 +277,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     n.tremDepth.gain.value = 0; n.tremLfo.connect(n.tremDepth).connect(n.trem.gain); n.tremLfo.start();
     n.trem.connect(n.low).connect(n.mid).connect(n.high);
     // Après l'égaliseur et le compresseur : la chaîne d'effets ajoutés, puis le fader.
-    n.comp.connect(n.makeup).connect(n.insIn); n.insIn.connect(n.insOut); n.insOut.connect(n.fader);
+    n.comp.connect(n.makeup).connect(n.insIn); n.insIn.connect(n.insOut); n.insOut.connect(n.pdc).connect(n.fader);
     n.fader.connect(n.auto).connect(n.duck).connect(n.pan); // la sortie (général ou bus) est branchée par sync
     n.pan.connect(n.revSend).connect(this.revBus);
     n.pan.connect(n.dlySend).connect(this.dlyBus);
@@ -275,8 +326,12 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       if (!au?.rev?.length) this.set(n.revSend.gain, t.rev);
       if (!au?.dly?.length) this.set(n.dlySend.gain, t.dly);
     }
+    this.lastProject = p;
+    this.compensate(p);
     for (const [id, n] of this.tracks) if (!p.tracks.some(t => t.id === id) && !busIds.has(id)) {
       n.pan.disconnect(); n.revSend.disconnect(); n.dlySend.disconnect(); this.tracks.delete(id);
+      // Piste supprimée (ou autre projet ouvert) : ses plugins sont libérés (un Audio Unit a un fil natif à arrêter).
+      for (const [iid, node] of n.ins) { node.out.disconnect(); node.wam?.audioNode.destroy?.(); liveWams.delete(wamKey(id, iid)); }
     }
   }
 
@@ -436,6 +491,12 @@ function pluckBuffer(ctx: BaseAudioContext, freq: number, damp: number): AudioBu
   return b;
 }
 
+/** Part de douceur d'une note (0 = jouée à fond ou nuances coupées, jusqu'à 1). */
+export const touchSoftness = (p: SynthParams, vel: number) => Math.max(0, Math.min(1, (p.touch ?? 0) * (1 - Math.min(1, vel))));
+/** Fréquence de coupure du timbre selon la douceur, relative à la note jouée : ouverte à fond,
+ * elle descend vers les premiers harmoniques quand on joue doucement, jamais sous le 3e. */
+export const touchCutoff = (soft: number, freq: number) => Math.min(18000, freq * Math.max(3, Math.pow(18000 / Math.max(20, freq), 1 - 1.3 * soft)));
+
 /**
  * Joue une note. `dur` en secondes pour une note programmée ; `null` pour une note tenue
  * (jeu en direct) : la voix renvoyée doit alors être relâchée avec `release()`.
@@ -445,7 +506,7 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   const freq = 440 * Math.pow(2, (midi - 69) / 12 + p.octave);
   const vca = c.createGain(), filt = c.createBiquadFilter();
   const srcs: AudioScheduledSourceNode[] = [];
-  let level = 0.15, startOff = 0;
+  let level = 0.15, startOff = 0, softAttack = 0;
 
   if (p.engine === 'fm') {
     const car = mix.reg(c.createOscillator()), mod = mix.reg(c.createOscillator()), mg = c.createGain();
@@ -461,8 +522,16 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
     // Vrai instrument : l'échantillon le plus proche, transposé jusqu'à la note demandée.
     const m = p.bank ? sampleFor(p.bank, midi + p.octave * 12) : null;
     if (!m) return;
-    const s = mix.reg(c.createBufferSource()); s.buffer = m.s.buf; s.playbackRate.value = m.rate;
-    s.connect(filt); srcs.push(s); level = 0.5 * m.s.gain; startOff = m.s.off;
+    const s = mix.reg(c.createBufferSource()); s.buffer = p.hold && m.s.held ? m.s.held.buf : m.s.buf; s.playbackRate.value = m.rate;
+    if (p.hold && m.s.held) { s.loop = true; s.loopStart = m.s.held.loop.start; s.loopEnd = m.s.held.loop.end; }
+    // Nuances : les sources n'ont qu'une couche par note ; une note jouée doucement est donc
+    // assombrie (moins d'harmoniques aigus) et attaquée un peu moins sec, comme un vrai instrument.
+    const soft = touchSoftness(p, vel);
+    if (soft > 0) {
+      const tone = c.createBiquadFilter(); tone.type = 'lowpass'; tone.Q.value = 0.5;
+      tone.frequency.value = touchCutoff(soft, freq); s.connect(tone).connect(filt); softAttack = soft * 0.015;
+    } else s.connect(filt);
+    srcs.push(s); level = 0.5 * m.s.gain; startOff = m.s.off;
   } else if (p.engine === 'sampler') {
     const buf = p.bufferId ? buffers?.get(p.bufferId) : undefined;
     if (!buf) return;
@@ -485,7 +554,7 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   filt.frequency.setValueAtTime(Math.min(18000, p.cutoff + p.envAmt * 9000), t);
   filt.frequency.setTargetAtTime(p.cutoff, t + p.a, Math.max(0.01, p.d / 3));
 
-  const peak = vel * level, sus = peak * p.s, a = Math.max(0.002, p.a), dk = Math.max(0.01, p.d / 3), rk = Math.max(0.01, p.r / 3);
+  const peak = vel * level, sus = peak * p.s, a = Math.max(0.002, p.a, softAttack), dk = Math.max(0.01, p.d / 3), rk = Math.max(0.01, p.r / 3);
   const g = vca.gain;
   g.setValueAtTime(0, t);
   filt.connect(vca).connect(dest);

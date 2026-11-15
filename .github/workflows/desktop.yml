@@ -7,7 +7,7 @@ on:
   push:
     branches: ['**']
     tags: ['v*.*.*']
-    paths: ['electron/**', '.github/workflows/desktop.yml', 'qa/desktop-smoke.cjs']
+    paths: ['electron/**', '.github/workflows/desktop.yml', 'qa/desktop-smoke.cjs', 'qa/packaged-mac.cjs', 'native/kh-au-bridge/**', 'scripts/build-native.sh', 'package.json']
 permissions:
   contents: read
 jobs:
@@ -32,9 +32,16 @@ jobs:
       - name: Vérifier que l'application démarre et produit du son
         if: matrix.name == 'linux'
         run: xvfb-run -a node qa/desktop-smoke.cjs
+      # Module natif (plugins Audio Unit, carte son par Core Audio) : un seul fichier pour les Mac Apple et Intel, rangé dans l'application.
+      - name: Construire le module natif macOS
+        if: matrix.name == 'macos'
+        run: npm run native
       - run: npx electron-builder ${{ matrix.args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Vérifier l'application macOS empaquetée (module natif, plugin du Mac, moteur natif)
+        if: matrix.name == 'macos'
+        run: node qa/packaged-mac.cjs "release/mac-arm64/KH Music Pro.app"
       - uses: actions/upload-artifact@v4
         with:
           name: kh-music-pro-${{ matrix.name }}

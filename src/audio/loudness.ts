@@ -54,3 +54,15 @@ export function gainLimit(buf: AudioBuffer, gain: number, ceil = 0.966) {
   for (let i = 1; i < n; i++) { const prev = 1 - (1 - g[i - 1]) * rel; if (prev < g[i]) g[i] = prev; }
   for (const c of ch) for (let i = 0; i < n; i++) c[i] *= gain * g[i];
 }
+
+/** Volume perçu d'une note (pondération K, en dB) sur `dur` secondes à partir de `off`. */
+export function noteLoudness(buf: AudioBuffer, off: number, dur = 0.5): number {
+  const sr = buf.sampleRate, k = kWeighting(sr), i0 = Math.round(off * sr), n = Math.min(buf.length - i0, Math.round(dur * sr));
+  if (n <= 0) return -Infinity;
+  let p = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const y = biquad(biquad(buf.getChannelData(c).subarray(i0, i0 + n), k[0]), k[1]);
+    let e = 0; for (let i = 0; i < n; i++) e += y[i] * y[i]; p += e / n;
+  }
+  return 10 * Math.log10(p / buf.numberOfChannels + 1e-20);
+}

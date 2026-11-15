@@ -184,6 +184,15 @@ export function moveInsert(trackId: string, id: string, dir: -1 | 1) {
   if (!l || i < 0 || j < 0 || j >= l.length) return;
   [l[i], l[j]] = [l[j], l[i]]; commit();
 }
+/** Ajoute un plugin Audio Unit du Mac (version bureau macOS) : `id` = « type:sous-type:fabricant » (« aufx:dely:appl »). */
+export function addAu(trackId: string, id: string, name: string) {
+  const tr = strip(trackId);
+  if (!tr) return;
+  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  if (!/^\w{4}:[^:]{4}:[^:]{4}$/.test(id)) return;
+  const ins = newInsert('au'); ins.url = id; ins.name = name;
+  tr.inserts.push(ins); commit();
+}
 /** Origines dont les plugins web ont été acceptés par l'utilisateur. */
 const trusted = (): string[] => { try { return JSON.parse(localStorage.getItem('kh-wam-trust') || '[]'); } catch { return []; } };
 /**
