@@ -36,6 +36,8 @@ const loaded = new Map<string, Map<number, Sample>>(), pending = new Map<string,
 let decoder: BaseAudioContext | null = null;
 export const setDecoder = (ctx: BaseAudioContext) => { decoder = ctx; };
 export const bankReady = (id: string) => loaded.has(id);
+/** Oublie un instrument chargé (vérifications : rejouer le tout premier chargement). */
+export const forgetBank = (id: string) => { loaded.delete(id); };
 
 /** Lecture d'un fichier embarqué. XMLHttpRequest fonctionne aussi dans la version bureau (fichiers locaux). */
 function fetchBytes(url: string): Promise<ArrayBuffer> {

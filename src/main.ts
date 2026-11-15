@@ -6,7 +6,7 @@ import { ioBridge } from './audio/native-io';
 import { initNative, setNativeEngine } from './ui/native';
 import { liveWams } from './audio/wam';
 import { lufs, noteLoudness } from './audio/loudness';
-import { BANKS, loadBank, sampleFor } from './audio/banks';
+import { BANKS, forgetBank, loadBank, sampleFor } from './audio/banks';
 import { SUSTAIN_BANKS } from './audio/sustain';
 import { touchCutoff, touchSoftness } from './audio/graph';
 import { stretchBuffer } from './audio/stretch';
@@ -37,11 +37,30 @@ function renderPanel() {
   });
 }
 
-function renderAll() { setBar((S.project.sig || 4) * 4); engine.sync(); refreshRack(); renderArr(); renderPanel(); renderTop(); }
+/** Signature de l'élément qui a le focus : balise, attributs data-*, aria-label, et rang parmi les éléments identiques. */
+function focusKey(): { sel: string; i: number } | null {
+  const a = document.activeElement as HTMLElement | null;
+  // Seulement les boutons et les curseurs : un champ texte ou une liste qui garderait le focus bloquerait les raccourcis (Espace…).
+  if (!a || a.closest('dialog') || !(a.tagName === 'BUTTON' || (a.tagName === 'INPUT' && (a as HTMLInputElement).type === 'range'))) return null;
+  const esc = (v: string) => v.replace(/["\\]/g, '\\$&');
+  let sel = a.tagName.toLowerCase();
+  for (const at of [...a.attributes]) if (at.name.startsWith('data-') || at.name === 'aria-label' || at.name === 'type') sel += `[${at.name}="${esc(at.value)}"]`;
+  return { sel, i: [...document.querySelectorAll(sel)].indexOf(a) };
+}
+/** Au clavier, chaque réglage redessine l'écran : le focus revient sur le même contrôle, au lieu de repartir en haut de la page. */
+function keepFocus(draw: () => void) {
+  const k = focusKey(), before = document.activeElement;
+  draw();
+  if (!k || (before && before.isConnected) || k.i < 0) return;
+  const el = document.querySelectorAll<HTMLElement>(k.sel)[k.i];
+  el?.focus({ preventScroll: true });
+}
+
+function renderAll() { keepFocus(() => { setBar((S.project.sig || 4) * 4); engine.sync(); refreshRack(); renderArr(); renderPanel(); renderTop(); }); }
 onChange(renderAll);
 onSelect(() => {
   refreshSelection();
-  if (S.tab === 'editor') renderPanel();
+  if (S.tab === 'editor') keepFocus(renderPanel);
   else document.querySelectorAll<HTMLElement>('.strip[data-id]').forEach(e => e.classList.toggle('sel', e.dataset.id === S.selTrack));
 });
 engine.onLive = refreshLive;
@@ -62,6 +81,10 @@ const PIANO: Record<string, number> = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD
 const PADS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK'];
 const down = new Map<string, number>();
 
+/** Le focus vient-il de la touche Tab (navigation au clavier) plutôt que d'un clic ou d'un doigt ? */
+let focusByTab = false;
+addEventListener('keydown', e => { if (e.key === 'Tab') focusByTab = true; }, true);
+addEventListener('pointerdown', () => { focusByTab = false; }, true);
 addEventListener('keydown', e => {
   const el = e.target as HTMLElement;
   if (document.querySelector('dialog[open], .tour')) return;
@@ -76,6 +99,10 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.altKey) return;
+  // Espace lance ou arrête la lecture, sauf sur un bouton atteint au clavier (Tab) : il actionne alors ce bouton,
+  // comme partout ailleurs. Un bouton juste cliqué à la souris ou au doigt garde le focus : Espace reste la lecture.
+  // (:focus-visible ne suffit pas : Chromium le rallume dès qu'une touche est pressée.)
+  if (e.code === 'Space' && el.tagName === 'BUTTON' && focusByTab) return;
   if (e.code === 'Space') { e.preventDefault(); engine.toggle(); return; }
   if (e.key === 'Enter' && el.tagName !== 'BUTTON') { engine.seek(0); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteClip(); return; }
@@ -143,7 +170,7 @@ function onLang() { rebuild(); }
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, banks: { BANKS, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -161,8 +161,9 @@ input[type=range] { accent-color: var(--a1); height: 18px; margin: 0; cursor: po
 .key.black { background: #161c33; border-bottom-color: #000; width: 64%; }
 .key.c { font-weight: 700; }
 .key:active { background: var(--a1); }
-/* Touche tenue au doigt : pas de défilement ni de menu d'appui long, sinon la note serait coupée. */
-.key { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* Touche tenue au doigt : pas de menu d'appui long. Un glissé vertical fait défiler le piano roll (la note s'arrête alors) :
+   la colonne des touches reste la zone pour changer d'octave au doigt. */
+.key { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .pr-grid {
   position: relative; flex: none; cursor: crosshair;
   background-image: linear-gradient(90deg, rgba(255, 255, 255, .22) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .1) 1px, transparent 1px),

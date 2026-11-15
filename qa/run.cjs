@@ -2307,9 +2307,9 @@ test('LH07', 'Notes longues', 'Une touche du clavier du piano roll tenue à la s
   await page.mouse.up(); await sleep(650); const off = await masterRms();
   expect(on > 0.001 && off < on * 0.03, `touche tenue ${on}, relâchée ${off}`);
 });
-test('LH08', 'Notes longues', 'Au doigt : la touche tenue joue, ne fait pas défiler la page et s’arrête même si le doigt glisse hors de la touche', async () => {
+test('LH08', 'Notes longues', 'Au doigt : la touche tenue joue, la colonne des touches reste le moyen de défiler, et la note s’arrête même si le doigt est levé ailleurs', async () => {
   await organOnTrack1(); await prKey(60);
-  expect(await page.$eval('.keys .key[data-p="60"]', e => getComputedStyle(e).touchAction) === 'none', 'la touche laisse le doigt faire défiler la page');
+  expect(await page.$eval('.keys .key[data-p="60"]', e => getComputedStyle(e).touchAction) === 'pan-y', 'la colonne des touches doit défiler verticalement, et seulement verticalement');
   const fire = (type, target) => page.evaluate(([type, target]) => { const el = target === 'key' ? document.querySelector('.keys .key[data-p="60"]') : document.body; el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true })); }, [type, target]);
   await fire('pointerdown', 'key'); await sleep(3600); const on = await masterRms();
   await fire('pointerup', 'body'); await sleep(650); const off = await masterRms();
@@ -2342,6 +2342,66 @@ test('LH11', 'Notes longues', 'Enregistrer en jouant sur le clavier du piano rol
   const ns = (await proj()).tracks[1].clips.flatMap(c => c.notes || []).filter(n => n.p === 72);
   const added = ns.length - before, longest = Math.max(...ns.map(n => n.l));
   expect(added === 1 && longest >= 6, `notes ajoutées ${added}, durée la plus longue ${longest} pas (1 s à 120 = 8 pas)`);
+});
+test('GE01', 'Gestes réels', 'Clavier à l’écran : une touche tenue pendant un redessin (enregistrement, bouton MIDI) ne reste pas bloquée, arpégiateur compris', async () => {
+  await page.click(await headSel(3)); await page.click('[data-act=okb]'); const k = await box('.wk[data-m="60"]');
+  const voices = () => S(() => window.kh.engine.voices.size);
+  await page.mouse.move(k.x + k.width / 2, k.y + k.height - 10); await page.mouse.down(); await sleep(150);
+  await S(() => window.kh.commit()); await sleep(100); const held = await voices();
+  const lit = await page.$eval('.wk[data-m="60"]', e => e.classList.contains('on'));
+  await page.mouse.up(); await sleep(150); const after = await voices();
+  expect(held === 1 && lit && after === 0, `voix tenue ${held} (touche allumée : ${lit}), après relâchement ${after}`);
+  await S(() => { window.kh.kb.arp = 'up'; window.kh.commit(); }); const k2 = await box('.wk[data-m="60"]');
+  await page.mouse.move(k2.x + k2.width / 2, k2.y + k2.height - 10); await page.mouse.down(); await sleep(400);
+  await S(() => window.kh.commit()); await sleep(200); const arpOn = await masterRms(); await page.mouse.up(); await sleep(1500);
+  const arpOff = await masterRms(); expect(arpOn > 0.001 && arpOff < arpOn * 0.05, `l’arpégiateur continue après relâchement (pendant ${arpOn}, après ${arpOff})`);
+});
+test('GE02', 'Gestes réels', 'Effet Live tenu à la souris puis au clavier pendant un redessin : l’effet s’arrête au relâchement et le bouton reste fidèle', async () => {
+  await tab('live'); const b = await box('[data-fx=echo]');
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(100);
+  await S(() => window.kh.commit()); await sleep(100);
+  const lit = await page.$eval('[data-fx=echo]', e => e.classList.contains('on')), on = await S(() => window.kh.engine.fxOn.has('echo'));
+  await page.mouse.up(); await sleep(100); const off = await S(() => window.kh.engine.fxOn.size);
+  expect(lit && on && off === 0, `bouton allumé après redessin : ${lit}, effet actif : ${on}, effets restants : ${off}`);
+  await page.focus('[data-fx=delay], [data-fx=reverb]'); await page.keyboard.down('Space'); await S(() => window.kh.commit()); await page.keyboard.up('Space'); await sleep(100);
+  expect(await S(() => window.kh.engine.fxOn.size === 0 && !window.kh.engine.playing), 'effet resté actif ou lecture lancée au clavier');
+});
+test('GE03', 'Gestes réels', 'Espace sur un bouton atteint au clavier actionne ce bouton ; après un clic à la souris, Espace reste la lecture', async () => {
+  await tab('live'); const sel = await S(() => `[data-lmute="${window.kh.S.project.tracks[0].id}"]`);
+  await page.keyboard.press('Tab'); await page.focus(sel); await page.keyboard.press('Space'); await sleep(150);
+  expect((await proj()).tracks[0].mute && !(await S(() => window.kh.engine.playing)), 'Espace sur le bouton atteint au clavier doit couper la piste sans lancer la lecture');
+  await page.click(sel); await page.keyboard.press('Space'); await sleep(300);
+  const r = await S(() => window.kh.engine.playing); await page.keyboard.press('Space');
+  expect(r && !(await proj()).tracks[0].mute, 'après un clic à la souris, Espace doit lancer la lecture');
+});
+test('GE04', 'Gestes réels', 'Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu', async () => {
+  await page.click(await headSel(0)); await page.click('[data-view=pads]'); await S(() => { window.kh.kb.repeat = 2; });
+  await page.focus('.pad[data-pad="0"]'); await page.keyboard.down('Enter'); await sleep(600); const on = await masterRms();
+  await page.keyboard.up('Enter'); await sleep(900); const off = await masterRms();
+  expect(on > 0.001 && off < on * 0.03, `répétition au clavier : pendant ${on}, après ${off}`);
+  const fire = (type, id, target) => page.evaluate(([type, id, target]) => { const el = target ? document.querySelector(target) : window; el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', bubbles: true, cancelable: true })); }, [type, id, target]);
+  await fire('pointerdown', 21, '.pad[data-pad="0"]'); await fire('pointerdown', 22, '.pad[data-pad="1"]'); await sleep(200);
+  await fire('pointerup', 22, null); await sleep(600); const still = await masterRms(); await fire('pointerup', 21, null); await sleep(900);
+  const end = await masterRms(); expect(still > 0.001 && end < still * 0.03, `pad tenu coupé par l’autre doigt (pendant ${still}, après ${end})`);
+});
+test('GE05', 'Gestes réels', 'La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue', async () => {
+  await page.click(await clipSel(1, 0)); await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.synth = k.makeSynth('r_church'); tr.rev = 0; tr.dly = 0; k.commit(); });
+  const ready = await S(() => { window.kh.banks.forgetBank('church'); return window.kh.engine.voices.size; });
+  const b = await prKey(60); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(4000);
+  const on = await masterRms(); await page.mouse.up(); await sleep(700);
+  expect(on > 0.001 && await masterRms() < on * 0.05, `première touche : tenue ${on}, relâchée ${await masterRms()} (${ready})`);
+});
+test('GE06', 'Gestes réels', 'Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné', async () => {
+  await tab('mixer'); const id = await S(() => window.kh.S.project.tracks[1].id), sel = `.strip[data-id="${id}"] input[type=range]`;
+  const v0 = await page.$eval(sel, e => +e.value), step = await page.$eval(sel, e => +e.step);
+  await page.keyboard.press('Tab'); await page.focus(sel);
+  for (let n = 0; n < 3; n++) { await page.keyboard.press('ArrowRight'); await sleep(60); }
+  const r = await page.evaluate(sel => { const a = document.activeElement, e = document.querySelector(sel); return { same: a === e, v: +e.value }; }, sel);
+  expect(r.same && Math.abs(r.v - (v0 + 3 * step)) < 1e-6, `focus gardé : ${r.same}, valeur ${r.v} (attendu ${v0 + 3 * step})`);
+  const m = await S(() => `[data-lmute="${window.kh.S.project.tracks[0].id}"]`); await tab('live');
+  await page.keyboard.press('Tab'); await page.focus(m); await page.keyboard.press('Enter'); await sleep(100);
+  const still = await page.evaluate(m => document.activeElement === document.querySelector(m), m); await page.keyboard.press('Enter'); await sleep(100);
+  expect(still && !(await proj()).tracks[0].mute, `bouton : focus gardé ${still}, piste rétablie au second appui`);
 });
 test('SB01', 'Navigateur de sons', 'Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
   for (const lang of ['fr', 'en', 'es']) {
