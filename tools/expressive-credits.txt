@@ -1,0 +1,28 @@
+Banques expressives V17 (0.17.0)
+
+Piano : « Salamander Grand Piano v3 » par Alexander Holm.
+Licence CC BY 3.0 : https://creativecommons.org/licenses/by/3.0/
+Source : https://github.com/sfzinstruments/SalamanderGrandPiano
+Révision : 3382bf9496bba2486f5ab0de55a264d1dfc38404
+Adaptation KH Music Pro : sélection de 4 nuances (v4, v8, v12, v16),
+30 notes sources (MIDI 21 à 108, une tierce mineure), conversion MP3 stéréo
+44,1 kHz / 192 kbit/s, durée limitée à 12 secondes avec fondu final de 150 ms.
+Calage d’attaque et gain appliqués à la lecture. Ni bruits de pédale,
+ni résonances sympathiques, ni moteur SFZ/ARIA de la source ne sont inclus.
+Les fichiers SOURCE-LICENSE et SOURCE-README.md sont conservés dans salamander/.
+
+Batterie Studio : « Virtuosity Drums », Versilian Studios et Karoryfer Lecolds,
+batterie jouée par Austin McMahon. Licence CC0 1.0 :
+https://creativecommons.org/publicdomain/zero/1.0/
+Source : https://github.com/sfzinstruments/virtuosity_drums
+Révision : 9f04cf9a734527edfbb0a4eee1f674e45bbf71bc
+Adaptation KH Music Pro : 115 frappes sur 16 pads, 1 à 4 nuances et
+jusqu’à 3 variantes de répétition selon l’élément ; choix d’une prise micro,
+conversion mono 44,1 kHz / 128 kbit/s, maximum 6 secondes, fondu final 150 ms.
+Calage d’attaque et gain appliqués à la lecture. Pas de mixage multi-micros.
+Les fichiers SOURCE-LICENSE et SOURCE-README.md sont conservés dans studio_drums/.
+
+Reconstruction : python3 tools/build-expressive-banks.py (curl et ffmpeg requis).
+Provenance détaillée et empreintes SHA256 de chaque source et fichier adapté :
+expressive-provenance.json. Aucune de ces sources ne provient de Logic,
+Ableton, FL Studio ou des sons internes d’un clavier Yamaha.

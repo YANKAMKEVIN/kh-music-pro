@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-223 cas réussis sur 224 (sur le Mac, 15/11/2026). DK01 ne tourne que sous Linux (`xvfb-run`) ; il est vérifié par GitHub Actions. TU02, instable quand la machine est chargée, attend désormais l'accordeur jusqu'à 3 s et a été rejoué avec succès.
+265 cas réussis sur 265.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -148,10 +148,10 @@
 | SP01 | Mixeur | L'analyseur de spectre s'anime pendant la lecture et retombe à l'arrêt | OK |
 | MOD01 | Mixage | Chorus, trémolo et lo-fi : réglables et audibles au rendu | OK |
 | TU01 | Accordeur | La détection de hauteur est juste : sinus, son riche en harmoniques, silence et bruit | OK |
-| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK (rejoué) |
+| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
-| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : spawnSync xvfb-run ENOENT |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
 | CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
 | CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
@@ -166,7 +166,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 29 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI01 | Vrais instruments | Les 30 instruments enregistrés se chargent et produisent un signal propre | OK |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -194,6 +194,21 @@
 | WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
 | LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
 | LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
+| LAT03 | Latence | Sans le module natif (version web), le son entre et sort toujours par le navigateur | OK |
+| NAT01 | Moteur natif | Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac | OK |
+| NAT02 | Moteur natif | Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu | OK |
+| NAT03 | Moteur natif | Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée | OK |
+| NAT04 | Moteur natif | Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul | OK |
+| NAT05 | Moteur natif | Réglage et plugins du Mac en anglais et en espagnol | OK |
+| MAC01 | Plugins du Mac | Les plugins d'effet du Mac sont proposés dans la chaîne d'effets, triés ; en ajouter un affiche ses réglages | OK |
+| MAC02 | Plugins du Mac | Les curseurs d'un plugin du Mac pilotent le plugin, s'enregistrent dans le projet, s'annulent et reviennent aux réglages d'origine | OK |
+| MAC03 | Plugins du Mac | Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d'erreur | OK |
+| MAC04 | Plugins du Mac | Plugin du Mac qui ne se charge pas : message clair, le son passe sans lui ; huit effets au plus | OK |
+| MAC05 | Plugins du Mac | Supprimer la piste ou ouvrir un autre projet libère ses plugins du Mac ; un effet retiré pendant son chargement n'est pas signalé en échec | OK |
+| MAC06 | Plugins du Mac | Fréquences d'un plugin du Mac sur une échelle logarithmique : le milieu du curseur tombe vers 470 Hz, valeur lue au lecteur d'écran | OK |
+| MAC07 | Plugins du Mac | Réglages à choix d'un plugin du Mac : liste des valeurs par leur nom, interrupteur marche/arrêt au clavier | OK |
+| MAC08 | Plugins du Mac | Préréglages d'usine d'un plugin du Mac : en charger un recopie ses réglages dans le projet ; toucher un réglage repasse en réglages personnels ; annulable | OK |
+| MAC09 | Plugins du Mac | Compensation de la latence déclarée par les plugins du Mac : les autres pistes et les bus sont retardés d'autant, l'export reste calé | OK |
 | BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | OK |
 | BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | OK |
 | BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | OK |
@@ -206,7 +221,18 @@
 | LH04 | Notes longues | Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier | OK |
 | LH05 | Notes longues | Arrêter le transport coupe aussi les voix bouclées sans note bloquée | OK |
 | LH06 | Notes longues | L’export WAV contient la note longue et une fin silencieuse sans saturation | OK |
-| SB01 | Navigateur de sons | Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| LH07 | Notes longues | Une touche du clavier du piano roll tenue à la souris joue tant qu’elle est enfoncée, puis s’arrête au relâchement | OK |
+| LH08 | Notes longues | Au doigt : la touche tenue joue, la colonne des touches reste le moyen de défiler, et la note s’arrête même si le doigt est levé ailleurs | OK |
+| LH09 | Notes longues | Une touche tenue pendant que l’écran se redessine ne reste pas bloquée ; un geste annulé coupe aussi la note | OK |
+| LH10 | Notes longues | Accords à un doigt depuis le clavier du piano roll, à la souris : la touche tenue joue tout l’accord, le relâchement le coupe | OK |
+| LH11 | Notes longues | Enregistrer en jouant sur le clavier du piano roll à la souris : la note tenue est écrite avec sa durée | OK |
+| GE01 | Gestes réels | Clavier à l’écran : une touche tenue pendant un redessin (enregistrement, bouton MIDI) ne reste pas bloquée, arpégiateur compris | OK |
+| GE02 | Gestes réels | Effet Live tenu à la souris puis au clavier pendant un redessin : l’effet s’arrête au relâchement et le bouton reste fidèle | OK |
+| GE03 | Gestes réels | Espace sur un bouton atteint au clavier actionne ce bouton ; après un clic à la souris, Espace reste la lecture | OK |
+| GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
+| GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
+| GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
+| SB01 | Navigateur de sons | Les 54 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
 | SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
 | SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
 | SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
@@ -228,3 +254,18 @@
 | RG01 | Registres | D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments | OK |
 | RG02 | Registres | Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle | OK |
 | RG03 | Registres | Une gamme jouée sur trois octaves au piano reste régulière à l’export | OK |
+| EX01 | Banques expressives | Piano et kit Studio sélectionnables dans les trois langues, avec de vrais noms de pads | OK |
+| EX02 | Banques expressives | Les quatre nuances du piano sont des enregistrements distincts et jouent doucement ou fort | OK |
+| EX03 | Banques expressives | Le nouveau piano est juste dans plusieurs registres, transposition comprise, et s’arrête au relâchement | OK |
+| EX04 | Banques expressives | Les 16 pads Studio produisent un son propre, avec nuances et variantes de répétition | OK |
+| EX05 | Banques expressives | Les variantes restent reproductibles à l’export, indépendamment des pads joués avant | OK |
+| EX06 | Banques expressives | Le charleston fermé coupe le charleston ouvert du même kit | OK |
+| EX07 | Banques expressives | Un sample personnel importé remplace un pad Studio et voyage avec le projet | OK |
+| EX08 | Banques expressives | Piano expressif et batterie Studio conservés dans le fichier, après rechargement, et audibles à l’export | OK |
+| EX09 | Banques expressives | Un téléchargement incomplet reste indisponible, bloque l’export puis se recharge après réessai | OK |
+| EX10 | Banques expressives | Un ancien projet garde le piano et le kit acoustique historiques | OK |
+| MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | OK |
+| MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | OK |
+| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
+| MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | OK |
+| MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | OK |

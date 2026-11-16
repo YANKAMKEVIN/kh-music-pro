@@ -425,13 +425,17 @@ const D: Record<string, [string, string, string]> = {
   'ins.r_ebass': ['Basse électrique', 'Electric bass', 'Bajo eléctrico'], 'ins.r_abass': ['Contrebasse', 'Upright bass', 'Contrabajo'],
   'ins.r_strings': ['Ensemble de cordes', 'String ensemble', 'Conjunto de cuerdas'], 'ins.r_cello': ['Violoncelle', 'Cello', 'Violonchelo'], 'ins.r_brass': ['Section de cuivres', 'Brass section', 'Sección de metales'],
   'ins.r_sax': ['Saxophone ténor', 'Tenor sax', 'Saxofón tenor'], 'ins.r_flute': ['Flûte traversière', 'Concert flute', 'Flauta travesera'], 'ins.r_choir': ['Chœur', 'Choir', 'Coro'],
+  'toast.bankExportFail': ['Export annulé : un instrument n’a pas pu être chargé. Réessayez une fois les sons disponibles.', 'Export cancelled: an instrument could not be loaded. Retry when the sounds are available.', 'Exportación cancelada: no se pudo cargar un instrumento. Reintenta cuando los sonidos estén disponibles.'],
+  'ins.r_salamander': ['Piano à queue expressif · Salamander', 'Expressive grand piano · Salamander', 'Piano de cola expresivo · Salamander'],
+  'kit.studio': ['Acoustique expressive · Studio', 'Expressive acoustic · Studio', 'Acústica expresiva · Studio'],
+  'syn.recordedLayers': ['Quatre nuances enregistrées · piano stéréo', 'Four recorded dynamic layers · stereo piano', 'Cuatro matices grabados · piano estéreo'],
   'kit.acoustic': ['Acoustique', 'Acoustic', 'Acústica'],
   'da2': ['Rimshot', 'Rimshot', 'Rimshot'], 'da6': ['Cross-stick', 'Cross-stick', 'Cross-stick'], 'da8': ['Kick mat', 'Dry kick', 'Bombo seco'], 'da9': ['Snare étouffée', 'Muted snare', 'Caja apagada'],
   'syn.real': ['Instrument enregistré : chaque note est un vrai son, transposé si besoin.', 'Recorded instrument: every note is a real sound, transposed where needed.', 'Instrumento grabado: cada nota es un sonido real, transpuesto si hace falta.'],
   'toast.bankLoading': ['Chargement des sons de l\'instrument…', 'Loading the instrument sounds…', 'Cargando los sonidos del instrumento…'],
   'toast.bankReady': ['Instrument prêt', 'Instrument ready', 'Instrumento listo'],
   'toast.bankFailed': ['Impossible de charger les sons de cet instrument (connexion requise la première fois)', 'Could not load this instrument\'s sounds (a connection is needed the first time)', 'No se pudieron cargar los sonidos de este instrumento (se necesita conexión la primera vez)'],
-  'help.credits': ['Sons : FluidR3 GM de Frank Wen (CC BY 3.0) et Virtuosity Drums de Versilian Studios (CC0).', 'Sounds: FluidR3 GM by Frank Wen (CC BY 3.0) and Virtuosity Drums by Versilian Studios (CC0).', 'Sonidos: FluidR3 GM de Frank Wen (CC BY 3.0) y Virtuosity Drums de Versilian Studios (CC0).'],
+  'help.credits': ['Sons : FluidR3 GM de Frank Wen (CC BY 3.0) ; Salamander Grand Piano d’Alexander Holm (CC BY 3.0), adapté pour KH Music Pro ; Virtuosity Drums de Versilian Studios et Karoryfer (CC0).', 'Sounds: FluidR3 GM by Frank Wen (CC BY 3.0) ; Salamander Grand Piano by Alexander Holm (CC BY 3.0), adapted for KH Music Pro; Virtuosity Drums by Versilian Studios and Karoryfer (CC0).', 'Sonidos: FluidR3 GM de Frank Wen (CC BY 3.0) ; Salamander Grand Piano de Alexander Holm (CC BY 3.0), adaptado para KH Music Pro; Virtuosity Drums de Versilian Studios y Karoryfer (CC0).'],
 
 
   // ===== V15 : banque généraliste =====

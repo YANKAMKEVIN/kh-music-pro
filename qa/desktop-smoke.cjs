@@ -20,23 +20,30 @@ const path = require('path');
       // Vrai instrument : les fichiers de sons embarqués doivent se charger aussi depuis l'application de bureau.
       const pp = k.demoProject(); pp.tracks = [pp.tracks[3]]; pp.tracks[0].synth = k.makeSynth('r_drawbar'); pp.tracks[0].clips = [{ id: 'held', name: 'Orgue', start: 0, len: 48, offset: 0, patLen: 48, notes: [{ p: 60, s: 0, l: 48, v: 0.8 }] }];
       const pb = await k.renderOffline(pp, false), pd = pb.getChannelData(0); let pe = 0; const from = Math.floor(pb.sampleRate * 4), to = Math.floor(pb.sampleRate * 5); for (let i = from; i < to; i++) pe += pd[i] * pd[i];
+      // V17: both new banks must load from local files, including all dynamic layers.
+      pp.tracks[0].synth = k.makeSynth('r_salamander');
+      const piano = await k.renderOffline(pp, false);
+      const kit = k.demoProject(); kit.tracks = [kit.tracks[0]]; kit.tracks[0].kit = 'studio';
+      const drums = await k.renderOffline(kit, false);
+      const rms = b => { let sum = 0; for (const x of b.getChannelData(0)) sum += x * x; return Math.sqrt(sum / b.length); };
+      const expressive = { piano: rms(piano), drums: rms(drums) };
       // Plugin web fourni (Web Audio Module), sous la règle de contenu : il doit se charger et passer à l'export.
       const pw = k.demoProject(); pw.tracks = [pw.tracks[1]]; const wi = k.newInsert('wam'); wi.url = 'wam/kh-tape/index.js'; wi.name = 'KH Tape Echo'; pw.tracks[0].inserts = [wi];
       await k.renderOffline(pw, false); const wamFailed = k.lastRender.wamFailed;
       const csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '';
-      return { wamFailed, csp: csp.includes("object-src 'none'"), sampled: Math.sqrt(pe / (to - from)), title: document.title, tracks: k.S.project.tracks.length, rms: Math.sqrt(e / d.length), dur: b.duration, node: typeof window.require };
+      return { expressive, wamFailed, csp: csp.includes("object-src 'none'"), sampled: Math.sqrt(pe / (to - from)), title: document.title, tracks: k.S.project.tracks.length, rms: Math.sqrt(e / d.length), dur: b.duration, node: typeof window.require };
     });
     await win.click('.head >> nth=1 >> .ticon'); await win.click('[data-act=sound-browser]');
     const soundCount = await win.$$eval('#sounds [data-sound]', es => es.length);
     await win.fill('[data-role=sound-search]', 'drawbar'); await win.click('[data-sound="r_drawbar"] [data-act=sound-preview]');
     await win.waitForTimeout(350);
-    const soundBrowser = soundCount === 53 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
+    const soundBrowser = soundCount === 54 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
     await win.keyboard.press('Escape'); await win.waitForSelector('#sounds', { state: 'detached' });
     const returnFocus = await win.$eval('[data-act=sound-browser]', b => document.activeElement === b);
     await win.click('#bPlay'); await win.waitForTimeout(600);
     const playing = await win.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1);
     console.log(JSON.stringify({ ...r, soundBrowser, returnFocus, playing, errors }));
-    const ok = r.csp && r.wamFailed === 0 && r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
+    const ok = r.expressive.piano > 0.001 && r.expressive.drums > 0.005 && r.csp && r.wamFailed === 0 && r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
     console.log(ok ? 'Version bureau : OK' : 'Version bureau : ÉCHEC');
     process.exitCode = ok ? 0 : 1;
   } finally { await app.close(); }

@@ -1,4 +1,4 @@
-import { ensureBanks, loadBank, setDecoder, usedBanks, bankReady } from './banks';
+import { ensureBanks, loadBank, setDecoder, usedBanks, bankReady, drumBank } from './banks';
 import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT } from './graph';
@@ -27,6 +27,7 @@ class Engine {
   liveQueued = new Map<string, string | null>();
   onLive: () => void = () => { };
   onRecEnd: (kind: 'audio' | 'midi') => void = () => { };
+  onStop: () => void = () => { };
   /** Appelé pour chaque pas programmé de l'arrangement (arpégiateur). */
   onStep: (s: number, t: number) => void = () => { };
 
@@ -115,6 +116,10 @@ class Engine {
 
   /** Arrêt. À l'arrêt, un second appel ramène au début. */
   stop() {
+    this.onStop();
+    this.pendingOn.clear();
+    for (const v of this.voices.values()) v.release(this.ctx.currentTime);
+    this.voices.clear();
     if (!this.playing) { this.pos = 0; return; }
     this.playing = false; clearInterval(this.timer);
     this.mix.stopAll(); this.voices.clear(); this.mix.clearAuto(S.project);
@@ -217,8 +222,13 @@ class Engine {
     const key = track.id + ':' + midi;
     // Instrument pas encore chargé : la touche reste en attente et sonne dès la fin du chargement, si elle est toujours tenue.
     if (track.synth?.engine === 'multi' && track.synth.bank && !bankReady(track.synth.bank)) {
-      this.pendingOn.add(key);
-      this.loadBank(track.synth.bank).then(ok => { if (ok && this.pendingOn.delete(key)) this.noteOn(track, midi, vel); });
+      const bank = track.synth.bank, token = {};
+      this.pendingOn.set(key, token);
+      this.loadBank(bank).then(ok => {
+        if (this.pendingOn.get(key) !== token) return;
+        this.pendingOn.delete(key);
+        if (ok && track.synth?.bank === bank && S.project.tracks.includes(track)) this.noteOn(track, midi, vel);
+      });
       return;
     }
     this.pendingOn.delete(key);
@@ -229,7 +239,7 @@ class Engine {
     if (v) this.voices.set(key, v);
   }
   /** Touches tenues pendant le chargement de leur instrument. */
-  private pendingOn = new Set<string>();
+  private pendingOn = new Map<string, object>();
   noteOff(track: Track, midi: number) {
     const key = track.id + ':' + midi;
     this.pendingOn.delete(key);
@@ -286,7 +296,8 @@ class Engine {
   }
   pad(track: Track, row: number, vel = 1) {
     this.ctx.resume(); this.sync();
-    if (track.kit === 'acoustic' && !bankReady('drums')) this.loadBank('drums');
+    const bank = drumBank(track.kit);
+    if (bank && !bankReady(bank)) { this.loadBank(bank); if (track.kit === 'studio') return; }
     const n = this.mix.tracks.get(track.id);
     if (n) hitPad(this.mix, buffers, track, n.input, row, this.ctx.currentTime + 0.003, vel);
   }
@@ -492,7 +503,8 @@ export const lastRender = { wamFailed: 0, pdc: 0 };
 export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
   const end = contentEnd(p);
   if (!end) throw new Error('empty');
-  await ensureBanks(p);
+  const failed = await ensureBanks(p);
+  if (failed.length) throw new Error('bank');
   const sr = 44100;
   const off = new OfflineAudioContext(2, Math.ceil((timeOf(p, end) + 2.5) * sr), sr);
   const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
@@ -533,14 +545,29 @@ export async function analyze(p: Project): Promise<{ lufs: number; peakDb: numbe
 /** Encode en MP3 (192 kbit/s). L'encodeur n'est chargé qu'à la première utilisation. */
 export async function encodeMp3(b: AudioBuffer): Promise<Blob> {
   const { Mp3Encoder } = await import('@breezystack/lamejs');
-  const ch = Math.min(2, b.numberOfChannels), enc = new Mp3Encoder(ch, b.sampleRate, 192), parts: BlobPart[] = [], BLK = 1152 * 20;
-  const pcm = Array.from({ length: ch }, (_, c) => { const d = b.getChannelData(c), o = new Int16Array(d.length); for (let i = 0; i < d.length; i++) { const x = Math.max(-1, Math.min(1, d[i])); o[i] = x < 0 ? x * 0x8000 : x * 0x7fff; } return o; });
-  for (let i = 0; i < b.length; i += BLK) {
-    const out = enc.encodeBuffer(pcm[0].subarray(i, i + BLK), ch > 1 ? pcm[1].subarray(i, i + BLK) : undefined);
-    if (out.length) parts.push(new Uint8Array(out) as BlobPart);
+  const ch = Math.min(2, b.numberOfChannels), BLK = 1152 * 20;
+  const encode = (gain: number) => {
+    const enc = new Mp3Encoder(ch, b.sampleRate, 192), parts: BlobPart[] = [];
+    const pcm = Array.from({ length: ch }, (_, c) => { const d = b.getChannelData(c), o = new Int16Array(d.length); for (let i = 0; i < d.length; i++) { const x = Math.max(-1, Math.min(1, d[i] * gain)); o[i] = x < 0 ? x * 0x8000 : x * 0x7fff; } return o; });
+    for (let i = 0; i < b.length; i += BLK) {
+      const out = enc.encodeBuffer(pcm[0].subarray(i, i + BLK), ch > 1 ? pcm[1].subarray(i, i + BLK) : undefined);
+      if (out.length) parts.push(new Uint8Array(out) as BlobPart);
+    }
+    const end = enc.flush(); if (end.length) parts.push(new Uint8Array(end) as BlobPart);
+    return new Blob(parts, { type: 'audio/mpeg' });
+  };
+  // L'encodage avec pertes peut créer de nouvelles crêtes. Vérifier le fichier
+  // décodé (les deux canaux), puis réduire seulement si nécessaire. Le rendu
+  // WAV et le tampon du projet restent inchangés ; trois essais au plus.
+  const check = new OfflineAudioContext(ch, 1, b.sampleRate);
+  let gain = 1;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const blob = encode(gain), peak = peakOf(await check.decodeAudioData(await blob.arrayBuffer()));
+    if (Number.isFinite(peak) && peak <= 0.966) return blob;
+    if (!Number.isFinite(peak)) break;
+    gain *= 0.95 / peak;
   }
-  const end = enc.flush(); if (end.length) parts.push(new Uint8Array(end) as BlobPart);
-  return new Blob(parts, { type: 'audio/mpeg' });
+  throw new Error('mp3 peak');
 }
 
 export function encodeWav(b: AudioBuffer): Blob {

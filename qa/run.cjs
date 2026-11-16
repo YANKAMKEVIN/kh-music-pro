@@ -1331,8 +1331,8 @@ test('MP01', 'Export', 'Exporter en MP3 : fichier valide, de la bonne durée, re
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), menu('bMp3')]); const f = path.join(TMP, 'demo.mp3'); await dl.saveAs(f);
   const b = fs.readFileSync(f); expect(dl.suggestedFilename() === 'Demo.mp3', `nom ${dl.suggestedFilename()}`);
   expect(b[0] === 0xff && (b[1] & 0xe0) === 0xe0, `en-tête MP3 invalide (${b[0].toString(16)} ${b[1].toString(16)})`); near(b.length / 1000, 18.5 * 192 / 8, 30, 'taille (192 kbit/s)');
-  const r = await page.evaluate(async bytes => { const a = await window.kh.engine.ctx.decodeAudioData(new Uint8Array(bytes).buffer), d = a.getChannelData(0); let e = 0, pk = 0; for (const v of d) { e += v * v; pk = Math.max(pk, Math.abs(v)); } return { dur: a.duration, ch: a.numberOfChannels, rms: Math.sqrt(e / d.length), pk }; }, [...b]);
-  near(r.dur, 18.5, 0.2, 'durée'); expect(r.ch === 2 && r.rms > 0.02 && r.pk <= 1.0, `contenu ${JSON.stringify(r)}`);
+  const r = await page.evaluate(async bytes => { const a = await window.kh.engine.ctx.decodeAudioData(new Uint8Array(bytes).buffer), d = a.getChannelData(0); let e = 0, pk = 0; for (const v of d) e += v * v; for (let ch = 0; ch < a.numberOfChannels; ch++) for (const v of a.getChannelData(ch)) pk = Math.max(pk, Math.abs(v)); return { dur: a.duration, ch: a.numberOfChannels, rms: Math.sqrt(e / d.length), pk }; }, [...b]);
+  near(r.dur, 18.5, 0.2, 'durée'); expect(r.ch === 2 && r.rms > 0.02 && r.pk <= 0.98, `contenu ${JSON.stringify(r)}`);
 });
 test('CC01', 'Arrangement', 'Copier un clip et le coller à la tête de lecture, sur la même piste ou une autre du même type', async () => {
   await page.click(await clipSel(1, 0)); await page.keyboard.press('Control+c'); expect((await page.textContent('#toast')).includes('Clip'), 'message');
@@ -1420,7 +1420,9 @@ test('DK01', 'Version bureau', 'L\'application de bureau démarre, charge le pro
   const cp = require('child_process'), root = path.join(__dirname, '..');
   cp.execSync('npx vite build', { cwd: root, stdio: 'ignore' });
   let out = '';
-  try { out = cp.execFileSync('xvfb-run', ['-a', 'node', 'qa/desktop-smoke.cjs'], { cwd: root, timeout: 120000, env: { ...process.env, NODE_PATH: process.env.NODE_PATH || '' } }).toString(); }
+  const bin = process.platform === 'linux' ? 'xvfb-run' : process.execPath;
+  const args = process.platform === 'linux' ? ['-a', process.execPath, 'qa/desktop-smoke.cjs'] : ['qa/desktop-smoke.cjs'];
+  try { out = cp.execFileSync(bin, args, { cwd: root, timeout: 120000, env: { ...process.env, NODE_PATH: process.env.NODE_PATH || '' } }).toString(); }
   catch (e) { out = String(e.stdout || '') + String(e.stderr || '') + String(e.message || ''); }
   expect(out.includes('Version bureau : OK'), `échec : ${out.trim().split('\n').slice(-2).join(' / ').slice(0, 300)}`);
 });
@@ -1596,11 +1598,11 @@ test('GR07', 'Grille fine', 'Mode Live, scission et copier/coller fonctionnent a
 });
 
 // ============ V10 : vrais instruments ============
-const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir', 'r_honky', 'r_epiano', 'r_clavinet', 'r_drawbar', 'r_church', 'r_steel', 'r_overdrive', 'r_slap', 'r_violin', 'r_contrabass', 'r_trumpet', 'r_trombone', 'r_marimba', 'r_vibes', 'r_steelpan', 'r_air', 'r_cinema', 'r_synthchoir'];
+const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir', 'r_honky', 'r_epiano', 'r_clavinet', 'r_drawbar', 'r_church', 'r_steel', 'r_overdrive', 'r_slap', 'r_violin', 'r_contrabass', 'r_trumpet', 'r_trombone', 'r_marimba', 'r_vibes', 'r_steelpan', 'r_air', 'r_cinema', 'r_synthchoir', 'r_salamander'];
 /** Piste instrument seule jouant un vrai instrument, sans réverb. */
 const realProj = (id, notes, len = 16) => page.evaluate(([id, notes, len]) => { const k = window.kh; return window.qa.only(1, (p, t) => { p.bpm = 120; t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = len; c.patLen = len; c.notes = notes; }); }, [id, notes, len]);
 
-test('RI01', 'Vrais instruments', 'Les 29 instruments enregistrés se chargent et produisent un signal propre', async () => {
+test('RI01', 'Vrais instruments', 'Les 30 instruments enregistrés se chargent et produisent un signal propre', async () => {
   const r = await S(async () => { const k = window.kh, out = {}; for (const id of Object.keys(k.PRESETS).filter(x => k.PRESETS[x].p.engine === 'multi')) { const p = window.qa.only(1, (p, t) => { t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = [48, 60, 64, 67].map((n, i) => ({ p: n, s: i * 4, l: 4, v: 0.8 })); }); out[id] = await window.qa.stats(p); } return out; });
   expect(Object.keys(r).join() === REAL.join(), `instruments : ${Object.keys(r)}`);
   for (const [id, s] of Object.entries(r)) { expect(s.bad === 0, `${id} : valeurs invalides`); expect(s.rms > 0.01, `${id} : inaudible (rms ${s.rms.toFixed(5)})`); expect(s.peak <= 0.97, `${id} : saturation (${s.peak})`); }
@@ -1646,7 +1648,9 @@ test('RI06', 'Vrais instruments', 'Si les sons ne peuvent pas être chargés : m
     expect((await page.textContent('#toast')).includes('Impossible'), `message : ${await page.textContent('#toast')}`);
     await page.keyboard.down('a'); await sleep(150); await page.keyboard.up('a');
     await page.keyboard.press('Space'); await sleep(900); expect(await S(async () => window.kh.engine.playing && (await window.qa.level()) > 0.2), 'les autres pistes ne jouent plus');
-    await page.keyboard.press('Space'); const st = await S(() => window.qa.stats(window.kh.S.project)); expect(st.bad === 0 && st.rms > 0.02, 'export impossible');
+    await page.keyboard.press('Space');
+    const blocked = await S(async () => { try { await window.kh.renderOffline(window.kh.S.project); return false; } catch (e) { return e.message === 'bank'; } });
+    expect(blocked, 'un export incomplet ne doit pas être présenté comme réussi');
   } finally { await page.unroute('**/banks/choir_aahs/**'); }
 });
 
@@ -2141,7 +2145,7 @@ test('BN01', 'Banque généraliste', 'Les 18 nouveaux sons sont classés par fam
     await page.evaluate(l => window.kh.setLang(l), lang);
     const groups = await page.$$eval('[data-role=preset] optgroup', gs => gs.map(g => ({ label: g.label, ids: [...g.children].map(o => o.value), names: [...g.children].map(o => o.textContent) })));
     expect(groups.length === 15 && groups.every(g => g.label && !g.label.startsWith('cat.')), `familles manquantes en ${lang}`);
-    const all = groups.flatMap(g => g.ids); expect(all.length === 53 && new Set(all).size === 53, `catalogue : ${all.length} en ${lang}`);
+    const all = groups.flatMap(g => g.ids); expect(all.length === 54 && new Set(all).size === 54, `catalogue : ${all.length} en ${lang}`);
     for (const id of NEW_BANK_PRESETS) {
       const g = groups.find(g => g.ids.includes(id));
       expect(g && g.names[g.ids.indexOf(id)] && !g.names[g.ids.indexOf(id)].startsWith('ins.'), `${id} non traduit en ${lang}`);
@@ -2403,10 +2407,10 @@ test('GE06', 'Gestes réels', 'Au clavier seul : un curseur du mixeur garde le f
   const still = await page.evaluate(m => document.activeElement === document.querySelector(m), m); await page.keyboard.press('Enter'); await sleep(100);
   expect(still && !(await proj()).tracks[0].mute, `bouton : focus gardé ${still}, piste rétablie au second appui`);
 });
-test('SB01', 'Navigateur de sons', 'Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
+test('SB01', 'Navigateur de sons', 'Les 54 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
   for (const lang of ['fr', 'en', 'es']) {
     await page.evaluate(l => window.kh.setLang(l), lang); await soundsOpen();
-    near(await page.$$eval('#sounds [data-sound]', es => es.length), 53, 0, 'sons');
+    near(await page.$$eval('#sounds [data-sound]', es => es.length), 54, 0, 'sons');
     near(await page.$$eval('[data-role=sound-family] option', es => es.length), 16, 0, 'familles');
     expect(await page.$eval('[data-role=sound-search]', e => document.activeElement === e), 'recherche non focalisée');
     const bad = await page.$$eval('#sounds button, #sounds input, #sounds select', es => es.filter(e => !(e.getAttribute('aria-label') || e.textContent.trim())).length); near(bad, 0, 0, 'commandes sans nom');
@@ -2482,7 +2486,7 @@ test('SB08', 'Navigateur de sons', 'Des favoris invalides sont ignorés et le sa
   near(await page.$$eval('#sounds [data-sound]', es => es.length), 1, 0, 'favoris valides'); expect(await page.$(soundRow('r_air')), 'favori valide absent');
   await page.click('[data-act=sound-favorites]'); await page.fill('[data-role=sound-search]', 'sampler');
   await page.click(soundRow('sampler') + ' [data-act=sound-preview]'); expect((await page.textContent('.sound-status')).includes('Chargez'), 'sampler vide non expliqué'); await closeSounds();
-  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 53, 0, 'favoris corrompus'); await closeSounds();
+  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 54, 0, 'favoris corrompus'); await closeSounds();
 });
 test('SB09', 'Navigateur de sons', 'Une préécoute indisponible signale l’échec puis fonctionne après réessai', async () => {
   await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
@@ -2610,6 +2614,170 @@ test('RG03', 'Registres', 'Une gamme jouée sur trois octaves au piano reste ré
   const w = await page.evaluate(p => window.qa.wins(p, Array.from({ length: 19 }, (_, i) => [i * 0.5 + 0.01, i * 0.5 + 0.2])), p);
   const lv = w.map(x => 20 * Math.log10(x.l + 1e-9)); let jump = 0; for (let i = 1; i < lv.length; i++) jump = Math.max(jump, Math.abs(lv[i] - lv[i - 1]));
   expect(jump < 4, `écart de ${jump.toFixed(1)} dB entre deux notes voisines : ${lv.map(v => v.toFixed(1)).join(' ')}`);
+});
+
+// ============ V17 : banques expressives et jeu MIDI ============
+test('EX01', 'Banques expressives', 'Piano et kit Studio sélectionnables dans les trois langues, avec de vrais noms de pads', async () => {
+  for (const lang of ['fr', 'en', 'es']) {
+    await S(() => window.kh.engine.stop()); await page.evaluate(l => window.kh.setLang(l), lang);
+    await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander');
+    expect(await S(() => window.kh.engine.prepare()), 'piano non chargé');
+    expect((await page.textContent('[data-role=preset] option:checked')).includes('Salamander'), 'nom du piano');
+    await page.click(await headSel(0)); await page.selectOption('[data-role=kit]', 'studio');
+    expect(await S(() => window.kh.engine.prepare()), 'batterie non chargée');
+    await page.click('[data-view=pads]');
+    expect(!(await page.textContent('.pad[data-pad="2"]')).includes('Clap'), 'nom synthétique au lieu du rimshot');
+    expect(!(await page.textContent('[data-role=kit]')).includes('kit.studio'), 'traduction du kit absente');
+  }
+});
+test('EX02', 'Banques expressives', 'Les quatre nuances du piano sont des enregistrements distincts et jouent doucement ou fort', async () => {
+  const r = await S(async () => {
+    const k = window.kh; await k.banks.loadBank('salamander');
+    const samples = [0.15, 0.4, 0.65, 0.9].map(v => k.banks.sampleFor('salamander', 60, v));
+    return { distinct: new Set(samples.map(x => x.s.buf)).size, channels: samples.map(x => x.s.buf.numberOfChannels),
+      offsets: samples.map(x => x.s.off), gains: samples.map(x => x.s.gain) };
+  });
+  expect(r.distinct === 4 && r.channels.every(c => c === 2), JSON.stringify(r));
+  const levels = [];
+  for (const v of [0.15, 0.4, 0.65, 0.9]) {
+    const p = await realProj('r_salamander', [{ p: 60, s: 0, l: 8, v }]);
+    const w = await page.evaluate(p => window.qa.wins(p, [[0.04, 0.3]]), p); levels.push(w[0].l);
+  }
+  expect(levels.every((x, i) => x > 0.0005 && (!i || x > levels[i - 1])), 'dynamique non croissante : ' + levels);
+});
+test('EX03', 'Banques expressives', 'Le nouveau piano est juste dans plusieurs registres, transposition comprise, et s’arrête au relâchement', async () => {
+  for (const midi of [48, 61, 72]) {
+    const p = await realProj('r_salamander', [{ p: midi, s: 0, l: 4, v: 0.8 }]);
+    const r = await page.evaluate(async p => {
+      const k = window.kh, b = await k.renderOffline(p, false), d = b.getChannelData(0), sr = b.sampleRate;
+      let tail = 0; for (let i = Math.floor(1.7 * sr); i < 1.9 * sr; i++) tail += d[i] ** 2;
+      return { hz: k.detectPitch(d.slice(Math.floor(sr * 0.2), Math.floor(sr * 0.2) + 8192), sr), tail: Math.sqrt(tail / (0.2 * sr)) };
+    }, p);
+    near(1200 * Math.log2(r.hz / (440 * 2 ** ((midi - 69) / 12))), 0, 35, 'hauteur ' + midi);
+    expect(r.tail < 0.001, 'note non relâchée');
+  }
+});
+test('EX04', 'Banques expressives', 'Les 16 pads Studio produisent un son propre, avec nuances et variantes de répétition', async () => {
+  const r = await S(async () => {
+    const k = window.kh; await k.banks.loadBank('studio_drums'); const out = [];
+    for (let row = 0; row < 16; row++) {
+      const a = k.banks.expressiveSample('studio_drums', row, 0.1, 0), b = k.banks.expressiveSample('studio_drums', row, 1, 0);
+      const p = window.qa.only(0, (p, tr) => { tr.kit = 'studio'; tr.rev = 0; tr.dly = 0; const c = tr.clips[0]; c.len = 16; c.drums = c.drums.map((r, i) => r.map((_, s) => i === row && s === 0 ? 1 : 0)); });
+      out.push({ row, layers: a.s.buf !== b.s.buf, stats: await window.qa.stats(p) });
+    }
+    return { out, repeats: new Set([0, 1, 2].map(i => k.banks.expressiveSample('studio_drums', 3, 0.8, i).s.buf)).size };
+  });
+  expect(r.repeats === 3, 'charleston sans variantes');
+  for (const x of r.out) expect(x.stats.bad === 0 && x.stats.peak <= 0.97 && x.stats.rms > 0.0005 && (x.row === 12 || x.layers), JSON.stringify(x));
+});
+test('EX05', 'Banques expressives', 'Les variantes restent reproductibles à l’export, indépendamment des pads joués avant', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = window.qa.only(0, (p, tr) => { tr.kit = 'studio'; tr.rev = 0; tr.dly = 0; tr.chorus = 0; const c = tr.clips[0]; c.len = 16; c.drums = c.drums.map((r, i) => r.map((_, s) => i === 3 && s % 2 === 0 ? 0.8 : 0)); });
+    const a = await k.renderOffline(p, false); k.S.project.tracks[0].kit = 'studio'; k.engine.pad(k.S.project.tracks[0], 3);
+    const b = await k.renderOffline(p, false); let delta = 0;
+    for (let i = 0; i < a.length; i++) delta = Math.max(delta, Math.abs(a.getChannelData(0)[i] - b.getChannelData(0)[i]));
+    return delta;
+  });
+  expect(r < 1e-7, 'export influencé par le jeu en direct : ' + r);
+});
+test('EX06', 'Banques expressives', 'Le charleston fermé coupe le charleston ouvert du même kit', async () => {
+  const r = await S(async () => {
+    const k = window.kh;
+    const mk = close => window.qa.only(0, (p, tr) => { p.bpm = 120; tr.kit = 'studio'; tr.rev = 0; tr.dly = 0; const c = tr.clips[0]; c.len = 16; c.drums = c.drums.map((r, i) => r.map((_, s) => i === 4 && s === 0 || close && i === 3 && s === 2 ? 1 : 0)); });
+    return [await window.qa.wins(mk(false), [[0.8, 1.2]]), await window.qa.wins(mk(true), [[0.8, 1.2]])];
+  });
+  expect(r[1][0].l < r[0][0].l * 0.2, 'charleston ouvert encore audible : ' + JSON.stringify(r));
+});
+test('EX07', 'Banques expressives', 'Un sample personnel importé remplace un pad Studio et voyage avec le projet', async () => {
+  await page.selectOption('[data-role=kit]', 'studio'); await S(() => window.kh.engine.prepare()); await page.click('[data-view=pads]');
+  await pick('.pad[data-pad="0"] [data-act=padload]', TONE);
+  expect((await page.textContent('.pad[data-pad="0"]')).includes('qa-tone'), 'sample personnel non appliqué');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'studio-custom.khm'); await dl.saveAs(f);
+  const data = JSON.parse(fs.readFileSync(f, 'utf8')); const pad = data.project.tracks[0].pads[0];
+  expect(data.project.tracks[0].kit === 'studio' && data.buffers[pad.bufferId], 'sample absent du fichier');
+  await page.setInputFiles('#fProj', f); await sleep(500);
+  expect((await proj()).tracks[0].pads[0].name === 'qa-tone', 'sample perdu à la réouverture');
+});
+test('EX08', 'Banques expressives', 'Piano expressif et batterie Studio conservés dans le fichier, après rechargement, et audibles à l’export', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander');
+  await page.click(await headSel(0)); await page.selectOption('[data-role=kit]', 'studio'); await S(() => window.kh.engine.prepare());
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'expressive.khm'); await dl.saveAs(f);
+  await page.setInputFiles('#fProj', f); await sleep(750); await page.reload(); await page.waitForSelector('.clip');
+  const r = await S(async () => { const k = window.kh; return { kit: k.S.project.tracks[0].kit, bank: k.S.project.tracks[1].synth.bank, stats: await window.qa.stats(k.S.project) }; });
+  expect(r.kit === 'studio' && r.bank === 'salamander' && r.stats.bad === 0 && r.stats.rms > 0.01, JSON.stringify(r));
+});
+test('EX09', 'Banques expressives', 'Un téléchargement incomplet reste indisponible, bloque l’export puis se recharge après réessai', async () => {
+  await S(() => window.kh.banks.forgetBank('salamander'));
+  await page.route('**/banks/salamander/21_0_0.mp3', r => r.abort()); ignoreErr = /ERR_FAILED/;
+  try {
+    const r = await S(async () => {
+      const k = window.kh; const ok = await k.engine.loadBank('salamander'); let rejected = false;
+      try { await k.renderOffline(window.qa.only(1, (_, tr) => tr.synth = k.makeSynth('r_salamander'))); } catch (e) { rejected = e.message === 'bank'; }
+      return { ok, ready: k.banks.bankReady('salamander'), partial: !!k.banks.sampleFor('salamander', 24), rejected };
+    });
+    expect(!r.ok && !r.ready && !r.partial && r.rejected, JSON.stringify(r));
+  } finally { await page.unroute('**/banks/salamander/21_0_0.mp3'); }
+  expect(await S(() => window.kh.engine.loadBank('salamander')), 'réessai impossible');
+});
+test('EX10', 'Banques expressives', 'Un ancien projet garde le piano et le kit acoustique historiques', async () => {
+  const r = await S(() => { const k = window.kh; return { piano: k.makeSynth('r_piano').bank, old: k.banks.sampleFor('piano', 60), studio: k.banks.sampleFor('salamander', 60) }; });
+  expect(r.piano === 'piano', 'ancien préréglage remplacé');
+  await page.selectOption('[data-role=kit]', 'studio'); await page.keyboard.press('Control+z');
+  expect((await proj()).tracks[0].kit === 'electro', 'changement de kit non annulable');
+});
+test('MD01', 'Pédale MIDI', 'La pédale tient le piano après la touche, et son relâchement arrête le son', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander'); await S(() => window.kh.engine.prepare()); await sleep(1400);
+  await S(() => { const k = window.kh; k.onMidi([0xb0, 64, 127]); k.onMidi([0x90, 60, 100]); });
+  await sleep(250); await S(() => window.kh.onMidi([0x80, 60, 0])); await sleep(650);
+  const on = await masterRms(); await S(() => window.kh.onMidi([0xb0, 64, 0])); await sleep(1800); const off = await masterRms();
+  expect(on > 0.002 && off < on * 0.05, `pédale : ${on} → ${off}`);
+});
+test('MD02', 'Pédale MIDI', 'La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander'); await S(() => window.kh.engine.prepare());
+  const r = await S(() => {
+    const k = window.kh, e = k.engine, calls = [], oldOn = e.noteOn.bind(e), oldOff = e.noteOff.bind(e);
+    e.noteOn = (tr, n, v) => { calls.push(['on', n]); oldOn(tr, n, v); }; e.noteOff = (tr, n) => { calls.push(['off', n]); oldOff(tr, n); };
+    try {
+      k.onMidi([0xb0, 64, 127]); k.onMidi([0x91, 62, 100]); k.onMidi([0x81, 62, 0]);
+      k.onMidi([0x90, 60, 90]); k.onMidi([0x80, 60, 0]); k.onMidi([0x90, 60, 95]); k.onMidi([0x80, 60, 0]); k.onMidi([0xb0, 64, 0]);
+      return calls;
+    } finally { e.noteOn = oldOn; e.noteOff = oldOff; }
+  });
+  expect(JSON.stringify(r) === JSON.stringify([['on',62],['off',62],['on',60],['off',60],['on',60],['off',60]]), JSON.stringify(r));
+});
+test('MD03', 'Pédale MIDI', 'Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander');
+  await S(async () => { const k = window.kh, tr = k.S.project.tracks[1]; tr.clips = []; k.S.project.loop = false; await k.engine.recordMidi(tr.id, 0); });
+  await sleep(150); await S(() => { const k = window.kh; k.onMidi([0xb0,64,127]); k.onMidi([0x90,60,90]); });
+  await sleep(200); await S(() => window.kh.onMidi([0x80,60,0])); await sleep(700);
+  await S(() => window.kh.onMidi([0xb0,64,0])); await sleep(100); await S(() => window.kh.engine.stop()); await sleep(400);
+  const notes = (await proj()).tracks[1].clips.flatMap(c => c.notes || []);
+  expect(notes.length === 1 && notes[0].l >= 5, 'durée de pédale perdue : ' + JSON.stringify(notes));
+});
+test('MD04', 'Pédale MIDI', 'Arrêt et perte de focus coupent le maintien, même pendant le premier chargement', async () => {
+  await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander'); await S(() => window.kh.engine.prepare());
+  for (const action of ['stop', 'blur', 'panic']) {
+    await S(() => { const k = window.kh; k.onMidi([0xb0,64,127]); k.onMidi([0x90,60,100]); k.onMidi([0x80,60,0]); });
+    await page.evaluate(action => { if (action === 'stop') window.kh.engine.stop(); else if (action === 'blur') dispatchEvent(new Event('blur')); else window.kh.onMidi([0xb0,123,0]); }, action);
+    await sleep(1700); expect(await masterRms() < 0.0005, action + ' laisse une note tenue');
+  }
+  await S(() => window.kh.banks.forgetBank('salamander'));
+  await page.route('**/banks/salamander/**', async r => { await sleep(30); await r.continue(); });
+  try {
+    await S(() => { window.kh.onMidi([0x90,60,100]); window.kh.engine.stop(); });
+    await S(() => window.kh.engine.loadBank('salamander')); await sleep(500);
+    expect(await masterRms() < 0.0005, 'note tardive après arrêt');
+  } finally { await page.unroute('**/banks/salamander/**'); }
+});
+test('MD05', 'Pads MIDI', 'L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue', async () => {
+  await page.selectOption('[data-role=kit]', 'studio');
+  await S(async () => { const k = window.kh, tr = k.S.project.tracks[0]; tr.clips = []; k.S.project.loop = false; await k.engine.recordMidi(tr.id, 0); });
+  await sleep(150); await S(() => { window.kh.onMidi([0x99,36,25]); window.kh.onMidi([0x89,36,0]); });
+  await sleep(350); await S(() => { window.kh.onMidi([0x99,36,120]); window.kh.onMidi([0x89,36,0]); });
+  await sleep(400); await S(() => window.kh.engine.stop()); await sleep(400);
+  const r = await S(() => { const k = window.kh, values = k.S.project.tracks[0].clips.flatMap(c => c.drums[0]).filter(Boolean); const midi = k.importMidi(k.exportMidi(k.S.project).buffer); return { values, exported: midi.tracks.filter(t => t.type === 'drums').flatMap(t => t.clips.flatMap(c => c.drums.flat().filter(Boolean))) }; });
+  expect(r.values.some(v => v < 0.25) && r.values.some(v => v > 0.9), JSON.stringify(r));
+  expect(r.exported.some(v => v < 0.25) && r.exported.some(v => v > 0.9), 'MIDI sans nuances : ' + JSON.stringify(r));
 });
 
 (async () => {

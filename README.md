@@ -14,7 +14,28 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.16)
+## Banques expressives (v0.17.0)
+
+Deux nouveaux choix complètent les instruments existants, sans remplacer les sons des anciens projets :
+
+- **Piano à queue expressif · Salamander** : dans une piste Instrument, ouvrir **Son** ou **Parcourir les sons** et chercher « Salamander ». Quatre nuances réellement enregistrées (120 échantillons stéréo, 30 notes sources entre MIDI 21 et 108) sont choisies selon la force du jeu. Les notes intermédiaires sont transposées. Le réglage de nuances synthétiques est masqué pour ce piano : son timbre vient des prises originales.
+- **Acoustique expressive · Studio** : sur une piste Batterie, choisir ce kit dans **Kit**, puis jouer les **Pads** ou le séquenceur. 16 pads, 115 frappes enregistrées, une à quatre nuances selon l’élément. Grosse caisse, charlestons, cymbales et percussions disposent jusqu’à trois variantes alternées. La caisse claire et les toms ont plusieurs nuances mais pas de variantes à force identique. Un charleston fermé coupe le charleston ouvert de la même piste.
+- Les sons personnels importés sur un pad restent prioritaires et sont inclus dans le fichier `.khm`. Les banques embarquées sont référencées par leur identifiant ; elles ne sont pas dupliquées dans chaque fichier projet.
+- **Pédale MIDI CC64** : maintien tout-ou-rien, relâchement et réattaque ; les durées enregistrées sont prolongées jusqu’au lever de pédale et sont donc conservées dans l’export audio et MIDI. Arrêt, perte de focus et déconnexion libèrent le maintien. Pas de demi-pédale ni de modélisation des résonances sympathiques.
+- **Frappes MIDI enregistrées** : leur force est conservée dans le motif de batterie et à l’export MIDI.
+- Une banque incomplète n’est jamais considérée comme chargée. Un export audio est annulé avec un message si un instrument ne peut pas être chargé, pour éviter un fichier incomplet. L’export MP3 contrôle également les crêtes après décodage et réduit légèrement le gain si nécessaire, sans modifier le WAV ni le projet.
+
+Les deux banques ajoutent environ **34 Mo** compressés, chargés à la demande avec six téléchargements/décodages simultanés au plus par banque. La version bureau inclut tous les fichiers. Sur le web, utiliser une première fois chaque banque en ligne pour que le service hors ligne puisse la garder ; un premier chargement hors ligne n’est pas possible. Le cache du navigateur reste soumis à son quota. Une fois décodés à 48 kHz, les sons occupent environ 433 Mio pour le piano et 60 Mio pour la batterie, en plus du reste de l’application : ces banques visent d’abord un ordinateur.
+
+Sources : [Salamander Grand Piano v3](https://github.com/sfzinstruments/SalamanderGrandPiano), Alexander Holm, CC BY 3.0 ; [Virtuosity Drums](https://github.com/sfzinstruments/virtuosity_drums), Versilian Studios et Karoryfer, CC0. Attributions et adaptations dans `public/banks/CREDITS.txt`, licences originales dans les dossiers des banques. Les révisions sources, chemins et empreintes de chaque fichier figurent dans `public/banks/expressive-provenance.json`.
+
+Reconstruction (Python 3, curl et ffmpeg) : `python3 tools/build-expressive-banks.py`. Vérification hors ligne des 235 fichiers : `python3 tools/check-expressive-banks.py`. La reconstruction sélectionne une version allégée : piano limité à 12 secondes par note, batterie à 6 secondes, fondu final de 150 ms. Bruits de mécanique/pédale et résonances du piano source non intégrés ; aucune banque complète de plugin tiers n’est nécessaire.
+
+Exemples : serveur lancé, `node qa/expressive-demo.cjs` produit un projet `.khm`, trois écoutes WAV et deux captures dans `livrables/v0.17.0/` (profil temporaire, aucun projet personnel modifié).
+
+Vérifications musicales finales : à écouter par le propriétaire avec son Yamaha DGX-670, sa pédale et sa Focusrite. Les tests MIDI et micro automatisés utilisent des messages et entrées simulés ; ils ne valident pas le branchement ni la latence de ce matériel réel.
+
+## Fonctions (v0.17)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
@@ -92,7 +113,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 250 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 265 cas).
 Le plus simple, serveur compris :
 
 ```bash

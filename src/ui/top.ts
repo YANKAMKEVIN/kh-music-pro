@@ -121,6 +121,7 @@ function buildHelp() {
       <div><h3>${t('help.keys')}</h3><table>${rows.map(([a, key]) => `<tr><td>${a}</td><td>${t('help.k.' + key)}</td></tr>`).join('')}</table></div>
     </div>
     <p class="tip credits">${t('help.credits')}</p>
+    <p class="tip credits"><a href="https://github.com/sfzinstruments/SalamanderGrandPiano" target="_blank" rel="noopener">Salamander Grand Piano</a> · <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a> · <a href="https://versilian-studios.com/virtuosity-drums/" target="_blank" rel="noopener">Virtuosity Drums</a> · <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a></p>
     <form method="dialog"><button class="pill" id="bTour" value="tour">🧭 ${t('tour.start')}</button><button class="pill accent" autofocus>${t('help.go')}</button></form>`;
   $('bTour').onclick = () => setTimeout(startTour, 50);
 }
