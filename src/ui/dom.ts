@@ -42,3 +42,22 @@ export function toast(msg: string, kind: 'info' | 'error' = 'info') {
 
 export const pct = (v: number) => Math.round(v * 100) + ' %';
 export const db = (v: number) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
+
+/**
+ * Suit un glissé commencé par `e` (V17) : seul le pointeur qui l'a commencé le fait avancer (un deuxième doigt posé ailleurs
+ * ne le déplace pas et ne le termine pas). Fin normale au relâchement ; `cancel` si le système annule le geste (pointercancel :
+ * appel entrant, geste du système, doigt parti en défilement). Souris : si le bouton est déjà relâché quand elle bouge
+ * (relâché hors de la fenêtre, changement d'application), le glissé se termine normalement au lieu de rester accroché.
+ */
+export function followDrag(e: PointerEvent, move: (ev: PointerEvent) => void, end: (ev: PointerEvent) => void, cancel: (ev: PointerEvent) => void = end): () => void {
+  const id = e.pointerId;
+  const stop = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', fin); removeEventListener('pointercancel', fin); };
+  const fin = (ev: PointerEvent) => { if (ev.pointerId !== id) return; stop(); (ev.type === 'pointercancel' ? cancel : end)(ev); };
+  const mv = (ev: PointerEvent) => {
+    if (ev.pointerId !== id) return;
+    if (ev.pointerType === 'mouse' && ev.buttons === 0) { stop(); end(ev); return; }
+    move(ev);
+  };
+  addEventListener('pointermove', mv); addEventListener('pointerup', fin); addEventListener('pointercancel', fin);
+  return stop;
+}

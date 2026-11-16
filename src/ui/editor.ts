@@ -1,15 +1,15 @@
 import { SUSTAIN_BANKS } from '../audio/sustain';
 import { drumBank, recordedDynamics } from '../audio/banks';
 import { chooseSound, showSounds } from './sounds';
-import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
+import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
-import { S, commit, emit, findClip, findTrack } from '../store';
-import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, stepDur } from '../types';
+import { S, commit, emit, findClip, findTrack, revert } from '../store';
+import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
 import { ICON, drawFades, drawWave } from './arr';
-import { clamp, h, pct, slider, toast } from './dom';
+import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
 const okbDown = new Map<number, number>();
@@ -166,8 +166,7 @@ function drumEditor(tr: Track, c: Clip | null) {
     const v = e.shiftKey || e.button === 2 ? (cur === 0.5 ? 1 : 0.5) : cur ? 0 : 1;
     setCell(el, v);
     const mv = (ev: PointerEvent) => { const x = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.cell'); if (x && grid.contains(x)) setCell(x, v); };
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    followDrag(e, mv, () => commit());
   };
   grid.oncontextmenu = e => e.preventDefault();
   grid.onkeydown = e => {
@@ -372,11 +371,11 @@ function pianoRoll(tr: Track, c: Clip) {
       let x1 = x0, y1 = y0;
       const mv = (ev: PointerEvent) => { x1 = ev.clientX - r.left; y1 = ev.clientY - r.top; box.style.cssText = `left:${Math.min(x0, x1)}px;top:${Math.min(y0, y1)}px;width:${Math.abs(x1 - x0)}px;height:${Math.abs(y1 - y0)}px`; };
       const up = () => {
-        removeEventListener('pointermove', mv); removeEventListener('pointerup', up); box.remove();
+        box.remove();
         const sa = Math.min(x0, x1) / SW, sb = Math.max(x0, x1) / SW, pa = PMAX - Math.floor(Math.max(y0, y1) / RH), pb = PMAX - Math.floor(Math.min(y0, y1) / RH);
         selNotes = new Set(c.notes!.filter(n => n.s < sb && n.s + n.l > sa && n.p >= pa && n.p <= pb)); refreshSel();
       };
-      addEventListener('pointermove', mv); addEventListener('pointerup', up);
+      followDrag(e, mv, up, () => box.remove());   // annulé : la sélection ne change pas
       return;
     }
     if (el) {
@@ -411,10 +410,11 @@ function pianoRoll(tr: Track, c: Clip) {
     const group = [...selNotes].filter(n => c.notes!.includes(n)).map(n => ({ n, o: { ...n }, el: n === note ? node : grid.querySelector<HTMLElement>(`.note[data-i="${c.notes!.indexOf(n)}"]`) }));
     const created = !o.l || resize && !(e.target as HTMLElement).closest('.note');
     const up = () => {
-      removeEventListener('pointermove', mv); removeEventListener('pointerup', up); lastLen = note.l; node.classList.remove('drag');
+      lastLen = note.l; node.classList.remove('drag');
       if (created || note.l !== o.l || group.some(g => g.n.s !== g.o.s || g.n.p !== g.o.p)) commit();
     };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    // Geste annulé : notes remises comme avant (une note qu'on était en train de créer disparaît).
+    followDrag(e, mv, up, () => { node.classList.remove('drag'); selNotes.clear(); revert(); });
   };
 
   // Vélocité : une barre par note, à régler en glissant.
@@ -433,8 +433,7 @@ function pianoRoll(tr: Track, c: Clip) {
       });
     };
     apply(e);
-    const up = () => { removeEventListener('pointermove', apply); removeEventListener('pointerup', up); if (changed) commit(); };
-    addEventListener('pointermove', apply); addEventListener('pointerup', up);
+    followDrag(e, apply, () => { if (changed) commit(); }, revert);
   };
   const scroll = h('div', { class: 'pr' }, h('div', { class: 'pr-inner' }, keys, grid),
     h('div', { class: 'vel-row' }, h('div', { class: 'vel-lbl', title: t('tip.velocity') }, t('ed.velocity')), vel));
@@ -476,7 +475,7 @@ function audioEditor(tr: Track, c: Clip) {
     const w = cv.clientWidth || 800, hgt = cv.clientHeight || 120;
     cv.width = w; cv.height = hgt;
     const g = cv.getContext('2d')!; g.fillStyle = tr.color;
-    if (c.bufferId) { drawWave(g, c.bufferId, c.offset, c.offset + c.len * stepDur(S.project.bpm), w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
+    if (c.bufferId) { drawWave(g, c.bufferId, c.offset, c.offset + c.len * srcStep(S.project, c), w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
   });
   const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
   const act = (key: string, icon: string, fn: () => void) => h('button', { title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
@@ -491,6 +490,12 @@ function audioEditor(tr: Track, c: Clip) {
       slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec),
       slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec),
       act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip),
+      // V17 : le clip suit le tempo du morceau (étirement sans changer la hauteur), à partir de son tempo d'origine.
+      h('button', { class: 'pill switch' + (c.warp ? ' on' : ''), role: 'switch', 'aria-checked': String(!!c.warp), title: t('warp.tip'), data: { act: 'warp' }, onclick: toggleWarp }, '🎚 ' + t('warp.label')),
+      c.warp && h('label', { class: 'fld mini-in' }, t('warp.ref'), (() => {
+        const i = h('input', { type: 'number', min: '20', max: '400', step: '0.01', value: String(c.srcBpm ?? S.project.bpm), 'aria-label': t('warp.ref'), title: t('warp.refTip'), data: { role: 'warpbpm' } });
+        i.onchange = () => setWarpBpm(+i.value); return i;
+      })()),
       (c.takes?.length ?? 0) > 1 && h('div', { class: 'segs', role: 'group', 'aria-label': t('take.title'), title: t('take.tip') },
         ...c.takes!.map((_, i) => h('button', { class: 'seg' + (c.take === i ? ' on' : ''), data: { take: String(i) }, 'aria-pressed': String(c.take === i), onclick: () => chooseTake(i) }, `${t('clip.take')} ${i + 1}`)))),
     h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),

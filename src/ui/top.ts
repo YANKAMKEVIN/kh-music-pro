@@ -1,4 +1,4 @@
-import { addMarker, addTempo, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, pickAudio, saveFile, tapTempo, toggleRecord } from '../actions';
+import { addMarker, addTempo, deskFiles, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -6,7 +6,7 @@ import { S, commit, emit, redo, undo } from '../store';
 import { clamp, h, toast } from './dom';
 import { keyLabel } from './editor';
 import { showAudio } from './audio';
-import { showLibrary } from './library';
+import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -41,9 +41,21 @@ export function buildTop(onLang: () => void) {
 
   const menu = h('details', { class: 'menu', id: 'menu' });
   const item = (id: string, label: string, fn: () => void) => h('button', { id, onclick: () => { menu.open = false; fn(); } }, label);
+  // Version bureau : Enregistrer sous et fichiers récents (liste relue à chaque ouverture du menu).
+  const desk = deskFiles(), recent = h('div', { id: 'recent', class: 'recent', role: 'group', 'aria-label': t('file.recent') });
+  const fillRecent = async () => {
+    if (!desk) return;
+    const list = await desk.recent().catch(() => []);
+    recent.replaceChildren(h('small', { class: 'mhead' }, t('file.recent')),
+      ...(list.length ? list.map(f => h('button', { class: 'rfile', data: { path: f.path }, title: f.path, onclick: () => { menu.open = false; openRecentFile(f.path, f.name); } }, '🎵 ' + f.name))
+        : [h('small', { class: 'mnone' }, t('file.none'))]),
+      ...(list.length ? [h('button', { id: 'bRecentClear', class: 'rclear', onclick: async () => { await desk.clearRecent(); fillRecent(); } }, t('file.clear'))] : []));
+  };
+  menu.addEventListener('toggle', () => { if (menu.open) fillRecent(); });
   menu.append(h('summary', { class: 'pill' }, t('top.project') + ' ▾'), h('div', { class: 'menu-list' },
-    item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bOpen', t('top.open'), () => $('fProj').click()),
-    item('bSave', t('top.save'), saveFile), item('bImport', t('top.import'), () => pickAudio()),
+    item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bVersions', t('ver.menu'), showVersions), item('bOpen', t('top.open'), openProjectFile),
+    item('bSave', t('top.save'), saveFile), ...(desk ? [item('bSaveAs', t('file.saveAs'), saveFileAs)] : []), item('bImport', t('top.import'), () => pickAudio()),
+    ...(desk ? [recent] : []),
     item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()), h('hr', {}),
     item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile)));
 
@@ -96,6 +108,7 @@ export function renderTop() {
   const p = S.project, bpm = $<HTMLInputElement>('bpm'), pname = $<HTMLInputElement>('pname');
   if (document.activeElement !== bpm) bpm.value = String(p.bpm);
   if (document.activeElement !== pname) pname.value = p.name;
+  document.title = (S.file.path ? S.file.name : p.name) + ' — KH Music Pro';
   $<HTMLInputElement>('loopS').value = String(p.loopStart + 1);
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
   $<HTMLSelectElement>('snap').value = String(S.snap);

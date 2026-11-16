@@ -1,9 +1,11 @@
-import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, importFiles, moveTrack, pickAudio, removeTempo, selectedClips } from '../actions';
+import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, selectedClips, unfreezeTrack } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
-import { S, buffers, commit, emit, findTrack, select } from '../store';
-import { AUTO, AutoParam, BAR, Clip, Pt, Track, TrackType, contentEnd, newPatternClip, stepDur } from '../types';
-import { clamp, h } from './dom';
+import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
+import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
+import { auToNorm, auName } from '../audio/au';
+import { liveWams, wamKey } from '../audio/wam';
+import { clamp, followDrag, h } from './dom';
 
 export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
@@ -59,7 +61,7 @@ function drawPreview(cv: HTMLCanvasElement, tr: Track, c: Clip, wCss: number, hg
       g.fillRect(x * sw, (hi - n.p + (span - (hi - lo + 1)) / 2) * (hgt / span), Math.max(2, n.l * sw - 1), nh);
     }
   } else if (c.bufferId) {
-    drawWave(g, c.bufferId, c.offset, c.offset + c.len * stepDur(S.project.bpm), w, hgt);
+    drawWave(g, c.bufferId, c.offset, c.offset + c.len * srcStep(S.project, c), w, hgt);
     drawFades(g, c, w, hgt);
   }
 }
@@ -97,11 +99,13 @@ function head(tr: Track) {
   vol.oninput = () => { tr.vol = +vol.value; engine.sync(); };
   vol.onchange = () => commit();
   return h('div', {
-    class: 'head' + (S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id }, style: `--c:${tr.color}`,
+    class: 'head' + (S.selTrack === tr.id ? ' sel' : '') + (tr.frozen ? ' frozen' : ''), data: { id: tr.id }, style: `--c:${tr.color}`,
     onpointerdown: () => { if (S.selTrack !== tr.id) select(tr.id, ''); },
   },
     h('div', { class: 'hrow' }, h('span', { class: 'ticon', title: t('type.' + tr.type) }, ICON[tr.type]), name,
       sm('tup', '▲', 'track.up', () => moveTrack(tr.id, -1)), sm('tdown', '▼', 'track.down', () => moveTrack(tr.id, 1)), sm('tdup', '⧉', 'track.dup', () => duplicateTrack(tr.id)),
+      tr.type !== 'audio' ? h('button', { class: 'mini sm tfrz' + (tr.frozen ? ' on' : ''), data: { act: 'freeze' }, 'aria-pressed': String(!!tr.frozen), title: t(tr.frozen ? 'frz.unfreeze' : 'frz.freeze'), 'aria-label': `${t(tr.frozen ? 'frz.unfreeze' : 'frz.freeze')} – ${tr.name}`,
+        onclick: (e: Event) => { e.stopPropagation(); if (tr.frozen) unfreezeTrack(tr.id); else freezeTrack(tr.id); } }, '❄') : '',
       h('button', { class: 'mini del', title: t('track.delete'), 'aria-label': `${t('track.delete')} – ${tr.name}`, onclick: (e: Event) => { e.stopPropagation(); deleteTrack(tr.id); } }, '✕')),
     h('div', { class: 'hrow' }, tog('mute', 'M'), tog('solo', 'S'),
       h('button', {
@@ -113,27 +117,52 @@ function head(tr: Track) {
 
 // ---------- Automation ----------
 const AH = 64, PADY = 8, NS = 'http://www.w3.org/2000/svg';
-const autoY = (prm: AutoParam, v: number) => PADY + (1 - (v - AUTO[prm].min) / (1 - AUTO[prm].min)) * (AH - 2 * PADY);
-const autoV = (prm: AutoParam, y: number) => Math.round(clamp(AUTO[prm].min + (1 - (y - PADY) / (AH - 2 * PADY)) * (1 - AUTO[prm].min), AUTO[prm].min, 1) * 100) / 100;
+const autoY = (prm: string, v: number) => { const m = autoMeta(prm).min; return PADY + (1 - (v - m) / (1 - m)) * (AH - 2 * PADY); };
+const autoV = (prm: string, y: number) => { const m = autoMeta(prm).min; return Math.round(clamp(m + (1 - (y - PADY) / (AH - 2 * PADY)) * (1 - m), m, 1) * 1000) / 1000; };
 const PARAMS: AutoParam[] = ['vol', 'pan', 'filter', 'rev', 'dly', 'chorus'];
+/**
+ * Réglages automatisables des effets de la piste (V17) : effets intégrés (sauf la taille de la réverb) et plugins du Mac
+ * chargés (leur liste de réglages vient du plugin). Chaque entrée : clé, nom de l'effet, nom du réglage, valeur actuelle (0..1).
+ */
+function insParams(tr: Track): { key: string; fx: string; label: string; cur: number }[] {
+  const out: { key: string; fx: string; label: string; cur: number }[] = [];
+  tr.inserts?.forEach((ins, n) => {
+    if (FX[ins.type]?.length) {
+      const fx = `${n + 1}. ${t('fxn.' + ins.type)}`;
+      for (const [k] of FX[ins.type]) if (fxAutomatable(ins.type, k)) out.push({ key: insKey(ins.id, k), fx, label: t('fxp.' + k), cur: fxToNorm(ins.type, k, ins.p[k]) });
+    } else if (ins.type === 'au') {
+      const inst = liveWams.get(wamKey(tr.id, ins.id)) as { params?: import('../audio/au').AuParam[] } | undefined, fx = `${n + 1}. 🍎 ${auName(ins.name || '')}`;
+      for (const p of inst?.params ?? []) out.push({ key: insKey(ins.id, String(p.address)), fx, label: p.name, cur: auToNorm(p, ins.p[String(p.address)] ?? p.value) });
+    }
+  });
+  return out;
+}
 
 function ahead(tr: Track) {
-  const prm = tr.autoShow as AutoParam;
+  const prm = tr.autoShow ?? 'vol', extra = insParams(tr), groups = new Map<string, typeof extra>();
+  for (const e of extra) groups.set(e.fx, [...(groups.get(e.fx) ?? []), e]);
+  const dot = (k: string) => (tr.auto?.[k]?.length ? ' •' : '');
+  // Un réglage d'effet dont l'effet a disparu (ou un plugin du Mac pas encore chargé) reste affiché tel quel.
+  const orphan = parseInsKey(prm) && !extra.some(e => e.key === prm);
   const sel = h('select', { 'aria-label': `${t('auto.param')} – ${tr.name}`, title: t('auto.param'), data: { role: 'autoparam' } },
-    ...PARAMS.map(k => h('option', { value: k, selected: prm === k }, t('auto.' + k) + (tr.auto?.[k]?.length ? ' •' : ''))));
-  sel.onchange = () => { tr.autoShow = sel.value as AutoParam; commit(); };
+    h('optgroup', { label: t('auto.track') }, ...PARAMS.map(k => h('option', { value: k, selected: prm === k }, t('auto.' + k) + dot(k)))),
+    ...[...groups].map(([fx, l]) => h('optgroup', { label: fx }, ...l.map(e => h('option', { value: e.key, selected: prm === e.key }, e.label + dot(e.key))))),
+    ...(orphan ? [h('option', { value: prm, selected: true }, t('auto.unavailable'))] : []));
+  sel.onchange = () => { tr.autoShow = sel.value; commit(); };
   return h('div', { class: 'ahead', style: `--c:${tr.color}` }, h('span', { class: 'albl' }, t('auto.title')), sel,
     h('button', { class: 'mini', title: t('auto.clear'), 'aria-label': `${t('auto.clear')} – ${tr.name}`, data: { act: 'autoclear' }, disabled: !tr.auto?.[prm]?.length, onclick: () => { delete tr.auto![prm]; commit(); } }, '⌫'));
 }
 
 function alane(tr: Track, total: number) {
-  const prm = tr.autoShow as AutoParam, px = S.px, W = total * px;
+  const prm = tr.autoShow || 'vol', px = S.px, W = total * px;
+  // Valeur de départ d'une courbe vide : le réglage actuel (effet), ou la valeur par défaut (piste).
+  const def = insParams(tr).find(e => e.key === prm)?.cur ?? autoMeta(prm).def;
   const el = h('div', { class: 'alane', data: { auto: tr.id }, style: `--c:${tr.color}` });
   const svg = document.createElementNS(NS, 'svg'), line = document.createElementNS(NS, 'polyline');
   svg.setAttribute('width', String(W)); svg.setAttribute('height', String(AH)); svg.append(line); el.append(svg);
   const hint = h('div', { class: 'hint ahint' }, t('auto.hint'));
   const draw = () => {
-    const l = tr.auto?.[prm] ?? [], y0 = autoY(prm, l.length ? l[0].v : AUTO[prm].def);
+    const l = tr.auto?.[prm] ?? [], y0 = autoY(prm, l.length ? l[0].v : def);
     const xy = [[0, y0], ...l.map(p => [p.s * px, autoY(prm, p.v)]), [W, l.length ? autoY(prm, l[l.length - 1].v) : y0]];
     line.setAttribute('points', xy.map(a => a.join(',')).join(' '));
     el.classList.toggle('none', !l.length);
@@ -165,8 +194,7 @@ function alane(tr: Track, total: number) {
       const s = clamp(Math.round((ev.clientX - r.left) / px), lo, hi), v = autoV(prm, ev.clientY - r.top);
       if (s !== pt.s || v !== pt.v) { pt.s = s; pt.v = v; changed = true; draw(); }
     };
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (changed) commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    followDrag(e, mv, () => { if (changed) commit(); }, revert);
   };
   return el;
 }
@@ -212,7 +240,7 @@ function laneDown(e: PointerEvent, tr: Track) {
   const grouped = S.selMore.size > 0 && (S.selMore.has(clip.id) || S.selClip === clip.id);
   if (!grouped) select(tr.id, clip.id);
   e.preventDefault();
-  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset, takes: clip.takes }, r = el.getBoundingClientRect(), dur = stepDur(S.project.bpm);
+  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset, takes: clip.takes }, r = el.getBoundingClientRect(), dur = srcStep(S.project, clip);
   const resize = e.clientX > r.right - 10, trim = !resize && e.clientX < r.left + 8 && r.width > 30;
   const buf = clip.bufferId ? buffers.get(clip.bufferId) : undefined;
   const maxLen = buf ? Math.ceil((buf.duration - clip.offset) / dur) : Infinity;
@@ -241,11 +269,11 @@ function laneDown(e: PointerEvent, tr: Track) {
     if (over && tt && tt.type === tr.type && tt !== target) { target = tt; over.append(el); changed = true; }
   };
   const up = () => {
-    removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
     if (target !== tr) { tr.clips.splice(tr.clips.indexOf(clip), 1); target.clips.push(clip); S.selTrack = target.id; }
     if (changed) commit();
   };
-  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  // Geste annulé : le clip (et ceux qui le suivaient) reviennent à leur place, sur leur piste.
+  followDrag(e, mv, up, () => { revert(); if (target !== tr) emit(); });
 }
 
 export function renderArr() {
@@ -279,9 +307,7 @@ export function renderArr() {
     const b0 = bar(e.clientX), zone = ruler.querySelector<HTMLElement>('.loopr') ?? ruler.appendChild(h('div', { class: 'loopr' }));
     const set = (x: number) => { const b1 = bar(x); p.loop = true; p.loopStart = Math.min(b0, b1); p.loopLen = Math.abs(b1 - b0) + 1; zone.style.cssText = `left:${p.loopStart * BAR * px}px;width:${p.loopLen * BAR * px}px`; };
     set(e.clientX);
-    const mv = (ev: PointerEvent) => set(ev.clientX);
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); commit(); };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    followDrag(e, ev => set(ev.clientX), () => commit(), revert);
   };
   lanes.append(ruler);
 

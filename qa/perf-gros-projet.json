@@ -1,0 +1,36 @@
+{
+ "date": "2026-11-16",
+ "machine": "Apple M3 (8 cœurs)",
+ "full": {
+  "load": {
+   "ratio": 3.627875,
+   "ms": 14511.5,
+   "sec": 4,
+   "tracks": 40,
+   "inserts": 120
+  },
+  "redraw": 20.680000019073486,
+  "mixer": 36.5,
+  "export": {
+   "ms": 158957.39999961853,
+   "sec": 18.5
+  },
+  "play": {
+   "steps": 44,
+   "late": 0,
+   "underruns": 1891,
+   "longest": 0,
+   "longTasks": 0
+  }
+ },
+ "frozen": {
+  "before": 5.259549999952316,
+  "after": 1.6636749999523164,
+  "play": {
+   "steps": 33,
+   "late": 0,
+   "underruns": 2832,
+   "lvl": 0.8915014827987853
+  }
+ }
+}
