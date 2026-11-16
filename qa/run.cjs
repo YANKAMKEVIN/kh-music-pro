@@ -2834,7 +2834,10 @@ test('SV09', 'Sauvegarde', 'Plantage reconnu en retard (le système libère l’
   const holder = await ctx.newPage();
   try {
     await holder.goto(new URL('/icon.svg', page.url()).href);
-    await holder.evaluate(() => { localStorage.setItem('kh-open:zombie', JSON.stringify({ t: Date.now() })); navigator.locks.request('kh-tab:zombie', () => new Promise(() => { })); });
+    await holder.evaluate(() => {
+      // Traces d'onglets plantés par les cas précédents (SV01, SV06) : sous Linux, leur verrou peut être libéré en retard.
+      for (const k of Object.keys(localStorage)) if (k.startsWith('kh-open:')) localStorage.removeItem(k);
+      localStorage.setItem('kh-open:zombie', JSON.stringify({ t: Date.now() })); navigator.locks.request('kh-tab:zombie', () => new Promise(() => { })); });
     await sleep(200);
     await page.reload(); await page.waitForSelector('.clip'); await sleep(1500);
     expect(!(await page.$('dialog#crash[open]')), 'tant que le verrou est tenu, aucun message ne doit apparaître');
