@@ -297,7 +297,7 @@ class Engine {
   pad(track: Track, row: number, vel = 1) {
     this.ctx.resume(); this.sync();
     const bank = drumBank(track.kit);
-    if (bank && !bankReady(bank)) { this.loadBank(bank); if (track.kit === 'studio') return; }
+    if (bank && !bankReady(bank)) { this.loadBank(bank); if (bank !== 'drums') return; }
     const n = this.mix.tracks.get(track.id);
     if (n) hitPad(this.mix, buffers, track, n.input, row, this.ctx.currentTime + 0.003, vel);
   }

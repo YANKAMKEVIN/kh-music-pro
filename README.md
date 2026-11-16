@@ -14,6 +14,24 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
+## Piano électrique, basse et percussions (v0.17.1)
+
+Trois ajouts viennent compléter le piano acoustique et la batterie Studio :
+
+- **Piano électrique expressif · Wurlitzer EP200**, famille Claviers et orgues : 47 échantillons mono, jusqu’à quatre nuances réelles. Les zones de notes et les corrections de justesse du mappage original sont respectées ; les nuances n’ont pas toutes les mêmes notes sources. Certaines notes aiguës réutilisent la même prise entre nuances, comme dans la banque d’origine. Plage d’origine MIDI 33–96 ; au-delà, la note source la plus proche est transposée.
+- **Basse électrique expressive · Fashionbass**, famille Basses : 190 échantillons mono, cinq nuances et deux prises alternées par note enregistrée. Notes pincées uniquement, sans bruits de corde ni effets du moteur SFZ original. Zones d’origine MIDI 12–72, notes sources 18–69 ; les registres extrêmes hors plage restent obtenus par transposition.
+- **Percussions acoustiques · VCSL**, dans le menu Kit d’une piste Batterie : 16 pads nommés, 72 frappes, une à quatre nuances et jusqu’à deux prises selon le son. Tumba, congas ouvertes/étouffées, quinto, bongos ouverts/étouffés, darbuka, claves, shaker, tambourin, guiro et triangle. Les percussions ne déclenchent pas artificiellement le sidechain du kick et ne se coupent pas entre elles comme un charleston.
+
+Ces choix s’utilisent avec le clavier MIDI, la pédale existante, le piano roll et les pads. Les samples personnels restent prioritaires. Les anciens sons ne sont pas remplacés ; aucun nouveau champ n’est nécessaire dans les projets `.khm`. Les corrections de hauteur, les nuances et les prises alternées sont communes au direct et à l’export.
+
+Sources : [Greg Sullivan’s E-Pianos](https://github.com/sfzinstruments/GregSullivan.E-Pianos), Greg Sullivan, CC BY 3.0 ; [Fashionbass](https://github.com/sfzinstruments/karoryfer.fashionbass), Karoryfer Samples, CC0 ; [VCSL](https://github.com/sgossner/VCSL), Versilian Studios, CC0. Les licences, mappages originaux et attributions sont fournis avec les sons. Les prises de percussions trop faibles sont amplifiées avant compression, puis le gain de lecture est calculé à partir du fichier final.
+
+Les ajouts occupent **26,7 Mo** compressés ; mémoire décodée approximative à 48 kHz : Wurlitzer 19 Mio, basse 209 Mio, percussions 17 Mio. Chargement à la demande, uniquement pour les banques utilisées. Le catalogue contient désormais 56 sons d’instrument (dont 32 échantillonnés), et six kits. L’ensemble des cinq banques expressives représente 544 échantillons et 60,7 Mo compressés.
+
+Le même script `python3 tools/build-expressive-banks.py` reconstruit les cinq banques ; il conserve les fichiers déjà vérifiés, sauf avec `--force`. `python3 tools/check-expressive-banks.py` contrôle les 544 fichiers et leurs mappages. `node qa/expressive-demo.cjs --ensemble` génère un projet et quatre écoutes dans `livrables/v0.17.1/`.
+
+L’écoute humaine et les essais avec le Yamaha/Focusrite restent à faire. Les variantes et articulations des moteurs SFZ complets ne sont pas toutes reprises ; le logiciel utilise les enregistrements sélectionnés dans son propre lecteur.
+
 ## Banques expressives (v0.17.0)
 
 Deux nouveaux choix complètent les instruments existants, sans remplacer les sons des anciens projets :
@@ -113,7 +131,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 265 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 274 cas).
 Le plus simple, serveur compris :
 
 ```bash

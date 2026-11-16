@@ -7,7 +7,7 @@ import { SUSTAIN_BANKS, SustainLoop, sustainSample } from './sustain';
 import { noteLoudness } from './loudness';
 import { EXPRESSIVE, ExpressiveEntry } from './expressive-manifest';
 
-export interface Sample { buf: AudioBuffer; off: number; gain: number; audible: boolean; held?: { buf: AudioBuffer; loop: SustainLoop } } // off = silence initial à sauter (s), gain = mise à niveau
+export interface Sample { buf: AudioBuffer; off: number; gain: number; audible: boolean; lo?: number; hi?: number; tune?: number; held?: { buf: AudioBuffer; loop: SustainLoop } } // off = silence initial à sauter (s), gain = mise à niveau
 /** Identifiant de banque → dossier des fichiers. */
 export const BANKS: Record<string, string> = {
   piano: 'acoustic_grand_piano', nylon: 'acoustic_guitar_nylon', eguitar: 'electric_guitar_clean', ebass: 'electric_bass_finger', abass: 'acoustic_bass',
@@ -43,7 +43,8 @@ export const bankReady = (id: string) => loaded.has(id) || expressiveLoaded.has(
 export const forgetBank = (id: string) => { loaded.delete(id); expressiveLoaded.delete(id); };
 
 /** New kits have their own IDs: old projects keep the original acoustic kit. */
-export const drumBank = (kit?: string): string | undefined => kit === 'acoustic' ? 'drums' : kit === 'studio' ? 'studio_drums' : undefined;
+export const recordedDynamics = (bank?: string) => !!bank && EXPRESSIVE[bank]?.kind === 'instrument';
+export const drumBank = (kit?: string): string | undefined => kit === 'acoustic' ? 'drums' : kit === 'studio' ? 'studio_drums' : kit === 'percussion' ? 'percussion' : undefined;
 
 /** Lecture d'un fichier embarqué. XMLHttpRequest fonctionne aussi dans la version bureau (fichiers locaux). */
 function fetchBytes(url: string): Promise<ArrayBuffer> {
@@ -67,7 +68,7 @@ async function loadExpressive(id: string) {
         const buf = await context.decodeAudioData(await fetchBytes('banks/' + e.file));
         if (e.off >= buf.duration) throw new Error('invalid sample offset');
         const layers = map.get(e.key) ?? []; map.set(e.key, layers);
-        (layers[e.layer] ??= [])[e.rr] = { buf, off: e.off, gain: e.gain, audible: true };
+        (layers[e.layer] ??= [])[e.rr] = { buf, off: e.off, gain: e.gain, audible: true, lo: e.lo, hi: e.hi, tune: e.tune };
       } catch (error) { failed = error; }
     }
   };
@@ -80,16 +81,23 @@ async function loadExpressive(id: string) {
 export function expressiveSample(id: string, key: number, vel = 0.8, turn = 0): { s: Sample; rate: number } | null {
   const map = expressiveLoaded.get(id);
   if (!map?.size) return null;
-  let base = key;
-  if (EXPRESSIVE[id].kind === 'instrument') {
-    base = [...map.keys()].reduce((a, b) => Math.abs(b - key) < Math.abs(a - key) ? b : a);
-  }
-  const layers = map.get(base);
-  if (!layers?.length) return null;
+  const definition = EXPRESSIVE[id], instrument = definition.kind === 'instrument';
+  const count = instrument ? Math.max(...[...map.values()].map(layers => layers.length)) : (map.get(key)?.length ?? 0);
+  if (!count) return null;
   const v = Number.isFinite(vel) ? Math.max(0, Math.min(1, vel)) : 0;
-  const choices = layers[Math.min(layers.length - 1, Math.floor(v * layers.length))];
+  let layer = definition.velocityEnds?.findIndex(end => v <= end);
+  if (layer === undefined) layer = Math.min(count - 1, Math.floor(v * count));
+  if (layer < 0) layer = count - 1;
+  let base = key;
+  if (instrument) {
+    // Each dynamic layer may have different recorded root notes (Wurlitzer).
+    const roots = [...map.keys()].filter(k => map.get(k)?.[layer]?.length).sort((a,b) => a-b);
+    const zone = roots.find(k => { const s = map.get(k)![layer][0]; return s.lo !== undefined && s.hi !== undefined && key >= s.lo && key <= s.hi; });
+    base = zone ?? roots.reduce((a,b) => Math.abs(b-key) < Math.abs(a-key) ? b : a);
+  }
+  const choices = map.get(base)?.[layer];
   const s = choices?.[Math.max(0, Math.floor(turn)) % choices.length];
-  return s ? { s, rate: EXPRESSIVE[id].kind === 'instrument' ? Math.pow(2, (key - base) / 12) : 1 } : null;
+  return s ? { s, rate: instrument ? Math.pow(2, (key-base + (s.tune ?? 0)/100)/12) : 1 } : null;
 }
 
 async function load(id: string) {
@@ -161,8 +169,8 @@ export async function ensureBanks(p: Project): Promise<string[]> {
 }
 
 /** Échantillon à jouer pour une note : le plus proche, et le rapport de vitesse qui donne la bonne hauteur. */
-export function sampleFor(id: string, midi: number, vel = 0.8): { s: Sample; rate: number } | null {
-  if (EXPRESSIVE[id]) return expressiveSample(id, midi, vel);
+export function sampleFor(id: string, midi: number, vel = 0.8, turn = 0): { s: Sample; rate: number } | null {
+  if (EXPRESSIVE[id]) return expressiveSample(id, midi, vel, turn);
   const map = loaded.get(id);
   if (!map) return null;
   let base = Math.max(24, Math.min(96, 24 + Math.round((midi - 24) / 3) * 3));

@@ -181,6 +181,7 @@ export const GM_DRUMS = [36, 38, 39, 42, 46, 45, 37, 56, 35, 40, 47, 50, 70, 49,
 export const KITS: Record<string, { tune: number; dec: number }> = {
   electro: { tune: 1, dec: 1 }, deep: { tune: 0.8, dec: 1.6 }, tight: { tune: 1.25, dec: 0.6 },
   acoustic: { tune: 1, dec: 1 }, // batterie enregistrée (banque « drums »)
+  percussion: { tune: 1, dec: 1 },
   studio: { tune: 1, dec: 1 }, // nuances et répétitions réellement enregistrées
 };
 
@@ -216,6 +217,8 @@ const DEFS: [string, string, P][] = [
   ['r_air', 'realPad', real('air', 0.15, 0.7)],
   ['r_cinema', 'realPad', real('cinema', 0.12, 0.7)],
   ['r_synthchoir', 'realPad', real('synthchoir', 0.08, 0.5)],
+  ['r_wurli', 'realKeys', { ...real('wurli', 0.002, 0.4), touch: 0 }],
+  ['r_fashionbass', 'realBass', { ...real('fashionbass', 0.002, 0.18), touch: 0 }],
   ['r_salamander', 'realKeys', { ...real('salamander', 0.002, 0.45), touch: 0 }],
   ['epiano', 'keys', { engine: 'fm', ratio: 1, fmAmt: 1.6, fmDecay: 0.35, cutoff: 7000, reso: 0.5, envAmt: 0, a: 0.003, d: 1.2, s: 0.25, r: 0.35 }],
   ['keys', 'keys', { wave: 'triangle', wave2: 'sine', detune: 3, mix2: 0.6, cutoff: 3200, reso: 0.5, envAmt: 0.2, a: 0.004, d: 0.5, s: 0.3, r: 0.3 }],

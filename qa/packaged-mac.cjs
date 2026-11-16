@@ -39,6 +39,8 @@ const exe = path.join(appDir, 'Contents', 'MacOS', 'KH Music Pro');
       const drums = k.demoProject(); drums.tracks = [drums.tracks[0]]; drums.tracks[0].kit = 'studio';
       const rms = b => { let e = 0; for (const v of b.getChannelData(0)) e += v * v; return Math.sqrt(e / b.length); };
       res.samples = { piano: rms(await k.renderOffline(piano)), drums: rms(await k.renderOffline(drums)) };
+      for (const [key,preset] of [['wurli','r_wurli'],['bass','r_fashionbass']]) { piano.tracks[0].synth=k.makeSynth(preset);res.samples[key]=rms(await k.renderOffline(piano)); }
+      drums.tracks[0].kit='percussion';res.samples.percussion=rms(await k.renderOffline(drums));
       return res;
     });
     console.log(JSON.stringify(r));
@@ -49,6 +51,7 @@ const exe = path.join(appDir, 'Contents', 'MacOS', 'KH Music Pro');
     if (r.on) check(true, `moteur natif activé : le son passe par « ${r.out} »`);
     else check(!STRICT && r.back && /n'a pas pu démarrer/.test(r.toast), `moteur natif non démarré (pas de carte son ?) : message « ${r.toast} », son rendu au navigateur`);
     check(!r.off && r.backAfter, 'moteur natif désactivé : le son repasse par le navigateur');
+    check(r.samples?.wurli > 0.001 && r.samples?.bass > 0.001 && r.samples?.percussion > 0.005, 'piano électrique, basse et percussions chargés depuis l’application');
     check(r.samples?.piano > 0.002 && r.samples?.drums > 0.005, 'piano expressif et batterie Studio chargés et rendus depuis les fichiers de l’application');
     check(!errors.length, `aucune erreur dans la page${errors.length ? ' : ' + errors.join(' | ') : ''}`);
   } finally { await app.close(); }

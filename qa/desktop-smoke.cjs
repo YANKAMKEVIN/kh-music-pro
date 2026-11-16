@@ -27,6 +27,8 @@ const path = require('path');
       const drums = await k.renderOffline(kit, false);
       const rms = b => { let sum = 0; for (const x of b.getChannelData(0)) sum += x * x; return Math.sqrt(sum / b.length); };
       const expressive = { piano: rms(piano), drums: rms(drums) };
+      for (const [key,preset] of [['wurli','r_wurli'],['bass','r_fashionbass']]) { pp.tracks[0].synth = k.makeSynth(preset); expressive[key] = rms(await k.renderOffline(pp,false)); }
+      kit.tracks[0].kit='percussion'; expressive.percussion=rms(await k.renderOffline(kit,false));
       // Plugin web fourni (Web Audio Module), sous la règle de contenu : il doit se charger et passer à l'export.
       const pw = k.demoProject(); pw.tracks = [pw.tracks[1]]; const wi = k.newInsert('wam'); wi.url = 'wam/kh-tape/index.js'; wi.name = 'KH Tape Echo'; pw.tracks[0].inserts = [wi];
       await k.renderOffline(pw, false); const wamFailed = k.lastRender.wamFailed;
@@ -37,13 +39,13 @@ const path = require('path');
     const soundCount = await win.$$eval('#sounds [data-sound]', es => es.length);
     await win.fill('[data-role=sound-search]', 'drawbar'); await win.click('[data-sound="r_drawbar"] [data-act=sound-preview]');
     await win.waitForTimeout(350);
-    const soundBrowser = soundCount === 54 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
+    const soundBrowser = soundCount === 56 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
     await win.keyboard.press('Escape'); await win.waitForSelector('#sounds', { state: 'detached' });
     const returnFocus = await win.$eval('[data-act=sound-browser]', b => document.activeElement === b);
     await win.click('#bPlay'); await win.waitForTimeout(600);
     const playing = await win.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1);
     console.log(JSON.stringify({ ...r, soundBrowser, returnFocus, playing, errors }));
-    const ok = r.expressive.piano > 0.001 && r.expressive.drums > 0.005 && r.csp && r.wamFailed === 0 && r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
+    const ok = r.expressive.wurli > 0.001 && r.expressive.bass > 0.001 && r.expressive.percussion > 0.005 && r.expressive.piano > 0.001 && r.expressive.drums > 0.005 && r.csp && r.wamFailed === 0 && r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
     console.log(ok ? 'Version bureau : OK' : 'Version bureau : ÉCHEC');
     process.exitCode = ok ? 0 : 1;
   } finally { await app.close(); }

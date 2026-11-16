@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-265 cas réussis sur 265.
+274 cas réussis sur 274.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -166,7 +166,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 30 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | OK |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -232,7 +232,7 @@
 | GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
 | GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
 | GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
-| SB01 | Navigateur de sons | Les 54 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
 | SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
 | SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
 | SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
@@ -269,3 +269,12 @@
 | MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
 | MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | OK |
 | MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | OK |
+| BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | OK |
+| BX02 | Nouvelles banques | Le Wurlitzer couvre toutes les notes et nuances malgré ses zones irrégulières | OK |
+| BX03 | Nouvelles banques | La basse dispose de cinq nuances et de deux prises alternées, et reste juste | OK |
+| BX04 | Nouvelles banques | Les seize percussions sont audibles, sans silence dans les nuances hautes des pads à peu de couches | OK |
+| BX05 | Nouvelles banques | Un son importé reste prioritaire sur un pad de percussions et sa réinitialisation rend le bon instrument | OK |
+| BX06 | Nouvelles banques | Les trois choix survivent au fichier projet, au rechargement et à un rendu complet | OK |
+| BX07 | Nouvelles banques | Les répétitions de basse et de percussions restent indépendantes des préécoutes | OK |
+| BX08 | Nouvelles banques | Une banque de percussions incomplète est refusée puis se recharge après réessai | OK |
+| BX09 | Nouvelles banques | Les percussions restent accessibles au doigt sur un écran de téléphone | OK |

@@ -598,3 +598,37 @@ Travail demandé explicitement par le propriétaire : avancer sans son intervent
 - Guide de branchement sourcé : `docs/YAMAHA-FOCUSRITE.md`.
 
 Non vérifié par cette session : écoute humaine, véritable DGX-670/pédale, véritable Focusrite/micro, latence avec ce matériel, appareil mobile réel, installateur Windows. Les sons du piano sont une sélection allégée de la source, sans bruits de mécanique, pédale, résonances ni prise en charge du moteur SFZ/ARIA original. Pas de plugins instruments Audio Unit ajoutés.
+
+
+## 14. V17.1 — Wurlitzer, basse électrique et percussions (16/11/2026)
+
+Suite à la demande du propriétaire « vas y rajoute » : ajout des trois familles proposées, dans la branche d’essai V17 existante (PR #5 encore ouverte). Version préparée : **0.17.1**. Aucun remplacement des anciens identifiants ni nouvelle migration de projet.
+
+### Sources et contenu
+
+- `r_wurli` / `wurli` : Wurlitzer EP200 de Greg Sullivan, portage kinwie, CC BY 3.0. Dépôt `sfzinstruments/GregSullivan.E-Pianos`, révision `8c3e581acda3594b553948ff0222d4f84a698376`. 47 échantillons mono, jusqu’à quatre nuances, 8 s maximum, 160 kbit/s. La répartition des notes varie selon la nuance ; le lecteur respecte les zones et corrections de hauteur du SFZ d’origine. Certaines prises aiguës sont partagées entre nuances dans la source.
+- `r_fashionbass` / `fashionbass` : basse électrique pincée Fashionbass, Karoryfer Samples, CC0. Dépôt `sfzinstruments/karoryfer.fashionbass`, révision `0703973b300a6bacb837602be9b588ab64732a72`. 190 échantillons mono : 19 notes sources, cinq nuances, deux prises alternées. 6 s maximum, 160 kbit/s. Pas de bruitages, key-switches ni effets des variantes shifty/unison.
+- Kit `percussion` : VCSL, Versilian Studios, CC0. Dépôt `sgossner/VCSL`, révision `c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e`. 16 pads, 72 frappes, une à quatre nuances et jusqu’à deux prises par élément. Tumba, conga ouverte/étouffée, quinto, bongos ouverts/étouffés, deux sons de darbuka, deux claves, shaker, tambourin, guiro, triangle. MP3 mono, 6 s maximum, 128 kbit/s.
+- Les nouvelles banques ajoutent 26,7 Mo compressés et environ 245 Mio décodés à 48 kHz (19 + 209 + 17). Le total des cinq banques expressives est de 544 fichiers et 60,7 Mo. Les fichiers restent chargés à la demande.
+- Les licences, SFZ utilisés, crédits et provenance sont livrés. Fashionbass n’a pas de README amont : `SOURCE-README.md` l’indique explicitement et donne une notice générée, sans prétendre être un document original.
+
+### Lecteur et préparation
+
+- Le constructeur de banques lit les SFZ comme données avec des expressions régulières, sans exécuter de code tiers. Les notes, zones, corrections de justesse et limites de vélocité sont reprises ; les paramètres du moteur SFZ complet ne sont pas importés.
+- Le lecteur sélectionne d’abord une nuance puis la note source dans cette nuance, au lieu de supposer que toutes les nuances ont les mêmes notes enregistrées. Ce choix évite les trous de registre du Wurlitzer.
+- Les répétitions mélodiques utilisent des compteurs par destination de piste et par note dans chaque Mix. Une préécoute ne change pas les variantes de la piste ou celles d’un export.
+- Les percussions sélectionnent leur nuance d’après le nombre de couches de chaque pad, pas d’après le maximum du kit. Elles ne déclenchent pas le sidechain du kick et ne passent pas dans le groupe d’étouffement des charlestons.
+- Les sources VCSL très faibles sont amplifiées avant compression, pour ne pas encoder un signal minuscule avant de l’amplifier à l’écoute. Le gain de lecture est ensuite calculé sur le MP3 final. Le gain préparatoire est consigné dans la provenance.
+- Les téléchargements d’une même source utilisée par plusieurs régions emploient désormais des fichiers temporaires distincts, évitant une course lors de la conversion parallèle. La reconstruction conserve les fichiers dont le hash et la source n’ont pas changé ; `--force` les régénère tous.
+- Les échantillons des deux banques 0.17.0 ne sont pas réencodés dans cette extension. Les nouveaux textes et noms des pads existent en français, anglais et espagnol. Catalogue : 56 instruments, dont 32 échantillonnés, et six kits.
+
+### Validation
+
+- Neuf cas BX01–BX09 ajoutés : traductions et sélection, couverture de toutes les notes/nuances du Wurlitzer, justesse, cinq nuances et répétitions de basse, 16 percussions aux forces extrêmes, sample personnel prioritaire et réinitialisation, sauvegarde/rechargement/export, isolation des préécoutes, panne/réessai et accès tactile.
+- Les 13 cas ciblés BX + RI01/BN01/SB01/EX05 réussissent sur ce Mac. Les cinq banques sont également chargées depuis l’application Mac empaquetée avec le contrôle natif strict : OK.
+- La précédente CI Linux 0.17.0 avait terminé à 264/265 : seul EX05 comparait deux rendus à 1e-7 près et trouvait un écart maximal de 0,00001758. Le contrôle tolère désormais moins d’un pas PCM 16 bits (1/32768), tout en refusant un changement musical de variante. La condition n’est ni supprimée ni ignorée.
+- Campagne complète 0.17.1 : **274/274 réussis** sur ce Mac. `npm run build`, contrôle des 544 échantillons, démarrage bureau et application Mac empaquetée avec le module natif : OK. La validation Linux et les constructions des installateurs sont relancées sur GitHub après la sauvegarde de la branche.
+
+`node qa/expressive-demo.cjs --ensemble` produit une démo `.khm`, quatre écoutes WAV et deux captures dans `livrables/v0.17.1/`. Installateur Apple : `release/KH Music Pro-0.17.1-arm64.dmg`. Lanceur d’essai local avec profil distinct ; application installée et version en ligne non remplacées.
+
+Restent à faire avec le propriétaire : écoute humaine, toucher du DGX-670, vraie pédale, Focusrite et micro, latence et appareils mobiles réels. Pas de nouveaux plugins instruments natifs ; ces banques utilisent le lecteur d’échantillons intégré.
