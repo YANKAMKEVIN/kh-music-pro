@@ -1,7 +1,7 @@
 {
   "name": "kh-music-pro",
   "private": true,
-  "version": "0.16.2",
+  "version": "0.17.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -55,6 +55,14 @@
     },
     "win": {
       "target": "nsis"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": "khm",
+        "name": "KH Music Pro",
+        "description": "Projet KH Music Pro",
+        "role": "Editor"
+      }
+    ]
   }
 }

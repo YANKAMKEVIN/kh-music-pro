@@ -1,13 +1,13 @@
 # Document de passation — KH Music Pro
 
-Rédigé à la fin de la V14a, mis à jour pour la V15.1, puis pour la version 0.16.0 en ligne (15/11/2026), pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
+Rédigé à la fin de la V14a, mis à jour pour la V15.1, la version 0.16.0 en ligne (15/11/2026), puis la V17 (branche `v17`, 16/11/2026), pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
 
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
 - **État** : version **0.16.0 en ligne** sur `main` depuis le 15/11/2026 (fusion de la V15, banque de sons, et de la V14b, moteur natif et plugins du Mac : PR #2). 239 cas de QA. Site : https://yankamkevin.github.io/kh-music-pro/ ; installable (PWA) ; installateurs Windows, macOS (Apple et Intel) et Linux dans la release v0.16.0. Installée sur le Mac du propriétaire (`/Applications/KH Music Pro.app`).
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0, **v0.16.0** (15/11/2026). Les branches `v14b-prototype-natif`, `v15-banque-generaliste` et `integration-v15-natif` sont fusionnées : tout nouveau travail part de `main`.
-- **Prochaine étape** : la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5 et 9). Ses retours passent avant toute nouvelle fonction.
+- **Prochaine étape** : la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5, 9 et 13). Ses retours passent avant toute nouvelle fonction. La V17 (0.17.0) attend sur la branche `v17` : pas fusionnée dans `main` sans son accord (section 13).
 - **Liste des fonctions** : section « Fonctions » du README.
 
 ## 2. Architecture
@@ -53,12 +53,13 @@ Principes à respecter :
 ## 4. Limites connues, assumées
 
 - Instruments enregistrés : une seule prise par note (les nuances sont imitées par un filtre, voir section 9), sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
-- Tempo : les clips audio ne suivent pas les changements de tempo ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
+- Tempo : depuis la V17, un clip audio peut suivre le tempo (réglage « Suit le tempo », désactivé par défaut) ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
 - Signature : une seule pour tout le morceau, de 2/4 à 7/4.
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
-- Automation : six paramètres (volume, pan, filtre, réverb, écho, chorus).
+- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac. Les réglages de l'instrument ne sont pas automatisables.
 - Installateurs non signés ; pas de mise à jour automatique.
-- Projets stockés dans le navigateur de chaque appareil ; le fichier `.khm` est la seule vraie sauvegarde.
+- Projets stockés dans le navigateur de chaque appareil, avec des versions (V17) ; le fichier `.khm` reste la seule sauvegarde hors de l'appareil. Version bureau Mac : vrais fichiers sur le disque (V17).
+- Performance (V17, mesurée) : le moteur audio du navigateur calcule sur un seul cœur ; un projet de 40 pistes et 120 effets le dépasse. Le gel de piste est la parade.
 
 ## 5. V14b — prototype natif sur le Mac
 
@@ -557,3 +558,48 @@ Relevé mais non corrigé, à trancher par le propriétaire :
 4. **Glisser une note, la boucle, un clip, un point d'automation** : pas de gestion de `pointercancel` ni de filtre par doigt. Rare, mais un geste annulé par le système laisse le glissé branché.
 
 QA : LH10-LH11, GE01-GE06 ; 250 cas. Version 0.16.2. Non vérifié : un vrai téléphone, un lecteur d'écran réel, l'écoute.
+
+## 13. V17 — version 0.17.0 (branche `v17`, nuit du 15 au 16/11/2026)
+
+Consigne du propriétaire : « pour le moment on se concentre uniquement sur le Mac, fais le maximum qui ne dépend pas de mon écoute ». Neuf étapes, toutes faites ; chacune a des cas de QA qui rejouent les gestes réels (souris tenue, doigt, clavier seul, plantage réel d'un onglet, fenêtres du système) et mesurent le son produit. **Rien n'est fusionné dans `main`.** Commits : `e7cbe0e` (étapes 1-2), `2c8c838` (3-4), `9fc3038` (5-8), puis l'étape 9 et cette section.
+
+### Ce qui a été fait
+
+1. **Empreinte sonore de référence** (`qa/empreinte.cjs`, `qa/empreintes/*.json`) : un export WAV est mesuré (durée, crête, LUFS, enveloppe par 250 ms, énergie par octave de 31 Hz à 16 kHz, clics, coupures de 10 ms, saturation, valeurs invalides) et comparé à une empreinte enregistrée. Cas EM01-EM05 : démo, notes tenues (cordes, orgue d'église, chœur, violoncelle), modèles trap/house/lofi, exportés par le vrai bouton « Exporter » ; EM04 vérifie que des défauts fabriqués (clic, trou de 30 ms, saturation, piste muette) sont bien signalés ; EM05 mesure une touche tenue 8 s à la souris toutes les 50 ms. Les bruits (caisse claire, réverbération) tirent au hasard : la graine est fixée pendant l'export de QA. `qa/empreinte-mac.cjs` fait de même avec de vrais Audio Units d'Apple (filtre + écho, réverb, dynamique) dans la version bureau. **Mise à jour volontaire seulement** : `KH_EMPREINTE=maj` (après une écoute qui valide un changement de son).
+2. **Ne jamais perdre un morceau** (`store.ts`) : versions du projet (instantané toutes les 2 minutes de travail, à l'ouverture, avant restauration, à la main ; on garde les 20 dernières et une par jour sur 10 jours), menu « Versions du morceau… » et bouton 🕘 dans la bibliothèque ; restauration annulable par Ctrl+Z. Fermeture inattendue détectée au lancement suivant (verrou Web Locks de chaque onglet ; sans lui, battement de 5 s) : message « Morceau récupéré » avec accès aux versions. Sauvegarde automatique illisible → dernière version lisible. Écriture forcée quand la page se cache ou se ferme. Quand le système libère l'onglet planté en retard (vu sous Linux sur GitHub), une seconde vérification 8 s après le démarrage affiche le message et marque alors la version d'ouverture « récupérée » (`markRecovered`). Cas SV01-SV09 (SV01 et SV06 tuent réellement l'onglet ; SV09 reproduit la libération tardive).
+3. **Vrais fichiers dans la version bureau** (`electron/files.cjs`, `electron/preload.cjs` en bac à sable, repris par `native-preload.cjs`) : Ouvrir (Cmd+O), Enregistrer (Cmd+S réécrit le fichier lié, même après redémarrage), Enregistrer sous (Cmd+Maj+S), fichiers récents dans le menu Projet, ouverture depuis le Finder (`open-file`, association `.khm` dans l'installateur), point « modifié » du Mac, titre de fenêtre. Écriture sûre (fichier temporaire puis remplacement). Le processus principal n'écrit que dans les fichiers choisis par l'utilisateur dans les fenêtres du système (ou ses récents) : vérifié. Cas DF01-DF08 (pont simulé) et `qa/desktop-files.cjs` (vraie version bureau, avec et sans module natif).
+4. **Glisser annulé** (`followDrag` dans `dom.ts`, `revert` dans `store.ts`) : note, poignée, vélocité, boucle, clip, point d'automation, séparation et grille de batterie. Seul le pointeur qui a commencé le glissé le pilote ; `pointercancel` remet l'état d'avant ; souris relâchée hors de la fenêtre = fin normale. Usage inchangé. Cas GD01-GD10 ; 9 sur 10 échouent sur l'ancien code (vérifié).
+5. **Clips audio qui suivent le tempo** (`Clip.warp`, `Clip.srcBpm`, `graph.ts`) : bouton « Suit le tempo » et « Tempo d'origine » dans l'éditeur audio. Une portion par tempo traversé, lue dans une version étirée sans changer la hauteur (fondus de 10 ms aux changements), même code à l'écoute et à l'export ; versions étirées gardées en mémoire (24 au plus). L'étirement WSOLA (`stretch.ts`) garde maintenant chaque attaque à l'heure, sans l'effacer ni la doubler (il en perdait avant ; profite aussi à l'étirement manuel). Cas WP01-WP07.
+6. **Automation de n'importe quel réglage d'effet** (clés `ins:<effet>:<réglage>`) : effets intégrés par rampes sur leurs paramètres audio, plugins du Mac par envoi au bon instant (minuterie à l'écoute, pauses du rendu hors-ligne à l'export). Liste des réglages groupée par effet dans la courbe d'automation ; retirer l'effet retire ses courbes. Cas AX01-AX06 ; `empreinte-mac.cjs` vérifie un vrai AULowpass automatisé à l'export (aigus −107 → −41 dB).
+7. **Gel de piste** (❄ dans l'en-tête, `freezeTrack`/`unfreezeTrack`) : rendu avant le fader (instrument, égaliseur, effets, automation) sur une piste audio juste en dessous, qui reprend volume, panoramique, envois, sortie et sidechain ; l'originale est coupée, ne joue plus ses notes et sa chaîne d'effets est débranchée. Cas FZ01-FZ05.
+8. **Performance** : indicateur « ⚡ Charge » dans le mixeur (`measureLoad` : temps de calcul de 4 s de mixage, notes programmées en retard, décrochages signalés par Chromium quand il les expose). Optimisations sans changement de son : chorus, trémolo et égaliseur à plat débranchés (40 pistes vides : 39 % → 25 % d'un cœur), phaser et autopan recalculés par bloc. Cas PF01-PF03, chiffres dans `qa/perf-gros-projet.json`.
+9. **Fenêtres graphiques des plugins du Mac** (`native/kh-au-bridge/src/bridge.mm` : `uiOpen`, `uiClose`, `uiIsOpen`, `uiPump`) : la vue Cocoa du plugin (ou la vue générique d'Apple) dans une fenêtre native flottante, ouverte par le bouton « 🪟 Fenêtre du plugin » de la chaîne d'effets. La page relit les réglages du plugin toutes les 300 ms et les recopie dans le projet (enregistrés, annulables, à l'export) ; pas pendant la lecture d'une automation de ce plugin. La fenêtre se ferme avec l'effet. Le module natif est désormais lié à AppKit, CoreAudioKit et QuartzCore. Cas AW01-AW03 et `qa/au-window.cjs` (vraie fenêtre vérifiée dans la liste des fenêtres du Mac).
+
+Aussi : `qa/snapshot.sh` lance une campagne sur une copie figée (le serveur de développement recharge le code modifié : une campagne lancée pendant qu'on édite se fausse) ; IN01 attend l'ouverture du micro au lieu d'un délai fixe.
+
+### Vérifié (sur le MacBook Pro M3 du propriétaire)
+
+| Vérification | Résultat |
+|---|---|
+| `npm run build` | OK |
+| `npm run qa:all` (308 cas) | dernière campagne complète : 307/308 (seul DK01, qui ne tourne que sous Linux) ; avant : 305/307 (DK01, et PF03 avant l'assouplissement de son seuil) ; la précédente 302/307 sous une charge machine de 100 à 185, ses échecs (L02, AR03, GE04, PF02, sensibles au temps) repassant seuls aussitôt. Campagnes précédentes : 263/265, 282/283, 302/304 (seuls DK01 et des cas de temps). DK01 ne tourne que sous Linux. |
+| `qa/desktop-smoke.cjs`, `qa/desktop-files.cjs`, `qa/au-window.cjs`, `qa/empreinte-mac.cjs`, `qa/au-bridge.cjs 60` | OK |
+| `qa/native-io.cjs 60` | OK au calme (charge 20) : 0 manque, 0 surcharge Core Audio, 0 coupure du témoin en 60 s. Un premier passage sous une charge de 185 (autres applications) avait échoué (1 manque, 2 surcharges, et le témoin navigateur coupait aussi). |
+| Charge du gros projet (40 pistes, 120 effets dont 10 réverbs d'effet) | machine au calme : 150 % d'un cœur → 63 % après gel des 32 pistes d'instruments, aucune note en retard ; machine saturée : 363 % / 526 % → 166 %, mais une fois 332 % → 298 % (mesure très bruitée sous charge extérieure ; PF03 exige donc seulement 10 % de baisse). Redessin de l'écran 20 à 60 ms, mixeur 27 à 37 ms. |
+
+Instabilités vues, liées à la charge de la machine : T01 (déjà connu, section 10) a échoué 2 fois sur 5 sous forte charge et passe au calme ; MA03, AX02 et PF03 ont révélé l'un un vrai défaut (classe CSS partagée, corrigé), les autres des seuils absolus remplacés par des critères relatifs.
+
+### Non vérifié
+
+- **L'écoute** de tout ce qui précède, en particulier : l'étirement des clips qui suivent le tempo (voix, batterie, instruments tenus), le nouvel étirement qui garde les attaques, le son gelé comparé à l'original, l'automation d'un plugin du Mac (petits sauts de valeur à chaque double-croche : la valeur est envoyée par pas, pas en continu).
+- **La souris dans la fenêtre d'un plugin du Mac** : la fenêtre s'ouvre, s'affiche, se ferme et ses réglages reviennent dans le projet, mais aucun test n'a cliqué dans ses boutons (le système demande une autorisation d'accessibilité pour simuler la souris). Elle vit dans le processus de la page (pas de vraie boucle d'évènements du Mac) : les évènements lui sont distribués toutes les 30 ms. Elle reste au-dessus des autres fenêtres, même d'autres applications.
+- Les vrais fichiers sur un autre Mac, un disque externe ou iCloud Drive ; l'association `.khm` (elle n'existe qu'une fois l'installateur reconstruit).
+- La charge mesurée par le rendu hors-ligne surestime sans doute la réverb d'effet à l'écoute (Chromium calcule la fin des longues réverbs sur un autre fil en temps réel).
+- Windows et Linux pour les nouveautés de la version bureau (elles visent le Mac).
+
+### À décider par le propriétaire
+
+1. Les trois choix de la section 12 (points 1 à 3) restent ouverts.
+2. « Suit le tempo » activé par défaut pour les nouveaux clips audio (comme Ableton pour les boucles) ? Aujourd'hui désactivé : un ancien projet sonne exactement pareil.
+3. Fréquence des versions (2 minutes) et nombre gardé (20 + une par jour sur 10 jours) : à ajuster selon l'usage.
+4. Fusion de `v17` dans `main` (met le site en ligne à jour) et release 0.17.0.

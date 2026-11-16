@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-223 cas réussis sur 224 (sur le Mac, 15/11/2026). DK01 ne tourne que sous Linux (`xvfb-run`) ; il est vérifié par GitHub Actions. TU02, instable quand la machine est chargée, attend désormais l'accordeur jusqu'à 3 s et a été rejoué avec succès.
+305 cas réussis sur 307.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -148,7 +148,7 @@
 | SP01 | Mixeur | L'analyseur de spectre s'anime pendant la lecture et retombe à l'arrêt | OK |
 | MOD01 | Mixage | Chorus, trémolo et lo-fi : réglables et audibles au rendu | OK |
 | TU01 | Accordeur | La détection de hauteur est juste : sinus, son riche en harmoniques, silence et bruit | OK |
-| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK (rejoué) |
+| TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
 | DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : spawnSync xvfb-run ENOENT |
@@ -194,6 +194,21 @@
 | WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
 | LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
 | LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
+| LAT03 | Latence | Sans le module natif (version web), le son entre et sort toujours par le navigateur | OK |
+| NAT01 | Moteur natif | Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac | OK |
+| NAT02 | Moteur natif | Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu | OK |
+| NAT03 | Moteur natif | Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée | OK |
+| NAT04 | Moteur natif | Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul | OK |
+| NAT05 | Moteur natif | Réglage et plugins du Mac en anglais et en espagnol | OK |
+| MAC01 | Plugins du Mac | Les plugins d'effet du Mac sont proposés dans la chaîne d'effets, triés ; en ajouter un affiche ses réglages | OK |
+| MAC02 | Plugins du Mac | Les curseurs d'un plugin du Mac pilotent le plugin, s'enregistrent dans le projet, s'annulent et reviennent aux réglages d'origine | OK |
+| MAC03 | Plugins du Mac | Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d'erreur | OK |
+| MAC04 | Plugins du Mac | Plugin du Mac qui ne se charge pas : message clair, le son passe sans lui ; huit effets au plus | OK |
+| MAC05 | Plugins du Mac | Supprimer la piste ou ouvrir un autre projet libère ses plugins du Mac ; un effet retiré pendant son chargement n'est pas signalé en échec | OK |
+| MAC06 | Plugins du Mac | Fréquences d'un plugin du Mac sur une échelle logarithmique : le milieu du curseur tombe vers 470 Hz, valeur lue au lecteur d'écran | OK |
+| MAC07 | Plugins du Mac | Réglages à choix d'un plugin du Mac : liste des valeurs par leur nom, interrupteur marche/arrêt au clavier | OK |
+| MAC08 | Plugins du Mac | Préréglages d'usine d'un plugin du Mac : en charger un recopie ses réglages dans le projet ; toucher un réglage repasse en réglages personnels ; annulable | OK |
+| MAC09 | Plugins du Mac | Compensation de la latence déclarée par les plugins du Mac : les autres pistes et les bus sont retardés d'autant, l'export reste calé | OK |
 | BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | OK |
 | BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | OK |
 | BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | OK |
@@ -206,6 +221,17 @@
 | LH04 | Notes longues | Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier | OK |
 | LH05 | Notes longues | Arrêter le transport coupe aussi les voix bouclées sans note bloquée | OK |
 | LH06 | Notes longues | L’export WAV contient la note longue et une fin silencieuse sans saturation | OK |
+| LH07 | Notes longues | Une touche du clavier du piano roll tenue à la souris joue tant qu’elle est enfoncée, puis s’arrête au relâchement | OK |
+| LH08 | Notes longues | Au doigt : la touche tenue joue, la colonne des touches reste le moyen de défiler, et la note s’arrête même si le doigt est levé ailleurs | OK |
+| LH09 | Notes longues | Une touche tenue pendant que l’écran se redessine ne reste pas bloquée ; un geste annulé coupe aussi la note | OK |
+| LH10 | Notes longues | Accords à un doigt depuis le clavier du piano roll, à la souris : la touche tenue joue tout l’accord, le relâchement le coupe | OK |
+| LH11 | Notes longues | Enregistrer en jouant sur le clavier du piano roll à la souris : la note tenue est écrite avec sa durée | OK |
+| GE01 | Gestes réels | Clavier à l’écran : une touche tenue pendant un redessin (enregistrement, bouton MIDI) ne reste pas bloquée, arpégiateur compris | OK |
+| GE02 | Gestes réels | Effet Live tenu à la souris puis au clavier pendant un redessin : l’effet s’arrête au relâchement et le bouton reste fidèle | OK |
+| GE03 | Gestes réels | Espace sur un bouton atteint au clavier actionne ce bouton ; après un clic à la souris, Espace reste la lecture | OK |
+| GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
+| GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
+| GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
 | SB01 | Navigateur de sons | Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
 | SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
 | SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
@@ -228,3 +254,60 @@
 | RG01 | Registres | D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments | OK |
 | RG02 | Registres | Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle | OK |
 | RG03 | Registres | Une gamme jouée sur trois octaves au piano reste régulière à l’export | OK |
+| EM01 | Empreinte sonore | La démo exportée par le bouton Exporter garde son empreinte : niveau, spectre, enveloppe, ni clic, ni coupure, ni saturation | OK |
+| EM02 | Empreinte sonore | Notes tenues (cordes, orgue d’église, chœur, violoncelle, huit secondes chacune) : empreinte conservée, aucun trou pendant la tenue | OK |
+| EM03-trap | Empreinte sonore | Le modèle « trap » exporté garde son empreinte | OK |
+| EM03-house | Empreinte sonore | Le modèle « house » exporté garde son empreinte | OK |
+| EM03-lofi | Empreinte sonore | Le modèle « lofi » exporté garde son empreinte | OK |
+| EM04 | Empreinte sonore | L’empreinte repère vraiment les défauts : un clic, une coupure de 30 ms, une saturation et une piste devenue muette sont signalés | OK |
+| EM05 | Empreinte sonore | Geste réel dans la durée : une touche du piano roll tenue huit secondes à la souris sonne sans trou ni chute, puis s’arrête | OK |
+| SV01 | Sauvegarde | Plantage de l’onglet juste après une modification au clavier : le morceau revient tel quel, un message le dit et mène aux versions | OK |
+| SV02 | Sauvegarde | Une fermeture normale (rechargement) n’affiche pas de message de récupération | OK |
+| SV03 | Sauvegarde | Versions : revenir à un état antérieur depuis le menu Projet, l’état remplacé reste gardé et Ctrl+Z annule la restauration | OK |
+| SV04 | Sauvegarde | Au clavier seul : ouvrir les versions, garder une version, en restaurer une avec Tab et Entrée | OK |
+| SV05 | Sauvegarde | Les versions anciennes sont éclaircies : seules les plus récentes restent, sans laisser de données orphelines | OK |
+| SV06 | Sauvegarde | Sauvegarde automatique illisible au démarrage : la dernière version lisible est rouverte, avec le message de récupération | OK |
+| SV07 | Sauvegarde | Supprimer un projet de la bibliothèque supprime aussi ses versions | OK |
+| SV08 | Sauvegarde | Versions et message de récupération traduits en anglais et en espagnol | OK |
+| DF01 | Fichiers | Navigateur : pas de commandes de la version bureau ; bureau : « Enregistrer sous… » et la liste des fichiers récents apparaissent dans le menu Projet | OK |
+| DF02 | Fichiers | Bureau : Cmd+S la première fois demande où enregistrer ; ensuite Cmd+S réécrit le même fichier sans rien demander, le titre suit | OK |
+| DF03 | Fichiers | Bureau : Cmd+O ouvre un projet du disque ; rouvrir le même fichier ne crée pas de doublon dans la bibliothèque ; annuler ne change rien | OK |
+| DF04 | Fichiers | Bureau : fichiers récents dans le menu, du plus récent au plus ancien ; un clic rouvre ; un fichier disparu est signalé et retiré | OK |
+| DF05 | Fichiers | Bureau : un échec d’écriture (disque plein, dossier protégé) est expliqué, le projet reste dans l’application | OK |
+| DF06 | Fichiers | Bureau, au clavier seul : ouvrir le menu Projet, atteindre un fichier récent avec Tab et l’ouvrir avec Entrée | OK |
+| DF07 | Fichiers | Fichier ouvert depuis le Finder (double-clic sur un .khm) : le projet s’ouvre et le fichier est lié | OK |
+| DF08 | Fichiers | Commandes de fichiers traduites en anglais et en espagnol | OK |
+| GD01 | Gestes | Note glissée au doigt puis geste annulé par le système : la note revient, rien n’est enregistré, les mouvements suivants n’ont plus d’effet | OK |
+| GD02 | Gestes | Deux doigts : un deuxième doigt qui bouge ou se lève ailleurs ne pilote ni ne termine le glissé de la note par le premier | OK |
+| GD03 | Gestes | Poignée de durée et note en cours de création : un geste annulé ne change pas la durée et ne laisse pas de note | OK |
+| GD04 | Gestes | Vélocité glissée puis geste annulé : les forces de frappe reviennent ; un deuxième doigt ne les change pas | OK |
+| GD05 | Gestes | Boucle tracée dans la règle (Maj+glisser) puis geste annulé : la boucle reste comme avant | OK |
+| GD06 | Gestes | Clip glissé vers une autre piste puis geste annulé : il revient à sa place et sur sa piste | OK |
+| GD07 | Gestes | Point d’automation créé ou déplacé au doigt puis geste annulé : la courbe revient comme avant | OK |
+| GD08 | Gestes | Séparation du panneau du bas : un deuxième doigt ne la déplace pas, un geste annulé la libère | OK |
+| GD09 | Gestes | Souris relâchée hors de la fenêtre pendant le glissé d’une note : le glissé se termine, il est enregistré et s’annule, la souris ne traîne plus la note | OK |
+| GD10 | Gestes | Sans incident, rien ne change : glisser une note et un clip à la souris déplace et s’annule comme avant | OK |
+| WP01 | Tempo | Clip audio qui suit le tempo : bouton activé à la souris, tempo tapé au clavier, le son s’étire sans changer de hauteur, à l’export comme à l’écoute | OK |
+| WP02 | Tempo | Changement de tempo au milieu d’un clip qui suit le tempo : chaque coup tombe sur son temps, avant et après le changement | OK |
+| WP03 | Tempo | Tempo d’origine saisi (boucle jouée à 60 BPM dans un morceau à 120) : le clip se raccourcit et se cale sur la grille | OK |
+| WP04 | Tempo | Au tempo d’origine, suivre le tempo ne change rien au son : rendu identique échantillon par échantillon | OK |
+| WP05 | Tempo | Scinder et rogner un clip qui suit le tempo : les coups restent sur les temps | OK |
+| WP06 | Tempo | Au clavier : activer le suivi du tempo avec Entrée, l’annuler ; le réglage voyage dans le fichier projet | OK |
+| WP07 | Tempo | Suivi du tempo traduit en anglais et en espagnol | OK |
+| AX01 | Automation | Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe | OK |
+| AX02 | Automation | À l’écoute : pendant la lecture, l’effet suit la courbe ; à l’arrêt, il revient à son réglage fixe | OK |
+| AX03 | Automation | Retirer l’effet retire ses courbes ; Annuler ramène l’effet et ses courbes ; le tout voyage dans le fichier projet | OK |
+| AX04 | Automation | Plugin du Mac : ses réglages apparaissent dans la liste ; automatisé, il reçoit les valeurs au fil de la lecture | OK |
+| AX05 | Automation | Écho automatisé (dosage) à l’export : la traîne n’apparaît que là où la courbe monte | OK |
+| AX06 | Automation | Liste des réglages traduite (anglais, espagnol) | OK |
+| FZ01 | Gel de piste | Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil | OK |
+| FZ02 | Gel de piste | Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel | OK |
+| FZ03 | Gel de piste | Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien | OK |
+| FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | OK |
+| FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | OK |
+| PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | OK |
+| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | ÉCHEC : la charge ne baisse pas assez : 332 % → 298 % |
+| PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | OK |
+| AW01 | Plugins du Mac | Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable | OK |
+| AW02 | Plugins du Mac | Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet | OK |
+| AW03 | Plugins du Mac | Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit | OK |

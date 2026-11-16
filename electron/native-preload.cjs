@@ -6,6 +6,8 @@
 // une fois par window.postMessage({ khSab, key }), le préchargement la garde sous cette clé et confirme par { khSabOk: key }.
 // Les fonctions du pont reçoivent ensuite la clé à la place de la mémoire. La mémoire reste bien partagée (même processus).
 const { contextBridge } = require('electron');
+// Fichiers de projet (window.khFiles) : le même pont que hors module natif.
+require('./preload.cjs');
 
 const arg = process.argv.find(a => a.startsWith('--kh-native='));
 let m = null;
@@ -41,6 +43,11 @@ if (m) {
     setPreset: (id, n) => m.setPreset(num(id), num(n)),
     info: id => m.info(num(id)),
     close: id => m.close(num(id)),
+    // Fenêtre graphique du plugin (V17) : vue Cocoa du plugin ou vue générique d'Apple, dans une fenêtre native.
+    uiOpen: id => (m.uiOpen ? m.uiOpen(num(id)) : null),
+    uiClose: id => { if (m.uiClose) m.uiClose(num(id)); },
+    uiIsOpen: id => (m.uiIsOpen ? m.uiIsOpen(num(id)) : false),
+    uiPump: () => { if (m.uiPump) m.uiPump(); },
     ioStart: (key, o) => m.ioStart(sab(key), ioOpts(o)),
     ioStop: () => m.ioStop(),
     ioInput: (name, inTarget) => (inTarget === undefined ? m.ioInput(str(name)) : m.ioInput(str(name), num(inTarget))),

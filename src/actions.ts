@@ -2,11 +2,11 @@ import { analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, emit, findClip, findTrack, loadProjectFile, serializeProject } from './store';
+import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, stepDur, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -33,6 +33,41 @@ export function deleteTrack(id: string) {
   S.project.tracks = S.project.tracks.filter(x => x.id !== id);
   if (S.selTrack === id) { S.selTrack = ''; S.selClip = ''; }
   commit();
+}
+
+/**
+ * Geler une piste (V17) : son rendu (instrument, égaliseur, effets, automation) devient un clip audio sur une nouvelle piste
+ * juste en dessous, qui reprend le volume, le panoramique, les envois et la sortie ; la piste d'origine est coupée et gardée.
+ * Le rendu passe par le même chemin que l'export. Utile pour alléger un gros projet, ou pour retravailler le son en audio.
+ */
+export async function freezeTrack(id: string) {
+  const tr = findTrack(id), p = S.project;
+  if (!tr || tr.type === 'audio' || tr.frozen || !tr.clips.length) return;
+  toast(t('frz.working', tr.name));
+  const copy: Track = JSON.parse(JSON.stringify(tr)), moved: NonNullable<Track['auto']> = {};
+  // Le rendu s'arrête avant le fader : volume, panoramique, envois, sortie et sidechain restent réglables sur la piste audio.
+  Object.assign(copy, { vol: 1, pan: 0, rev: 0, dly: 0, out: '', duck: 0, mute: false, solo: false });
+  for (const k of ['vol', 'pan', 'rev', 'dly'] as const) if (copy.auto?.[k]) { moved[k] = copy.auto[k]; delete copy.auto[k]; }
+  let buf: AudioBuffer;
+  try { buf = await renderOffline({ ...p, tracks: [copy], loop: false }, false); }
+  catch { return toast(t('frz.fail'), 'error'); }
+  if (!S.project.tracks.includes(tr)) return;            // piste supprimée pendant le rendu
+  const bid = uid(); addBuffer(bid, buf);
+  let len = 0; while (timeOf(S.project, len) < buf.duration && len < 100000) len++;
+  const at: Track = newTrack('audio', p.tracks.filter(x => x.type === 'audio').length + 1);
+  Object.assign(at, { name: `${tr.name} ❄`, color: tr.color, vol: tr.vol, pan: tr.pan, rev: tr.rev, dly: tr.dly, out: tr.out, duck: tr.duck, frozenFrom: tr.id, auto: Object.keys(moved).length ? moved : undefined });
+  at.clips = [{ id: uid(), name: `${tr.name} ❄`, start: 0, len: Math.max(1, len), offset: 0, bufferId: bid, gain: 1 }];
+  tr.frozen = true; tr.mute = true;
+  p.tracks.splice(p.tracks.indexOf(tr) + 1, 0, at);
+  S.selTrack = at.id; S.selClip = at.clips[0].id;
+  commit(); toast(t('frz.done', tr.name));
+}
+/** Dégeler : la piste audio du gel disparaît, la piste d'origine revient telle qu'elle était. */
+export function unfreezeTrack(id: string) {
+  const tr = findTrack(id); if (!tr?.frozen) return;
+  S.project.tracks = S.project.tracks.filter(x => x.frozenFrom !== tr.id);
+  tr.frozen = false; tr.mute = false; S.selTrack = tr.id; S.selClip = tr.clips[0]?.id ?? '';
+  commit(); toast(t('frz.undone', tr.name));
 }
 
 export function duplicateTrack(id: string) {
@@ -63,7 +98,7 @@ function rewriteClip(fn: (src: Float32Array, dst: Float32Array) => void, after?:
 
 export function reverseClip() {
   rewriteClip((a, b) => { for (let i = 0, n = a.length; i < n; i++) b[i] = a[n - 1 - i]; }, (clip, buf) => {
-    const lenSec = clip.len * stepDur(S.project.bpm);
+    const lenSec = clip.len * srcStep(S.project, clip);
     clip.offset = Math.max(0, buf.duration - clip.offset - lenSec); delete clip.takes; delete clip.take;
     [clip.fadeIn, clip.fadeOut] = [clip.fadeOut ?? 0, clip.fadeIn ?? 0];
   });
@@ -79,6 +114,29 @@ export function normalizeClip() {
   const k = 0.966 / pk;
   rewriteClip((a, b) => { for (let i = 0; i < a.length; i++) b[i] = a[i] * k; }, clip => { clip.gain = 1; });
   toast(t('toast.normalized', (20 * Math.log10(k)).toFixed(1)));
+}
+
+/**
+ * Le clip audio suit le tempo du morceau (V17) : en l'activant, on considère qu'il tombe juste au tempo actuel
+ * (à l'endroit du clip). Sa longueur en mesures ne change pas.
+ */
+export function toggleWarp() {
+  const f = findClip(S.selClip);
+  if (!f || f.track.type !== 'audio') return;
+  const c = f.clip;
+  if (c.warp) c.warp = false;
+  else { c.warp = true; c.srcBpm ??= bpmAt(S.project, c.start); }
+  commit(); toast(t(c.warp ? 'warp.on' : 'warp.off', Math.round(c.srcBpm ?? S.project.bpm)));
+}
+/** Tempo d'origine du son (une boucle à 90 BPM dans un morceau à 120) : la longueur en pas suit, bornée à la fin du son. */
+export function setWarpBpm(v: number) {
+  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
+  if (!f || !buf || !(v >= 20 && v <= 400)) return;
+  const c = f.clip, old = c.srcBpm ?? bpmAt(S.project, c.start);
+  c.warp = true; c.srcBpm = Math.round(v * 100) / 100;
+  c.len = Math.max(1, Math.min(Math.round(c.len * c.srcBpm / old), Math.ceil((buf.duration - c.offset) / (15 / c.srcBpm) - 1e-6)));
+  c.fadeIn = Math.min(c.fadeIn ?? 0, c.len); c.fadeOut = Math.min(c.fadeOut ?? 0, c.len);
+  commit();
 }
 
 /** Étire le son du clip (`pct` % de sa durée) et le transpose de `semis` demi-tons, l'un sans toucher à l'autre. */
@@ -178,7 +236,14 @@ export function addInsert(trackId: string, type: string) {
   if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
   tr.inserts.push(newInsert(type)); commit();
 }
-export function removeInsert(trackId: string, id: string) { const tr = strip(trackId); if (tr) { tr.inserts = tr.inserts.filter(i => i.id !== id); commit(); } }
+export function removeInsert(trackId: string, id: string) {
+  const tr = strip(trackId); if (!tr) return;
+  tr.inserts = tr.inserts.filter(i => i.id !== id);
+  // Ses courbes d'automation partent avec lui (Annuler les ramène).
+  for (const k of Object.keys(tr.auto ?? {})) if (k.startsWith(`ins:${id}:`)) delete tr.auto![k];
+  if (tr.autoShow?.startsWith(`ins:${id}:`)) tr.autoShow = 'vol';
+  commit();
+}
 export function moveInsert(trackId: string, id: string, dir: -1 | 1) {
   const l = strip(trackId)?.inserts, i = l?.findIndex(x => x.id === id) ?? -1, j = i + dir;
   if (!l || i < 0 || j < 0 || j >= l.length) return;
@@ -381,7 +446,7 @@ export function splitClip() {
   if (at <= clip.start || at >= clip.start + clip.len) return toast(t('toast.playheadInside'));
   const right: Clip = JSON.parse(JSON.stringify(clip));
   right.id = uid(); right.start = at; right.len = clip.start + clip.len - at;
-  if (track.type === 'audio') shiftAudio(right, (at - clip.start) * stepDur(S.project.bpm));
+  if (track.type === 'audio') shiftAudio(right, (at - clip.start) * srcStep(S.project, clip));
   else right.offset = (clip.offset + at - clip.start) % clip.patLen!;
   clip.len = at - clip.start;
   track.clips.push(right); commit();
@@ -525,10 +590,60 @@ export async function analyzeMix(): Promise<string> {
   } catch { toast(t('toast.emptyProject'), 'error'); return ''; }
 }
 
-export async function saveFile() {
+/** Version bureau (electron/preload.cjs) : fichiers de projet sur le disque. Absent dans le navigateur. */
+export interface DeskFile { path: string; name: string; text?: string }
+export interface DeskFiles {
+  open(): Promise<DeskFile | null>; openRecent(path: string): Promise<DeskFile>;
+  save(path: string, text: string): Promise<DeskFile>; saveAs(name: string, text: string): Promise<DeskFile | null>;
+  recent(): Promise<DeskFile[]>; clearRecent(): Promise<boolean>; onOpen(fn: (f: DeskFile) => void): void; edited(on: boolean): void;
+}
+export const deskFiles = (): DeskFiles | null => (window as unknown as { khFiles?: DeskFiles }).khFiles ?? null;
+
+/** Enregistrer : dans la version bureau, réécrit le fichier du projet (ou demande où l'enregistrer la première fois) ; dans le navigateur, télécharge le .khm. */
+export async function saveFile(): Promise<void> {
+  const d = deskFiles();
+  if (d && S.file.path) {
+    await saveWamStates();
+    try { linkFile(await d.save(S.file.path, serializeProject())); setDirty(false); toast(t('file.saved', S.file.name)); }
+    catch { toast(t('file.saveFail'), 'error'); }
+    return;
+  }
+  if (d) return saveFileAs();
   await saveWamStates();
   download(new Blob([serializeProject()], { type: 'application/json' }), safeName() + '.khm');
   toast(t('toast.saved'));
+}
+/** Enregistrer sous : fenêtre du système, dossier et nom au choix (version bureau). Dans le navigateur : comme Enregistrer. */
+export async function saveFileAs(): Promise<void> {
+  const d = deskFiles();
+  if (!d) return saveFile();
+  await saveWamStates();
+  try {
+    const f = await d.saveAs(S.project.name || 'Projet', serializeProject());
+    if (!f) return;
+    linkFile(f); setDirty(false); toast(t('file.saved', f.name));
+  } catch { toast(t('file.saveFail'), 'error'); }
+}
+function openText(f: DeskFile) {
+  engine.stop(); loadProjectFile(f.text ?? '', pidOfFile(f.path)); linkFile(f); setDirty(false);
+  toast(t('file.opened', f.name)); engine.prepare();
+}
+/** Ouvrir : fenêtre du système dans la version bureau, sélecteur de fichier dans le navigateur. */
+export async function openProjectFile() {
+  const d = deskFiles();
+  if (!d) { document.getElementById('fProj')?.click(); return; }
+  try { const f = await d.open(); if (f) openText(f); }
+  catch { toast(t('toast.badProject'), 'error'); }
+}
+export async function openRecentFile(path: string, name: string) {
+  const d = deskFiles(); if (!d) return;
+  let f: DeskFile;
+  try { f = await d.openRecent(path); } catch { toast(t('file.missing', name), 'error'); return; }
+  try { openText(f); } catch { toast(t('toast.badProject'), 'error'); }
+}
+/** Fichier .khm ouvert depuis le Finder (double-clic, glisser sur le Dock). */
+export function listenSystemOpen() {
+  deskFiles()?.onOpen(f => { try { openText(f); } catch { toast(t('toast.badProject'), 'error'); } });
 }
 
 export async function openFile(f: File) {

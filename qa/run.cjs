@@ -88,10 +88,32 @@ const PAGE_HELPERS = () => {
         ioInput: n => ({ input: n, inChannels: 0, inDeclared: 0 }),
         ioStats: () => (f.running ? { devEvents: 0, outCalls: 1 } : null),
         ioArm() { }, ioResetStats() { }, ioGain() { }, ioDevices: () => [],
+        // Fenêtre du plugin (V17) : ouverte/fermée, nombre de distributions d'évènements ; noUi = module natif plus ancien.
+        ui: {}, pumps: 0,
+        uiOpen: id => { calls.push(['uiOpen', id]); f.ui[id] = true; return { generic: false, width: 400, height: 300 }; },
+        uiClose: id => { f.ui[id] = false; }, uiIsOpen: id => !!f.ui[id], uiPump: () => { f.pumps++; },
       };
       window.__fakeListen ??= e => { const w = window.khNative; if (w?.sabs && e.data?.khSab instanceof SharedArrayBuffer) { w.sabs.add(e.data.key); window.postMessage({ khSabOk: e.data.key }, '*'); } };
       removeEventListener('message', window.__fakeListen); addEventListener('message', window.__fakeListen);
+      if (opts.noUi) for (const k of ['uiOpen', 'uiClose', 'uiIsOpen', 'uiPump']) delete f[k];
       window.khNative = f;
+      return f;
+    },
+    /** Pont des fichiers de la version bureau simulé (electron/preload.cjs) : disque en mémoire, réponses des fenêtres réglables. */
+    fakeFiles() {
+      const f = {
+        disk: {}, recents: [], calls: [], next: { open: null, saveAs: null }, failSave: false, editedLog: [],
+        info: p => ({ path: p, name: p.split('/').pop().replace(/\.khm$/, '') }),
+        remember(p) { f.recents = [p, ...f.recents.filter(x => x !== p)].slice(0, 10); },
+        async open() { f.calls.push('open'); const p = f.next.open; if (!p) return null; f.remember(p); return { ...f.info(p), text: f.disk[p] }; },
+        async openRecent(p) { f.calls.push('openRecent'); if (!(p in f.disk)) { f.recents = f.recents.filter(x => x !== p); throw new Error('missing'); } f.remember(p); return { ...f.info(p), text: f.disk[p] }; },
+        async save(p, text) { f.calls.push('save'); if (f.failSave) throw new Error('disk full'); f.disk[p] = text; f.remember(p); return f.info(p); },
+        async saveAs(name, text) { f.calls.push('saveAs'); const p = f.next.saveAs; if (!p) return null; if (f.failSave) throw new Error('disk full'); f.disk[p] = text; f.remember(p); return f.info(p); },
+        async recent() { return f.recents.filter(p => p in f.disk).map(f.info); },
+        async clearRecent() { f.recents = []; return true; },
+        onOpen(fn) { f.sys = fn; }, edited(on) { f.editedLog.push(on); },
+      };
+      window.khFiles = f; window.kh.setLang('fr');
       return f;
     },
     sine(id) {
@@ -103,6 +125,17 @@ const PAGE_HELPERS = () => {
 };
 
 const results = [];
+let ctx;
+/** Ouvre l'application dans un nouvel onglet du même profil (mêmes données enregistrées) ; sert aussi après un plantage simulé. */
+async function openPage(ready) {
+  page = ready || await ctx.newPage();
+  page.on('pageerror', e => errors.push('PAGE ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
+  page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
+  await page.addInitScript(PAGE_HELPERS);
+  await page.goto(BASE); await page.waitForSelector('.clip');
+  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+}
 let page, browser, dialogText, refuseConfirm = false, ignoreErr = null, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
@@ -110,6 +143,8 @@ const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu
 async function reset() {
   // Module natif simulé (cas NAT et AU) : on le retire, moteur natif arrêté, choix oublié.
   await page.evaluate(async () => { const k = window.kh; if (k.engine.native) await k.engine.stopNative(); delete window.khNative; try { localStorage.removeItem('kh-native'); } catch { } });
+  // Pont des fichiers simulé (cas DF) : retiré, menu reconstruit sans les commandes de la version bureau.
+  await page.evaluate(() => { if (window.khFiles) { delete window.khFiles; window.kh.S.file = { path: '', name: '' }; window.kh.setLang('fr'); } });
   await page.evaluate(() => {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
@@ -997,8 +1032,8 @@ const waitLevel = (id, min, ms = 3000) => page.evaluate(async ([id, min, ms]) =>
 
 test('IN01', 'Entrée audio', 'Activer l\'entrée : liste des micros, vumètre d\'entrée, puis fermeture', async () => {
   await page.click(await headSel(4)); expect(await page.$('.inbar'), 'panneau d\'entrée absent');
-  await page.click('[data-act=inopen]'); await sleep(400);
-  expect(await S(() => !!window.kh.engine.inp), 'entrée non ouverte'); expect(await page.getAttribute('[data-act=inopen]', 'aria-pressed') === 'true', 'état du bouton');
+  await page.click('[data-act=inopen]');
+  await until(() => S(() => !!window.kh.engine.inp), 'entrée non ouverte', 5000); await sleep(150);   // (l'ouverture du micro peut prendre plus de 0,4 s sur une machine chargée) expect(await page.getAttribute('[data-act=inopen]', 'aria-pressed') === 'true', 'état du bouton');
   expect(await page.$$eval('[data-role=indev] option', e => e.length) >= 2, 'aucun micro listé');
   const lvl = await waitLevel('input', 0.2); expect(lvl > 0.2, `vumètre d'entrée inactif (${lvl})`);
   await page.click('[data-act=inopen]'); await sleep(150); expect(await S(() => !window.kh.engine.inp), 'entrée non fermée');
@@ -2612,17 +2647,795 @@ test('RG03', 'Registres', 'Une gamme jouée sur trois octaves au piano reste ré
   expect(jump < 4, `écart de ${jump.toFixed(1)} dB entre deux notes voisines : ${lv.map(v => v.toFixed(1)).join(' ')}`);
 });
 
+// ============ Empreinte sonore de référence (V17) ============
+// Chaque projet type est exporté par le vrai bouton « Exporter » (même fichier WAV que l'utilisateur), puis mesuré
+// et comparé à son empreinte (qa/empreintes/*.json) : niveau, spectre, enveloppe, clics, coupures, saturation.
+// Les bruits (caisse claire, réverbération) tirent des nombres au hasard : on fixe la graine pendant l'export pour un rendu identique d'une fois sur l'autre.
+const EMP = require('./empreinte.cjs');
+async function exportPrint(name, build, arg, tol) {
+  await page.evaluate(build, arg);
+  await S(() => { const k = window.kh; k.resetHistory(); k.commit(); });
+  await S(() => { let a = 0x2545f491; window.__rnd ??= Math.random; Math.random = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; });
+  let dl;
+  try { [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('#bExport')]); }
+  finally { await S(() => { if (window.__rnd) Math.random = window.__rnd; }); }
+  const f = path.join(TMP, name + '.wav'); await dl.saveAs(f);
+  const r = EMP.check(name, EMP.readWav(fs.readFileSync(f)), tol);
+  expect(!r.problems.length, `${name} : ${r.problems.join(' ; ')}`);
+  return { ...r, file: f };
+}
+/** Projet de notes tenues : quatre instruments à maintien, l'un après l'autre, chacun huit secondes. */
+const HELD_PRINT = () => { const k = window.kh, p = k.templateProject('empty'), demo = k.demoProject(), base = demo.tracks.find(t => t.type === 'synth');
+  p.name = 'Notes tenues'; p.bpm = 120; p.loop = false; p.countIn = false;
+  p.tracks = [['r_strings', 60], ['r_church', 48], ['r_choir', 64], ['r_cello', 43]].map(([id, m], i) => { const tr = JSON.parse(JSON.stringify(base));
+    Object.assign(tr, { id: 'held' + i, name: id, rev: 0.15, dly: 0, chorus: 0, auto: {}, inserts: [], synth: k.makeSynth(id) });
+    tr.clips = [{ id: 'hc' + i, name: id, start: i * 72, len: 72, offset: 0, patLen: 72, notes: [{ p: m, s: 0, l: 64, v: 0.8 }, { p: m + 7, s: 16, l: 48, v: 0.6 }] }]; return tr; });
+  k.S.project = p; k.S.selTrack = p.tracks[0].id; k.S.selClip = p.tracks[0].clips[0].id; };
+test('EM01', 'Empreinte sonore', 'La démo exportée par le bouton Exporter garde son empreinte : niveau, spectre, enveloppe, ni clic, ni coupure, ni saturation', async () => {
+  const r = await exportPrint('demo', () => { const k = window.kh; k.S.project = k.demoProject(); k.S.project.countIn = false; });
+  expect(r.fp.dur > 10 && r.fp.lufs > -30, `export trop court ou trop faible : ${r.fp.dur} s, ${r.fp.lufs} LUFS`);
+});
+test('EM02', 'Empreinte sonore', 'Notes tenues (cordes, orgue d’église, chœur, violoncelle, huit secondes chacune) : empreinte conservée, aucun trou pendant la tenue', async () => {
+  const r = await exportPrint('notes-tenues', HELD_PRINT);
+  // En plus de la référence : chaque note reste présente sur toute sa tenue (aucune tranche de 250 ms ne tombe sous -45 dB).
+  for (let i = 0; i < 4; i++) { const a = Math.round((i * 9 + 0.3) * 4), b = Math.round((i * 9 + 7.7) * 4), seg = r.fp.env.slice(a, b), lo = Math.min(...seg);
+    expect(lo > -45, `instrument ${i + 1} : la tenue tombe à ${lo} dB entre ${(a / 4).toFixed(1)} et ${(b / 4).toFixed(1)} s`); }
+});
+for (const tpl of ['trap', 'house', 'lofi']) test('EM03-' + tpl, 'Empreinte sonore', `Le modèle « ${tpl} » exporté garde son empreinte`, async () => {
+  await exportPrint('modele-' + tpl, t => { const k = window.kh; k.S.project = k.templateProject(t); k.S.project.countIn = false; }, tpl);
+});
+test('EM04', 'Empreinte sonore', 'L’empreinte repère vraiment les défauts : un clic, une coupure de 30 ms, une saturation et une piste devenue muette sont signalés', async () => {
+  const r = await exportPrint('demo', () => { const k = window.kh; k.S.project = k.demoProject(); k.S.project.countIn = false; });
+  const a = EMP.readWav(fs.readFileSync(r.file)), sr = a.sr, copy = () => ({ sr, ch: a.ch.map(c => Float32Array.from(c)) });
+  // Défauts fabriqués dans le fichier exporté, au milieu du morceau.
+  const click = copy(), at = Math.round(sr * 5.37); for (const c of click.ch) { c[at] += 0.6; c[at + 1] -= 0.6; }   // hors des attaques de la batterie
+  const gap = copy(); for (const c of gap.ch) c.fill(0, sr * 6, sr * 6 + Math.round(sr * 0.03));
+  const sat = copy(); for (const c of sat.ch) for (let i = sr * 3; i < sr * 3 + 2000; i++) c[i] = Math.max(-1, Math.min(1, c[i] * 6));
+  const pb = (x, word) => { const l = EMP.compare(r.fp, EMP.fingerprint(x)); expect(l.some(m => m.includes(word)), `défaut non signalé (${word}) : ${l.join(' ; ') || 'aucun écart'}`); };
+  pb(click, 'clics'); pb(gap, 'coupures'); pb(sat, 'saturation');
+  expect(!EMP.compare(r.fp, EMP.fingerprint(copy())).length, 'le même fichier doit être conforme à lui-même');
+  // Une piste muette dans le projet : l'export change de niveau ou de spectre.
+  const muted = await page.evaluate(async () => { const k = window.kh, p = k.demoProject(); p.tracks[0].mute = true; const b = await k.renderOffline(p); return { sr: b.sampleRate, ch: [Array.from(b.getChannelData(0)), Array.from(b.getChannelData(1))] }; });
+  const l = EMP.compare(r.fp, EMP.fingerprint({ sr: muted.sr, ch: muted.ch.map(c => Float32Array.from(c)) }));
+  expect(l.length, 'une piste de batterie coupée n’a pas été remarquée');
+});
+test('EM05', 'Empreinte sonore', 'Geste réel dans la durée : une touche du piano roll tenue huit secondes à la souris sonne sans trou ni chute, puis s’arrête', async () => {
+  await organOnTrack1(); const b = await prKey(60);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down();
+  // Mesure toutes les 50 ms pendant la tenue (après l'attaque) : niveau du mixage principal.
+  const lv = await S(async () => { await new Promise(r => setTimeout(r, 600)); const a = window.kh.engine.mix.analyser, d = new Float32Array(a.fftSize), out = [];
+    for (let i = 0; i < 150; i++) { a.getFloatTimeDomainData(d); out.push(Math.sqrt(d.reduce((e, v) => e + v * v, 0) / d.length)); await new Promise(r => setTimeout(r, 50)); } return out; });
+  await page.mouse.up(); await sleep(650); const off = await masterRms();
+  const dbs = lv.map(v => 20 * Math.log10(v + 1e-9)), lo = Math.min(...dbs), hi = Math.max(...dbs); let jump = 0;
+  for (let i = 1; i < dbs.length; i++) jump = Math.max(jump, Math.abs(dbs[i] - dbs[i - 1]));
+  expect(lo > -50, `la note tenue tombe à ${lo.toFixed(1)} dB`); expect(hi - lo < 10, `niveau instable pendant la tenue : de ${lo.toFixed(1)} à ${hi.toFixed(1)} dB`);
+  expect(jump < 6, `saut de ${jump.toFixed(1)} dB entre deux mesures (trou ou hoquet)`); expect(off < lv[0] * 0.03, `la note ne s’arrête pas (${off})`);
+});
+
+// ============ Ne jamais perdre un morceau (V17) ============
+async function renameByTyping(name) { await page.click('#pname', { clickCount: 3 }); await page.keyboard.type(name); await page.keyboard.press('Tab'); }
+/** Plantage réel de l'onglet (le processus de la page est tué, sans fermeture propre), puis réouverture dans le même profil. */
+async function crashAndReopen() {
+  // L'onglet suivant est créé avant le plantage : le profil reste ouvert, comme une application qu'on relance.
+  const next = await ctx.newPage(), cdp = await page.context().newCDPSession(page);
+  cdp.send('Page.crash').catch(() => { /* la page meurt pendant l'appel : la réponse n'arrive jamais */ });
+  await sleep(1200); page.close().catch(() => { }); await sleep(200);
+  await openPage(next);
+}
+test('SV01', 'Sauvegarde', 'Plantage de l’onglet juste après une modification au clavier : le morceau revient tel quel, un message le dit et mène aux versions', async () => {
+  await renameByTyping('Morceau sauvé QA'); await sleep(900);   // la sauvegarde automatique part 0,5 s après la modification
+  await crashAndReopen();
+  await page.waitForSelector('dialog#crash[open]', { timeout: 15000 });   // jusqu'à 8 s si le système libère lentement l'onglet planté
+  const txt = await page.textContent('dialog#crash');
+  expect(txt.includes('Morceau sauvé QA'), `le message ne nomme pas le morceau : ${txt}`);
+  expect((await proj()).name === 'Morceau sauvé QA', 'le morceau n’a pas été retrouvé');
+  expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'crashok', 'le focus doit être sur « Continuer »');
+  await page.click('dialog#crash [data-act=crashvers]');
+  await page.waitForSelector('#lib[open] [data-ver]');
+  const why = await page.textContent('#lib');
+  expect(why.includes('récupérée après une fermeture inattendue'), 'la version d’ouverture devrait être marquée « récupérée »');
+  await page.keyboard.press('Escape');
+});
+test('SV02', 'Sauvegarde', 'Une fermeture normale (rechargement) n’affiche pas de message de récupération', async () => {
+  await renameByTyping('Fermeture propre QA'); await sleep(900);
+  await page.reload(); await page.waitForSelector('.clip'); await sleep(9000);   // au-delà de la seconde vérification (8 s)
+  expect(!(await page.$('dialog#crash')), 'message de récupération affiché à tort');
+  expect((await proj()).name === 'Fermeture propre QA', 'morceau non retrouvé');
+});
+test('SV03', 'Sauvegarde', 'Versions : revenir à un état antérieur depuis le menu Projet, l’état remplacé reste gardé et Ctrl+Z annule la restauration', async () => {
+  await S(() => { window.kh.store.versioning.every = 0; });
+  try {
+    await renameByTyping('Version A'); await sleep(800);
+    await renameByTyping('Version B'); await sleep(800);
+    await menu('bVersions'); await page.waitForSelector('#lib[open] [data-ver]');
+    const rows = await page.$$eval('#lib [data-ver] strong + small', l => l.map(e => e.textContent));
+    const iA = rows.findIndex(r => r.startsWith('Version A'));
+    expect(iA > 0 && rows[0].startsWith('Version B'), `liste des versions inattendue : ${rows.join(' | ')}`);
+    await page.locator('#lib [data-act=verrestore]').nth(iA).click(); await sleep(400);
+    expect((await proj()).name === 'Version A', 'la version A n’a pas été restaurée');
+    expect(await page.$eval('#pname', e => e.value) === 'Version A', 'le nom affiché n’a pas suivi');
+    await page.keyboard.press('Control+z'); await sleep(200);
+    expect((await proj()).name === 'Version B', 'Ctrl+Z doit revenir à l’état d’avant la restauration');
+    const list = await S(() => window.kh.store.listVersions());
+    expect(list.some(v => v.name === 'Version B'), 'l’état remplacé doit rester parmi les versions');
+  } finally { await S(() => { window.kh.store.versioning.every = 120000; }); }
+});
+test('SV04', 'Sauvegarde', 'Au clavier seul : ouvrir les versions, garder une version, en restaurer une avec Tab et Entrée', async () => {
+  await S(() => { window.kh.store.versioning.every = 0; });
+  try {
+    await renameByTyping('Clavier A'); await sleep(800); await renameByTyping('Clavier B'); await sleep(800);
+    await S(() => window.kh.showVersions()); await page.waitForSelector('#lib[open] [data-act=versnap]');
+    expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'versnap', 'le focus doit arriver dans la liste des versions');
+    const n0 = (await S(() => window.kh.store.listVersions())).length;
+    await page.keyboard.press('Enter'); await page.waitForTimeout(400);
+    const n1 = (await S(() => window.kh.store.listVersions())).length;
+    expect(n1 === n0, 'rien n’a changé : aucune version en double ne doit être créée');   // état identique au dernier instantané
+    await page.focus('#lib [data-act=versnap]'); await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+    const target = await page.evaluate(() => document.activeElement?.closest('[data-ver]')?.querySelector('small')?.textContent ?? '');
+    expect(target.startsWith('Clavier A'), `Tab doit mener au bouton Restaurer de la version précédente (obtenu : ${target})`);
+    await page.keyboard.press('Enter'); await sleep(400);
+    expect((await proj()).name === 'Clavier A', 'restauration au clavier sans effet');
+  } finally { await S(() => { window.kh.store.versioning.every = 120000; }); }
+});
+test('SV05', 'Sauvegarde', 'Les versions anciennes sont éclaircies : seules les plus récentes restent, sans laisser de données orphelines', async () => {
+  const r = await S(async () => {
+    const st = window.kh.store, k = window.kh, v0 = { ...st.versioning };
+    Object.assign(st.versioning, { keep: 3, days: 2 });
+    try {
+      const ts = [];
+      for (let i = 0; i < 6; i++) { k.S.project.name = 'Éclairci ' + i; await st.snapshot('manual'); const l = await st.listVersions(); ts.push(l[l.length - 1].t); }
+      const list = await st.listVersions(); let gone = 0;
+      for (const t of ts.slice(0, 3)) { try { await st.restoreVersion(t); } catch { gone++; } }
+      return { n: list.length, names: list.map(v => v.name), gone };
+    } finally { Object.assign(st.versioning, { keep: v0.keep, days: v0.days }); }
+  });
+  expect(r.n === 3 && r.names.join() === 'Éclairci 3,Éclairci 4,Éclairci 5', `versions gardées : ${r.names.join(', ')}`);
+  expect(r.gone === 3, `${3 - r.gone} version(s) retirée(s) de la liste mais encore présentes dans le stockage`);
+});
+test('SV06', 'Sauvegarde', 'Sauvegarde automatique illisible au démarrage : la dernière version lisible est rouverte, avec le message de récupération', async () => {
+  await S(() => { window.kh.store.versioning.every = 0; });
+  await renameByTyping('Lisible QA'); await sleep(900);
+  await S(() => { window.kh.store.versioning.every = 120000; });
+  // Abîme la sauvegarde du projet courant, comme un disque plein ou une écriture interrompue.
+  await S(() => new Promise((ok, ko) => { const r = indexedDB.open('khmusicpro', 1); r.onsuccess = () => { const db = r.result, tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv');
+    st.get('current').onsuccess = e => { st.put('{"tracks": [ abîmé', 'proj:' + e.target.result); }; tx.oncomplete = () => { db.close(); ok(); }; tx.onerror = () => ko(tx.error); }; }));
+  await crashAndReopen();
+  await page.waitForSelector('dialog#crash[open]', { timeout: 15000 });
+  expect((await proj()).name === 'Lisible QA', `morceau rouvert : ${(await proj()).name}`);
+  await page.click('dialog#crash [data-act=crashok]');
+});
+test('SV07', 'Sauvegarde', 'Supprimer un projet de la bibliothèque supprime aussi ses versions', async () => {
+  const r = await S(async () => {
+    const k = window.kh, st = k.store; k.S.project.name = 'À supprimer QA'; await st.snapshot('manual'); await st.saveNow();
+    const pid = k.S.pid; k.createFromTemplate('empty'); await st.saveNow();
+    const before = (await st.listVersions(pid)).length;
+    return { pid, before };
+  });
+  expect(r.before >= 1, 'aucune version avant suppression');
+  await S(() => window.kh.showLibrary()); await page.waitForSelector(`#lib li[data-pid="${r.pid}"]`);
+  await page.click(`#lib li[data-pid="${r.pid}"] [data-act=libdel]`); await sleep(400);
+  const after = await page.evaluate(pid => window.kh.store.listVersions(pid), r.pid);
+  expect(!after.length, `il reste ${after.length} version(s)`);
+  await page.keyboard.press('Escape');
+});
+test('SV08', 'Sauvegarde', 'Versions et message de récupération traduits en anglais et en espagnol', async () => {
+  for (const [l, menuTxt, restore] of [['en', 'Song versions…', 'Restore'], ['es', 'Versiones de la canción…', 'Restaurar']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.textContent('#bVersions')).trim() === menuTxt, `menu en ${l}`);
+    await S(async () => { window.kh.store.versioning.every = 0; window.kh.S.project.name = 'Lang ' + Math.random(); window.kh.commit(); await window.kh.store.saveNow(); window.kh.store.versioning.every = 120000; });
+    await S(() => window.kh.showVersions()); await page.waitForSelector('#lib[open] [data-act=verrestore]');
+    expect((await page.textContent('#lib [data-act=verrestore]')).trim() === restore, `bouton Restaurer en ${l}`);
+    await page.keyboard.press('Escape');
+  }
+});
+test('SV09', 'Sauvegarde', 'Plantage reconnu en retard (le système libère l’onglet planté après le redémarrage) : le message arrive quand même et la version rouverte est marquée « récupérée »', async () => {
+  await renameByTyping('Morceau tardif QA'); await sleep(900);
+  // Un onglet « planté » dont le système n'a pas encore libéré le verrou : une autre page de la même adresse le tient.
+  const holder = await ctx.newPage();
+  try {
+    await holder.goto(new URL('/icon.svg', page.url()).href);
+    await holder.evaluate(() => {
+      // Traces d'onglets plantés par les cas précédents (SV01, SV06) : sous Linux, leur verrou peut être libéré en retard.
+      for (const k of Object.keys(localStorage)) if (k.startsWith('kh-open:')) localStorage.removeItem(k);
+      localStorage.setItem('kh-open:zombie', JSON.stringify({ t: Date.now() })); navigator.locks.request('kh-tab:zombie', () => new Promise(() => { })); });
+    await sleep(200);
+    await page.reload(); await page.waitForSelector('.clip'); await sleep(1500);
+    expect(!(await page.$('dialog#crash[open]')), 'tant que le verrou est tenu, aucun message ne doit apparaître');
+  } finally { await holder.close(); }   // le système libère enfin le verrou
+  await page.waitForSelector('dialog#crash[open]', { timeout: 15000 });
+  expect((await page.textContent('dialog#crash')).includes('Morceau tardif QA'), 'le message doit nommer le morceau');
+  await page.click('dialog#crash [data-act=crashvers]');
+  await page.waitForSelector('#lib[open] [data-ver]');
+  const vers = await S(() => window.kh.store.listVersions());
+  expect(vers[vers.length - 1]?.why === 'crash' && vers[vers.length - 1]?.name === 'Morceau tardif QA', `la version rouverte doit être marquée « récupérée » (dernière : ${JSON.stringify(vers[vers.length - 1])})`);
+  expect(vers.filter(v => v.name === 'Morceau tardif QA' && v.why === 'open').length === 0, 'pas de doublon « ouverture » de la même version');
+  expect((await page.textContent('#lib')).includes('récupérée après une fermeture inattendue'), 'la liste doit afficher « récupérée »');
+  await page.keyboard.press('Escape');
+});
+
+// ============ Fichiers de projet de la version bureau (V17) ============
+// Pont simulé dans le navigateur (qa.fakeFiles) ; le vrai pont, avec les fenêtres du système, est vérifié par qa/desktop-files.cjs.
+const DFS = () => page.evaluate(() => ({ calls: window.khFiles.calls, disk: Object.fromEntries(Object.entries(window.khFiles.disk).map(([k, v]) => [k, JSON.parse(v).project.name])), recents: window.khFiles.recents, edited: window.khFiles.editedLog, file: window.kh.S.file }));
+async function lastToast() { await sleep(150); return page.textContent('#toast'); }
+test('DF01', 'Fichiers', 'Navigateur : pas de commandes de la version bureau ; bureau : « Enregistrer sous… » et la liste des fichiers récents apparaissent dans le menu Projet', async () => {
+  await page.click('#menu summary');
+  expect(!(await page.$('#bSaveAs')) && !(await page.$('#recent')), 'commandes de la version bureau visibles dans le navigateur');
+  await page.keyboard.press('Escape'); await S(() => { document.getElementById('menu').open = false; });
+  await S(() => window.qa.fakeFiles());
+  await page.click('#menu summary'); await page.waitForSelector('#recent .mnone');
+  expect(await page.isVisible('#bSaveAs'), '« Enregistrer sous… » absent');
+  expect((await page.textContent('#recent')).includes('Aucun fichier récent'), 'liste des récents vide non annoncée');
+});
+test('DF02', 'Fichiers', 'Bureau : Cmd+S la première fois demande où enregistrer ; ensuite Cmd+S réécrit le même fichier sans rien demander, le titre suit', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); f.next.saveAs = '/Users/kh/Musique/Mon titre.khm'; });
+  await page.keyboard.press('Meta+s'); await sleep(300);
+  let r = await DFS();
+  expect(r.calls.join() === 'saveAs' && r.file.path === '/Users/kh/Musique/Mon titre.khm', `premier enregistrement : ${JSON.stringify(r)}`);
+  expect((await lastToast()).includes('Mon titre'), 'le message doit nommer le fichier');
+  expect((await page.title()).startsWith('Mon titre'), `titre de la fenêtre : ${await page.title()}`);
+  expect(r.edited.at(-1) === false, 'le document doit être marqué comme enregistré');
+  await renameByTyping('Titre modifié'); await sleep(100);
+  expect((await DFS()).edited.at(-1) === true, 'une modification doit marquer le document comme modifié');
+  await page.keyboard.press('Meta+s'); await sleep(300);
+  r = await DFS();
+  expect(r.calls.join() === 'saveAs,save', `Cmd+S doit réécrire sans fenêtre : ${r.calls.join()}`);
+  expect(r.disk['/Users/kh/Musique/Mon titre.khm'] === 'Titre modifié', 'le fichier n’a pas été mis à jour');
+  await page.keyboard.press('Meta+Shift+s'); await sleep(300);
+  expect((await DFS()).calls.at(-1) === 'saveAs', 'Cmd+Maj+S doit rouvrir la fenêtre « Enregistrer sous »');
+});
+test('DF03', 'Fichiers', 'Bureau : Cmd+O ouvre un projet du disque ; rouvrir le même fichier ne crée pas de doublon dans la bibliothèque ; annuler ne change rien', async () => {
+  await S(() => { const f = window.qa.fakeFiles(), p = window.kh.demoProject(); p.name = 'Depuis le disque';
+    f.disk['/Users/kh/Projets/Disque.khm'] = JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const before = await proj();
+  await page.keyboard.press('Meta+o'); await sleep(300);
+  expect((await proj()).name === before.name, 'une ouverture annulée ne doit rien changer');
+  await S(() => { window.khFiles.next.open = '/Users/kh/Projets/Disque.khm'; });
+  await menu('bOpen'); await sleep(500);
+  expect((await proj()).name === 'Depuis le disque', 'projet non ouvert');
+  const n1 = await S(() => window.kh.S.pid);
+  await S(() => window.kh.createFromTemplate('empty')); await sleep(200);
+  await page.keyboard.press('Meta+o'); await sleep(500);
+  const n2 = await S(() => window.kh.S.pid);
+  expect(n1 === n2, 'le même fichier rouvert doit reprendre le même projet de la bibliothèque');
+  expect((await DFS()).file.name === 'Disque', 'fichier lié non retenu');
+});
+test('DF04', 'Fichiers', 'Bureau : fichiers récents dans le menu, du plus récent au plus ancien ; un clic rouvre ; un fichier disparu est signalé et retiré', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); for (const n of ['Un', 'Deux', 'Trois']) { const p = window.kh.demoProject(); p.name = 'Récent ' + n; f.disk[`/m/${n}.khm`] = JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); f.recents.unshift(`/m/${n}.khm`); } });
+  await page.click('#menu summary'); await page.waitForSelector('#recent .rfile');
+  const names = await page.$$eval('#recent .rfile', l => l.map(e => e.textContent.replace('🎵 ', '')));
+  expect(names.join() === 'Trois,Deux,Un', `ordre des récents : ${names.join()}`);
+  await page.click('#recent .rfile[data-path="/m/Un.khm"]'); await sleep(400);
+  expect((await proj()).name === 'Récent Un', 'le fichier récent ne s’est pas ouvert');
+  await S(() => { delete window.khFiles.disk['/m/Deux.khm']; window.khFiles.recents.unshift('/m/Deux.khm'); window.khFiles.recent = async () => window.khFiles.recents.map(window.khFiles.info); });
+  await page.click('#menu summary'); await page.waitForSelector('#recent .rfile[data-path="/m/Deux.khm"]');
+  await page.click('#recent .rfile[data-path="/m/Deux.khm"]');
+  const msg = await lastToast();
+  expect(msg.includes('introuvable') && msg.includes('Deux'), `message attendu pour un fichier disparu : ${msg}`);
+  expect((await proj()).name === 'Récent Un', 'le projet ouvert ne doit pas changer');
+  expect(!(await DFS()).recents.includes('/m/Deux.khm'), 'le fichier disparu doit sortir de la liste');
+  await page.click('#menu summary'); await page.click('#bRecentClear'); await sleep(200);
+  expect((await page.textContent('#recent')).includes('Aucun fichier récent'), 'la liste ne s’est pas effacée');
+});
+test('DF05', 'Fichiers', 'Bureau : un échec d’écriture (disque plein, dossier protégé) est expliqué, le projet reste dans l’application', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); f.next.saveAs = '/protégé/x.khm'; f.failSave = true; });
+  await renameByTyping('Pas perdu'); await page.keyboard.press('Meta+s');
+  const msg = await lastToast();
+  expect(msg.includes('Impossible d') && msg.includes('reste gardé'), `message : ${msg}`);
+  expect((await proj()).name === 'Pas perdu' && !(await DFS()).file.path, 'le projet doit rester ouvert, sans fichier lié');
+});
+test('DF06', 'Fichiers', 'Bureau, au clavier seul : ouvrir le menu Projet, atteindre un fichier récent avec Tab et l’ouvrir avec Entrée', async () => {
+  await S(() => { const f = window.qa.fakeFiles(), p = window.kh.demoProject(); p.name = 'Au clavier'; f.disk['/k/Clavier.khm'] = JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); f.recents = ['/k/Clavier.khm']; });
+  await page.focus('#menu summary'); await page.keyboard.press('Enter'); await page.waitForSelector('#recent .rfile');
+  for (let i = 0; i < 20 && (await page.evaluate(() => document.activeElement?.className)) !== 'rfile'; i++) await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement?.dataset.path) === '/k/Clavier.khm', 'Tab n’atteint pas le fichier récent');
+  await page.keyboard.press('Enter'); await sleep(400);
+  expect((await proj()).name === 'Au clavier', 'Entrée n’a pas ouvert le fichier');
+});
+test('DF07', 'Fichiers', 'Fichier ouvert depuis le Finder (double-clic sur un .khm) : le projet s’ouvre et le fichier est lié', async () => {
+  await S(() => { const f = window.qa.fakeFiles(); window.kh.listenSystemOpen(); const p = window.kh.demoProject(); p.name = 'Du Finder'; f.sys({ path: '/f/Finder.khm', name: 'Finder', text: JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }) }); });
+  await sleep(300);
+  expect((await proj()).name === 'Du Finder' && (await DFS()).file.path === '/f/Finder.khm', 'fichier du Finder non ouvert');
+});
+test('DF08', 'Fichiers', 'Commandes de fichiers traduites en anglais et en espagnol', async () => {
+  await S(() => window.qa.fakeFiles());
+  for (const [l, sa, rc] of [['en', 'Save as…', 'Recent files'], ['es', 'Guardar como…', 'Archivos recientes']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    await page.click('#menu summary'); await page.waitForSelector('#recent .mhead');
+    expect((await page.textContent('#bSaveAs')).trim() === sa && (await page.textContent('#recent .mhead')).trim() === rc, `libellés en ${l}`);
+    await S(() => { document.getElementById('menu').open = false; });
+  }
+});
+
+// ============ Gestes : glisser annulé, deuxième doigt, souris relâchée ailleurs (V17) ============
+// Un geste annulé par le système (pointercancel : appel, geste du système, doigt parti en défilement) remet tout comme avant ;
+// un deuxième doigt ne pilote pas le glissé du premier ; une souris relâchée hors de la fenêtre ne laisse pas le glissé accroché.
+/** Envoie un évènement de pointeur : sur l'élément `sel` (null = la fenêtre), au point (x, y). */
+const ptr = (type, sel, x, y, o = {}) => page.evaluate(([type, sel, x, y, o]) => {
+  const id = o.id ?? 11, el = sel ? document.querySelector(sel) : window, up = type === 'pointerup' || type === 'pointercancel';
+  el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: o.kind ?? 'touch', isPrimary: id === 11, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: up ? 0 : (o.buttons ?? 1), shiftKey: !!o.shift }));
+}, [type, sel, x, y, o]);
+const center = async sel => { const b = await box(sel); return [b.x + b.width / 2, b.y + b.height / 2]; };
+async function openSynthClip() { await page.click(await clipSel(1, 0)); await page.waitForSelector('.pr .note'); }
+const notes = () => S(() => JSON.parse(JSON.stringify(window.kh.S.project.tracks[1].clips[0].notes)));
+
+test('GD01', 'Gestes', 'Note glissée au doigt puis geste annulé par le système : la note revient, rien n’est enregistré, les mouvements suivants n’ont plus d’effet', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await ptr('pointerdown', '.pr .note[data-i="0"]', x, y); await ptr('pointermove', null, x + 120, y - 60);
+  expect(JSON.stringify(await notes()) !== JSON.stringify(n0), 'le glissé ne déplace pas la note');
+  await ptr('pointercancel', null, x + 120, y - 60);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'la note doit revenir à sa place après un geste annulé');
+  await ptr('pointermove', null, x + 200, y + 40); await ptr('pointermove', null, x + 220, y + 40, { kind: 'mouse', id: 1 });
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le glissé est resté branché après l’annulation');
+});
+test('GD02', 'Gestes', 'Deux doigts : un deuxième doigt qui bouge ou se lève ailleurs ne pilote ni ne termine le glissé de la note par le premier', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await ptr('pointerdown', '.pr .note[data-i="0"]', x, y);
+  await ptr('pointermove', null, x + 300, y + 100, { id: 12 }); await ptr('pointerup', null, x + 300, y + 100, { id: 12 });
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le deuxième doigt a déplacé la note');
+  await ptr('pointermove', null, x + 66, y, { id: 11 }); await ptr('pointerup', null, x + 66, y, { id: 11 }); await sleep(100);
+  const n1 = await notes();
+  expect(n1[0].s > n0[0].s && n1[0].p === n0[0].p, `le premier doigt doit toujours déplacer la note (${n0[0].s} → ${n1[0].s})`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le glissé terminé doit s’annuler en une fois');
+});
+test('GD03', 'Gestes', 'Poignée de durée et note en cours de création : un geste annulé ne change pas la durée et ne laisse pas de note', async () => {
+  await openSynthClip(); const n0 = await notes(), b = await box('.pr .note[data-i="0"]');
+  const hx = b.x + b.width - 2, hy = b.y + b.height / 2;
+  await ptr('pointerdown', '.pr .note[data-i="0"]', hx, hy); await ptr('pointermove', null, hx + 90, hy); await ptr('pointercancel', null, hx + 90, hy);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'durée modifiée malgré l’annulation');
+  // Création dans le vide : la note apparaît au toucher, puis disparaît si le geste est annulé.
+  const g = await box('.pr .pr-grid'), ex = g.x + g.width - 30, ey = g.y + 12;
+  await ptr('pointerdown', '.pr .pr-grid', ex, ey);
+  expect((await notes()).length === n0.length + 1, 'la note n’apparaît pas au toucher');
+  await ptr('pointercancel', null, ex, ey); await sleep(80);
+  expect((await notes()).length === n0.length, 'la note en cours de création doit disparaître');
+  expect(await page.$$eval('.pr .note.drag', l => l.length) === 0, 'une note reste marquée « en glissé »');
+});
+test('GD04', 'Gestes', 'Vélocité glissée puis geste annulé : les forces de frappe reviennent ; un deuxième doigt ne les change pas', async () => {
+  await openSynthClip(); const n0 = await notes(), v = await box('.vel'), x = v.x + n0[0].s * (v.width / (await S(() => window.kh.S.project.tracks[1].clips[0].patLen))) + 6;
+  await ptr('pointerdown', '.vel', x, v.y + 2);
+  const top = (await notes())[0].v;
+  expect(top > 0.95 && top !== n0[0].v, `la vélocité ne suit pas le doigt (${n0[0].v} → ${top})`);
+  await ptr('pointermove', null, x, v.y + v.height - 4, { id: 12 });
+  expect((await notes())[0].v === top, 'un deuxième doigt a changé la vélocité');
+  await ptr('pointercancel', null, x, v.y + 4); await sleep(80);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'vélocités non rétablies après annulation');
+});
+test('GD05', 'Gestes', 'Boucle tracée dans la règle (Maj+glisser) puis geste annulé : la boucle reste comme avant', async () => {
+  const p0 = await S(() => ({ loop: window.kh.S.project.loop, s: window.kh.S.project.loopStart, l: window.kh.S.project.loopLen }));
+  const r = await box('.ruler'), bar = await S(() => window.kh.bar() * window.kh.S.px);
+  await ptr('pointerdown', '.ruler', r.x + bar * 6 + 4, r.y + 5, { kind: 'mouse', id: 1, shift: true });
+  await ptr('pointermove', null, r.x + bar * 9 + 4, r.y + 5, { kind: 'mouse', id: 1 });
+  expect(await S(() => window.kh.S.project.loopStart) === 6, 'le tracé ne suit pas');
+  await ptr('pointercancel', null, r.x + bar * 9 + 4, r.y + 5, { kind: 'mouse', id: 1 }); await sleep(80);
+  const p1 = await S(() => ({ loop: window.kh.S.project.loop, s: window.kh.S.project.loopStart, l: window.kh.S.project.loopLen }));
+  expect(JSON.stringify(p1) === JSON.stringify(p0), `boucle modifiée : ${JSON.stringify(p0)} → ${JSON.stringify(p1)}`);
+  expect(await page.$$eval('.ruler .loopr', l => l.length) === (p0.loop ? 1 : 0), 'la zone dessinée reste affichée');
+});
+test('GD06', 'Gestes', 'Clip glissé vers une autre piste puis geste annulé : il revient à sa place et sur sa piste', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.tracks.splice(2, 0, JSON.parse(JSON.stringify(p.tracks[1]))); p.tracks[2].id = 'copie'; p.tracks[2].clips = []; k.commit(); });
+  const sel = await clipSel(1, 0), id = await S(() => window.kh.S.project.tracks[1].clips[0].id), st0 = await S(() => window.kh.S.project.tracks[1].clips[0].start);
+  const [x, y] = await center(sel), lane2 = await box('.lane[data-id="copie"]');
+  await ptr('pointerdown', sel, x, y); await ptr('pointermove', null, x + 200, lane2.y + lane2.height / 2);
+  expect(await page.$(`.lane[data-id="copie"] .clip[data-id="${id}"]`), 'le clip ne suit pas le doigt vers l’autre piste');
+  await ptr('pointercancel', null, x + 200, lane2.y + lane2.height / 2); await sleep(120);
+  const r = await S(() => ({ n1: window.kh.S.project.tracks[1].clips.length, n2: window.kh.S.project.tracks[2].clips.length, st: window.kh.S.project.tracks[1].clips[0]?.start }));
+  expect(r.n2 === 0 && r.st === st0, `clip pas revenu : ${JSON.stringify(r)}`);
+  expect(await page.$(`.lane[data-id="${await S(() => window.kh.S.project.tracks[1].id)}"] .clip[data-id="${id}"]`), 'l’affichage n’a pas remis le clip sur sa piste');
+});
+test('GD07', 'Gestes', 'Point d’automation créé ou déplacé au doigt puis geste annulé : la courbe revient comme avant', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.autoShow = 'vol'; tr.auto = { vol: [{ s: 8, v: 0.5 }] }; k.commit(); });
+  const lane = `.alane[data-auto="${await S(() => window.kh.S.project.tracks[1].id)}"]`;
+  const [x, y] = await center(lane + ' .apt');
+  await ptr('pointerdown', lane + ' .apt', x, y); await ptr('pointermove', null, x + 80, y - 10); await ptr('pointercancel', null, x + 80, y - 10); await sleep(80);
+  let a = await S(() => window.kh.S.project.tracks[1].auto.vol);
+  expect(a.length === 1 && a[0].s === 8 && a[0].v === 0.5, `point déplacé malgré l’annulation : ${JSON.stringify(a)}`);
+  const lb = await box(lane);
+  await ptr('pointerdown', lane, lb.x + 300, lb.y + 10); await ptr('pointercancel', null, lb.x + 300, lb.y + 10); await sleep(80);
+  a = await S(() => window.kh.S.project.tracks[1].auto.vol);
+  expect(a.length === 1, `le point en cours de création doit disparaître : ${JSON.stringify(a)}`);
+});
+test('GD08', 'Gestes', 'Séparation du panneau du bas : un deuxième doigt ne la déplace pas, un geste annulé la libère', async () => {
+  const [x, y] = await center('#split'), h0 = await page.$eval('#panel', e => e.getBoundingClientRect().height);
+  await ptr('pointerdown', '#split', x, y); await ptr('pointermove', null, x, y - 300, { id: 12 });
+  expect(Math.abs(await page.$eval('#panel', e => e.getBoundingClientRect().height) - h0) < 2, 'le deuxième doigt a déplacé la séparation');
+  await ptr('pointermove', null, x, y - 60); const h1 = await page.$eval('#panel', e => e.getBoundingClientRect().height);
+  expect(h1 > h0 + 30, 'le premier doigt ne déplace pas la séparation');
+  await ptr('pointercancel', null, x, y - 60); await ptr('pointermove', null, x, y - 250);
+  expect(Math.abs(await page.$eval('#panel', e => e.getBoundingClientRect().height) - h1) < 2, 'la séparation suit encore après l’annulation');
+});
+test('GD09', 'Gestes', 'Souris relâchée hors de la fenêtre pendant le glissé d’une note : le glissé se termine, il est enregistré et s’annule, la souris ne traîne plus la note', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 66, y, { steps: 4 });
+  // Le relâchement a eu lieu hors de la fenêtre : la souris revient bouton relevé, sans évènement de relâchement.
+  await ptr('pointermove', null, x + 70, y, { kind: 'mouse', id: 1, buttons: 0 }); await sleep(80);
+  const n1 = await notes();
+  expect(n1[0].s > n0[0].s, 'le déplacement fait avant le relâchement doit être gardé');
+  await ptr('pointermove', null, x + 300, y + 80, { kind: 'mouse', id: 1, buttons: 0 });
+  expect(JSON.stringify(await notes()) === JSON.stringify(n1), 'la note suit encore la souris bouton relevé');
+  await page.mouse.up();
+  await page.keyboard.press('Control+z'); await sleep(80);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0), 'le glissé doit s’annuler par Ctrl+Z');
+});
+test('GD10', 'Gestes', 'Sans incident, rien ne change : glisser une note et un clip à la souris déplace et s’annule comme avant', async () => {
+  await openSynthClip(); const n0 = await notes(), [x, y] = await center('.pr .note[data-i="0"]');
+  await drag(x, y, 66, 0); const n1 = await notes();
+  expect(n1[0].s > n0[0].s, 'la note ne se déplace plus à la souris');
+  const sel = await clipSel(0, 0), st0 = await S(() => window.kh.S.project.tracks[0].clips[0].start), [cx, cy] = await center(sel);
+  await drag(cx, cy, await S(() => window.kh.bar() * window.kh.S.px * 2), 0);
+  expect(await S(() => window.kh.S.project.tracks[0].clips[0].start) === st0 + await S(() => window.kh.bar() * 2), 'le clip ne se déplace plus à la souris');
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await sleep(80);
+  expect(JSON.stringify(await notes()) === JSON.stringify(n0) && await S(() => window.kh.S.project.tracks[0].clips[0].start) === st0, 'annulation incomplète');
+});
+
+// ============ Clips audio qui suivent le tempo (V17) ============
+// Piste de clics : un coup bref (1 kHz, 8 ms) toutes les 0,5 s pendant 4 s, c'est-à-dire des noires à 120 BPM.
+const CLICKS = (() => { const sr = 44100, n = sr * 4, b = Buffer.alloc(44 + n * 2); b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) { const k = i % (sr / 2); b.writeInt16LE(k < sr * 0.008 ? Math.round(Math.sin(2 * Math.PI * 1000 * k / sr) * 20000) : 0, 44 + i * 2); }
+  const f = path.join(TMP, 'qa-clics.wav'); fs.writeFileSync(f, b); return f; })();
+/** Importe un fichier sur la piste audio (menu Projet > Importer), puis isole cette piste (les autres sont coupées). */
+async function importSolo(file) {
+  await page.click(await headSel(4)); const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu('bImport')]); await fc.setFiles(file); await sleep(600);
+  await S(() => { const k = window.kh, p = k.S.project; p.tracks.forEach((t, i) => { t.mute = i !== 4; }); p.tracks[4].rev = 0; p.tracks[4].dly = 0; p.loop = false; k.commit(); });
+  await page.click(await clipSel(4, 0)); await page.waitForSelector('[data-act=warp]');
+}
+async function typeTempo(v) { await page.click('#bpm', { clickCount: 3 }); await page.keyboard.type(String(v)); await page.keyboard.press('Tab'); await sleep(150); }
+/** Durée (s) pendant laquelle le rendu dépasse -40 dB, et fréquence par passages à zéro sur la première seconde sonore. */
+const toneStats = () => S(async () => {
+  const b = await window.kh.renderOffline(window.kh.S.project, false), d = b.getChannelData(0), sr = b.sampleRate; let first = -1, last = -1;
+  for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.01) { if (first < 0) first = i; last = i; }
+  let z = 0; for (let i = first + 1; i < Math.min(d.length, first + sr * 0.8); i++) if (d[i - 1] < 0 && d[i] >= 0) z++;
+  return { dur: (last - first) / sr, freq: z / 0.8 };
+});
+const onsetsNow = () => S(() => window.qa.onsets(window.kh.S.project, 0.05, 0.1));
+
+test('WP01', 'Tempo', 'Clip audio qui suit le tempo : bouton activé à la souris, tempo tapé au clavier, le son s’étire sans changer de hauteur, à l’export comme à l’écoute', async () => {
+  await importSolo(TONE);
+  await typeTempo(60); let r = await toneStats();
+  near(r.dur, 1, 0.05, 'sans suivi du tempo, le son garde sa durée'); 
+  await typeTempo(120); await page.click('[data-act=warp]'); await sleep(150);
+  expect(await page.$eval('[data-act=warp]', b => b.getAttribute('aria-checked')) === 'true', 'interrupteur non activé');
+  expect(await S(() => window.kh.S.project.tracks[4].clips[0].srcBpm) === 120, 'tempo d’origine non retenu');
+  await typeTempo(60); r = await toneStats();
+  near(r.dur, 2, 0.06, 'à 60 BPM, le son de 1 s doit durer 2 s'); near(r.freq, 440, 8, 'la hauteur ne doit pas changer');
+  // À l'écoute : 1,5 s après le départ, le son est encore là (il serait fini sans le suivi du tempo).
+  await page.click('#bPlay'); await sleep(1500); const on = await masterRms(); await page.click('#bStop');
+  expect(on > 0.01, `à l’écoute, le clip étiré doit encore sonner à 1,5 s (niveau ${on.toFixed(4)})`);
+  // L'export par le bouton : le fichier WAV contient bien 2 s de son.
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#bExport')]); const f = path.join(TMP, 'warp.wav'); await dl.saveAs(f);
+  const w = EMP.readWav(fs.readFileSync(f)), d = w.ch[0]; let a = -1, z = -1; for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.01) { if (a < 0) a = i; z = i; }
+  near((z - a) / w.sr, 2, 0.06, 'durée du son dans le WAV exporté');
+});
+test('WP02', 'Tempo', 'Changement de tempo au milieu d’un clip qui suit le tempo : chaque coup tombe sur son temps, avant et après le changement', async () => {
+  await importSolo(CLICKS); await page.click('[data-act=warp]');
+  await S(() => { const k = window.kh, p = k.S.project; p.tempos = [{ s: 16, bpm: 90 }]; k.commit(); });
+  const o = await onsetsNow(), want = await S(() => Array.from({ length: 8 }, (_, i) => window.kh.timeOf(window.kh.S.project, i * 4)));
+  near(o.length, 8, 0, 'nombre de coups');
+  want.forEach((t, i) => near(o[i], t, 0.012, `coup n° ${i + 1}`));
+  // Sans suivi : les coups gardent leur espacement d'origine et se décalent après le changement.
+  await page.click('[data-act=warp]'); const o2 = await onsetsNow();
+  expect(Math.abs(o2[6] - want[6]) > 0.2, 'sans suivi du tempo, les coups ne devraient pas suivre le changement');
+});
+test('WP03', 'Tempo', 'Tempo d’origine saisi (boucle jouée à 60 BPM dans un morceau à 120) : le clip se raccourcit et se cale sur la grille', async () => {
+  await importSolo(CLICKS); await page.click('[data-act=warp]');
+  near(await S(() => window.kh.S.project.tracks[4].clips[0].len), 32, 0, 'longueur avant');
+  await page.fill('[data-role=warpbpm]', '60'); await page.keyboard.press('Tab'); await sleep(200);
+  near(await S(() => window.kh.S.project.tracks[4].clips[0].len), 16, 0, 'longueur en pas après le tempo d’origine à 60');
+  const o = await onsetsNow();
+  near(o.length, 8, 0, 'les huit coups restent'); for (let i = 0; i < 8; i++) near(o[i], i * 0.25, 0.012, `coup n° ${i + 1} (deux fois plus serré)`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  near(await S(() => window.kh.S.project.tracks[4].clips[0].len), 32, 0, 'Ctrl+Z rétablit la longueur');
+});
+test('WP04', 'Tempo', 'Au tempo d’origine, suivre le tempo ne change rien au son : rendu identique échantillon par échantillon', async () => {
+  await importSolo(TONE);
+  const r = await S(async () => { const k = window.kh, p = k.S.project, a = await k.renderOffline(p, false); p.tracks[4].clips[0].warp = true; p.tracks[4].clips[0].srcBpm = p.bpm;
+    const b = await k.renderOffline(p, false), x = a.getChannelData(0), y = b.getChannelData(0); let m = 0; for (let i = 0; i < x.length; i++) m = Math.max(m, Math.abs(x[i] - y[i])); return { m }; });
+  expect(r.m < 1e-6, `écart ${r.m}`);
+});
+test('WP05', 'Tempo', 'Scinder et rogner un clip qui suit le tempo : les coups restent sur les temps', async () => {
+  await importSolo(CLICKS); await page.click('[data-act=warp]'); await typeTempo(60);
+  await S(() => window.kh.engine.seek(16)); await page.keyboard.press('Control+e'); await sleep(150);
+  const cl = await S(() => window.kh.S.project.tracks[4].clips.map(c => ({ s: c.start, l: c.len, o: c.offset })));
+  expect(cl.length === 2 && Math.abs(cl[1].o - 2) < 1e-6, `seconde moitié : ${JSON.stringify(cl)}`);
+  const o = await onsetsNow(); near(o.length, 8, 0, 'coups après scission'); for (let i = 0; i < 8; i++) near(o[i], i, 0.015, `coup n° ${i + 1} à 60 BPM`);
+  // Rognage du bord gauche de la seconde moitié, d'une noire, à la souris.
+  const sel = await clipSel(4, 1), b = await box(sel), px = await S(() => window.kh.S.px);
+  await S(() => { window.kh.S.snap = 4; }); await drag(b.x + 3, b.y + b.height / 2, 4 * px, 0);
+  const c1 = await S(() => window.kh.S.project.tracks[4].clips[1]);
+  near(c1.start, 20, 0, 'début rogné'); near(c1.offset, 2.5, 1e-6, 'le son avance d’une noire du tempo d’origine (0,5 s)');
+  const o2 = await onsetsNow(); near(o2.length, 7, 0, `un coup en moins (${o2.map(x => x.toFixed(3)).join(' ')})`); near(o2[4], 5, 0.015, 'le coup suivant reste sur son temps');
+});
+test('WP06', 'Tempo', 'Au clavier : activer le suivi du tempo avec Entrée, l’annuler ; le réglage voyage dans le fichier projet', async () => {
+  await importSolo(TONE);
+  await page.focus('[data-act=warp]'); await page.keyboard.press('Enter'); await sleep(150);
+  expect(await S(() => window.kh.S.project.tracks[4].clips[0].warp) === true, 'Entrée n’active pas le suivi');
+  expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'warp', 'le focus doit rester sur l’interrupteur');
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(!(await S(() => window.kh.S.project.tracks[4].clips[0].warp)), 'Ctrl+Z n’annule pas');
+  await page.keyboard.press('Control+y'); await S(() => { window.kh.S.project.tracks[4].clips[0].srcBpm = 93; window.kh.commit(); });
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'warp.khm'); await dl.saveAs(f);
+  await S(() => { window.kh.S.project = window.kh.demoProject(); window.kh.commit(); });
+  const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu('bOpen')]); await fc.setFiles(f); await sleep(600);
+  const c = await S(() => window.kh.S.project.tracks[4].clips[0]);
+  expect(c.warp === true && c.srcBpm === 93, `réglage perdu au fichier : ${JSON.stringify({ warp: c.warp, srcBpm: c.srcBpm })}`);
+});
+test('WP07', 'Tempo', 'Suivi du tempo traduit en anglais et en espagnol', async () => {
+  await importSolo(TONE);
+  for (const [l, txt] of [['en', 'Follows tempo'], ['es', 'Sigue el tempo']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.textContent('[data-act=warp]')).includes(txt), `libellé en ${l}`);
+  }
+});
+
+// ============ Automation de n'importe quel réglage (V17) ============
+/** Piste 1 en orgue tenu (son continu), un effet « Gain » ajouté par la fenêtre des effets, puis la courbe d'automation ouverte. */
+async function gainAutoSetup() {
+  await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[1]; p.tracks.forEach((t, i) => { t.mute = i !== 1; }); p.loop = false;
+    tr.synth = k.makeSynth('r_drawbar'); tr.rev = 0; tr.dly = 0; tr.clips = [{ id: 'orgue', name: 'Orgue', start: 0, len: 64, offset: 0, patLen: 64, notes: [{ p: 60, s: 0, l: 64, v: 0.8 }] }]; k.commit(); });
+  await S(() => window.kh.engine.prepare());
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.selectOption('[data-role=fxadd]', 'gain'); await page.keyboard.press('Escape'); await tab('editor');
+  await page.click(`.head[data-id="${await S(() => window.kh.S.project.tracks[1].id)}"] .autob`);
+  const ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  return { ins, key: `ins:${ins}:gain`, lane: `.alane[data-auto="${await S(() => window.kh.S.project.tracks[1].id)}"]` };
+}
+/** Pose un point dans la courbe : au pas `s`, à la hauteur `frac` (0 = bas, 1 = haut), au clic de souris. */
+async function autoPoint(lane, s, frac) { const b = await box(lane), px = await S(() => window.kh.S.px); await page.mouse.click(b.x + s * px + 1, b.y + 8 + (1 - frac) * (b.height - 16)); await sleep(80); }
+
+test('AX01', 'Automation', 'Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe', async () => {
+  const { key, lane } = await gainAutoSetup();
+  const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.textContent)]));
+  expect(opts.length === 2 && opts[1][0] === '1. Gain' && opts[1][1].join() === 'Gain', `réglages proposés : ${JSON.stringify(opts)}`);
+  await page.selectOption('[data-role=autoparam]', key);
+  await autoPoint(lane, 0, 0.1); await autoPoint(lane, 63, 0.9);
+  const pts = await page.evaluate(k => window.kh.S.project.tracks[1].auto[k], key);
+  expect(pts?.length === 2 && pts[0].v < 0.2 && pts[1].v > 0.8, `courbe tracée : ${JSON.stringify(pts)}`);
+  // Gain de -19 dB au début à +19 dB à la fin : le niveau monte d'environ 38 dB sur la note tenue.
+  const w = await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.4, 0.8], [3.4, 3.8], [7.0, 7.4]]));
+  const lv = w.map(x => 20 * Math.log10(x.l + 1e-9));
+  expect(lv[1] - lv[0] > 12 && lv[2] - lv[1] > 12, `le niveau doit suivre la courbe : ${lv.map(v => v.toFixed(1)).join(' → ')} dB`);
+});
+test('AX02', 'Automation', 'À l’écoute : pendant la lecture, l’effet suit la courbe ; à l’arrêt, il revient à son réglage fixe', async () => {
+  const { key, lane } = await gainAutoSetup();
+  await page.selectOption('[data-role=autoparam]', key);
+  await autoPoint(lane, 0, 0.05); await autoPoint(lane, 63, 0.05); await autoPoint(lane, 24, 0.95);
+  await page.keyboard.press('Space'); await sleep(700); const lo = await masterRms(); await sleep(2200); const hi = await masterRms();
+  await page.keyboard.press('Space'); await sleep(200);
+  expect(hi > lo * 8, `pendant la lecture, le niveau doit monter avec la courbe (${lo.toFixed(4)} → ${hi.toFixed(4)})`);
+  // À l'arrêt : le réglage fixe (0 dB) revient ; on joue une note à la main pour l'entendre.
+  await S(() => window.kh.engine.noteOn(window.kh.S.project.tracks[1], 60)); await sleep(500); const man = await masterRms(); await S(() => window.kh.engine.noteOff(window.kh.S.project.tracks[1], 60));
+  expect(man > lo * 2.5 && man < hi * 0.6, `à l’arrêt, l’effet doit revenir à son réglage fixe (${man.toFixed(4)} ; courbe basse ${lo.toFixed(4)}, haute ${hi.toFixed(4)})`);
+});
+test('AX03', 'Automation', 'Retirer l’effet retire ses courbes ; Annuler ramène l’effet et ses courbes ; le tout voyage dans le fichier projet', async () => {
+  const { key, lane } = await gainAutoSetup();
+  await page.selectOption('[data-role=autoparam]', key); await autoPoint(lane, 8, 0.8);
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); await page.click('#fx [data-act=fxdel]'); await page.keyboard.press('Escape');
+  let tr = await S(() => window.kh.S.project.tracks[1]);
+  expect(!tr.inserts.length && !Object.keys(tr.auto ?? {}).some(k => k.startsWith('ins:')) && tr.autoShow === 'vol', `courbes restées : ${JSON.stringify(tr.auto)}`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  tr = await S(() => window.kh.S.project.tracks[1]);
+  expect(tr.inserts.length === 1 && tr.auto?.[key]?.length === 1, 'Annuler doit ramener l’effet et sa courbe');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'auto-fx.khm'); await dl.saveAs(f);
+  const saved = JSON.parse(fs.readFileSync(f, 'utf8')).project.tracks[1];
+  expect(saved.auto?.[key]?.length === 1 && saved.autoShow === key, 'courbe d’effet absente du fichier');
+});
+test('AX04', 'Automation', 'Plugin du Mac : ses réglages apparaissent dans la liste ; automatisé, il reçoit les valeurs au fil de la lecture', async () => {
+  await S(() => { window.qa.fakeNative(); });
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.selectOption('[data-role=fxadd]', 'au:aufx:lpas:appl'); await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+  await page.keyboard.press('Escape'); await tab('editor');
+  const tid = await S(() => window.kh.S.project.tracks[1].id), ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  await page.click(`.head[data-id="${tid}"] .autob`);
+  const labels = await page.$$eval('[data-role=autoparam] optgroup:nth-of-type(2) option', o => o.map(x => x.textContent));
+  expect(labels.join() === 'Cutoff Frequency,Resonance,Filter Type,Bypass', `réglages du plugin proposés : ${labels.join()}`);
+  await page.selectOption('[data-role=autoparam]', `ins:${ins}:0`);
+  const lane = `.alane[data-auto="${tid}"]`; await autoPoint(lane, 0, 0); await autoPoint(lane, 32, 1);
+  await S(() => { window.khNative.calls.length = 0; });
+  await page.keyboard.press('Space'); await sleep(2600); await page.keyboard.press('Space'); await sleep(300);
+  const sets = await S(() => window.khNative.calls.filter(c => c[0] === 'set' && c[2] === 0).map(c => c[3]));
+  expect(sets.length >= 4, `le plugin doit recevoir plusieurs valeurs pendant la lecture (${sets.length})`);
+  expect(sets[0] < 50 && Math.max(...sets) > 150 && sets.slice(0, -1).every((v, i) => i === 0 || v >= sets[i - 1] - 1), `valeurs envoyées (fréquence de coupure, montante) : ${sets.map(v => Math.round(v)).join(', ')}`);
+  expect(Math.abs(sets[sets.length - 1] - 6900) < 1, `à l’arrêt, le réglage fixe doit revenir (${sets[sets.length - 1]})`);
+});
+test('AX05', 'Automation', 'Écho automatisé (dosage) à l’export : la traîne n’apparaît que là où la courbe monte', async () => {
+  await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[1]; p.tracks.forEach((t, i) => { t.mute = i !== 1; }); p.loop = false; p.bpm = 120;
+    Object.assign(tr.synth = k.makeSynth('lead'), { engine: 'sub', wave: 'sine', mix2: 0, cutoff: 12000, envAmt: 0, a: 0.002, d: 0.03, s: 0, r: 0.02 }); tr.rev = 0; tr.dly = 0;
+    tr.clips = [{ id: 'bips', name: 'Bips', start: 0, len: 64, offset: 0, patLen: 64, notes: [{ p: 72, s: 0, l: 1, v: 0.9 }, { p: 72, s: 32, l: 1, v: 0.9 }] }];
+    const i = k.newInsert('delay'); i.p.mix = 0; tr.inserts = [i]; tr.auto = { [`ins:${i.id}:mix`]: [{ s: 0, v: 0 }, { s: 31, v: 0 }, { s: 32, v: 1 }] }; k.commit(); });
+  const w = await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.5, 1.2], [4.5, 5.2]]));
+  expect(w[0].l < 0.002 && w[1].l > w[0].l * 10 + 0.002, `traîne d’écho : sans ${w[0].l.toFixed(4)}, avec ${w[1].l.toFixed(4)}`);
+});
+test('AX06', 'Automation', 'Liste des réglages traduite (anglais, espagnol)', async () => {
+  await gainAutoSetup();
+  for (const [l, tr] of [['en', 'Track'], ['es', 'Pista']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect(await page.$eval('[data-role=autoparam] optgroup', g => g.label) === tr, `groupe en ${l}`);
+  }
+});
+
+// ============ Gel de piste : transformer une piste en audio (V17) ============
+/** Niveau (dB) par fenêtre de 0,5 s du rendu complet du projet, et rendu brut pour comparer. */
+const levels = () => S(async () => { let a = 0x2545f491; const rnd = Math.random; Math.random = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  let b; try { b = await window.kh.renderOffline(window.kh.S.project, false); } finally { Math.random = rnd; }   // graine fixe : rendus comparables
+  const d = b.getChannelData(0), sr = b.sampleRate, W = sr / 2, out = [];
+  for (let s = 0; s + W <= d.length; s += W) { let q = 0; for (let i = s; i < s + W; i++) q += d[i] * d[i]; out.push(10 * Math.log10(q / W + 1e-12)); } return out; });
+const lvDiff = (a, b) => { let m = 0; for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] > -60 || b[i] > -60) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
+const freezeBtn = async ti => `.head[data-id="${await page.evaluate(i => window.kh.S.project.tracks[i].id, ti)}"] [data-act=freeze]`;
+
+test('FZ01', 'Gel de piste', 'Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.vol = 0.7; tr.pan = -0.4; tr.rev = 0.3; k.commit(); });
+  const before = await levels(), n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click(await freezeBtn(1)); await page.waitForFunction(n => window.kh.S.project.tracks.length === n + 1, n0, { timeout: 30000 });
+  const r = await S(() => { const t = window.kh.S.project.tracks; return { o: { frozen: t[1].frozen, mute: t[1].mute }, a: { type: t[2].type, from: t[2].frozenFrom === t[1].id, vol: t[2].vol, pan: t[2].pan, rev: t[2].rev, clips: t[2].clips.length, start: t[2].clips[0].start } }; });
+  expect(r.o.frozen && r.o.mute && r.a.type === 'audio' && r.a.from && r.a.clips === 1 && r.a.start === 0, `état après gel : ${JSON.stringify(r)}`);
+  expect(r.a.vol === 0.7 && r.a.pan === -0.4 && r.a.rev === 0.3, 'la piste audio doit reprendre volume, panoramique et envois');
+  expect(await page.$eval(await freezeBtn(1), b => b.getAttribute('aria-pressed')) === 'true', 'le bouton doit montrer la piste gelée');
+  const after = await levels(), d = lvDiff(before, after);
+  expect(d < 1, `le morceau gelé doit sonner comme avant (écart max ${d.toFixed(2)} dB par demi-seconde)`);
+});
+test('FZ02', 'Gel de piste', 'Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel', async () => {
+  const before = await levels();
+  await page.click(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  await page.click(await freezeBtn(1)); await sleep(150);
+  let r = await S(() => ({ n: window.kh.S.project.tracks.length, f: window.kh.S.project.tracks[1].frozen, m: window.kh.S.project.tracks[1].mute, any: window.kh.S.project.tracks.some(t => t.frozenFrom) }));
+  expect(r.n === 5 && !r.f && !r.m && !r.any, `dégel incomplet : ${JSON.stringify(r)}`);
+  const dd = lvDiff(before, await levels());
+  expect(dd < 0.01, `après dégel, le son doit être exactement celui d’origine (écart ${dd.toFixed(2)} dB)`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(await S(() => window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks.length === 6), 'Ctrl+Z doit ramener l’état gelé');
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(await S(() => !window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks.length === 5), 'un second Ctrl+Z doit annuler le gel');
+});
+test('FZ03', 'Gel de piste', 'Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1], i = k.newInsert('delay'); i.p.mix = 0.6; tr.inserts = [i]; tr.auto = { filter: [{ s: 0, v: -0.8 }, { s: 32, v: 0.5 }] }; k.commit(); });
+  const before = await levels();
+  await page.click(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  expect(lvDiff(before, await levels()) < 1, 'effet ou automation absents du rendu gelé');
+  await S(() => { const k = window.kh; k.S.project.tracks[1].inserts = []; k.commit(); });
+  expect(lvDiff(before, await levels()) < 1, 'la piste gelée ne doit plus dépendre des réglages de l’originale');
+});
+test('FZ04', 'Gel de piste', 'Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet', async () => {
+  const sel = await freezeBtn(0);
+  await page.focus(sel); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.kh.S.project.tracks[0].frozen, null, { timeout: 30000 });
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'gel.khm'); await dl.saveAs(f);
+  const j = JSON.parse(fs.readFileSync(f, 'utf8')), at = j.project.tracks[1];
+  expect(j.project.tracks[0].frozen && at.frozenFrom === j.project.tracks[0].id && j.buffers[at.clips[0].bufferId], 'piste gelée ou son rendu absents du fichier');
+});
+test('FZ05', 'Gel de piste', 'Bouton de gel traduit (anglais, espagnol), absent des pistes audio', async () => {
+  expect(!(await page.$(`.head[data-id="${await S(() => window.kh.S.project.tracks[4].id)}"] [data-act=freeze]`)), 'une piste audio n’a pas de bouton de gel');
+  for (const [l, w] of [['en', 'Freeze'], ['es', 'Congelar']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.getAttribute(await freezeBtn(1), 'title')).startsWith(w), `info-bulle en ${l}`);
+  }
+});
+
+// ============ Performance des gros projets (V17) ============
+/** Projet de 40 pistes (12 batteries, 20 instruments dont 8 enregistrés, 8 audio), chacune avec 3 effets (dont 10 réverbs), 8 mesures. */
+const bigPerf = {};
+const BIG = () => {
+  const k = window.kh, p = k.demoProject(), [dr, sy] = [p.tracks[0], p.tracks[1]];
+  const ids = ['r_piano', 'r_strings', 'r_epiano', 'r_church', 'r_brass', 'r_flute', 'r_nylon', 'r_choir'];
+  window.qa.sine('big-sine');
+  p.name = 'Gros projet'; p.loop = false; p.countIn = false; p.tracks = [];
+  for (let i = 0; i < 40; i++) {
+    const kind = i < 12 ? 'drums' : i < 32 ? 'synth' : 'audio', tr = JSON.parse(JSON.stringify(kind === 'drums' ? dr : sy));
+    tr.id = 'big' + i; tr.name = 'Piste ' + (i + 1); tr.type = kind; tr.auto = {}; tr.out = '';
+    tr.inserts = ['eq', 'delay', i % 4 ? 'phaser' : 'reverb'].map(t => k.newInsert(t));
+    if (kind === 'synth') { if (i - 12 < 8) tr.synth = k.makeSynth(ids[i - 12]); tr.clips = [{ id: 'bc' + i, name: 'c', start: 0, len: 128, offset: 0, patLen: 16, notes: [{ p: 48 + (i % 12), s: 0, l: 4, v: 0.7 }, { p: 55 + (i % 12), s: 8, l: 4, v: 0.6 }] }]; }
+    if (kind === 'drums') tr.clips = tr.clips.map((c, j) => ({ ...c, id: 'bd' + i + '-' + j }));
+    if (kind === 'audio') { delete tr.synth; tr.clips = Array.from({ length: 8 }, (_, j) => ({ id: `ba${i}-${j}`, name: 'son', start: j * 16, len: 8, offset: 0, bufferId: 'big-sine', gain: 0.5 })); }
+    tr.vol = 0.4; p.tracks.push(tr);
+  }
+  k.S.project = p; k.S.selTrack = p.tracks[12].id; k.S.selClip = p.tracks[12].clips[0].id; k.resetHistory(); k.commit();
+};
+test('PF01', 'Performance', 'Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure', async () => {
+  ignoreErr = /AudioContext encountered an error/;   // carte son virtuelle de GitHub (sans vrai périphérique) saturée par le gros projet
+  await S(BIG); await S(() => window.kh.engine.prepare());
+  const m = {};
+  m.load = await S(async () => window.kh.measureLoad(window.kh.S.project, 0, 4));
+  m.redraw = await S(() => { const a = performance.now(); for (let i = 0; i < 5; i++) window.kh.commit(); return (performance.now() - a) / 5; });
+  await tab('mixer'); m.mixer = await S(() => { const a = performance.now(); window.kh.commit(); return performance.now() - a; });
+  m.export = await S(async () => { const a = performance.now(); const b = await window.kh.renderOffline(window.kh.S.project, false); return { ms: performance.now() - a, sec: b.duration }; });
+  // Lecture de 5 s ; pendant ce temps, un fader est glissé à la souris (le mixeur se met à jour à chaque mouvement).
+  await S(() => { window.__long = []; try { new PerformanceObserver(l => l.getEntries().forEach(e => window.__long.push(e.duration))).observe({ type: 'longtask', buffered: false }); } catch { } });
+  const u0 = await S(() => window.kh.engine.underruns());
+  await page.click('#bPlay'); await sleep(1500);
+  const f = await box('.strip >> nth=5 >> input[type=range]'); await page.mouse.move(f.x + f.width / 2, f.y + f.height / 2); await page.mouse.down();
+  for (let i = 0; i < 20; i++) { await page.mouse.move(f.x + f.width / 2 + (i % 2 ? 30 : -30), f.y + f.height / 2 + (i % 2 ? -25 : 25)); await sleep(60); }
+  await page.mouse.up(); await sleep(2000);
+  m.play = await S(u0 => ({ ...window.kh.engine.perf, underruns: window.kh.engine.underruns() === null ? null : window.kh.engine.underruns() - (u0 ?? 0), longest: Math.max(0, ...window.__long), longTasks: window.__long.length }), u0);
+  await page.click('#bStop');
+  bigPerf.full = m;
+  console.log('        gros projet :', JSON.stringify({ charge: +(m.load.ratio * 100).toFixed(1) + ' % d’un cœur', redessin: +m.redraw.toFixed(1) + ' ms', mixeur: +m.mixer.toFixed(1) + ' ms', export: `${(m.export.ms / 1000).toFixed(1)} s pour ${m.export.sec.toFixed(1)} s`, lecture: m.play }));
+  expect(m.load.tracks === 40 && m.load.inserts === 120, `projet : ${m.load.tracks} pistes, ${m.load.inserts} effets`);
+  expect(m.redraw < 150 && m.mixer < 200, `redessin trop lent : arrangement ${m.redraw.toFixed(0)} ms, mixeur ${m.mixer.toFixed(0)} ms`);
+  expect(m.play.steps > 20, 'la lecture n’a pas avancé');
+});
+test('PF03', 'Performance', 'Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard', async () => {
+  ignoreErr = /AudioContext encountered an error/;
+  await S(BIG); await S(() => window.kh.engine.prepare());
+  // Meilleure de deux mesures : un pic de charge passager de la machine ne fausse pas la comparaison.
+  const best = () => S(async () => Math.min((await window.kh.measureLoad(window.kh.S.project, 0, 4)).ratio, (await window.kh.measureLoad(window.kh.S.project, 0, 4)).ratio));
+  const before = await best();
+  for (let i = 0; i < 32; i++) {
+    const id = await S(() => window.kh.S.project.tracks.find(t => t.type !== 'audio' && !t.frozen)?.id);
+    await page.click(`.head[data-id="${id}"] [data-act=freeze]`);
+    await page.waitForFunction(id => window.kh.S.project.tracks.find(t => t.id === id)?.frozen, id, { timeout: 60000 });
+  }
+  const after = await best();
+  const u0 = await S(() => window.kh.engine.underruns());
+  await page.click('#bPlay'); await sleep(4000);
+  const play = await S(u0 => ({ ...window.kh.engine.perf, underruns: window.kh.engine.underruns() === null ? null : window.kh.engine.underruns() - (u0 ?? 0), lvl: window.kh.engine.level('master') }), u0);
+  await page.click('#bStop');
+  bigPerf.frozen = { before, after, play };
+  fs.writeFileSync(path.join(__dirname, 'perf-gros-projet.json'), JSON.stringify({ date: new Date().toISOString().slice(0, 10), machine: `${os.cpus()[0]?.model} (${os.cpus().length} cœurs)`, ...bigPerf }, null, 1) + '\n');
+  console.log('        après gel :', JSON.stringify({ avant: +(before * 100).toFixed(1) + ' %', après: +(after * 100).toFixed(1) + ' %', lecture: play }));
+  // Critère relatif : la charge absolue dépend de la machine et de ce qui tourne à côté (mesures dans qa/perf-gros-projet.json).
+  // Sur une machine au calme la charge baisse de 55 à 70 % ; sous forte charge extérieure la mesure varie beaucoup : on exige au moins 10 %.
+  expect(after < before * 0.9, `la charge ne baisse pas assez : ${(before * 100).toFixed(0)} % → ${(after * 100).toFixed(0)} %`);
+  expect(play.late === 0, `notes programmées en retard après gel : ${play.late} sur ${play.steps}`);
+  expect(play.lvl > 0.01, 'le projet gelé doit toujours sonner');
+});
+test('PF02', 'Performance', 'Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol', async () => {
+  await S(BIG); await tab('mixer');
+  await page.click('[data-act=load]'); await page.waitForFunction(() => /%/.test(document.querySelector('[data-role=load]')?.textContent ?? ''), null, { timeout: 120000 });
+  const txt = await page.textContent('[data-role=load]'), cls = await page.getAttribute('[data-role=load]', 'class');
+  expect(/\d+ % d.un cœur \(40 pistes, 120 effets\)/.test(txt) && /\b(ok|warn|high)\b/.test(cls), `affichage : « ${txt} » (${cls})`);
+  for (const [l, w] of [['en', 'Load'], ['es', 'Carga']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('[data-act=load]')).includes(w), `bouton en ${l}`); }
+});
+
+// ============ Fenêtre graphique des plugins du Mac (V17) ============
+async function auRack(opts = {}) {
+  await page.evaluate(o => { window.qa.fakeNative(o); }, opts);
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.selectOption('[data-role=fxadd]', 'au:aufx:lpas:appl'); await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+}
+test('AW01', 'Plugins du Mac', 'Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable', async () => {
+  await auRack();
+  await page.click('#fx [data-act=auwindow]'); await sleep(200);
+  const id = await S(() => window.khNative.calls.find(c => c[0] === 'uiOpen')?.[1]);
+  expect(id, 'la fenêtre du plugin n’a pas été demandée au module natif');
+  const p0 = await sleep(400).then(() => S(() => window.khNative.pumps));
+  expect(p0 > 3, `les clics du Mac doivent être distribués à la fenêtre (${p0})`);
+  // Dans la fenêtre, l'utilisateur tourne le bouton de coupure : le plugin a changé de valeur.
+  await S(() => { window.khNative.vals[0] = 1234; });
+  await page.waitForFunction(() => window.kh.S.project.tracks[1].inserts[0].p['0'] === 1234, null, { timeout: 3000 });
+  await sleep(500);
+  expect((await page.textContent('#fx [data-addr="0"]')).includes('1.23 kHz'), `le curseur doit suivre la fenêtre : ${await page.textContent('#fx [data-addr="0"]')}`);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await sleep(150);
+  expect(await S(() => window.kh.S.project.tracks[1].inserts[0].p['0']) !== 1234, 'Ctrl+Z doit annuler le réglage fait dans la fenêtre');
+  // Fenêtre fermée par son bouton : le suivi s'arrête.
+  await S(() => { window.khNative.ui = {}; }); await sleep(200); const n1 = await S(() => window.khNative.pumps); await sleep(400);
+  expect(await S(() => window.khNative.pumps) === n1, 'le suivi doit s’arrêter quand la fenêtre est fermée');
+});
+test('AW02', 'Plugins du Mac', 'Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet', async () => {
+  await auRack(); const ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  await page.evaluate(i => { const k = window.kh, tr = k.S.project.tracks[1]; tr.auto = { [`ins:${i}:0`]: [{ s: 0, v: 0 }, { s: 16, v: 1 }] }; k.commit(); }, ins);
+  await page.click('#fx [data-act=auwindow]'); await page.keyboard.press('Escape');
+  await page.click('#bPlay'); await sleep(1500); await page.click('#bStop'); await sleep(500);
+  const p = await S(() => window.kh.S.project.tracks[1].inserts[0].p);
+  expect(p['0'] === undefined || p['0'] === 6900, `une valeur de la courbe a été recopiée dans le réglage fixe : ${JSON.stringify(p)}`);
+});
+test('AW03', 'Plugins du Mac', 'Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit', async () => {
+  await auRack({ noUi: true });
+  expect(!(await page.$('#fx [data-act=auwindow]')), 'bouton affiché alors que le module ne sait pas ouvrir de fenêtre');
+  await page.keyboard.press('Escape'); await S(() => { window.kh.S.project.tracks[1].inserts = []; window.kh.commit(); });
+  await auRack();
+  await page.focus('#fx [data-act=auwindow]'); await page.keyboard.press('Enter'); await sleep(200);
+  expect(await S(() => window.khNative.calls.some(c => c[0] === 'uiOpen')), 'Entrée n’ouvre pas la fenêtre');
+  for (const [l, w] of [['en', 'Plugin window'], ['es', 'Ventana del plugin']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id)); await page.waitForSelector('#fx [data-act=auwindow]');
+    expect((await page.textContent('#fx [data-act=auwindow]')).includes(w), `bouton en ${l}`);
+  }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
-  const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
-  page = await ctx.newPage();
-  page.on('pageerror', e => errors.push('PAGE ' + e.message));
-  page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
-  page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
-  await page.addInitScript(PAGE_HELPERS);
-  await page.goto(BASE); await page.waitForSelector('.clip');
-  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  ctx = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true, locale: 'fr-FR' });
+  await openPage();
 
   const only = process.argv[2];
   for (const c of cases) {

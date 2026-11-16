@@ -36,7 +36,7 @@ const path = require('path');
     await win.click('#bPlay'); await win.waitForTimeout(600);
     const playing = await win.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1);
     console.log(JSON.stringify({ ...r, soundBrowser, returnFocus, playing, errors }));
-    const ok = r.csp && r.wamFailed === 0 && r.title === 'KH Music Pro' && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
+    const ok = r.csp && r.wamFailed === 0 && r.title.endsWith('KH Music Pro') && r.tracks === 5 && r.rms > 0.02 && r.sampled > 0.005 && r.node === 'undefined' && soundBrowser && returnFocus && playing && !errors.length;
     console.log(ok ? 'Version bureau : OK' : 'Version bureau : ÉCHEC');
     process.exitCode = ok ? 0 : 1;
   } finally { await app.close(); }

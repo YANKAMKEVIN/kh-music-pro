@@ -9,6 +9,10 @@
 #include <node.h>
 #include <v8.h>
 #include <AudioToolbox/AudioToolbox.h>
+#import <AppKit/AppKit.h>
+#import <CoreAudioKit/CoreAudioKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <AudioToolbox/AUCocoaUIView.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #include <mach/thread_policy.h>
@@ -257,12 +261,102 @@ void SetPreset(const FunctionCallbackInfo<Value>& a) {
   a.GetReturnValue().Set(ok);
 }
 
+
+// ---------- Fenêtre graphique du plugin (V17) ----------
+// La vue Cocoa fournie par le plugin (kAudioUnitProperty_CocoaUI) ou, à défaut, la vue générique d'Apple (AUGenericView),
+// dans une fenêtre native flottante. Les réglages changés dans cette fenêtre vivent dans le plugin : la page les relit (params).
+std::map<int, NSWindow*> windows;
+
+NSView* makeView(AudioUnit au, bool& generic) {
+  generic = false;
+  UInt32 sz = 0; ::Boolean wr = false;
+  if (AudioUnitGetPropertyInfo(au, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &sz, &wr) == noErr && sz >= sizeof(AudioUnitCocoaViewInfo)) {
+    auto* info = (AudioUnitCocoaViewInfo*)malloc(sz);
+    NSView* v = nil;
+    if (AudioUnitGetProperty(au, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, info, &sz) == noErr) {
+      NSBundle* b = [NSBundle bundleWithURL:(NSURL*)info->mCocoaAUViewBundleLocation];
+      Class c = b ? [b classNamed:(NSString*)info->mCocoaAUViewClass[0]] : nil;
+      if (c && [c conformsToProtocol:@protocol(AUCocoaUIBase)]) {
+        id<AUCocoaUIBase> f = [[c alloc] init];
+        v = [f uiViewForAudioUnit:au withSize:NSMakeSize(480, 320)];
+        [v retain]; [(id)f release];
+      }
+      UInt32 n = (sz - sizeof(CFURLRef)) / sizeof(CFStringRef);
+      CFRelease(info->mCocoaAUViewBundleLocation); for (UInt32 i = 0; i < n; i++) CFRelease(info->mCocoaAUViewClass[i]);
+    }
+    free(info);
+    if (v) return v;
+  }
+  generic = true;
+  AUGenericView* g = [[AUGenericView alloc] initWithAudioUnit:au displayFlags:AUViewTitleDisplayFlag | AUViewPropertiesDisplayFlag | AUViewParametersDisplayFlag];
+  [g setShowsExpertParameters:YES];
+  return g;
+}
+
+/** uiOpen(id) → { generic, width, height } : ouvre (ou ramène devant) la fenêtre du plugin. */
+void UiOpen(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
+  int id = a[0]->Int32Value(cx).FromMaybe(0);
+  auto it = slots.find(id);
+  if (it == slots.end()) { iso->ThrowException(Exception::Error(String::NewFromUtf8Literal(iso, "plugin inconnu"))); return; }
+  @autoreleasepool {
+    [NSApplication sharedApplication];
+    NSWindow* w = windows.count(id) ? windows[id] : nil;
+    bool generic = false;
+    if (!w) {
+      NSView* v = makeView(it->second->au, generic);
+      NSRect r = NSMakeRect(240, 240, MAX(320, v.frame.size.width), MAX(160, v.frame.size.height));
+      w = [[NSWindow alloc] initWithContentRect:r styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable backing:NSBackingStoreBuffered defer:NO];
+      [w setReleasedWhenClosed:NO];
+      [w setTitle:[NSString stringWithUTF8String:it->second->name.c_str()]];
+      [w setContentView:v]; [v release];
+      [w setLevel:NSFloatingWindowLevel];
+      windows[id] = w;
+    }
+    [w makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    [CATransaction flush];   // la page n'a pas de boucle d'évènements du Mac : on applique l'affichage tout de suite
+    Local<Object> o = Object::New(iso);
+    o->Set(cx, String::NewFromUtf8Literal(iso, "generic"), v8::Boolean::New(iso, generic)).Check();
+    o->Set(cx, String::NewFromUtf8Literal(iso, "width"), Number::New(iso, w.frame.size.width)).Check();
+    o->Set(cx, String::NewFromUtf8Literal(iso, "height"), Number::New(iso, w.frame.size.height)).Check();
+    a.GetReturnValue().Set(o);
+  }
+}
+/** uiClose(id) : ferme la fenêtre du plugin. */
+void UiClose(const FunctionCallbackInfo<Value>& a) {
+  auto cx = a.GetIsolate()->GetCurrentContext();
+  int id = a[0]->Int32Value(cx).FromMaybe(0);
+  auto it = windows.find(id);
+  if (it == windows.end()) return;
+  [it->second orderOut:nil]; [it->second close]; [it->second release]; windows.erase(it);
+  [CATransaction flush];
+}
+/** uiIsOpen(id) : la fenêtre est-elle affichée (l'utilisateur a pu la fermer par son bouton) ? */
+void UiIsOpen(const FunctionCallbackInfo<Value>& a) {
+  auto cx = a.GetIsolate()->GetCurrentContext();
+  auto it = windows.find(a[0]->Int32Value(cx).FromMaybe(0));
+  a.GetReturnValue().Set(it != windows.end() && [it->second isVisible]);
+}
+/** uiPump() : distribue les évènements du système (clics, touches) aux fenêtres des plugins. */
+void UiPump(const FunctionCallbackInfo<Value>&) {
+  if (windows.empty()) return;
+  @autoreleasepool {
+    for (int i = 0; i < 64; i++) {
+      NSEvent* e = [NSApp nextEventMatchingMask:NSEventMaskAny untilDate:nil inMode:NSDefaultRunLoopMode dequeue:YES];
+      if (!e) break;
+      [NSApp sendEvent:e];
+    }
+  }
+}
+
 /** close(id) */
 void Close(const FunctionCallbackInfo<Value>& a) {
   auto cx = a.GetIsolate()->GetCurrentContext();
   auto it = slots.find(a[0]->Int32Value(cx).FromMaybe(0));
   if (it == slots.end()) return;
   Slot* s = it->second.get();
+  { auto w = windows.find(it->first); if (w != windows.end()) { [w->second orderOut:nil]; [w->second close]; [w->second release]; windows.erase(w); [CATransaction flush]; } }
   s->run = false; if (s->th.joinable()) s->th.join();
   AudioUnitUninitialize(s->au); AudioComponentInstanceDispose(s->au); free(s->abl);
   slots.erase(it);
@@ -298,5 +392,6 @@ NODE_MODULE_INIT(/* exports, module, context */) {
     exports->Set(context, String::NewFromUtf8(iso, n).ToLocalChecked(), FunctionTemplate::New(iso, f)->GetFunction(context).ToLocalChecked()).Check();
   };
   add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List); add("params", Params); add("presets", Presets); add("setPreset", SetPreset);
+  add("uiOpen", UiOpen); add("uiClose", UiClose); add("uiIsOpen", UiIsOpen); add("uiPump", UiPump);
   RegisterIO(iso, exports, context);
 }

@@ -15,6 +15,9 @@ export interface Clip {
   len: number;
   /** décalage dans le contenu : en pas pour les motifs, en secondes pour l'audio */
   offset: number;
+  /** Audio (V17) : le clip suit le tempo du morceau ; `srcBpm` = tempo auquel le son tombe juste sur la grille. */
+  warp?: boolean;
+  srcBpm?: number;
   patLen?: number;
   /** Batterie : nombre de cases par pas (1 = doubles-croches, 2 = triples-croches, 0,75 = triolets de croches, 1,5 = triolets de doubles). */
   res?: number;
@@ -68,6 +71,28 @@ export const FX: Record<string, [string, number, number, number, number][]> = {
   gain: [['gain', -24, 24, 0.5, 0]],
   wam: [],
 };
+// ---------- Automation des réglages d'effets (V17) ----------
+// Clé « ins:<id de l'effet>:<réglage> » : réglage d'un effet intégré (clé de FX) ou adresse d'un réglage d'Audio Unit.
+// La courbe va de 0 à 1 sur toute la plage du réglage (échelle logarithmique pour les fréquences).
+export const insKey = (id: string, k: string) => `ins:${id}:${k}`;
+export function parseInsKey(key: string): { id: string; k: string } | null { const m = /^ins:([^:]+):(.+)$/.exec(key); return m ? { id: m[1], k: m[2] } : null; }
+/** La taille de la réverbération reconstruit sa réponse à chaque changement : elle n'est pas automatisable. */
+export const fxAutomatable = (type: string, k: string) => !!FX[type]?.some(d => d[0] === k) && !(type === 'reverb' && k === 'size');
+const fxDef = (type: string, k: string) => FX[type]?.find(d => d[0] === k);
+const isLogRange = (min: number, max: number) => min > 0 && max / min >= 20;
+export function fxFromNorm(type: string, k: string, v: number): number {
+  const d = fxDef(type, k); if (!d) return v;
+  const [, min, max] = d, x = isLogRange(min, max) ? min * Math.pow(max / min, v) : min + v * (max - min);
+  return type === 'delay' && k === 'time' ? Math.round(x) : x;   // l'écho reste calé sur la grille (en pas)
+}
+export function fxToNorm(type: string, k: string, x: number): number {
+  const d = fxDef(type, k); if (!d) return 0;
+  const [, min, max] = d;
+  return Math.min(1, Math.max(0, isLogRange(min, max) ? Math.log(x / min) / Math.log(max / min) : (x - min) / (max - min)));
+}
+/** Bornes d'une courbe : minimum et valeur par défaut (réglages de la piste) ; 0 à 1 pour un réglage d'effet. */
+export const autoMeta = (k: string): { min: number; def: number } => AUTO[k as AutoParam] ?? { min: 0, def: 0.5 };
+
 export const newInsert = (type: string): Insert => ({ id: uid(), type, on: true, p: Object.fromEntries((FX[type] ?? []).map(([k, , , , d]) => [k, d])) });
 
 export interface Pad { bufferId: string; name: string }
@@ -87,8 +112,12 @@ export interface Track {
   compThr: number; compRatio: number; // compresseur : seuil (dB) et taux
   out: string;                       // sortie : '' = général, sinon identifiant d'un bus
   inserts: Insert[];                 // chaîne d'effets ajoutés, dans l'ordre, après l'égaliseur et le compresseur
-  auto?: Partial<Record<AutoParam, Pt[]>>;
-  autoShow?: AutoParam | '';
+  /** Courbes d'automation : les six réglages de la piste (AutoParam) et, depuis la V17, les réglages de ses effets (insKey). */
+  auto?: Partial<Record<AutoParam, Pt[]>> & Record<string, Pt[] | undefined>;
+  autoShow?: string;
+  /** Gel (V17) : `frozen` = piste transformée en audio (coupée, gardée pour la dégeler) ; `frozenFrom` = la piste audio qui la remplace. */
+  frozen?: boolean;
+  frozenFrom?: string;
   synth?: SynthParams;
   kit?: string;
   pads?: (Pad | null)[];
@@ -127,6 +156,8 @@ export function bpmAt(p: Project, s: number): number {
   for (const m of p.tempos ?? []) { if (m.s <= s) b = m.bpm; else break; }
   return b;
 }
+/** Secondes de son (dans le fichier) par pas, pour un clip audio : fixe s'il suit le tempo, sinon celle du tempo du morceau. */
+export const srcStep = (p: Project, c: Clip) => (c.warp && c.srcBpm ? 15 / c.srcBpm : 15 / p.bpm);
 /** Durée d'un pas (double-croche) au pas `s`, en secondes. */
 export const durAt = (p: Project, s: number) => 15 / bpmAt(p, s);
 /** Temps écoulé depuis le début du morceau jusqu'au pas `s`, en tenant compte des changements de tempo. */

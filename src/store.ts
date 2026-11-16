@@ -19,7 +19,32 @@ export const S = {
   synthOpen: false, // réglages détaillés de l'instrument dépliés dans le piano roll
   px: 11,     // pixels par pas dans l'arrangement
   snap: 4,    // grille magnétique, en pas
+  file: { path: '', name: '' }, // version bureau : fichier .khm lié au projet ouvert ('' = aucun)
 };
+
+// ---------- Version bureau : fichier .khm lié à chaque projet de la bibliothèque (V17) ----------
+/** Fichier du disque lié au projet `pid` (enregistré ou ouvert depuis ce fichier). */
+export function fileOf(pid: string): { path: string; name: string } {
+  try { const v = JSON.parse(localStorage.getItem('kh-file:' + pid) || 'null'); if (v && typeof v.path === 'string') return { path: v.path, name: String(v.name || '') }; } catch { /* ignore */ }
+  return { path: '', name: '' };
+}
+export function linkFile(f: { path: string; name: string }) {
+  S.file = { path: f.path, name: f.name };
+  document.title = (f.path ? f.name : S.project.name) + ' — KH Music Pro';
+  try { localStorage.setItem('kh-file:' + S.pid, JSON.stringify(S.file)); } catch { /* stockage désactivé */ }
+}
+/** Projet de la bibliothèque déjà lié à ce fichier (pour ne pas créer un doublon à chaque ouverture). */
+export function pidOfFile(path: string): string {
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith('kh-file:') && fileOf(k.slice(8)).path === path) return k.slice(8); } catch { /* ignore */ }
+  return '';
+}
+/** Changements non enregistrés dans le fichier lié (version bureau : point dans le bouton de fermeture du Mac). */
+export const fileState = { dirty: false };
+const desk = () => (window as unknown as { khFiles?: { edited(on: boolean): void } }).khFiles;
+export function setDirty(on: boolean) {
+  if (fileState.dirty === on) return;
+  fileState.dirty = on; desk()?.edited(on && !!S.file.path);
+}
 
 export const buffers = new Map<string, AudioBuffer>();
 
@@ -43,13 +68,15 @@ export function resetHistory() { hist = [JSON.stringify(S.project)]; hi = 0; }
 export function commit() {
   hist = hist.slice(0, hi + 1); hist.push(JSON.stringify(S.project));
   if (hist.length > 150) hist.shift();
-  hi = hist.length - 1; autosave(); emit();
+  hi = hist.length - 1; setDirty(true); autosave(); emit();
 }
 function travel(d: number) {
   if (hi + d < 0 || hi + d >= hist.length) return;
   hi += d; S.project = JSON.parse(hist[hi]); autosave(); emit();
 }
 export const undo = () => travel(-1);
+/** Abandonne les modifications en cours non validées (glissé annulé par le système) : retour au dernier état enregistré dans l'historique. */
+export function revert() { if (hi >= 0 && JSON.stringify(S.project) !== hist[hi]) { S.project = JSON.parse(hist[hi]); emit(); } }
 export const redo = () => travel(1);
 
 export const findTrack = (id: string): Track | undefined => S.project.tracks.find(t => t.id === id);
@@ -111,13 +138,103 @@ function autosave() {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => { saveNow().catch(() => { /* stockage indisponible */ }); }, 500);
 }
-async function saveNow() {
+export async function saveNow() {
   clearTimeout(saveTimer);
   if (!S.pid) S.pid = uid();
   const id = S.pid, e = library.find(x => x.id === id), now = Date.now();
   if (e) { e.name = S.project.name; e.updated = now; } else library.push({ id, name: S.project.name, updated: now });
-  await idbSet('proj:' + id, JSON.stringify(S.project)); await idbSet('lib', library); await idbSet('current', id);
+  const json = JSON.stringify(S.project);
+  await idbSet('proj:' + id, json); await idbSet('lib', library); await idbSet('current', id);
+  saved.at = now;
+  if (now - versioning.last >= versioning.every) await snapshot('auto', json);
 }
+
+// ---------- Versions du projet (V17) : instantanés gardés dans le navigateur, pour revenir en arrière même après fermeture ----------
+/** Un instantané : date, nom du projet à ce moment, nombre de pistes, et pourquoi il a été pris. */
+export interface Version { t: number; name: string; tracks: number; why: 'auto' | 'open' | 'restore' | 'crash' | 'manual' }
+/** Un instantané au plus toutes les `every` ms d'édition (2 minutes) ; `keep` derniers gardés, plus un par jour au-delà (`days`). */
+export const versioning = { every: 120000, keep: 20, days: 10, last: 0 };
+/** Date de la dernière sauvegarde automatique réussie (0 = jamais dans cette session). */
+export const saved = { at: 0 };
+let lastSnap = '';
+export const listVersions = async (pid = S.pid) => (await idbGet<Version[]>('vers:' + pid)) ?? [];
+/** Prend un instantané du projet courant (rien si identique au précédent). */
+export async function snapshot(why: Version['why'], json = JSON.stringify(S.project)): Promise<boolean> {
+  if (!S.pid) S.pid = uid();
+  const pid = S.pid, list = await listVersions(pid);
+  versioning.last = Date.now();
+  if (!lastSnap && list.length) lastSnap = (await idbGet<string>(`ver:${pid}:${list[list.length - 1].t}`)) ?? '';
+  if (json === lastSnap) return false;
+  const t = Math.max(Date.now(), (list[list.length - 1]?.t ?? 0) + 1), p = S.project;
+  await idbSet(`ver:${pid}:${t}`, json);
+  list.push({ t, name: p.name, tracks: p.tracks.length, why });
+  // Éclaircissement : les `keep` plus récents, puis le plus récent de chaque jour, sur `days` jours au plus.
+  const recent = list.slice(-versioning.keep), older = list.slice(0, -versioning.keep), day = (x: Version) => new Date(x.t).toDateString(), kept: Version[] = [];
+  for (let i = older.length - 1; i >= 0 && kept.length < versioning.days; i--) if (!kept.some(k => day(k) === day(older[i])) && !recent.some(r => day(r) === day(older[i]))) kept.unshift(older[i]);
+  const next = [...kept, ...recent];
+  for (const v of list) if (!next.includes(v)) await idbDel(`ver:${pid}:${v.t}`);
+  await idbSet('vers:' + pid, next);
+  lastSnap = json;
+  return true;
+}
+/** Plantage reconnu après coup (seconde vérification) : la version d'ouverture déjà prise devient « récupérée » (sinon une nouvelle version l'est). */
+export async function markRecovered(): Promise<void> {
+  const list = await listVersions(), last = list[list.length - 1];
+  if (!last) { await snapshot('crash'); return; }
+  // Si l'état n'a pas changé depuis la dernière version, c'est elle qu'on a rouverte : on la marque.
+  if ((last.why === 'open' || !(await snapshot('crash')))) { last.why = 'crash'; await idbSet('vers:' + S.pid, list); }
+}
+/** Revient à un instantané : l'état actuel est d'abord gardé comme version, et Annuler ramène à l'état d'avant. */
+export async function restoreVersion(t: number): Promise<void> {
+  const json = await idbGet<string>(`ver:${S.pid}:${t}`);
+  if (!json) throw new Error('missing');
+  await snapshot('restore');
+  const p: Project = migrate(JSON.parse(json));
+  await loadBuffers(p);
+  S.project = p;
+  if (!findTrack(S.selTrack)) { S.selTrack = p.tracks[0]?.id ?? ''; S.selClip = p.tracks[0]?.clips[0]?.id ?? ''; }
+  commit();
+}
+
+// ---------- Fermeture inattendue (V17) ----------
+// Chaque onglet ouvert laisse une trace (localStorage) qu'il efface en se fermant normalement, et garde un verrou
+// (Web Locks) tant qu'il vit : le système le libère si l'onglet ou l'application meurt. Au démarrage, une trace dont le
+// verrou n'est plus tenu = une session précédente qui s'est arrêtée net (plantage, ordinateur éteint, application tuée).
+// Sans Web Locks, une trace sans battement depuis plus de 15 s compte comme telle. Le projet a déjà été rouvert depuis
+// la sauvegarde automatique : on le dit au musicien, et la version d'ouverture est marquée « récupérée ».
+export const crash = { found: false, name: '', at: 0 };
+const TAB = uid();
+function beat() { try { localStorage.setItem('kh-open:' + TAB, JSON.stringify({ t: Date.now(), pid: S.pid })); } catch { /* stockage désactivé */ } }
+export async function watchSession(onLate?: () => void) {
+  const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+  const heldNow = async (): Promise<Set<string> | null> => { try { return locks ? new Set(((await locks.query()).held ?? []).map(l => l.name ?? '')) : null; } catch { return null; } };
+  const read = (k: string) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } };
+  const held = await heldNow(), doubtful: string[] = [];
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('kh-open:')) {
+      const v = read(k), dead = held ? !held.has('kh-tab:' + k.slice(8)) : Date.now() - (v.t || 0) > 15000;
+      if (dead) { crash.found = true; localStorage.removeItem(k); }
+      else doubtful.push(k);   // verrou encore tenu : autre onglet vivant, ou onglet planté que le système n'a pas fini de libérer
+    }
+  } catch { /* stockage désactivé */ }
+  // Seconde vérification 8 s plus tard : le verrou d'un onglet planté a alors été libéré par le système.
+  if (doubtful.length && !crash.found) setTimeout(async () => {
+    const h2 = await heldNow(); let late = false;
+    for (const k of doubtful) {
+      const v = read(k); if (!v.t) continue;
+      // Avec Web Locks, seul le verrou compte (un onglet caché ralentit ses battements) ; sans, le battement.
+      if (h2 ? !h2.has('kh-tab:' + k.slice(8)) : Date.now() - v.t > 7500) { late = true; try { localStorage.removeItem(k); } catch { /* ignore */ } }
+    }
+    if (late && !crash.found) { crash.found = true; onLate?.(); }
+  }, 8000);
+  try { locks?.request('kh-tab:' + TAB, () => new Promise(() => { /* tenu jusqu'à la fin de l'onglet */ })); } catch { /* ignore */ }
+  beat(); setInterval(beat, 5000);
+  const flush = () => { saveNow().catch(() => { }); };
+  addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+  addEventListener('pagehide', () => { flush(); try { localStorage.removeItem('kh-open:' + TAB); } catch { /* ignore */ } });
+  addEventListener('pageshow', e => { if (e.persisted) beat(); });
+}
+
 async function loadBuffers(p: Project) {
   for (const id of usedBuffers(p)) if (!buffers.has(id)) {
     const raw = await idbGet<RawBuf>('buf:' + id);
@@ -130,17 +247,27 @@ export async function loadAutosave(): Promise<boolean> {
     library = (await idbGet<LibEntry[]>('lib')) ?? [];
     let id = await idbGet<string>('current'), json = id ? await idbGet<string>('proj:' + id) : undefined;
     if (!json) { json = await idbGet<string>('project'); id = uid(); } // sauvegarde d'une version antérieure
-    S.pid = id || uid();
+    S.pid = id || uid(); S.file = fileOf(S.pid);
     if (!json) return false;
-    const p: Project = migrate(JSON.parse(json));
+    let p: Project;
+    try { p = migrate(JSON.parse(json)); }
+    catch {
+      // Sauvegarde illisible : on repart de la version précédente la plus récente qui se relit.
+      const list = await listVersions(S.pid); let ok: Project | null = null;
+      for (let i = list.length - 1; i >= 0 && !ok; i--) { try { ok = migrate(JSON.parse((await idbGet<string>(`ver:${S.pid}:${list[i].t}`)) ?? '')); } catch { /* suivante */ } }
+      if (!ok) return false;
+      p = ok; crash.found = true;
+    }
     await loadBuffers(p);
     S.project = p;
+    crash.name = p.name; crash.at = library.find(x => x.id === S.pid)?.updated ?? 0;
     return true;
   } catch { S.pid ||= uid(); return false; }
 }
 
 function install(p: Project, id: string) {
-  S.project = p; S.pid = id; S.selTrack = ''; S.selClip = '';
+  S.project = p; S.pid = id; S.selTrack = ''; S.selClip = ''; lastSnap = ''; versioning.last = Date.now();
+  S.file = fileOf(id); setDirty(false);
   resetHistory(); autosave(); emit();
 }
 /** Démarre un nouveau projet ; le précédent reste dans la bibliothèque. */
@@ -154,6 +281,7 @@ export async function openProject(id: string) {
   if (!json) throw new Error('missing');
   const p: Project = migrate(JSON.parse(json));
   await loadBuffers(p); install(p, id);
+  await snapshot('open').catch(() => { });
 }
 export async function duplicateProject(id: string) {
   if (id === S.pid) await saveNow();
@@ -166,7 +294,8 @@ export async function duplicateProject(id: string) {
 export async function deleteProject(id: string) {
   if (id === S.pid) return;
   library = library.filter(x => x.id !== id);
-  await idbDel('proj:' + id); await idbSet('lib', library);
+  for (const v of await listVersions(id)) await idbDel(`ver:${id}:${v.t}`);
+  await idbDel('vers:' + id); await idbDel('proj:' + id); await idbSet('lib', library);
 }
 
 // ---------- Fichier projet (.khm) ----------
@@ -188,12 +317,15 @@ export function serializeProject(): string {
   return JSON.stringify({ format: 'kh-music-pro', version: 1, project: S.project, buffers: bufs });
 }
 
-export function loadProjectFile(text: string) {
+/** Charge un fichier .khm ; `pid` : projet de la bibliothèque à réutiliser (même fichier rouvert). */
+export function loadProjectFile(text: string, pid = '') {
   const data = JSON.parse(text);
   if (data.format !== 'kh-music-pro' || !data.project?.tracks) throw new Error('invalid');
   for (const [id, r] of Object.entries<{ sr: number; ch: string[] }>(data.buffers ?? {})) {
     addBuffer(id, fromRaw({ sr: r.sr, ch: r.ch.map(unb64) }));
   }
   saveNow().catch(() => { });
-  install(migrate(data.project), uid());
+  if (pid && !library.some(x => x.id === pid)) pid = '';
+  install(migrate(data.project), pid || uid());
+  snapshot('open').catch(() => { });
 }

@@ -2,6 +2,10 @@
 const { app, BrowserWindow, session, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const files = require('./files.cjs');
+
+// Double-clic sur un .khm dans le Finder (ou glisser sur l'icône du Dock), y compris pour lancer l'application.
+app.on('open-file', (e, p) => { e.preventDefault(); files.openFromSystem(p); });
 
 // Module natif (macOS) : plugins Audio Unit du Mac et carte son par Core Audio (V14b). Dans l'installateur, il est rangé
 // hors de l'archive de l'application (Resources/native) ; en développement, c'est le résultat de la construction.
@@ -19,9 +23,10 @@ function createWindow() {
     width: 1500, height: 920, minWidth: 900, minHeight: 600, backgroundColor: '#060914', title: 'KH Music Pro', autoHideMenuBar: true,
     webPreferences: NATIVE
       ? { contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false, preload: path.join(__dirname, 'native-preload.cjs'), additionalArguments: ['--kh-native=' + MODULE] }
-      : { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      : { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  win.webContents.on('did-finish-load', () => files.flush(win.webContents));
   // Les liens externes s'ouvrent dans le navigateur, jamais dans l'application.
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', e => e.preventDefault());
@@ -32,6 +37,7 @@ app.whenReady().then(() => {
   const allowed = new Set(['media', 'midi', 'midiSysex']);
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+  files.setup();
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
