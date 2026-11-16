@@ -1,10 +1,10 @@
 # Rapport de QA — KH Music Pro
 
-302 cas réussis sur 304.
+305 cas réussis sur 307.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
-| T01 | Transport | Espace lance la lecture : le son sort et la position avance | ÉCHEC : niveau trop faible 0 |
+| T01 | Transport | Espace lance la lecture : le son sort et la position avance | OK |
 | T02 | Transport | Stop revient au point de départ, un second Stop revient au début | OK |
 | T03 | Transport | La boucle revient au début de la zone bouclée | OK |
 | T04 | Transport | Sans boucle, la lecture s'arrête seule à la fin du morceau | OK |
@@ -306,5 +306,8 @@
 | FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | OK |
 | FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | OK |
 | PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | OK |
-| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | OK |
+| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | ÉCHEC : la charge ne baisse pas assez : 332 % → 298 % |
 | PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | OK |
+| AW01 | Plugins du Mac | Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable | OK |
+| AW02 | Plugins du Mac | Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet | OK |
+| AW03 | Plugins du Mac | Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit | OK |

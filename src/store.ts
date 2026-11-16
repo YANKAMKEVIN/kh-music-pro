@@ -198,16 +198,28 @@ export async function restoreVersion(t: number): Promise<void> {
 export const crash = { found: false, name: '', at: 0 };
 const TAB = uid();
 function beat() { try { localStorage.setItem('kh-open:' + TAB, JSON.stringify({ t: Date.now(), pid: S.pid })); } catch { /* stockage désactivé */ } }
-export async function watchSession() {
+export async function watchSession(onLate?: () => void) {
   const locks = (navigator as Navigator & { locks?: LockManager }).locks;
-  let held: Set<string> | null = null;
-  try { if (locks) held = new Set(((await locks.query()).held ?? []).map(l => l.name ?? '')); } catch { held = null; }
+  const heldNow = async (): Promise<Set<string> | null> => { try { return locks ? new Set(((await locks.query()).held ?? []).map(l => l.name ?? '')) : null; } catch { return null; } };
+  const read = (k: string) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } };
+  const held = await heldNow(), doubtful: string[] = [];
   try {
     for (const k of Object.keys(localStorage)) if (k.startsWith('kh-open:')) {
-      const v = JSON.parse(localStorage.getItem(k) || '{}'), dead = held ? !held.has('kh-tab:' + k.slice(8)) : Date.now() - (v.t || 0) > 15000;
+      const v = read(k), dead = held ? !held.has('kh-tab:' + k.slice(8)) : Date.now() - (v.t || 0) > 15000;
       if (dead) { crash.found = true; localStorage.removeItem(k); }
+      else doubtful.push(k);   // verrou encore tenu : autre onglet vivant, ou onglet planté que le système n'a pas fini de libérer
     }
   } catch { /* stockage désactivé */ }
+  // Seconde vérification 8 s plus tard : le verrou d'un onglet planté a alors été libéré par le système.
+  if (doubtful.length && !crash.found) setTimeout(async () => {
+    const h2 = await heldNow(); let late = false;
+    for (const k of doubtful) {
+      const v = read(k); if (!v.t) continue;
+      // Avec Web Locks, seul le verrou compte (un onglet caché ralentit ses battements) ; sans, le battement.
+      if (h2 ? !h2.has('kh-tab:' + k.slice(8)) : Date.now() - v.t > 7500) { late = true; try { localStorage.removeItem(k); } catch { /* ignore */ } }
+    }
+    if (late && !crash.found) { crash.found = true; onLate?.(); }
+  }, 8000);
   try { locks?.request('kh-tab:' + TAB, () => new Promise(() => { /* tenu jusqu'à la fin de l'onglet */ })); } catch { /* ignore */ }
   beat(); setInterval(beat, 5000);
   const flush = () => { saveNow().catch(() => { }); };

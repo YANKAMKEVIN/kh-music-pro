@@ -170,7 +170,7 @@ function crashNotice() {
 
 (async () => {
   await loadAutosave();
-  await watchSession();
+  await watchSession(() => { snapshot('crash').catch(() => { }); if (!document.querySelector('dialog[open]')) crashNotice(); });
   resetHistory();
   S.selTrack = S.project.tracks[0]?.id ?? '';
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
