@@ -2,6 +2,7 @@ import { addAu, addInsert, addWam, moveInsert, removeInsert, saveWamStates } fro
 import { AuInstance, AuParam, auBridge, auFromPos, auList, auLog, auName, auToPos } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { engine } from '../audio/engine';
+import { autoKeysOf } from '../audio/graph';
 import { t } from '../i18n';
 import { S, commit } from '../store';
 import { FX, Insert, Track } from '../types';
@@ -79,7 +80,38 @@ function auBody(tr: Track, ins: Insert, body: HTMLElement) {
     };
     body.append(h('label', { class: 'fld' }, t('au.preset'), sel));
   }
+  // Fenêtre graphique du plugin (V17, module natif récent) : la vraie interface du plugin, dans une fenêtre du Mac.
+  const br = auBridge();
+  if (br?.uiOpen) body.append(h('button', { class: 'pill', data: { act: 'auwindow' }, title: t('au.windowTip'), onclick: () => openAuWindow(tr, ins, inst) }, '🪟 ' + t('au.window')));
   body.append(grid, reset);
+}
+
+/**
+ * Ouvre la fenêtre du plugin et la suit tant qu'elle est ouverte : distribue les clics et les touches du Mac à la fenêtre
+ * (toutes les 30 ms), et relit ses réglages (toutes les 300 ms) pour les recopier dans le projet : ce qu'on règle dans la
+ * fenêtre s'enregistre, s'annule et passe à l'export comme un curseur de KH Music Pro. Pendant la lecture d'une
+ * automation de ce plugin, les valeurs lues viennent de la courbe : elles ne sont pas recopiées.
+ */
+const uiFollow = new Map<string, number>();
+export function openAuWindow(tr: Track, ins: Insert, inst: AuInstance) {
+  const br = auBridge();
+  if (!br?.uiOpen) return;
+  try { br.uiOpen(inst.auId); } catch { toast(t('au.uiFail'), 'error'); return; }
+  const key = tr.id + ':' + ins.id;
+  if (uiFollow.has(key)) return;
+  let n = 0, pending = 0;
+  const timer = window.setInterval(() => {
+    if (!br.uiIsOpen?.(inst.auId) || liveWams.get(wamKey(tr.id, ins.id)) !== inst) { clearInterval(timer); uiFollow.delete(key); return; }
+    br.uiPump?.();
+    if (++n % 10 || (engine.playing && autoKeysOf(tr, ins.id).size)) return;
+    let changed = false;
+    for (const p of br.params(inst.auId) ?? []) {
+      const k = String(p.address), cur = ins.p[k] ?? inst.params.find(q => q.address === p.address)?.value;
+      if (cur === undefined || Math.abs(p.value - cur) > 1e-6 * Math.max(1, Math.abs(cur))) { ins.p[k] = p.value; changed = true; }
+    }
+    if (changed) { delete ins.preset; clearTimeout(pending); pending = window.setTimeout(() => commit(), 300); }
+  }, 30);
+  uiFollow.set(key, timer);
 }
 
 function card(tr: Track, ins: Insert, i: number) {

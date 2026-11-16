@@ -47,6 +47,11 @@ export interface Bridge {
   info(id: number): { name: string; latency: number; tail: number };
   close(id: number): void;
   list(): AuDesc[];
+  /** Fenêtre graphique du plugin (V17) : vue Cocoa du plugin, ou vue générique d'Apple. Absent d'un module natif plus ancien. */
+  uiOpen?(id: number): { generic: boolean; width: number; height: number } | null;
+  uiClose?(id: number): void;
+  uiIsOpen?(id: number): boolean;
+  uiPump?(): void;
 }
 
 export const auBridge = (): Bridge | null => (window as unknown as { khNative?: Bridge }).khNative ?? null;

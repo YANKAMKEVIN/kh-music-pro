@@ -7,6 +7,6 @@
       "MACOSX_DEPLOYMENT_TARGET": "13.0",
       "OTHER_CPLUSPLUSFLAGS": ["-std=c++20", "-O2"]
     },
-    "link_settings": { "libraries": ["-framework AudioToolbox", "-framework CoreFoundation", "-framework CoreAudio"] }
+    "link_settings": { "libraries": ["-framework AudioToolbox", "-framework AppKit", "-framework CoreAudioKit", "-framework QuartzCore", "-framework CoreFoundation", "-framework CoreAudio"] }
   }]
 }

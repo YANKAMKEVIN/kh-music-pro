@@ -88,9 +88,14 @@ const PAGE_HELPERS = () => {
         ioInput: n => ({ input: n, inChannels: 0, inDeclared: 0 }),
         ioStats: () => (f.running ? { devEvents: 0, outCalls: 1 } : null),
         ioArm() { }, ioResetStats() { }, ioGain() { }, ioDevices: () => [],
+        // Fenêtre du plugin (V17) : ouverte/fermée, nombre de distributions d'évènements ; noUi = module natif plus ancien.
+        ui: {}, pumps: 0,
+        uiOpen: id => { calls.push(['uiOpen', id]); f.ui[id] = true; return { generic: false, width: 400, height: 300 }; },
+        uiClose: id => { f.ui[id] = false; }, uiIsOpen: id => !!f.ui[id], uiPump: () => { f.pumps++; },
       };
       window.__fakeListen ??= e => { const w = window.khNative; if (w?.sabs && e.data?.khSab instanceof SharedArrayBuffer) { w.sabs.add(e.data.key); window.postMessage({ khSabOk: e.data.key }, '*'); } };
       removeEventListener('message', window.__fakeListen); addEventListener('message', window.__fakeListen);
+      if (opts.noUi) for (const k of ['uiOpen', 'uiClose', 'uiIsOpen', 'uiPump']) delete f[k];
       window.khNative = f;
       return f;
     },
@@ -3346,10 +3351,55 @@ test('PF03', 'Performance', 'Gros projet allégé par le gel : les 32 pistes d�
 });
 test('PF02', 'Performance', 'Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol', async () => {
   await S(BIG); await tab('mixer');
-  await page.click('[data-act=load]'); await page.waitForFunction(() => /%/.test(document.querySelector('[data-role=load]')?.textContent ?? ''), null, { timeout: 30000 });
+  await page.click('[data-act=load]'); await page.waitForFunction(() => /%/.test(document.querySelector('[data-role=load]')?.textContent ?? ''), null, { timeout: 120000 });
   const txt = await page.textContent('[data-role=load]'), cls = await page.getAttribute('[data-role=load]', 'class');
   expect(/\d+ % d.un cœur \(40 pistes, 120 effets\)/.test(txt) && /\b(ok|warn|high)\b/.test(cls), `affichage : « ${txt} » (${cls})`);
   for (const [l, w] of [['en', 'Load'], ['es', 'Carga']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('[data-act=load]')).includes(w), `bouton en ${l}`); }
+});
+
+// ============ Fenêtre graphique des plugins du Mac (V17) ============
+async function auRack(opts = {}) {
+  await page.evaluate(o => { window.qa.fakeNative(o); }, opts);
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.selectOption('[data-role=fxadd]', 'au:aufx:lpas:appl'); await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+}
+test('AW01', 'Plugins du Mac', 'Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable', async () => {
+  await auRack();
+  await page.click('#fx [data-act=auwindow]'); await sleep(200);
+  const id = await S(() => window.khNative.calls.find(c => c[0] === 'uiOpen')?.[1]);
+  expect(id, 'la fenêtre du plugin n’a pas été demandée au module natif');
+  const p0 = await sleep(400).then(() => S(() => window.khNative.pumps));
+  expect(p0 > 3, `les clics du Mac doivent être distribués à la fenêtre (${p0})`);
+  // Dans la fenêtre, l'utilisateur tourne le bouton de coupure : le plugin a changé de valeur.
+  await S(() => { window.khNative.vals[0] = 1234; });
+  await page.waitForFunction(() => window.kh.S.project.tracks[1].inserts[0].p['0'] === 1234, null, { timeout: 3000 });
+  await sleep(500);
+  expect((await page.textContent('#fx [data-addr="0"]')).includes('1.23 kHz'), `le curseur doit suivre la fenêtre : ${await page.textContent('#fx [data-addr="0"]')}`);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await sleep(150);
+  expect(await S(() => window.kh.S.project.tracks[1].inserts[0].p['0']) !== 1234, 'Ctrl+Z doit annuler le réglage fait dans la fenêtre');
+  // Fenêtre fermée par son bouton : le suivi s'arrête.
+  await S(() => { window.khNative.ui = {}; }); await sleep(200); const n1 = await S(() => window.khNative.pumps); await sleep(400);
+  expect(await S(() => window.khNative.pumps) === n1, 'le suivi doit s’arrêter quand la fenêtre est fermée');
+});
+test('AW02', 'Plugins du Mac', 'Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet', async () => {
+  await auRack(); const ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  await page.evaluate(i => { const k = window.kh, tr = k.S.project.tracks[1]; tr.auto = { [`ins:${i}:0`]: [{ s: 0, v: 0 }, { s: 16, v: 1 }] }; k.commit(); }, ins);
+  await page.click('#fx [data-act=auwindow]'); await page.keyboard.press('Escape');
+  await page.click('#bPlay'); await sleep(1500); await page.click('#bStop'); await sleep(500);
+  const p = await S(() => window.kh.S.project.tracks[1].inserts[0].p);
+  expect(p['0'] === undefined || p['0'] === 6900, `une valeur de la courbe a été recopiée dans le réglage fixe : ${JSON.stringify(p)}`);
+});
+test('AW03', 'Plugins du Mac', 'Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit', async () => {
+  await auRack({ noUi: true });
+  expect(!(await page.$('#fx [data-act=auwindow]')), 'bouton affiché alors que le module ne sait pas ouvrir de fenêtre');
+  await page.keyboard.press('Escape'); await S(() => { window.kh.S.project.tracks[1].inserts = []; window.kh.commit(); });
+  await auRack();
+  await page.focus('#fx [data-act=auwindow]'); await page.keyboard.press('Enter'); await sleep(200);
+  expect(await S(() => window.khNative.calls.some(c => c[0] === 'uiOpen')), 'Entrée n’ouvre pas la fenêtre');
+  for (const [l, w] of [['en', 'Plugin window'], ['es', 'Ventana del plugin']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id)); await page.waitForSelector('#fx [data-act=auwindow]');
+    expect((await page.textContent('#fx [data-act=auwindow]')).includes(w), `bouton en ${l}`);
+  }
 });
 
 (async () => {

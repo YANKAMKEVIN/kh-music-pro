@@ -14,10 +14,10 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
-## Fonctions (v0.16)
+## Fonctions (v0.17)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
-- **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**).
+- **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**) ; depuis la v0.17, aussi n'importe quel réglage des effets de la piste, plugins du Mac compris.
 - **Batterie** : 16 sons, 3 kits, séquenceur à pas avec swing et notes douces, **16 pads** jouables (souris, clavier, MIDI) acceptant vos propres samples.
 - **Instruments** : 24 sons (claviers, basses dont 808 et acid, leads, cuivres, flûte, nappes, cordes pincées, cloches) sur quatre moteurs (soustractif, FM, corde pincée, **sampler**).
 - **Piano roll** : vélocité par note, transposition, **gamme** (surlignage et aimantation), **accords à un doigt**.
@@ -90,9 +90,20 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 - **Registres égalisés** : le volume perçu de chaque note enregistrée est ramené vers la tendance de son instrument. Plus de note qui ressort ou disparaît par rapport à ses voisines (écart maximal mesuré : 1,3 dB entre deux notes enregistrées voisines, contre 11 dB avant), tout en gardant un grave plus rond et un aigu plus léger.
 - **Raccords des notes longues** : fondu de 100 ms, niveau corrigé pendant le fondu et compensation progressive sur toute la boucle. Plus de bosse ou de creux de niveau à chaque tour (jusqu’à 8 dB avant sur certaines notes), et aucun clic, mesurés sur les 237 boucles.
 
+## Ne rien perdre, gros projets, plugins du Mac (v0.17)
+
+- **Versions du morceau** (menu Projet) : une version est gardée toutes les deux minutes de travail, à l'ouverture et avant chaque restauration ; on revient à n'importe laquelle, et Annuler ramène l'état d'avant.
+- **Après un plantage** (onglet ou application fermés net, ordinateur éteint) : au lancement suivant, le morceau est rouvert tel qu'il était à la dernière sauvegarde automatique, avec un message et un accès aux versions. Une sauvegarde illisible est remplacée par la dernière version lisible.
+- **Version bureau Mac : vrais fichiers** : Ouvrir, Enregistrer (Cmd+S réécrit le même fichier), Enregistrer sous (Cmd+Maj+S) dans le dossier de son choix, fichiers récents dans le menu Projet, double-clic sur un `.khm` dans le Finder. Écriture sûre : un plantage pendant l'enregistrement ne laisse jamais un fichier à moitié écrit.
+- **Gestes plus sûrs** : un glissé (note, poignée, vélocité, boucle, clip, point d'automation, séparation) annulé par le système revient comme avant ; un deuxième doigt ne le perturbe pas ; une souris relâchée hors de la fenêtre ne laisse rien accroché.
+- **Clips audio qui suivent le tempo** (bouton « Suit le tempo » d'un clip audio) : le son s'étire sans changer de hauteur pour suivre le tempo du morceau et ses changements, à l'écoute comme à l'export ; tempo d'origine réglable (boucle à 90 BPM dans un morceau à 120). L'étirement garde chaque coup de batterie à l'heure.
+- **Geler une piste** (❄ dans l'en-tête) : son rendu (instrument, effets, automation) devient un clip audio sur une piste juste en dessous ; l'originale est coupée et ne calcule plus rien. Dégeler la ramène.
+- **Charge** (mixeur) : mesure la puissance de calcul que demande le mixage, avec les notes en retard et les décrochages de la dernière lecture.
+- **Fenêtre des plugins du Mac** (version bureau) : bouton « Fenêtre du plugin » dans la chaîne d'effets ; ce qu'on y règle est enregistré dans le projet.
+
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 250 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 307 cas).
 Le plus simple, serveur compris :
 
 ```bash
@@ -105,7 +116,7 @@ Ou, avec le serveur de développement déjà lancé sur le port 5173 :
 npm run qa
 ```
 
-Le rapport est écrit dans `qa/REPORT.md`. Si Chromium est déjà installé sur la machine, `KH_CHROMIUM_PATH=/chemin/vers/chromium npm run qa:all` permet de l’utiliser. Un seul domaine : `npm run qa -- L` (Live), `npm run qa -- AU,F` (automation et clips audio).
+Le rapport est écrit dans `qa/REPORT.md`. Les cas EM comparent des exports à une **empreinte sonore** enregistrée (`qa/empreintes/`) ; après un changement de son voulu et écouté : `KH_EMPREINTE=maj npm run qa:all -- EM`. Pour continuer à modifier le code pendant une campagne : `qa/snapshot.sh <dossier> npm run qa:all` la lance sur une copie figée. Si Chromium est déjà installé sur la machine, `KH_CHROMIUM_PATH=/chemin/vers/chromium npm run qa:all` permet de l’utiliser. Un seul domaine : `npm run qa -- L` (Live), `npm run qa -- AU,F` (automation et clips audio).
 Les tests utilisent Playwright (`npm i -D playwright` puis `npx playwright install chromium` si besoin) ; le cas E04 utilise `python3` pour vérifier l'archive ZIP.
 
 ## Version bureau
@@ -126,7 +137,7 @@ npm run native
 ```
 
 `KH_ARCHS=arm64 npm run native` le construit pour une seule puce, plus vite. Sans lui, la version bureau marche comme la version web.
-Vérifications natives (sur un Mac) : `node qa/au-bridge.cjs 60`, `node qa/native-io.cjs 60`, et `node qa/packaged-mac.cjs --strict` pour l'application de l'installateur.
+Vérifications natives (sur un Mac) : `node qa/au-bridge.cjs 60`, `node qa/native-io.cjs 60`, `node qa/au-window.cjs` (fenêtre des plugins), `node qa/empreinte-mac.cjs` (empreinte sonore des plugins du Mac), `node qa/desktop-files.cjs` (fichiers de projet), et `node qa/packaged-mac.cjs --strict` pour l'application de l'installateur.
 
 ## QA automatique
 
