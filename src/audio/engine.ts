@@ -1,7 +1,7 @@
 import { ensureBanks, loadBank, setDecoder, usedBanks, bankReady } from './banks';
 import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
-import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT, warmWarp, warpCacheSize } from './graph';
+import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT, warmWarp } from './graph';
 import { S, buffers } from '../store';
 import { IoOptions, NativeIO, nativeName } from './native-io';
 import { BAR, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
@@ -55,6 +55,14 @@ class Engine {
   constructor() { setDecoder(this.ctx); }
 
   sync() { this.mix.sync(S.project); warmWarp(S.project, buffers); }
+  /** Indicateur de charge (V17) : pas programmés et pas programmés en retard depuis le début de la lecture. */
+  perf = { steps: 0, late: 0 };
+  /** Décrochages du son signalés par le navigateur (Chromium récent : playoutStats / playbackStats), ou null si inconnus. */
+  underruns(): number | null {
+    const c = this.ctx as unknown as { playoutStats?: { underrunEvents?: number }; playbackStats?: { underrunEvents?: number } };
+    const st = c.playbackStats ?? c.playoutStats;
+    return typeof st?.underrunEvents === 'number' ? st.underrunEvents : null;
+  }
 
   /** Confie l'entrée et la sortie de la carte son au natif : Web Audio ne fait plus que le mixage. */
   async useNative(opts: IoOptions = {}): Promise<NativeIO> {
@@ -93,6 +101,7 @@ class Engine {
 
   // ---------- Transport ----------
   private async start(preroll: number) {
+    this.perf = { steps: 0, late: 0 };
     await this.ctx.resume();
     await this.prepare(); // les vrais instruments doivent être en mémoire avant le premier temps
     // Le bégaiement garde en mémoire les derniers instants joués : il doit écouter dès le début de la lecture.
@@ -171,6 +180,9 @@ class Engine {
     const end = Math.max(contentEnd(p), BAR);
     if (!this.recording && !(looping && this.nextStep <= le) && this.currentStep() >= end) { this.stop(); this.pos = 0; return; }
     while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
+      // Indicateur de charge (V17) : un pas programmé après son heure = l'interface a pris du retard (note jouée en retard).
+      if (this.nextTime < this.ctx.currentTime) this.perf.late++;
+      this.perf.steps++;
       if (looping && this.nextStep === le) { this.nextStep = ls; this.seg = true; }
       const limit = looping && this.nextStep < le ? le : null;
       this.mix.applyAuto(p, this.nextStep, this.nextTime); this.onStep(this.nextStep, this.nextTime);
@@ -499,6 +511,11 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   lastRender.wamFailed = await mix.loadWams(p); // plugins web : recréés pour ce rendu
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
+  // Automation des plugins du Mac : le rendu s'arrête à chaque changement le temps de l'envoyer au plugin.
+  for (const [q, fns] of mix.auEvents) {
+    if (q <= 0) { fns.forEach(f => f()); continue; }
+    off.suspend(q * 128 / sr).then(() => { fns.forEach(f => f()); off.resume(); });
+  }
   const out = await off.startRendering();
   mix.active.clear(); mix.disposePlugins();
   // Compensation de latence des plugins : tout le mixage sort en retard de `pdcMax` ; on le ramène au début du fichier,
@@ -522,6 +539,23 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
     if (pk > 0.966) gainLimit(out, 0.966 / pk);
   }
   return out;
+}
+
+/**
+ * Charge de calcul du mixage (V17) : le moteur calcule `sec` secondes du morceau à partir du pas `from`, aussi vite que possible,
+ * avec le même graphe que l'écoute. Rapport = temps de calcul / durée du son : 0,25 veut dire qu'un quart du temps réel
+ * d'un cœur du processeur suffit ; au-delà de 0,7 environ, l'écoute risque de craquer.
+ */
+export async function measureLoad(p: Project, from = 0, sec = 4): Promise<{ ratio: number; ms: number; sec: number; tracks: number; inserts: number }> {
+  await ensureBanks(p);
+  const sr = 44100, end = Math.max(contentEnd(p), from + 1), off = new OfflineAudioContext(2, Math.ceil(sec * sr), sr);
+  const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
+  await mix.loadWams(p);
+  const t0 = timeOf(p, from);
+  for (let s = from; s < end && timeOf(p, s) - t0 < sec; s++) { const t = timeOf(p, s) - t0; mix.applyAuto(p, s, t); scheduleStep(mix, p, buffers, s, swingT(p, s, t + t0) - t0, s === from, null); }
+  const a = performance.now(); await off.startRendering(); const ms = performance.now() - a;
+  mix.active.clear(); mix.disposePlugins();
+  return { ratio: ms / 1000 / sec, ms, sec, tracks: p.tracks.length, inserts: p.tracks.reduce((n, t) => n + (t.inserts?.filter(i => i.on).length ?? 0), 0) };
 }
 
 /** Volume perçu et crête du morceau tel qu'il sera exporté. */

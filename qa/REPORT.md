@@ -1,10 +1,10 @@
 # Rapport de QA — KH Music Pro
 
-282 cas réussis sur 283.
+302 cas réussis sur 304.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
-| T01 | Transport | Espace lance la lecture : le son sort et la position avance | OK |
+| T01 | Transport | Espace lance la lecture : le son sort et la position avance | ÉCHEC : niveau trop faible 0 |
 | T02 | Transport | Stop revient au point de départ, un second Stop revient au début | OK |
 | T03 | Transport | La boucle revient au début de la zone bouclée | OK |
 | T04 | Transport | Sans boucle, la lecture s'arrête seule à la fin du morceau | OK |
@@ -287,3 +287,24 @@
 | GD08 | Gestes | Séparation du panneau du bas : un deuxième doigt ne la déplace pas, un geste annulé la libère | OK |
 | GD09 | Gestes | Souris relâchée hors de la fenêtre pendant le glissé d’une note : le glissé se termine, il est enregistré et s’annule, la souris ne traîne plus la note | OK |
 | GD10 | Gestes | Sans incident, rien ne change : glisser une note et un clip à la souris déplace et s’annule comme avant | OK |
+| WP01 | Tempo | Clip audio qui suit le tempo : bouton activé à la souris, tempo tapé au clavier, le son s’étire sans changer de hauteur, à l’export comme à l’écoute | OK |
+| WP02 | Tempo | Changement de tempo au milieu d’un clip qui suit le tempo : chaque coup tombe sur son temps, avant et après le changement | OK |
+| WP03 | Tempo | Tempo d’origine saisi (boucle jouée à 60 BPM dans un morceau à 120) : le clip se raccourcit et se cale sur la grille | OK |
+| WP04 | Tempo | Au tempo d’origine, suivre le tempo ne change rien au son : rendu identique échantillon par échantillon | OK |
+| WP05 | Tempo | Scinder et rogner un clip qui suit le tempo : les coups restent sur les temps | OK |
+| WP06 | Tempo | Au clavier : activer le suivi du tempo avec Entrée, l’annuler ; le réglage voyage dans le fichier projet | OK |
+| WP07 | Tempo | Suivi du tempo traduit en anglais et en espagnol | OK |
+| AX01 | Automation | Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe | OK |
+| AX02 | Automation | À l’écoute : pendant la lecture, l’effet suit la courbe ; à l’arrêt, il revient à son réglage fixe | OK |
+| AX03 | Automation | Retirer l’effet retire ses courbes ; Annuler ramène l’effet et ses courbes ; le tout voyage dans le fichier projet | OK |
+| AX04 | Automation | Plugin du Mac : ses réglages apparaissent dans la liste ; automatisé, il reçoit les valeurs au fil de la lecture | OK |
+| AX05 | Automation | Écho automatisé (dosage) à l’export : la traîne n’apparaît que là où la courbe monte | OK |
+| AX06 | Automation | Liste des réglages traduite (anglais, espagnol) | OK |
+| FZ01 | Gel de piste | Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil | OK |
+| FZ02 | Gel de piste | Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel | OK |
+| FZ03 | Gel de piste | Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien | OK |
+| FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | OK |
+| FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | OK |
+| PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | OK |
+| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | OK |
+| PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | OK |

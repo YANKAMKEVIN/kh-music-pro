@@ -24,6 +24,12 @@ export const auLog = (p: AuParam) => p.min > 0 && p.max / p.min >= 20 && (p.unit
 /** Position (0 à 1) sur le curseur logarithmique, et valeur correspondante (4 chiffres significatifs). */
 export const auToPos = (p: AuParam, v: number) => Math.min(1, Math.max(0, Math.log(Math.max(v, p.min) / p.min) / Math.log(p.max / p.min)));
 export const auFromPos = (p: AuParam, x: number) => Math.min(p.max, Math.max(p.min, Number((p.min * Math.pow(p.max / p.min, x)).toPrecision(4))));
+/** Valeur d'un réglage d'Audio Unit pour une position d'automation 0..1 (logarithmique pour les fréquences, entière pour les choix). */
+export function auFromNorm(p: AuParam, v: number): number {
+  const x = auLog(p) ? auFromPos(p, v) : p.min + v * (p.max - p.min);
+  return p.unit === 1 || p.unit === 2 || p.values?.length ? Math.round(x) : x;
+}
+export const auToNorm = (p: AuParam, x: number) => (auLog(p) ? auToPos(p, x) : p.max > p.min ? Math.min(1, Math.max(0, (x - p.min) / (p.max - p.min))) : 0);
 export interface AuDesc { type: string; subtype: string; manufacturer: string; name: string }
 
 /**

@@ -1,5 +1,5 @@
 import { addBus, analyzeMix, applyMixPreset, deleteBus } from '../actions';
-import { engine } from '../audio/engine';
+import { engine, measureLoad } from '../audio/engine';
 import { t } from '../i18n';
 import { clearMidiMap, ccOf, learn } from '../input';
 import { S, commit, emit, select } from '../store';
@@ -92,6 +92,7 @@ export function renderMixer(): HTMLElement {
       learn.on && h('p', { class: 'tip' }, t(learn.target ? 'learn.move' : 'learn.pick')),
       Object.keys(learn.map).length > 0 && h('button', { class: 'pill', data: { act: 'learnclear' }, onclick: clearMidiMap }, t('learn.clear')),
       h('button', { class: 'pill', data: { act: 'busadd' }, title: t('bus.addTip'), onclick: addBus }, '＋ ' + t('bus.add')),
+      loadBtn(),
       h('canvas', { class: 'spec', width: 150, height: 70, role: 'img', 'aria-label': t('mix.spectrum'), title: t('mix.spectrum') })),
     ...p.tracks.map((tr, i) => strip(tr, i)), ...p.buses.map((b, i) => strip(b, i, true)),
     h('div', { class: 'strip master', style: '--c:#fff' },
@@ -159,4 +160,23 @@ export function updateMeters() {
   document.querySelectorAll<HTMLElement>('.mfill').forEach(el => {
     el.style.transform = `scaleY(${engine.level(el.dataset.id!).toFixed(3)})`;
   });
+}
+
+// ---------- Indicateur de charge (V17) ----------
+let lastLoad = '', lastLevel = '';
+/** Mesure la charge de calcul du mixage (4 s à partir de la tête de lecture) et l'affiche, avec les retards de la dernière lecture. */
+function loadBtn() {
+  const out = h('span', { class: 'loadres ' + lastLevel, role: 'status', data: { role: 'load' } }, lastLoad);
+  const b = h('button', { class: 'pill', data: { act: 'load' }, title: t('load.tip') }, '⚡ ' + t('load.title'));
+  b.onclick = async () => {
+    b.disabled = true; out.textContent = t('load.measuring');
+    try {
+      const r = await measureLoad(S.project, Math.floor(engine.pos), 4), pct = Math.round(r.ratio * 100), u = engine.underruns();
+      lastLevel = r.ratio < 0.4 ? 'ok' : r.ratio < 0.7 ? 'warn' : 'high';
+      lastLoad = t('load.result', pct, r.tracks, r.inserts) + ' ' + t('load.' + lastLevel) +
+        (engine.perf.steps ? ' ' + t('load.late', engine.perf.late, engine.perf.steps) : '') + (u !== null ? ' ' + t('load.underruns', u) : '');
+    } catch { lastLoad = t('toast.emptyProject'); lastLevel = ''; }
+    out.className = 'loadres ' + lastLevel; out.textContent = lastLoad; b.disabled = false;
+  };
+  return h('span', { class: 'loadbox' }, b, out);
 }

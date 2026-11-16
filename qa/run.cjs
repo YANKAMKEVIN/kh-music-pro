@@ -1027,8 +1027,8 @@ const waitLevel = (id, min, ms = 3000) => page.evaluate(async ([id, min, ms]) =>
 
 test('IN01', 'Entrée audio', 'Activer l\'entrée : liste des micros, vumètre d\'entrée, puis fermeture', async () => {
   await page.click(await headSel(4)); expect(await page.$('.inbar'), 'panneau d\'entrée absent');
-  await page.click('[data-act=inopen]'); await sleep(400);
-  expect(await S(() => !!window.kh.engine.inp), 'entrée non ouverte'); expect(await page.getAttribute('[data-act=inopen]', 'aria-pressed') === 'true', 'état du bouton');
+  await page.click('[data-act=inopen]');
+  await until(() => S(() => !!window.kh.engine.inp), 'entrée non ouverte', 5000); await sleep(150);   // (l'ouverture du micro peut prendre plus de 0,4 s sur une machine chargée) expect(await page.getAttribute('[data-act=inopen]', 'aria-pressed') === 'true', 'état du bouton');
   expect(await page.$$eval('[data-role=indev] option', e => e.length) >= 2, 'aucun micro listé');
   const lvl = await waitLevel('input', 0.2); expect(lvl > 0.2, `vumètre d'entrée inactif (${lvl})`);
   await page.click('[data-act=inopen]'); await sleep(150); expect(await S(() => !window.kh.engine.inp), 'entrée non fermée');
@@ -3037,6 +3037,319 @@ test('GD10', 'Gestes', 'Sans incident, rien ne change : glisser une note et un c
   expect(await S(() => window.kh.S.project.tracks[0].clips[0].start) === st0 + await S(() => window.kh.bar() * 2), 'le clip ne se déplace plus à la souris');
   await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await sleep(80);
   expect(JSON.stringify(await notes()) === JSON.stringify(n0) && await S(() => window.kh.S.project.tracks[0].clips[0].start) === st0, 'annulation incomplète');
+});
+
+// ============ Clips audio qui suivent le tempo (V17) ============
+// Piste de clics : un coup bref (1 kHz, 8 ms) toutes les 0,5 s pendant 4 s, c'est-à-dire des noires à 120 BPM.
+const CLICKS = (() => { const sr = 44100, n = sr * 4, b = Buffer.alloc(44 + n * 2); b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) { const k = i % (sr / 2); b.writeInt16LE(k < sr * 0.008 ? Math.round(Math.sin(2 * Math.PI * 1000 * k / sr) * 20000) : 0, 44 + i * 2); }
+  const f = path.join(TMP, 'qa-clics.wav'); fs.writeFileSync(f, b); return f; })();
+/** Importe un fichier sur la piste audio (menu Projet > Importer), puis isole cette piste (les autres sont coupées). */
+async function importSolo(file) {
+  await page.click(await headSel(4)); const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu('bImport')]); await fc.setFiles(file); await sleep(600);
+  await S(() => { const k = window.kh, p = k.S.project; p.tracks.forEach((t, i) => { t.mute = i !== 4; }); p.tracks[4].rev = 0; p.tracks[4].dly = 0; p.loop = false; k.commit(); });
+  await page.click(await clipSel(4, 0)); await page.waitForSelector('[data-act=warp]');
+}
+async function typeTempo(v) { await page.click('#bpm', { clickCount: 3 }); await page.keyboard.type(String(v)); await page.keyboard.press('Tab'); await sleep(150); }
+/** Durée (s) pendant laquelle le rendu dépasse -40 dB, et fréquence par passages à zéro sur la première seconde sonore. */
+const toneStats = () => S(async () => {
+  const b = await window.kh.renderOffline(window.kh.S.project, false), d = b.getChannelData(0), sr = b.sampleRate; let first = -1, last = -1;
+  for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.01) { if (first < 0) first = i; last = i; }
+  let z = 0; for (let i = first + 1; i < Math.min(d.length, first + sr * 0.8); i++) if (d[i - 1] < 0 && d[i] >= 0) z++;
+  return { dur: (last - first) / sr, freq: z / 0.8 };
+});
+const onsetsNow = () => S(() => window.qa.onsets(window.kh.S.project, 0.05, 0.1));
+
+test('WP01', 'Tempo', 'Clip audio qui suit le tempo : bouton activé à la souris, tempo tapé au clavier, le son s’étire sans changer de hauteur, à l’export comme à l’écoute', async () => {
+  await importSolo(TONE);
+  await typeTempo(60); let r = await toneStats();
+  near(r.dur, 1, 0.05, 'sans suivi du tempo, le son garde sa durée'); 
+  await typeTempo(120); await page.click('[data-act=warp]'); await sleep(150);
+  expect(await page.$eval('[data-act=warp]', b => b.getAttribute('aria-checked')) === 'true', 'interrupteur non activé');
+  expect(await S(() => window.kh.S.project.tracks[4].clips[0].srcBpm) === 120, 'tempo d’origine non retenu');
+  await typeTempo(60); r = await toneStats();
+  near(r.dur, 2, 0.06, 'à 60 BPM, le son de 1 s doit durer 2 s'); near(r.freq, 440, 8, 'la hauteur ne doit pas changer');
+  // À l'écoute : 1,5 s après le départ, le son est encore là (il serait fini sans le suivi du tempo).
+  await page.click('#bPlay'); await sleep(1500); const on = await masterRms(); await page.click('#bStop');
+  expect(on > 0.01, `à l’écoute, le clip étiré doit encore sonner à 1,5 s (niveau ${on.toFixed(4)})`);
+  // L'export par le bouton : le fichier WAV contient bien 2 s de son.
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#bExport')]); const f = path.join(TMP, 'warp.wav'); await dl.saveAs(f);
+  const w = EMP.readWav(fs.readFileSync(f)), d = w.ch[0]; let a = -1, z = -1; for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.01) { if (a < 0) a = i; z = i; }
+  near((z - a) / w.sr, 2, 0.06, 'durée du son dans le WAV exporté');
+});
+test('WP02', 'Tempo', 'Changement de tempo au milieu d’un clip qui suit le tempo : chaque coup tombe sur son temps, avant et après le changement', async () => {
+  await importSolo(CLICKS); await page.click('[data-act=warp]');
+  await S(() => { const k = window.kh, p = k.S.project; p.tempos = [{ s: 16, bpm: 90 }]; k.commit(); });
+  const o = await onsetsNow(), want = await S(() => Array.from({ length: 8 }, (_, i) => window.kh.timeOf(window.kh.S.project, i * 4)));
+  near(o.length, 8, 0, 'nombre de coups');
+  want.forEach((t, i) => near(o[i], t, 0.012, `coup n° ${i + 1}`));
+  // Sans suivi : les coups gardent leur espacement d'origine et se décalent après le changement.
+  await page.click('[data-act=warp]'); const o2 = await onsetsNow();
+  expect(Math.abs(o2[6] - want[6]) > 0.2, 'sans suivi du tempo, les coups ne devraient pas suivre le changement');
+});
+test('WP03', 'Tempo', 'Tempo d’origine saisi (boucle jouée à 60 BPM dans un morceau à 120) : le clip se raccourcit et se cale sur la grille', async () => {
+  await importSolo(CLICKS); await page.click('[data-act=warp]');
+  near(await S(() => window.kh.S.project.tracks[4].clips[0].len), 32, 0, 'longueur avant');
+  await page.fill('[data-role=warpbpm]', '60'); await page.keyboard.press('Tab'); await sleep(200);
+  near(await S(() => window.kh.S.project.tracks[4].clips[0].len), 16, 0, 'longueur en pas après le tempo d’origine à 60');
+  const o = await onsetsNow();
+  near(o.length, 8, 0, 'les huit coups restent'); for (let i = 0; i < 8; i++) near(o[i], i * 0.25, 0.012, `coup n° ${i + 1} (deux fois plus serré)`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  near(await S(() => window.kh.S.project.tracks[4].clips[0].len), 32, 0, 'Ctrl+Z rétablit la longueur');
+});
+test('WP04', 'Tempo', 'Au tempo d’origine, suivre le tempo ne change rien au son : rendu identique échantillon par échantillon', async () => {
+  await importSolo(TONE);
+  const r = await S(async () => { const k = window.kh, p = k.S.project, a = await k.renderOffline(p, false); p.tracks[4].clips[0].warp = true; p.tracks[4].clips[0].srcBpm = p.bpm;
+    const b = await k.renderOffline(p, false), x = a.getChannelData(0), y = b.getChannelData(0); let m = 0; for (let i = 0; i < x.length; i++) m = Math.max(m, Math.abs(x[i] - y[i])); return { m }; });
+  expect(r.m < 1e-6, `écart ${r.m}`);
+});
+test('WP05', 'Tempo', 'Scinder et rogner un clip qui suit le tempo : les coups restent sur les temps', async () => {
+  await importSolo(CLICKS); await page.click('[data-act=warp]'); await typeTempo(60);
+  await S(() => window.kh.engine.seek(16)); await page.keyboard.press('Control+e'); await sleep(150);
+  const cl = await S(() => window.kh.S.project.tracks[4].clips.map(c => ({ s: c.start, l: c.len, o: c.offset })));
+  expect(cl.length === 2 && Math.abs(cl[1].o - 2) < 1e-6, `seconde moitié : ${JSON.stringify(cl)}`);
+  const o = await onsetsNow(); near(o.length, 8, 0, 'coups après scission'); for (let i = 0; i < 8; i++) near(o[i], i, 0.015, `coup n° ${i + 1} à 60 BPM`);
+  // Rognage du bord gauche de la seconde moitié, d'une noire, à la souris.
+  const sel = await clipSel(4, 1), b = await box(sel), px = await S(() => window.kh.S.px);
+  await S(() => { window.kh.S.snap = 4; }); await drag(b.x + 3, b.y + b.height / 2, 4 * px, 0);
+  const c1 = await S(() => window.kh.S.project.tracks[4].clips[1]);
+  near(c1.start, 20, 0, 'début rogné'); near(c1.offset, 2.5, 1e-6, 'le son avance d’une noire du tempo d’origine (0,5 s)');
+  const o2 = await onsetsNow(); near(o2.length, 7, 0, `un coup en moins (${o2.map(x => x.toFixed(3)).join(' ')})`); near(o2[4], 5, 0.015, 'le coup suivant reste sur son temps');
+});
+test('WP06', 'Tempo', 'Au clavier : activer le suivi du tempo avec Entrée, l’annuler ; le réglage voyage dans le fichier projet', async () => {
+  await importSolo(TONE);
+  await page.focus('[data-act=warp]'); await page.keyboard.press('Enter'); await sleep(150);
+  expect(await S(() => window.kh.S.project.tracks[4].clips[0].warp) === true, 'Entrée n’active pas le suivi');
+  expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'warp', 'le focus doit rester sur l’interrupteur');
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(!(await S(() => window.kh.S.project.tracks[4].clips[0].warp)), 'Ctrl+Z n’annule pas');
+  await page.keyboard.press('Control+y'); await S(() => { window.kh.S.project.tracks[4].clips[0].srcBpm = 93; window.kh.commit(); });
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'warp.khm'); await dl.saveAs(f);
+  await S(() => { window.kh.S.project = window.kh.demoProject(); window.kh.commit(); });
+  const [fc] = await Promise.all([page.waitForEvent('filechooser'), menu('bOpen')]); await fc.setFiles(f); await sleep(600);
+  const c = await S(() => window.kh.S.project.tracks[4].clips[0]);
+  expect(c.warp === true && c.srcBpm === 93, `réglage perdu au fichier : ${JSON.stringify({ warp: c.warp, srcBpm: c.srcBpm })}`);
+});
+test('WP07', 'Tempo', 'Suivi du tempo traduit en anglais et en espagnol', async () => {
+  await importSolo(TONE);
+  for (const [l, txt] of [['en', 'Follows tempo'], ['es', 'Sigue el tempo']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.textContent('[data-act=warp]')).includes(txt), `libellé en ${l}`);
+  }
+});
+
+// ============ Automation de n'importe quel réglage (V17) ============
+/** Piste 1 en orgue tenu (son continu), un effet « Gain » ajouté par la fenêtre des effets, puis la courbe d'automation ouverte. */
+async function gainAutoSetup() {
+  await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[1]; p.tracks.forEach((t, i) => { t.mute = i !== 1; }); p.loop = false;
+    tr.synth = k.makeSynth('r_drawbar'); tr.rev = 0; tr.dly = 0; tr.clips = [{ id: 'orgue', name: 'Orgue', start: 0, len: 64, offset: 0, patLen: 64, notes: [{ p: 60, s: 0, l: 64, v: 0.8 }] }]; k.commit(); });
+  await S(() => window.kh.engine.prepare());
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.selectOption('[data-role=fxadd]', 'gain'); await page.keyboard.press('Escape'); await tab('editor');
+  await page.click(`.head[data-id="${await S(() => window.kh.S.project.tracks[1].id)}"] .autob`);
+  const ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  return { ins, key: `ins:${ins}:gain`, lane: `.alane[data-auto="${await S(() => window.kh.S.project.tracks[1].id)}"]` };
+}
+/** Pose un point dans la courbe : au pas `s`, à la hauteur `frac` (0 = bas, 1 = haut), au clic de souris. */
+async function autoPoint(lane, s, frac) { const b = await box(lane), px = await S(() => window.kh.S.px); await page.mouse.click(b.x + s * px + 1, b.y + 8 + (1 - frac) * (b.height - 16)); await sleep(80); }
+
+test('AX01', 'Automation', 'Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe', async () => {
+  const { key, lane } = await gainAutoSetup();
+  const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.textContent)]));
+  expect(opts.length === 2 && opts[1][0] === '1. Gain' && opts[1][1].join() === 'Gain', `réglages proposés : ${JSON.stringify(opts)}`);
+  await page.selectOption('[data-role=autoparam]', key);
+  await autoPoint(lane, 0, 0.1); await autoPoint(lane, 63, 0.9);
+  const pts = await page.evaluate(k => window.kh.S.project.tracks[1].auto[k], key);
+  expect(pts?.length === 2 && pts[0].v < 0.2 && pts[1].v > 0.8, `courbe tracée : ${JSON.stringify(pts)}`);
+  // Gain de -19 dB au début à +19 dB à la fin : le niveau monte d'environ 38 dB sur la note tenue.
+  const w = await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.4, 0.8], [3.4, 3.8], [7.0, 7.4]]));
+  const lv = w.map(x => 20 * Math.log10(x.l + 1e-9));
+  expect(lv[1] - lv[0] > 12 && lv[2] - lv[1] > 12, `le niveau doit suivre la courbe : ${lv.map(v => v.toFixed(1)).join(' → ')} dB`);
+});
+test('AX02', 'Automation', 'À l’écoute : pendant la lecture, l’effet suit la courbe ; à l’arrêt, il revient à son réglage fixe', async () => {
+  const { key, lane } = await gainAutoSetup();
+  await page.selectOption('[data-role=autoparam]', key);
+  await autoPoint(lane, 0, 0.05); await autoPoint(lane, 63, 0.05); await autoPoint(lane, 24, 0.95);
+  await page.keyboard.press('Space'); await sleep(700); const lo = await masterRms(); await sleep(2200); const hi = await masterRms();
+  await page.keyboard.press('Space'); await sleep(200);
+  expect(hi > lo * 8, `pendant la lecture, le niveau doit monter avec la courbe (${lo.toFixed(4)} → ${hi.toFixed(4)})`);
+  // À l'arrêt : le réglage fixe (0 dB) revient ; on joue une note à la main pour l'entendre.
+  await S(() => window.kh.engine.noteOn(window.kh.S.project.tracks[1], 60)); await sleep(500); const man = await masterRms(); await S(() => window.kh.engine.noteOff(window.kh.S.project.tracks[1], 60));
+  expect(man > lo * 2.5 && man < hi * 0.6, `à l’arrêt, l’effet doit revenir à son réglage fixe (${man.toFixed(4)} ; courbe basse ${lo.toFixed(4)}, haute ${hi.toFixed(4)})`);
+});
+test('AX03', 'Automation', 'Retirer l’effet retire ses courbes ; Annuler ramène l’effet et ses courbes ; le tout voyage dans le fichier projet', async () => {
+  const { key, lane } = await gainAutoSetup();
+  await page.selectOption('[data-role=autoparam]', key); await autoPoint(lane, 8, 0.8);
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); await page.click('#fx [data-act=fxdel]'); await page.keyboard.press('Escape');
+  let tr = await S(() => window.kh.S.project.tracks[1]);
+  expect(!tr.inserts.length && !Object.keys(tr.auto ?? {}).some(k => k.startsWith('ins:')) && tr.autoShow === 'vol', `courbes restées : ${JSON.stringify(tr.auto)}`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  tr = await S(() => window.kh.S.project.tracks[1]);
+  expect(tr.inserts.length === 1 && tr.auto?.[key]?.length === 1, 'Annuler doit ramener l’effet et sa courbe');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'auto-fx.khm'); await dl.saveAs(f);
+  const saved = JSON.parse(fs.readFileSync(f, 'utf8')).project.tracks[1];
+  expect(saved.auto?.[key]?.length === 1 && saved.autoShow === key, 'courbe d’effet absente du fichier');
+});
+test('AX04', 'Automation', 'Plugin du Mac : ses réglages apparaissent dans la liste ; automatisé, il reçoit les valeurs au fil de la lecture', async () => {
+  await S(() => { window.qa.fakeNative(); });
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.selectOption('[data-role=fxadd]', 'au:aufx:lpas:appl'); await page.waitForSelector('#fx [data-au=params] input[type=range]', { timeout: 5000 });
+  await page.keyboard.press('Escape'); await tab('editor');
+  const tid = await S(() => window.kh.S.project.tracks[1].id), ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  await page.click(`.head[data-id="${tid}"] .autob`);
+  const labels = await page.$$eval('[data-role=autoparam] optgroup:nth-of-type(2) option', o => o.map(x => x.textContent));
+  expect(labels.join() === 'Cutoff Frequency,Resonance,Filter Type,Bypass', `réglages du plugin proposés : ${labels.join()}`);
+  await page.selectOption('[data-role=autoparam]', `ins:${ins}:0`);
+  const lane = `.alane[data-auto="${tid}"]`; await autoPoint(lane, 0, 0); await autoPoint(lane, 32, 1);
+  await S(() => { window.khNative.calls.length = 0; });
+  await page.keyboard.press('Space'); await sleep(2600); await page.keyboard.press('Space'); await sleep(300);
+  const sets = await S(() => window.khNative.calls.filter(c => c[0] === 'set' && c[2] === 0).map(c => c[3]));
+  expect(sets.length >= 4, `le plugin doit recevoir plusieurs valeurs pendant la lecture (${sets.length})`);
+  expect(sets[0] < 50 && Math.max(...sets) > 150 && sets.slice(0, -1).every((v, i) => i === 0 || v >= sets[i - 1] - 1), `valeurs envoyées (fréquence de coupure, montante) : ${sets.map(v => Math.round(v)).join(', ')}`);
+  expect(Math.abs(sets[sets.length - 1] - 6900) < 1, `à l’arrêt, le réglage fixe doit revenir (${sets[sets.length - 1]})`);
+});
+test('AX05', 'Automation', 'Écho automatisé (dosage) à l’export : la traîne n’apparaît que là où la courbe monte', async () => {
+  await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[1]; p.tracks.forEach((t, i) => { t.mute = i !== 1; }); p.loop = false; p.bpm = 120;
+    Object.assign(tr.synth = k.makeSynth('lead'), { engine: 'sub', wave: 'sine', mix2: 0, cutoff: 12000, envAmt: 0, a: 0.002, d: 0.03, s: 0, r: 0.02 }); tr.rev = 0; tr.dly = 0;
+    tr.clips = [{ id: 'bips', name: 'Bips', start: 0, len: 64, offset: 0, patLen: 64, notes: [{ p: 72, s: 0, l: 1, v: 0.9 }, { p: 72, s: 32, l: 1, v: 0.9 }] }];
+    const i = k.newInsert('delay'); i.p.mix = 0; tr.inserts = [i]; tr.auto = { [`ins:${i.id}:mix`]: [{ s: 0, v: 0 }, { s: 31, v: 0 }, { s: 32, v: 1 }] }; k.commit(); });
+  const w = await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.5, 1.2], [4.5, 5.2]]));
+  expect(w[0].l < 0.002 && w[1].l > w[0].l * 10 + 0.002, `traîne d’écho : sans ${w[0].l.toFixed(4)}, avec ${w[1].l.toFixed(4)}`);
+});
+test('AX06', 'Automation', 'Liste des réglages traduite (anglais, espagnol)', async () => {
+  await gainAutoSetup();
+  for (const [l, tr] of [['en', 'Track'], ['es', 'Pista']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect(await page.$eval('[data-role=autoparam] optgroup', g => g.label) === tr, `groupe en ${l}`);
+  }
+});
+
+// ============ Gel de piste : transformer une piste en audio (V17) ============
+/** Niveau (dB) par fenêtre de 0,5 s du rendu complet du projet, et rendu brut pour comparer. */
+const levels = () => S(async () => { let a = 0x2545f491; const rnd = Math.random; Math.random = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  let b; try { b = await window.kh.renderOffline(window.kh.S.project, false); } finally { Math.random = rnd; }   // graine fixe : rendus comparables
+  const d = b.getChannelData(0), sr = b.sampleRate, W = sr / 2, out = [];
+  for (let s = 0; s + W <= d.length; s += W) { let q = 0; for (let i = s; i < s + W; i++) q += d[i] * d[i]; out.push(10 * Math.log10(q / W + 1e-12)); } return out; });
+const lvDiff = (a, b) => { let m = 0; for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] > -60 || b[i] > -60) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
+const freezeBtn = async ti => `.head[data-id="${await page.evaluate(i => window.kh.S.project.tracks[i].id, ti)}"] [data-act=freeze]`;
+
+test('FZ01', 'Gel de piste', 'Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.vol = 0.7; tr.pan = -0.4; tr.rev = 0.3; k.commit(); });
+  const before = await levels(), n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click(await freezeBtn(1)); await page.waitForFunction(n => window.kh.S.project.tracks.length === n + 1, n0, { timeout: 30000 });
+  const r = await S(() => { const t = window.kh.S.project.tracks; return { o: { frozen: t[1].frozen, mute: t[1].mute }, a: { type: t[2].type, from: t[2].frozenFrom === t[1].id, vol: t[2].vol, pan: t[2].pan, rev: t[2].rev, clips: t[2].clips.length, start: t[2].clips[0].start } }; });
+  expect(r.o.frozen && r.o.mute && r.a.type === 'audio' && r.a.from && r.a.clips === 1 && r.a.start === 0, `état après gel : ${JSON.stringify(r)}`);
+  expect(r.a.vol === 0.7 && r.a.pan === -0.4 && r.a.rev === 0.3, 'la piste audio doit reprendre volume, panoramique et envois');
+  expect(await page.$eval(await freezeBtn(1), b => b.getAttribute('aria-pressed')) === 'true', 'le bouton doit montrer la piste gelée');
+  const after = await levels(), d = lvDiff(before, after);
+  expect(d < 1, `le morceau gelé doit sonner comme avant (écart max ${d.toFixed(2)} dB par demi-seconde)`);
+});
+test('FZ02', 'Gel de piste', 'Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel', async () => {
+  const before = await levels();
+  await page.click(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  await page.click(await freezeBtn(1)); await sleep(150);
+  let r = await S(() => ({ n: window.kh.S.project.tracks.length, f: window.kh.S.project.tracks[1].frozen, m: window.kh.S.project.tracks[1].mute, any: window.kh.S.project.tracks.some(t => t.frozenFrom) }));
+  expect(r.n === 5 && !r.f && !r.m && !r.any, `dégel incomplet : ${JSON.stringify(r)}`);
+  const dd = lvDiff(before, await levels());
+  expect(dd < 0.01, `après dégel, le son doit être exactement celui d’origine (écart ${dd.toFixed(2)} dB)`);
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(await S(() => window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks.length === 6), 'Ctrl+Z doit ramener l’état gelé');
+  await page.keyboard.press('Control+z'); await sleep(100);
+  expect(await S(() => !window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks.length === 5), 'un second Ctrl+Z doit annuler le gel');
+});
+test('FZ03', 'Gel de piste', 'Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1], i = k.newInsert('delay'); i.p.mix = 0.6; tr.inserts = [i]; tr.auto = { filter: [{ s: 0, v: -0.8 }, { s: 32, v: 0.5 }] }; k.commit(); });
+  const before = await levels();
+  await page.click(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  expect(lvDiff(before, await levels()) < 1, 'effet ou automation absents du rendu gelé');
+  await S(() => { const k = window.kh; k.S.project.tracks[1].inserts = []; k.commit(); });
+  expect(lvDiff(before, await levels()) < 1, 'la piste gelée ne doit plus dépendre des réglages de l’originale');
+});
+test('FZ04', 'Gel de piste', 'Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet', async () => {
+  const sel = await freezeBtn(0);
+  await page.focus(sel); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.kh.S.project.tracks[0].frozen, null, { timeout: 30000 });
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'gel.khm'); await dl.saveAs(f);
+  const j = JSON.parse(fs.readFileSync(f, 'utf8')), at = j.project.tracks[1];
+  expect(j.project.tracks[0].frozen && at.frozenFrom === j.project.tracks[0].id && j.buffers[at.clips[0].bufferId], 'piste gelée ou son rendu absents du fichier');
+});
+test('FZ05', 'Gel de piste', 'Bouton de gel traduit (anglais, espagnol), absent des pistes audio', async () => {
+  expect(!(await page.$(`.head[data-id="${await S(() => window.kh.S.project.tracks[4].id)}"] [data-act=freeze]`)), 'une piste audio n’a pas de bouton de gel');
+  for (const [l, w] of [['en', 'Freeze'], ['es', 'Congelar']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.getAttribute(await freezeBtn(1), 'title')).startsWith(w), `info-bulle en ${l}`);
+  }
+});
+
+// ============ Performance des gros projets (V17) ============
+/** Projet de 40 pistes (12 batteries, 20 instruments dont 8 enregistrés, 8 audio), chacune avec 3 effets (dont 10 réverbs), 8 mesures. */
+const bigPerf = {};
+const BIG = () => {
+  const k = window.kh, p = k.demoProject(), [dr, sy] = [p.tracks[0], p.tracks[1]];
+  const ids = ['r_piano', 'r_strings', 'r_epiano', 'r_church', 'r_brass', 'r_flute', 'r_nylon', 'r_choir'];
+  window.qa.sine('big-sine');
+  p.name = 'Gros projet'; p.loop = false; p.countIn = false; p.tracks = [];
+  for (let i = 0; i < 40; i++) {
+    const kind = i < 12 ? 'drums' : i < 32 ? 'synth' : 'audio', tr = JSON.parse(JSON.stringify(kind === 'drums' ? dr : sy));
+    tr.id = 'big' + i; tr.name = 'Piste ' + (i + 1); tr.type = kind; tr.auto = {}; tr.out = '';
+    tr.inserts = ['eq', 'delay', i % 4 ? 'phaser' : 'reverb'].map(t => k.newInsert(t));
+    if (kind === 'synth') { if (i - 12 < 8) tr.synth = k.makeSynth(ids[i - 12]); tr.clips = [{ id: 'bc' + i, name: 'c', start: 0, len: 128, offset: 0, patLen: 16, notes: [{ p: 48 + (i % 12), s: 0, l: 4, v: 0.7 }, { p: 55 + (i % 12), s: 8, l: 4, v: 0.6 }] }]; }
+    if (kind === 'drums') tr.clips = tr.clips.map((c, j) => ({ ...c, id: 'bd' + i + '-' + j }));
+    if (kind === 'audio') { delete tr.synth; tr.clips = Array.from({ length: 8 }, (_, j) => ({ id: `ba${i}-${j}`, name: 'son', start: j * 16, len: 8, offset: 0, bufferId: 'big-sine', gain: 0.5 })); }
+    tr.vol = 0.4; p.tracks.push(tr);
+  }
+  k.S.project = p; k.S.selTrack = p.tracks[12].id; k.S.selClip = p.tracks[12].clips[0].id; k.resetHistory(); k.commit();
+};
+test('PF01', 'Performance', 'Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure', async () => {
+  await S(BIG); await S(() => window.kh.engine.prepare());
+  const m = {};
+  m.load = await S(async () => window.kh.measureLoad(window.kh.S.project, 0, 4));
+  m.redraw = await S(() => { const a = performance.now(); for (let i = 0; i < 5; i++) window.kh.commit(); return (performance.now() - a) / 5; });
+  await tab('mixer'); m.mixer = await S(() => { const a = performance.now(); window.kh.commit(); return performance.now() - a; });
+  m.export = await S(async () => { const a = performance.now(); const b = await window.kh.renderOffline(window.kh.S.project, false); return { ms: performance.now() - a, sec: b.duration }; });
+  // Lecture de 5 s ; pendant ce temps, un fader est glissé à la souris (le mixeur se met à jour à chaque mouvement).
+  await S(() => { window.__long = []; try { new PerformanceObserver(l => l.getEntries().forEach(e => window.__long.push(e.duration))).observe({ type: 'longtask', buffered: false }); } catch { } });
+  const u0 = await S(() => window.kh.engine.underruns());
+  await page.click('#bPlay'); await sleep(1500);
+  const f = await box('.strip >> nth=5 >> input[type=range]'); await page.mouse.move(f.x + f.width / 2, f.y + f.height / 2); await page.mouse.down();
+  for (let i = 0; i < 20; i++) { await page.mouse.move(f.x + f.width / 2 + (i % 2 ? 30 : -30), f.y + f.height / 2 + (i % 2 ? -25 : 25)); await sleep(60); }
+  await page.mouse.up(); await sleep(2000);
+  m.play = await S(u0 => ({ ...window.kh.engine.perf, underruns: window.kh.engine.underruns() === null ? null : window.kh.engine.underruns() - (u0 ?? 0), longest: Math.max(0, ...window.__long), longTasks: window.__long.length }), u0);
+  await page.click('#bStop');
+  bigPerf.full = m;
+  console.log('        gros projet :', JSON.stringify({ charge: +(m.load.ratio * 100).toFixed(1) + ' % d’un cœur', redessin: +m.redraw.toFixed(1) + ' ms', mixeur: +m.mixer.toFixed(1) + ' ms', export: `${(m.export.ms / 1000).toFixed(1)} s pour ${m.export.sec.toFixed(1)} s`, lecture: m.play }));
+  expect(m.load.tracks === 40 && m.load.inserts === 120, `projet : ${m.load.tracks} pistes, ${m.load.inserts} effets`);
+  expect(m.redraw < 150 && m.mixer < 200, `redessin trop lent : arrangement ${m.redraw.toFixed(0)} ms, mixeur ${m.mixer.toFixed(0)} ms`);
+  expect(m.play.steps > 20, 'la lecture n’a pas avancé');
+});
+test('PF03', 'Performance', 'Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard', async () => {
+  await S(BIG); await S(() => window.kh.engine.prepare());
+  const before = await S(async () => (await window.kh.measureLoad(window.kh.S.project, 0, 4)).ratio);
+  for (let i = 0; i < 32; i++) {
+    const id = await S(() => window.kh.S.project.tracks.find(t => t.type !== 'audio' && !t.frozen)?.id);
+    await page.click(`.head[data-id="${id}"] [data-act=freeze]`);
+    await page.waitForFunction(id => window.kh.S.project.tracks.find(t => t.id === id)?.frozen, id, { timeout: 60000 });
+  }
+  const after = await S(async () => (await window.kh.measureLoad(window.kh.S.project, 0, 4)).ratio);
+  const u0 = await S(() => window.kh.engine.underruns());
+  await page.click('#bPlay'); await sleep(4000);
+  const play = await S(u0 => ({ ...window.kh.engine.perf, underruns: window.kh.engine.underruns() === null ? null : window.kh.engine.underruns() - (u0 ?? 0), lvl: window.kh.engine.level('master') }), u0);
+  await page.click('#bStop');
+  bigPerf.frozen = { before, after, play };
+  fs.writeFileSync(path.join(__dirname, 'perf-gros-projet.json'), JSON.stringify({ date: new Date().toISOString().slice(0, 10), machine: `${os.cpus()[0]?.model} (${os.cpus().length} cœurs)`, ...bigPerf }, null, 1) + '\n');
+  console.log('        après gel :', JSON.stringify({ avant: +(before * 100).toFixed(1) + ' %', après: +(after * 100).toFixed(1) + ' %', lecture: play }));
+  // Critère relatif : la charge absolue dépend de la machine et de ce qui tourne à côté (mesures dans qa/perf-gros-projet.json).
+  expect(after < before * 0.6, `la charge ne baisse pas assez : ${(before * 100).toFixed(0)} % → ${(after * 100).toFixed(0)} %`);
+  expect(play.late === 0, `notes programmées en retard après gel : ${play.late} sur ${play.steps}`);
+  expect(play.lvl > 0.01, 'le projet gelé doit toujours sonner');
+});
+test('PF02', 'Performance', 'Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol', async () => {
+  await S(BIG); await tab('mixer');
+  await page.click('[data-act=load]'); await page.waitForFunction(() => /%/.test(document.querySelector('[data-role=load]')?.textContent ?? ''), null, { timeout: 30000 });
+  const txt = await page.textContent('[data-role=load]'), cls = await page.getAttribute('[data-role=load]', 'class');
+  expect(/\d+ % d.un cœur \(40 pistes, 120 effets\)/.test(txt) && /\b(ok|warn|high)\b/.test(cls), `affichage : « ${txt} » (${cls})`);
+  for (const [l, w] of [['en', 'Load'], ['es', 'Carga']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('[data-act=load]')).includes(w), `bouton en ${l}`); }
 });
 
 (async () => {

@@ -1,12 +1,12 @@
 import { drumSample, sampleFor } from './banks';
 import { WamInstance, createWam, liveWams, wamKey } from './wam';
-import { AuInstance, auBridge, createAu } from './au';
+import { AuInstance, auBridge, auFromNorm, createAu } from './au';
 
 /** Plugin d'une chaîne d'effets : web (WAM) ou, dans la version bureau native, Audio Unit. */
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
 const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
   i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
-import { Clip, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, bpmAt, durAt, stepDur as sd, timeOf } from '../types';
+import { Clip, FX, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, stepDur as sd, timeOf } from '../types';
 import { stretchBuffer } from './stretch';
 
 export interface TrackNodes {
@@ -14,6 +14,8 @@ export interface TrackNodes {
   low: BiquadFilterNode; mid: BiquadFilterNode; high: BiquadFilterNode;
   comp: DynamicsCompressorNode; makeup: GainNode; fader: GainNode; auto: GainNode; duck: GainNode; pan: StereoPannerNode;
   revSend: GainNode; dlySend: GainNode; analyser?: AnalyserNode; compOn?: boolean; driveVal?: number; duckAmt: number;
+  /** V17 (performance) : voix du chorus, et état des branches allumées seulement quand elles servent. */
+  chVoices: { d: DelayNode; lfo: OscillatorNode; depth: GainNode }[]; chorusOn?: boolean; tremOn?: boolean; eqSig?: string;
   outId?: string;
   insIn: GainNode; insOut: GainNode; ins: Map<string, InsNode>; insSig?: string;
   /** Compensation de latence : retard ajouté après la chaîne d'effets, pour rester calé sur la tranche la plus en retard. */
@@ -127,14 +129,15 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       return { in: input, out, set: (i, _p, set) => { if (size !== i.p.size) { conv.buffer = this.impulse(i.p.size); size = i.p.size; } set(wet.gain, i.p.mix); set(dry.gain, 1 - i.p.mix * 0.5); } };
     }
     if (type === 'phaser') {
-      const stages = [0, 1, 2, 3].map(() => { const f = c.createBiquadFilter(); f.type = 'allpass'; f.frequency.value = 900; f.Q.value = 0.6; return f; });
+      // Modulation lente : recalculée par bloc de 128 échantillons (k-rate) au lieu de chaque échantillon, inaudible, bien moins coûteux.
+      const stages = [0, 1, 2, 3].map(() => { const f = c.createBiquadFilter(); f.type = 'allpass'; f.frequency.value = 900; f.Q.value = 0.6; f.frequency.automationRate = 'k-rate'; return f; });
       const wet = c.createGain(), o = lfo(0.5), depth = c.createGain();
       input.connect(out); stages.reduce<AudioNode>((a, f) => a.connect(f), input).connect(wet).connect(out);
       o.connect(depth); for (const f of stages) depth.connect(f.frequency);
       return { in: input, out, set: (i, _p, set) => { set(o.frequency, i.p.rate); set(depth.gain, 700 * i.p.depth); set(wet.gain, i.p.mix); } };
     }
     if (type === 'autopan') {
-      const pan = c.createStereoPanner(), o = lfo(1), depth = c.createGain();
+      const pan = c.createStereoPanner(), o = lfo(1), depth = c.createGain(); pan.pan.automationRate = 'k-rate';
       input.connect(pan).connect(out); o.connect(depth).connect(pan.pan);
       return { in: input, out, set: (i, _p, set) => { set(o.frequency, i.p.rate); set(depth.gain, i.p.depth); } };
     }
@@ -156,13 +159,14 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
 
   /** Met la chaîne d'effets d'une tranche en accord avec le projet : ordre, effets actifs, réglages. */
   private syncInserts(t: Track, n: TrackNodes, p: Project) {
-    const list = t.inserts ?? [], active = list.filter(i => i.on), sig = active.map(i => i.id + i.type).join('|');
+    // Piste gelée : sa chaîne d'effets est débranchée (rien n'y passe, et un phaser ou un plugin y calculerait pour rien).
+    const list = t.inserts ?? [], active = t.frozen ? [] : list.filter(i => i.on), sig = active.map(i => i.id + i.type).join('|');
     for (const [id, node] of n.ins) if (!list.some(i => i.id === id)) { node.out.disconnect(); node.wam?.audioNode.destroy?.(); n.ins.delete(id); liveWams.delete(wamKey(t.id, id)); }
     for (const i of list) {
       let node = n.ins.get(i.id);
       if (!node) { node = this.buildInsert(i.type); n.ins.set(i.id, node); }
       // Plugin du Mac hors de la version bureau macOS : le son passe tel quel, sans essayer de le charger.
-      if (isPlugin(i) && !node.wam && !node.loading && this.live && (i.type !== 'au' || auBridge())) {
+      if (isPlugin(i) && !t.frozen && !node.wam && !node.loading && this.live && (i.type !== 'au' || auBridge())) {
         node.loading = true;
         const made = node;
         // L'effet a pu être retiré (ou la piste supprimée) pendant le chargement : on libère alors le plugin, sans rien signaler.
@@ -174,8 +178,10 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
           this.onWam?.(t.id, i.id, true);
         }, () => { if (!gone()) this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
       }
-      node.set(i, p, (prm, v) => this.set(prm, v));
-      if (i.type === 'au' && node.wam) (node.wam as AuInstance).apply(i.p);
+      // Pendant la lecture, les réglages automatisés sont pilotés par leur courbe (applyAuto), pas par la valeur fixe.
+      const auto = this.autoOn ? autoKeysOf(t, i.id) : null;
+      if (!auto?.size) node.set(i, p, (prm, v) => this.set(prm, v));
+      if (i.type === 'au' && node.wam) (node.wam as AuInstance).apply(auto?.size ? Object.fromEntries(Object.entries(i.p).filter(([k]) => !auto.has(k))) : i.p);
     }
     if (n.insSig === sig) return;
     n.insIn.disconnect(); for (const node of n.ins.values()) node.out.disconnect();
@@ -254,7 +260,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       low: c.createBiquadFilter(), mid: c.createBiquadFilter(), high: c.createBiquadFilter(),
       comp: c.createDynamicsCompressor(), makeup: c.createGain(), fader: c.createGain(), auto: c.createGain(), duck: c.createGain(), pan: c.createStereoPanner(),
       insIn: c.createGain(), insOut: c.createGain(), ins: new Map(), pdc: c.createDelay(1),
-      revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0,
+      revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0, chVoices: [],
       crush: c.createWaveShaper(), crushIn: c.createGain(), crushOut: c.createGain(), chWet: c.createGain(), trem: c.createGain(), tremDepth: c.createGain(), tremLfo: c.createOscillator(),
     };
     n.lp.type = 'lowpass'; n.lp.frequency.value = 20000; n.hp.type = 'highpass'; n.hp.frequency.value = 20;
@@ -271,12 +277,12 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const [ms, hz] of [[17, 0.7], [26, 1.1]]) {
       const d = c.createDelay(0.1), lfo = c.createOscillator(), depth = c.createGain();
       d.delayTime.value = ms / 1000; lfo.frequency.value = hz; depth.gain.value = 0.0035;
-      lfo.connect(depth).connect(d.delayTime); lfo.start();
-      n.crushOut.connect(d).connect(n.chWet);
+      depth.connect(d.delayTime); lfo.start(); d.connect(n.chWet);
+      n.chVoices.push({ d, lfo, depth });   // branchées par sync seulement si le chorus sert (sinon elles calculent pour rien)
     }
     n.chWet.connect(n.trem);
-    n.tremDepth.gain.value = 0; n.tremLfo.connect(n.tremDepth).connect(n.trem.gain); n.tremLfo.start();
-    n.trem.connect(n.low).connect(n.mid).connect(n.high);
+    n.tremDepth.gain.value = 0; n.tremDepth.connect(n.trem.gain); n.tremLfo.start();
+    n.low.connect(n.mid).connect(n.high);   // l'égaliseur est inséré par sync seulement s'il n'est pas à plat
     // Après l'égaliseur et le compresseur : la chaîne d'effets ajoutés, puis le fader.
     n.comp.connect(n.makeup).connect(n.insIn); n.insIn.connect(n.insOut); n.insOut.connect(n.pdc).connect(n.fader);
     n.fader.connect(n.auto).connect(n.duck).connect(n.pan); // la sortie (général ou bus) est branchée par sync
@@ -319,7 +325,21 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       if (!au?.chorus?.length) this.set(n.chWet.gain, t.chorus * 0.8);
       this.set(n.trem.gain, 1 - t.trem / 2); this.set(n.tremDepth.gain, t.trem / 2); this.set(n.tremLfo.frequency, p.bpm / 30);
       if (n.driveVal !== t.drive) { n.shaper.curve = t.drive > 0 ? driveCurve(t.drive) : null; n.driveVal = t.drive; }
-      if (n.compOn !== t.comp) { n.high.disconnect(); n.high.connect(t.comp ? n.comp : n.insIn); n.compOn = t.comp; }
+      // Performance (V17) : une branche au neutre est débranchée (40 pistes vides coûtaient 39 % d'un cœur) ; le son ne change pas.
+      const chorusOn = t.chorus > 0 || !!au?.chorus?.length;
+      if (n.chorusOn !== chorusOn) {
+        for (const v of n.chVoices) { if (chorusOn) { n.crushOut.connect(v.d); v.lfo.connect(v.depth); } else if (n.chorusOn !== undefined) { n.crushOut.disconnect(v.d); v.lfo.disconnect(); } }
+        n.chorusOn = chorusOn;
+      }
+      const tremOn = t.trem > 0;
+      if (n.tremOn !== tremOn) { if (tremOn) n.tremLfo.connect(n.tremDepth); else if (n.tremOn !== undefined) n.tremLfo.disconnect(); n.tremOn = tremOn; }
+      const eqOn = !!(t.eqLow || t.eqMid || t.eqHigh), sig = `${eqOn}|${t.comp}`;
+      if (n.eqSig !== sig) {
+        const dest = t.comp ? n.comp : n.insIn;
+        n.trem.disconnect(); n.high.disconnect();
+        if (eqOn) { n.trem.connect(n.low); n.high.connect(dest); } else n.trem.connect(dest);
+        n.eqSig = sig; n.compOn = t.comp;
+      }
       this.syncInserts(t, n, p);
       const audible = !t.mute && (isBus || !anySolo || t.solo);
       this.set(n.fader.gain, audible ? t.vol : 0);
@@ -349,7 +369,33 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       ramp(n.auto.gain, a.vol, v => v); ramp(n.pan.pan, a.pan, v => v);
       ramp(n.lp.frequency, a.filter, v => djFreqs(v)[0]); ramp(n.hp.frequency, a.filter, v => djFreqs(v)[1]);
       ramp(n.revSend.gain, a.rev, v => v); ramp(n.dlySend.gain, a.dly, v => v); ramp(n.chWet.gain, a.chorus, v => v * 0.8);
+      // Réglages des effets (V17) : effets intégrés par rampes sur leurs paramètres audio, plugins du Mac à l'instant du pas.
+      for (const ins of tr.inserts ?? []) {
+        const keys = autoKeysOf(tr, ins.id), node = n.ins.get(ins.id);
+        if (!keys.size || !node || !ins.on) continue;
+        if (ins.type === 'au') {
+          const au = node.wam as AuInstance | undefined; if (!au) continue;
+          const vals: Record<string, number> = {};
+          for (const k of keys) { const prm = au.params.find(q => String(q.address) === k); if (prm) vals[k] = auFromNorm(prm, autoAt(a[`ins:${ins.id}:${k}`]!, s)); }
+          const sig = JSON.stringify(vals), last = this.auLast.get(tr.id + ins.id);
+          if (sig !== last) { this.auLast.set(tr.id + ins.id, sig); this.auAt(t, () => au.apply(vals)); }
+        } else if (FX[ins.type]) {
+          const at = (x: number) => ({ ...ins, p: { ...ins.p, ...Object.fromEntries([...keys].map(k => [k, fxFromNorm(ins.type, k, autoAt(a[`ins:${ins.id}:${k}`]!, x))])) } });
+          node.set(at(s), p, (prm, v) => prm.setValueAtTime(v, t));
+          node.set(at(s + 1), p, (prm, v) => prm.linearRampToValueAtTime(v, t + d));
+        }
+      }
     }
+  }
+  /** Plugins du Mac : dernière valeur envoyée par l'automation, et changements à appliquer pendant un rendu hors-ligne. */
+  private auLast = new Map<string, string>();
+  auEvents = new Map<number, (() => void)[]>();
+  private auTimers = new Set<number>();
+  /** Un Audio Unit ne connaît pas l'heure du son : la valeur lui est envoyée au bon instant (minuterie, ou pause du rendu hors-ligne). */
+  private auAt(t: number, fn: () => void) {
+    if (!this.live) { const q = Math.max(0, Math.round(t * this.ctx.sampleRate / 128)); const l = this.auEvents.get(q) ?? []; l.push(fn); this.auEvents.set(q, l); return; }
+    const id = window.setTimeout(() => { this.auTimers.delete(id); fn(); }, Math.max(0, (t - this.ctx.currentTime) * 1000));
+    this.auTimers.add(id);
   }
 
   /** Fin de lecture : annule les rampes en attente et rend la main aux réglages du mixeur. */
@@ -359,6 +405,18 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const n of this.tracks.values()) {
       for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain]) prm.cancelScheduledValues(now);
       n.auto.gain.setTargetAtTime(1, now, 0.015); n.duck.gain.setTargetAtTime(1, now, 0.015);
+    }
+    // Réglages d'effets automatisés : rampes annulées, minuteries des plugins du Mac arrêtées ; sync remet les valeurs fixes.
+    for (const id of this.auTimers) clearTimeout(id);
+    this.auTimers.clear(); this.auLast.clear();
+    for (const tr of p.tracks) for (const ins of tr.inserts ?? []) {
+      const node = this.tracks.get(tr.id)?.ins.get(ins.id);
+      const keys = autoKeysOf(tr, ins.id);
+      if (!node || !keys.size) continue;
+      node.set(ins, p, prm => prm.cancelScheduledValues(now));
+      // Plugin du Mac : un réglage jamais touché à la main n'est pas dans le projet ; on lui rend sa valeur d'origine.
+      const au = ins.type === 'au' ? node.wam as AuInstance | undefined : undefined;
+      if (au) au.apply(Object.fromEntries([...keys].map(k => [k, ins.p[k] ?? au.params.find(q => String(q.address) === k)?.value ?? NaN])));
     }
     this.sync(p);
   }
@@ -584,6 +642,16 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
 
 // ---------- Séquenceur ----------
 
+/** Réglages automatisés d'un effet de la piste (clés de réglage, ou adresses d'Audio Unit). */
+export function autoKeysOf(tr: Track, insId: string): Set<string> {
+  const out = new Set<string>(), ins = tr.inserts?.find(i => i.id === insId);
+  for (const [key, pts] of Object.entries(tr.auto ?? {})) {
+    const k = parseInsKey(key);
+    if (k && k.id === insId && pts?.length && ins && (ins.type === 'au' || fxAutomatable(ins.type, k.k))) out.add(k.k);
+  }
+  return out;
+}
+
 // ---------- Clips audio qui suivent le tempo (V17) ----------
 // Pour chaque tempo rencontré, le son du clip est étiré sans changer de hauteur (WSOLA, stretch.ts) dans le rapport
 // tempo d'origine / tempo joué. Les versions étirées sont gardées en mémoire (les plus anciennes sont oubliées au-delà de 24).
@@ -687,7 +755,7 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
 export function scheduleStep(mix: Mix, p: Project, buffers: Buffers, s: number, t: number, segStart: boolean, endLimit: number | null) {
   for (const tr of p.tracks) {
     const n = mix.tracks.get(tr.id);
-    if (!n) continue;
+    if (!n || tr.frozen) continue;   // piste gelée : sa version audio joue à sa place, elle ne calcule plus rien
     for (const c of tr.clips) {
       if (s < c.start || s >= c.start + c.len) continue;
       const remain = Math.min(c.start + c.len, endLimit ?? Infinity) - s;
@@ -702,7 +770,7 @@ export function scheduleLive(mix: Mix, p: Project, buffers: Buffers, s: number, 
   active: Map<string, { clipId: string; since: number }>, onSrc: (trackId: string, src: AudioBufferSourceNode) => void) {
   for (const tr of p.tracks) {
     const a = active.get(tr.id), n = mix.tracks.get(tr.id), c = a && tr.clips.find(x => x.id === a.clipId);
-    if (!a || !n || !c) continue;
+    if (!a || !n || !c || tr.frozen) continue;
     const rel = (s - a.since) % c.len;
     fireClip(mix, p, buffers, tr, n, c, rel, c.len - rel, t, rel === 0, onSrc);
   }

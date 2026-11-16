@@ -1,12 +1,12 @@
 import { SUSTAIN_BANKS } from '../audio/sustain';
 import { chooseSound, showSounds } from './sounds';
-import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip } from '../actions';
+import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
 import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
-import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, stepDur } from '../types';
+import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
 import { ICON, drawFades, drawWave } from './arr';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
@@ -469,7 +469,7 @@ function audioEditor(tr: Track, c: Clip) {
     const w = cv.clientWidth || 800, hgt = cv.clientHeight || 120;
     cv.width = w; cv.height = hgt;
     const g = cv.getContext('2d')!; g.fillStyle = tr.color;
-    if (c.bufferId) { drawWave(g, c.bufferId, c.offset, c.offset + c.len * stepDur(S.project.bpm), w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
+    if (c.bufferId) { drawWave(g, c.bufferId, c.offset, c.offset + c.len * srcStep(S.project, c), w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
   });
   const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
   const act = (key: string, icon: string, fn: () => void) => h('button', { title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
@@ -484,6 +484,12 @@ function audioEditor(tr: Track, c: Clip) {
       slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec),
       slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec),
       act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip),
+      // V17 : le clip suit le tempo du morceau (étirement sans changer la hauteur), à partir de son tempo d'origine.
+      h('button', { class: 'pill switch' + (c.warp ? ' on' : ''), role: 'switch', 'aria-checked': String(!!c.warp), title: t('warp.tip'), data: { act: 'warp' }, onclick: toggleWarp }, '🎚 ' + t('warp.label')),
+      c.warp && h('label', { class: 'fld mini-in' }, t('warp.ref'), (() => {
+        const i = h('input', { type: 'number', min: '20', max: '400', step: '0.01', value: String(c.srcBpm ?? S.project.bpm), 'aria-label': t('warp.ref'), title: t('warp.refTip'), data: { role: 'warpbpm' } });
+        i.onchange = () => setWarpBpm(+i.value); return i;
+      })()),
       (c.takes?.length ?? 0) > 1 && h('div', { class: 'segs', role: 'group', 'aria-label': t('take.title'), title: t('take.tip') },
         ...c.takes!.map((_, i) => h('button', { class: 'seg' + (c.take === i ? ' on' : ''), data: { take: String(i) }, 'aria-pressed': String(c.take === i), onclick: () => chooseTake(i) }, `${t('clip.take')} ${i + 1}`)))),
     h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),

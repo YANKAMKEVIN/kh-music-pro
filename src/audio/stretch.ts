@@ -11,10 +11,22 @@ function wsola(ch: Float32Array[], ratio: number, sr: number): Float32Array[] {
   for (let i = 0; i < win; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / win);
   const ref = ch[0], out = ch.map(() => new Float32Array(outLen + win));
   const at = (i: number) => (i >= 0 && i < n ? ref[i] : 0);
-  let prev = 0;
+  // Attaques (V17) : sans précaution, un coup bref tombé au bord d'un grain est presque effacé par le fondu, ou répété
+  // quand on allonge. Chaque attaque est donc confiée au grain dont le centre est le plus proche de son instant d'arrivée
+  // (instant d'origine × rapport : elle reste exactement à l'heure), les grains précédents s'arrêtent avant elle, et les
+  // suivants continuent naturellement le son tant qu'ils la contiendraient encore : elle n'est jamais effacée ni doublée.
+  const on = onsets(ref, sr);
+  let prev = 0, oi = 0, last = -Infinity;
   for (let k = 0; k * hs < outLen; k++) {
-    let start = Math.round(k * ha);
-    if (k > 0) {
+    let start = Math.round(k * ha), fixed = false;
+    while (oi < on.length && on[oi] <= last) oi++;
+    if (oi < on.length) {
+      const oo = on[oi] * ratio;                                   // instant d'arrivée de l'attaque dans le son étiré
+      if (oo < k * hs + 1.5 * hs) { start = Math.round(on[oi] - (oo - k * hs)); last = on[oi]; oi++; fixed = true; }
+      else if (start + win > on[oi]) { start = on[oi] - win; fixed = true; }
+    }
+    if (!fixed && k > 0 && start <= last && last < start + win) { start = prev + hs; fixed = true; }  // l'attaque déjà jouée ne revient pas
+    if (!fixed && k > 0) {
       // Cherche, autour de la position idéale, le grain qui prolonge le mieux le précédent.
       const want = prev + hs; let best = -Infinity, bd = 0;
       for (let d = -tol; d <= tol; d += 2) {
@@ -27,11 +39,24 @@ function wsola(ch: Float32Array[], ratio: number, sr: number): Float32Array[] {
     const o = k * hs;
     for (let c = 0; c < ch.length; c++) {
       const src = ch[c], dst = out[c];
-      for (let i = 0; i < win; i++) { const j = start + i; if (j >= 0 && j < n) dst[o + i] += src[j] * w[i]; }
+      // Premier grain : pas de fondu d'entrée (rien ne le recouvre), le début du son reste net.
+      for (let i = 0; i < win; i++) { const j = start + i; if (j >= 0 && j < n) dst[o + i] += src[j] * (k === 0 && i < hs ? 1 : w[i]); }
     }
     prev = start;
   }
   return out.map(c => c.subarray(0, outLen));
+}
+
+/** Débuts de coups : énergie d'une tranche de 5 ms au moins 8 fois (9 dB) celle de la précédente, et audible. */
+function onsets(d: Float32Array, sr: number): number[] {
+  const F = Math.max(1, Math.round(sr * 0.005)), out: number[] = []; let prev = 0;
+  for (let s = 0; s + F <= d.length; s += F) {
+    let e = 0; for (let i = s; i < s + F; i++) e += d[i] * d[i]; e /= F;
+    // Instant précis : premier échantillon au-dessus du dixième de l'énergie moyenne de la tranche (début de la montée).
+    if (e > 1e-5 && e > prev * 8) { let i = s; while (i < s + F - 1 && d[i] * d[i] < e * 0.1) i++; out.push(i); }
+    prev = e;
+  }
+  return out;
 }
 
 /** Rééchantillonnage linéaire : `speed` > 1 raccourcit et monte la hauteur. */
