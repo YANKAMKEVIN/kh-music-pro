@@ -2828,6 +2828,27 @@ test('SV08', 'Sauvegarde', 'Versions et message de récupération traduits en an
     await page.keyboard.press('Escape');
   }
 });
+test('SV09', 'Sauvegarde', 'Plantage reconnu en retard (le système libère l’onglet planté après le redémarrage) : le message arrive quand même et la version rouverte est marquée « récupérée »', async () => {
+  await renameByTyping('Morceau tardif QA'); await sleep(900);
+  // Un onglet « planté » dont le système n'a pas encore libéré le verrou : une autre page de la même adresse le tient.
+  const holder = await ctx.newPage();
+  try {
+    await holder.goto(new URL('/icon.svg', page.url()).href);
+    await holder.evaluate(() => { localStorage.setItem('kh-open:zombie', JSON.stringify({ t: Date.now() })); navigator.locks.request('kh-tab:zombie', () => new Promise(() => { })); });
+    await sleep(200);
+    await page.reload(); await page.waitForSelector('.clip'); await sleep(1500);
+    expect(!(await page.$('dialog#crash[open]')), 'tant que le verrou est tenu, aucun message ne doit apparaître');
+  } finally { await holder.close(); }   // le système libère enfin le verrou
+  await page.waitForSelector('dialog#crash[open]', { timeout: 15000 });
+  expect((await page.textContent('dialog#crash')).includes('Morceau tardif QA'), 'le message doit nommer le morceau');
+  await page.click('dialog#crash [data-act=crashvers]');
+  await page.waitForSelector('#lib[open] [data-ver]');
+  const vers = await S(() => window.kh.store.listVersions());
+  expect(vers[vers.length - 1]?.why === 'crash' && vers[vers.length - 1]?.name === 'Morceau tardif QA', `la version rouverte doit être marquée « récupérée » (dernière : ${JSON.stringify(vers[vers.length - 1])})`);
+  expect(vers.filter(v => v.name === 'Morceau tardif QA' && v.why === 'open').length === 0, 'pas de doublon « ouverture » de la même version');
+  expect((await page.textContent('#lib')).includes('récupérée après une fermeture inattendue'), 'la liste doit afficher « récupérée »');
+  await page.keyboard.press('Escape');
+});
 
 // ============ Fichiers de projet de la version bureau (V17) ============
 // Pont simulé dans le navigateur (qa.fakeFiles) ; le vrai pont, avec les fenêtres du système, est vérifié par qa/desktop-files.cjs.

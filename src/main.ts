@@ -14,7 +14,7 @@ import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
-import { S, buffers, commit, crash, emit, findTrack, listVersions, loadAutosave, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
+import { S, buffers, commit, crash, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
 import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
 import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
 import { clamp, followDrag, h, toast } from './ui/dom';
@@ -170,7 +170,7 @@ function crashNotice() {
 
 (async () => {
   await loadAutosave();
-  await watchSession(() => { snapshot('crash').catch(() => { }); if (!document.querySelector('dialog[open]')) crashNotice(); });
+  await watchSession(() => { markRecovered().catch(() => { }); if (!document.querySelector('dialog[open]')) crashNotice(); });
   resetHistory();
   S.selTrack = S.project.tracks[0]?.id ?? '';
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';

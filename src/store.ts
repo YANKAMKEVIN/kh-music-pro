@@ -177,6 +177,13 @@ export async function snapshot(why: Version['why'], json = JSON.stringify(S.proj
   lastSnap = json;
   return true;
 }
+/** Plantage reconnu après coup (seconde vérification) : la version d'ouverture déjà prise devient « récupérée » (sinon une nouvelle version l'est). */
+export async function markRecovered(): Promise<void> {
+  const list = await listVersions(), last = list[list.length - 1];
+  if (!last) { await snapshot('crash'); return; }
+  // Si l'état n'a pas changé depuis la dernière version, c'est elle qu'on a rouverte : on la marque.
+  if ((last.why === 'open' || !(await snapshot('crash')))) { last.why = 'crash'; await idbSet('vers:' + S.pid, list); }
+}
 /** Revient à un instantané : l'état actuel est d'abord gardé comme version, et Annuler ramène à l'état d'avant. */
 export async function restoreVersion(t: number): Promise<void> {
   const json = await idbGet<string>(`ver:${S.pid}:${t}`);
