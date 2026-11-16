@@ -2713,8 +2713,9 @@ test('EX05', 'Banques expressives', 'Les variantes restent reproductibles à l�
     for (let i = 0; i < a.length; i++) delta = Math.max(delta, Math.abs(a.getChannelData(0)[i] - b.getChannelData(0)[i]));
     return delta;
   });
-  // One 16-bit PCM step tolerates platform rounding, not a changed performance.
-  expect(r < 1 / 32768, 'export influencé par le jeu en direct : ' + r);
+  // Une autre variante de frappe est un autre enregistrement : l'écart serait d'au moins 0,01. Sous Linux (GitHub),
+  // deux rendus identiques diffèrent déjà de 2 à 5e-5 (calcul audio du système) ; seuil à -60 dB, loin des deux.
+  expect(r < 1e-3, 'export influencé par le jeu en direct : ' + r);
 });
 test('EX06', 'Banques expressives', 'Le charleston fermé coupe le charleston ouvert du même kit', async () => {
   const r = await S(async () => {
