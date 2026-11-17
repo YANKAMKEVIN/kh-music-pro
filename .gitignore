@@ -2,3 +2,8 @@ node_modules
 dist
 livrables
 release
+
+# Captures reprises à chaque campagne de QA (cas V15 et V15.1), pas des références
+qa/shots/v15-phone.png
+qa/shots/v15.1-sounds-desktop.png
+qa/shots/v15.1-sounds-phone.png
