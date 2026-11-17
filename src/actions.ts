@@ -216,7 +216,7 @@ export async function exportMp3() {
     toast(t('toast.rendering'));
     download(await encodeMp3(await renderOffline(S.project)), safeName() + '.mp3');
     toast(t('toast.mp3Exported'));
-  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : t('toast.exportFail'), 'error'); }
+  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
 }
 
 /** Recale les notes sélectionnées (ou toutes) sur la grille du piano roll. */
@@ -544,7 +544,7 @@ export async function exportWav() {
     toast(t('toast.rendering'));
     download(encodeWav(await renderOffline(S.project)), safeName() + '.wav');
     toast(lastRender.wamFailed ? t('toast.exportedNoWam', lastRender.wamFailed) : t('toast.exported'), lastRender.wamFailed ? 'error' : 'info');
-  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : t('toast.exportFail'), 'error'); }
+  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
 }
 
 /** Une piste = un fichier WAV, tous de la même durée, réunis dans une archive ZIP. */

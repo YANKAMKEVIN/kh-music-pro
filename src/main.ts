@@ -6,7 +6,7 @@ import { ioBridge } from './audio/native-io';
 import { initNative, setNativeEngine } from './ui/native';
 import { liveWams } from './audio/wam';
 import { lufs, noteLoudness } from './audio/loudness';
-import { BANKS, forgetBank, loadBank, sampleFor } from './audio/banks';
+import { BANKS, forgetBank, loadBank, sampleFor, expressiveSample, bankReady } from './audio/banks';
 import { SUSTAIN_BANKS } from './audio/sustain';
 import { touchCutoff, touchSoftness } from './audio/graph';
 import { stretchBuffer } from './audio/stretch';
@@ -188,7 +188,7 @@ function crashNotice() {
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
+Object.assign(window, { kh: { S, engine, buffers, commit, emit, renderOffline, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, auBridge, ioBridge, setNativeEngine, initNative } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

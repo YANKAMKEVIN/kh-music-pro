@@ -67,4 +67,5 @@ Les nappes et le chœur synthétique sont des timbres synthétiques échantillon
 La lecture des instruments à maintien adapte une copie du son en mémoire
 (raccord de phase et fondu croisé) ; les fichiers MP3 sources restent inchangés.
 TXT
+if [ -f tools/expressive-credits.txt ]; then cat tools/expressive-credits.txt >> "$OUT/CREDITS.txt"; fi
 du -sh "$OUT"

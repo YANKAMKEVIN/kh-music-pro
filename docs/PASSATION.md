@@ -1,13 +1,13 @@
 # Document de passation — KH Music Pro
 
-Rédigé à la fin de la V14a, mis à jour pour la V15.1, la version 0.16.0 en ligne (15/11/2026), puis la V17 (branche `v17`, 16/11/2026), pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
+Rédigé à la fin de la V14a, mis à jour pour la V15.1, la version 0.16.0 en ligne (15/11/2026), puis la V17 (0.17.0, fusionnée dans `main` le 16/11/2026) et la V17.1 (banques expressives, branche `v17-expressive-banks`), pour qu'une nouvelle session (notamment sur le Mac du propriétaire) reparte sans le fil de la conversation d'origine.
 
 ## 1. Le projet en une minute
 
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
 - **État** : version **0.16.0 en ligne** sur `main` depuis le 15/11/2026 (fusion de la V15, banque de sons, et de la V14b, moteur natif et plugins du Mac : PR #2). 239 cas de QA. Site : https://yankamkevin.github.io/kh-music-pro/ ; installable (PWA) ; installateurs Windows, macOS (Apple et Intel) et Linux dans la release v0.16.0. Installée sur le Mac du propriétaire (`/Applications/KH Music Pro.app`).
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0, **v0.16.0** (15/11/2026). Les branches `v14b-prototype-natif`, `v15-banque-generaliste` et `integration-v15-natif` sont fusionnées : tout nouveau travail part de `main`.
-- **Prochaine étape** : la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5, 9 et 13). Ses retours passent avant toute nouvelle fonction. La V17 (0.17.0) attend sur la branche `v17` : pas fusionnée dans `main` sans son accord (section 13).
+- **Prochaine étape** : la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5, 9, 13, 14 et 15). Ses retours passent avant toute nouvelle fonction. La V17 (0.17.0) est en ligne sur `main` (PR #6) ; la V17.1 (0.17.1, sections 14 et 15) attend sur `v17-expressive-banks` (PR #5) : pas de fusion sans son accord.
 - **Liste des fonctions** : section « Fonctions » du README.
 
 ## 2. Architecture
@@ -603,3 +603,78 @@ Instabilités vues, liées à la charge de la machine : T01 (déjà connu, secti
 2. « Suit le tempo » activé par défaut pour les nouveaux clips audio (comme Ableton pour les boucles) ? Aujourd'hui désactivé : un ancien projet sonne exactement pareil.
 3. Fréquence des versions (2 minutes) et nombre gardé (20 + une par jour sur 10 jours) : à ajuster selon l'usage.
 4. Fusion de `v17` dans `main` (met le site en ligne à jour) et release 0.17.0.
+
+
+## 14. V17.1 — piano expressif, batterie Studio et pédale (16/11/2026)
+
+Travail demandé explicitement par le propriétaire : avancer sans son intervention sur les banques intégrées et préparer le jeu avec son Yamaha DGX-670, sa Focusrite (modèle non confirmé) et son micro. Branche `v17-expressive-banks`, issue de `main` à `ef4a5c1`. Version préparée : **0.17.0**. La version en ligne et l’application installée ne sont pas remplacées par ce travail.
+
+### Sons et droits
+
+- `r_salamander` / banque `salamander` : Salamander Grand Piano v3, Alexander Holm, CC BY 3.0. Source figée `sfzinstruments/SalamanderGrandPiano@3382bf9496bba2486f5ab0de55a264d1dfc38404`. 120 MP3 stéréo : 30 notes MIDI 21–108, 4 nuances (v4/v8/v12/v16), maximum 12 secondes, 44,1 kHz et 192 kbit/s.
+- Kit `studio` / banque `studio_drums` : Virtuosity Drums, Versilian Studios et Karoryfer, CC0. Source figée `sfzinstruments/virtuosity_drums@9f04cf9a734527edfbb0a4eee1f674e45bbf71bc`. 115 MP3 mono pour 16 pads ; jusqu’à 4 nuances et 3 répétitions selon l’élément. Pas de répétitions de même nuance pour la caisse claire et les toms, conformément à la source. Une prise micro par son, maximum 6 secondes et 128 kbit/s.
+- 34,0 Mo compressés au total. À 48 kHz, environ 433 Mio de piano et 60 Mio de batterie décodés en mémoire : ces banques ciblent d’abord l’ordinateur, pas un petit téléphone.
+- Les licences et README originaux sont livrés dans les dossiers de sons. Crédits et transformations dans `public/banks/CREDITS.txt`, avec leur texte reproductible dans `tools/expressive-credits.txt`. Le script historique conserve ces nouveaux crédits.
+- `tools/build-expressive-banks.py` télécharge les seules données audio/licences, puis les convertit avec ffmpeg ; aucun code tiers téléchargé n’est exécuté. Il conserve source, révision, SHA256 source/sortie, durée, canaux, gain et décalage d’attaque dans `public/banks/expressive-provenance.json`, et génère `src/audio/expressive-manifest.ts`.
+- `tools/check-expressive-banks.py` vérifie hors ligne les 235 fichiers, empreintes et mappages. Ajouté à la CI QA.
+
+### Lecture et compatibilité
+
+- Les anciens identifiants de piano et de kit acoustique ne changent pas. Aucun nouveau champ à migrer ni changement du format `.khm`. Le choix des nouvelles banques est explicite dans les menus existants et traduit dans les trois langues.
+- `banks.ts` charge les nouvelles banques à la demande avec six travailleurs par banque. Un échec ne publie aucun ensemble partiel ; les téléchargements en cours terminent avant le rejet, puis un réessai est possible. Les banques originales gardent leur lecteur.
+- La vélocité sélectionne un véritable enregistrement. Les gains de lecture égalisent le niveau d’attaque tout en bornant les crêtes à 0,85 ; l’amplitude jouée suit ensuite la vélocité. Le nouveau piano n’utilise pas le filtre de nuances artificielles, dont le curseur est masqué pour ce son.
+- Le même graphe sert au direct et à l’export. Les compteurs de répétition appartiennent à chaque Mix et piste, jamais à la banque globale ; jouer/préécouter n’altère pas les exports suivants. Le charleston fermé coupe le charleston ouvert de la même piste. Les samples personnels restent prioritaires sur les pads.
+- Les notes qui attendent le premier chargement sont annulées par l’arrêt ; une banque ou une piste remplacée ne peut pas déclencher une vieille note après son chargement.
+- Un export WAV/MP3 est désormais refusé avec un message clair quand une banque manque, plutôt que de rendre une piste silencieuse sans le dire. Le cas RI06 a été adapté pour vérifier cette protection, tout en gardant le jeu des autres pistes en direct.
+
+### MIDI et exports
+
+- CC64 maintient les notes après le relâchement des touches ; lever la pédale libère les notes différées, rejouer une note la réattaque. Arrêt, perte de focus, déconnexion et CC120/123 libèrent le maintien. Le contrôle de pédale est suivi par canal ; le moteur de jeu reste celui d’une seule piste sélectionnée, sans routage multitimbral.
+- L’enregistrement inscrit la durée audible jusqu’au lever de pédale dans les notes, donc cette durée survit à l’audio et au MIDI exportés. Pas de piste d’événements CC64 séparée, pas de demi-pédale ni de résonances sympathiques.
+- Les pads enregistrés conservent leur force (avant : valeur 1 systématique et force minimale de 0,3 imposée en MIDI). Les roulements enregistrés gardent aussi la force de lecture.
+- La première campagne a révélé un échec MP01 déjà décrit comme instable dans ce document : crête décodée à 1,00005 après compression MP3. L’encodeur vérifie maintenant le fichier décodé sur les deux canaux et le réencode à gain réduit si nécessaire, trois essais au maximum. Le WAV et le tampon source ne sont pas modifiés. Le MP3 peut donc être légèrement moins fort que la cible LUFS du rendu source. Le test MP01 contrôle les deux canaux avec une marge de crête.
+
+### Vérifications et livrables
+
+- 15 nouveaux cas EX01–EX10 et MD01–MD05 : sélection/traductions, 4 nuances réelles/stéréo, justesse/relâchement, 16 pads, répétitions et export reproductible, charleston, import personnel, fichier/rechargement, panne/réessai/export bloqué, compatibilité, pédale et nuances MIDI enregistrées.
+- DK01 sait maintenant lancer Electron directement sur macOS et Windows ; seul Linux passe par xvfb-run. Il ne s’agit pas de supprimer son contrôle. Les tests bureau et application Mac empaquetée vérifient les deux nouvelles banques depuis les fichiers locaux.
+- Premier passage complet : **264/265**, les 15 nouveaux cas réussis ; seul MP01 en échec. Après correction MP3, MP01 isolé et compilation passent. Passage final complet : **265/265 réussis** sur ce Mac, puis compilation de production réussie. Application Mac empaquetée vérifiée avec `qa/packaged-mac.cjs --strict` : module natif, isolation, effet AU, bascule native et les deux nouvelles banques embarquées OK.
+- Module natif universel Apple/Intel construit. Installateur de test Apple dans `release/KH Music Pro-0.17.0-arm64.dmg`. L’application installée dans `/Applications` n’est pas touchée.
+- `qa/expressive-demo.cjs` produit `livrables/v0.17.0/` : exemple `.khm`, trois écoutes WAV et deux captures françaises. Le lanceur local `Ouvrir-la-version-essai.command` utilise un profil distinct pour essayer l’application construite sans utiliser les projets du profil installé.
+- Guide de branchement sourcé : `docs/YAMAHA-FOCUSRITE.md`.
+
+Non vérifié par cette session : écoute humaine, véritable DGX-670/pédale, véritable Focusrite/micro, latence avec ce matériel, appareil mobile réel, installateur Windows. Les sons du piano sont une sélection allégée de la source, sans bruits de mécanique, pédale, résonances ni prise en charge du moteur SFZ/ARIA original. Pas de plugins instruments Audio Unit ajoutés.
+
+
+## 15. V17.1 (suite) — Wurlitzer, basse électrique et percussions (16/11/2026)
+
+Suite à la demande du propriétaire « vas y rajoute » : ajout des trois familles proposées, dans la branche d’essai V17 existante (PR #5 encore ouverte). Version préparée : **0.17.1**. Aucun remplacement des anciens identifiants ni nouvelle migration de projet.
+
+### Sources et contenu
+
+- `r_wurli` / `wurli` : Wurlitzer EP200 de Greg Sullivan, portage kinwie, CC BY 3.0. Dépôt `sfzinstruments/GregSullivan.E-Pianos`, révision `8c3e581acda3594b553948ff0222d4f84a698376`. 47 échantillons mono, jusqu’à quatre nuances, 8 s maximum, 160 kbit/s. La répartition des notes varie selon la nuance ; le lecteur respecte les zones et corrections de hauteur du SFZ d’origine. Certaines prises aiguës sont partagées entre nuances dans la source.
+- `r_fashionbass` / `fashionbass` : basse électrique pincée Fashionbass, Karoryfer Samples, CC0. Dépôt `sfzinstruments/karoryfer.fashionbass`, révision `0703973b300a6bacb837602be9b588ab64732a72`. 190 échantillons mono : 19 notes sources, cinq nuances, deux prises alternées. 6 s maximum, 160 kbit/s. Pas de bruitages, key-switches ni effets des variantes shifty/unison.
+- Kit `percussion` : VCSL, Versilian Studios, CC0. Dépôt `sgossner/VCSL`, révision `c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e`. 16 pads, 72 frappes, une à quatre nuances et jusqu’à deux prises par élément. Tumba, conga ouverte/étouffée, quinto, bongos ouverts/étouffés, deux sons de darbuka, deux claves, shaker, tambourin, guiro, triangle. MP3 mono, 6 s maximum, 128 kbit/s.
+- Les nouvelles banques ajoutent 26,7 Mo compressés et environ 245 Mio décodés à 48 kHz (19 + 209 + 17). Le total des cinq banques expressives est de 544 fichiers et 60,7 Mo. Les fichiers restent chargés à la demande.
+- Les licences, SFZ utilisés, crédits et provenance sont livrés. Fashionbass n’a pas de README amont : `SOURCE-README.md` l’indique explicitement et donne une notice générée, sans prétendre être un document original.
+
+### Lecteur et préparation
+
+- Le constructeur de banques lit les SFZ comme données avec des expressions régulières, sans exécuter de code tiers. Les notes, zones, corrections de justesse et limites de vélocité sont reprises ; les paramètres du moteur SFZ complet ne sont pas importés.
+- Le lecteur sélectionne d’abord une nuance puis la note source dans cette nuance, au lieu de supposer que toutes les nuances ont les mêmes notes enregistrées. Ce choix évite les trous de registre du Wurlitzer.
+- Les répétitions mélodiques utilisent des compteurs par destination de piste et par note dans chaque Mix. Une préécoute ne change pas les variantes de la piste ou celles d’un export.
+- Les percussions sélectionnent leur nuance d’après le nombre de couches de chaque pad, pas d’après le maximum du kit. Elles ne déclenchent pas le sidechain du kick et ne passent pas dans le groupe d’étouffement des charlestons.
+- Les sources VCSL très faibles sont amplifiées avant compression, pour ne pas encoder un signal minuscule avant de l’amplifier à l’écoute. Le gain de lecture est ensuite calculé sur le MP3 final. Le gain préparatoire est consigné dans la provenance.
+- Les téléchargements d’une même source utilisée par plusieurs régions emploient désormais des fichiers temporaires distincts, évitant une course lors de la conversion parallèle. La reconstruction conserve les fichiers dont le hash et la source n’ont pas changé ; `--force` les régénère tous.
+- Les échantillons des deux banques 0.17.0 ne sont pas réencodés dans cette extension. Les nouveaux textes et noms des pads existent en français, anglais et espagnol. Catalogue : 56 instruments, dont 32 échantillonnés, et six kits.
+
+### Validation
+
+- Neuf cas BX01–BX09 ajoutés : traductions et sélection, couverture de toutes les notes/nuances du Wurlitzer, justesse, cinq nuances et répétitions de basse, 16 percussions aux forces extrêmes, sample personnel prioritaire et réinitialisation, sauvegarde/rechargement/export, isolation des préécoutes, panne/réessai et accès tactile.
+- Les 13 cas ciblés BX + RI01/BN01/SB01/EX05 réussissent sur ce Mac. Les cinq banques sont également chargées depuis l’application Mac empaquetée avec le contrôle natif strict : OK.
+- La précédente CI Linux 0.17.0 avait terminé à 264/265 : seul EX05 comparait deux rendus à 1e-7 près et trouvait un écart maximal de 0,00001758. Le contrôle tolère désormais moins d’un pas PCM 16 bits (1/32768), tout en refusant un changement musical de variante. La condition n’est ni supprimée ni ignorée.
+- Campagne complète 0.17.1 : **274/274 réussis** sur ce Mac. `npm run build`, contrôle des 544 échantillons, démarrage bureau et application Mac empaquetée avec le module natif : OK. La validation Linux et les constructions des installateurs sont relancées sur GitHub après la sauvegarde de la branche.
+
+`node qa/expressive-demo.cjs --ensemble` produit une démo `.khm`, quatre écoutes WAV et deux captures dans `livrables/v0.17.1/`. Installateur Apple : `release/KH Music Pro-0.17.1-arm64.dmg`. Lanceur d’essai local avec profil distinct ; application installée et version en ligne non remplacées.
+
+Restent à faire avec le propriétaire : écoute humaine, toucher du DGX-670, vraie pédale, Focusrite et micro, latence et appareils mobiles réels. Pas de nouveaux plugins instruments natifs ; ces banques utilisent le lecteur d’échantillons intégré.

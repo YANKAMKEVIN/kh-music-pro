@@ -5,8 +5,9 @@
 import type { Project } from '../types';
 import { SUSTAIN_BANKS, SustainLoop, sustainSample } from './sustain';
 import { noteLoudness } from './loudness';
+import { EXPRESSIVE, ExpressiveEntry } from './expressive-manifest';
 
-export interface Sample { buf: AudioBuffer; off: number; gain: number; audible: boolean; held?: { buf: AudioBuffer; loop: SustainLoop } } // off = silence initial à sauter (s), gain = mise à niveau
+export interface Sample { buf: AudioBuffer; off: number; gain: number; audible: boolean; lo?: number; hi?: number; tune?: number; held?: { buf: AudioBuffer; loop: SustainLoop } } // off = silence initial à sauter (s), gain = mise à niveau
 /** Identifiant de banque → dossier des fichiers. */
 export const BANKS: Record<string, string> = {
   piano: 'acoustic_grand_piano', nylon: 'acoustic_guitar_nylon', eguitar: 'electric_guitar_clean', ebass: 'electric_bass_finger', abass: 'acoustic_bass',
@@ -35,17 +36,68 @@ const NOTES = Array.from({ length: 25 }, (_, i) => 24 + i * 3), PADS = Array.fro
 const loaded = new Map<string, Map<number, Sample>>(), pending = new Map<string, Promise<void>>();
 let decoder: BaseAudioContext | null = null;
 export const setDecoder = (ctx: BaseAudioContext) => { decoder = ctx; };
-export const bankReady = (id: string) => loaded.has(id);
+type Layered = Map<number, Sample[][]>;
+const expressiveLoaded = new Map<string, Layered>();
+export const bankReady = (id: string) => loaded.has(id) || expressiveLoaded.has(id);
 /** Oublie un instrument chargé (vérifications : rejouer le tout premier chargement). */
-export const forgetBank = (id: string) => { loaded.delete(id); };
+export const forgetBank = (id: string) => { loaded.delete(id); expressiveLoaded.delete(id); };
+
+/** New kits have their own IDs: old projects keep the original acoustic kit. */
+export const recordedDynamics = (bank?: string) => !!bank && EXPRESSIVE[bank]?.kind === 'instrument';
+export const drumBank = (kit?: string): string | undefined => kit === 'acoustic' ? 'drums' : kit === 'studio' ? 'studio_drums' : kit === 'percussion' ? 'percussion' : undefined;
 
 /** Lecture d'un fichier embarqué. XMLHttpRequest fonctionne aussi dans la version bureau (fichiers locaux). */
 function fetchBytes(url: string): Promise<ArrayBuffer> {
   return new Promise((res, rej) => {
     const x = new XMLHttpRequest(); x.open('GET', url); x.responseType = 'arraybuffer';
+    x.timeout = 30000; x.ontimeout = () => rej(new Error('sample timeout'));
     x.onload = () => (x.status === 200 || (x.status === 0 && x.response?.byteLength) ? res(x.response) : rej(new Error('http ' + x.status)));
     x.onerror = () => rej(new Error('network')); x.send();
   });
+}
+
+/** Bounded parallel decoding; a failed bank is never published partially. */
+async function loadExpressive(id: string) {
+  const entries = EXPRESSIVE[id].samples, map: Layered = new Map();
+  let next = 0, failed: unknown;
+  const context = decoder!;
+  const worker = async () => {
+    while (next < entries.length && !failed) {
+      const e: ExpressiveEntry = entries[next++];
+      try {
+        const buf = await context.decodeAudioData(await fetchBytes('banks/' + e.file));
+        if (e.off >= buf.duration) throw new Error('invalid sample offset');
+        const layers = map.get(e.key) ?? []; map.set(e.key, layers);
+        (layers[e.layer] ??= [])[e.rr] = { buf, off: e.off, gain: e.gain, audible: true, lo: e.lo, hi: e.hi, tune: e.tune };
+      } catch (error) { failed = error; }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  if (failed) throw failed;
+  expressiveLoaded.set(id, map);
+}
+
+/** Velocity chooses an actual recording. Repeat selection belongs to each Mix. */
+export function expressiveSample(id: string, key: number, vel = 0.8, turn = 0): { s: Sample; rate: number } | null {
+  const map = expressiveLoaded.get(id);
+  if (!map?.size) return null;
+  const definition = EXPRESSIVE[id], instrument = definition.kind === 'instrument';
+  const count = instrument ? Math.max(...[...map.values()].map(layers => layers.length)) : (map.get(key)?.length ?? 0);
+  if (!count) return null;
+  const v = Number.isFinite(vel) ? Math.max(0, Math.min(1, vel)) : 0;
+  let layer = definition.velocityEnds?.findIndex(end => v <= end);
+  if (layer === undefined) layer = Math.min(count - 1, Math.floor(v * count));
+  if (layer < 0) layer = count - 1;
+  let base = key;
+  if (instrument) {
+    // Each dynamic layer may have different recorded root notes (Wurlitzer).
+    const roots = [...map.keys()].filter(k => map.get(k)?.[layer]?.length).sort((a,b) => a-b);
+    const zone = roots.find(k => { const s = map.get(k)![layer][0]; return s.lo !== undefined && s.hi !== undefined && key >= s.lo && key <= s.hi; });
+    base = zone ?? roots.reduce((a,b) => Math.abs(b-key) < Math.abs(a-key) ? b : a);
+  }
+  const choices = map.get(base)?.[layer];
+  const s = choices?.[Math.max(0, Math.floor(turn)) % choices.length];
+  return s ? { s, rate: instrument ? Math.pow(2, (key-base + (s.tune ?? 0)/100)/12) : 1 } : null;
 }
 
 async function load(id: string) {
@@ -93,17 +145,21 @@ export function registerGains(map: Map<number, Sample>): Map<number, number> {
 
 /** Charge une banque (une seule fois). Rejette si les fichiers sont inaccessibles. */
 export function loadBank(id: string): Promise<void> {
-  if (!BANKS[id] || !decoder) return Promise.reject(new Error('unknown bank'));
-  if (loaded.has(id)) return Promise.resolve();
+  if ((!BANKS[id] && !EXPRESSIVE[id]) || !decoder) return Promise.reject(new Error('unknown bank'));
+  if (bankReady(id)) return Promise.resolve();
   let p = pending.get(id);
-  if (!p) { p = load(id).finally(() => pending.delete(id)); pending.set(id, p); }
+  if (!p) { p = (EXPRESSIVE[id] ? loadExpressive(id) : load(id)).finally(() => pending.delete(id)); pending.set(id, p); }
   return p;
 }
 
 export function usedBanks(p: Project): string[] {
   const ids = new Set<string>();
-  for (const t of p.tracks) { if (t.synth?.engine === 'multi' && t.synth.bank) ids.add(t.synth.bank); if (t.type === 'drums' && t.kit === 'acoustic') ids.add('drums'); }
-  return [...ids].filter(id => BANKS[id]);
+  for (const t of p.tracks) {
+    if (t.synth?.engine === 'multi' && t.synth.bank) ids.add(t.synth.bank);
+    const bank = t.type === 'drums' ? drumBank(t.kit) : undefined;
+    if (bank) ids.add(bank);
+  }
+  return [...ids].filter(id => BANKS[id] || EXPRESSIVE[id]);
 }
 /** Charge tout ce que le projet utilise ; renvoie les banques qui n'ont pas pu être chargées. */
 export async function ensureBanks(p: Project): Promise<string[]> {
@@ -113,7 +169,8 @@ export async function ensureBanks(p: Project): Promise<string[]> {
 }
 
 /** Échantillon à jouer pour une note : le plus proche, et le rapport de vitesse qui donne la bonne hauteur. */
-export function sampleFor(id: string, midi: number): { s: Sample; rate: number } | null {
+export function sampleFor(id: string, midi: number, vel = 0.8, turn = 0): { s: Sample; rate: number } | null {
+  if (EXPRESSIVE[id]) return expressiveSample(id, midi, vel, turn);
   const map = loaded.get(id);
   if (!map) return null;
   let base = Math.max(24, Math.min(96, 24 + Math.round((midi - 24) / 3) * 3));

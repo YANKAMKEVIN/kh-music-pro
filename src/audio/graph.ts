@@ -1,4 +1,4 @@
-import { drumSample, sampleFor } from './banks';
+import { drumBank, recordedDynamics, drumSample, expressiveSample, sampleFor } from './banks';
 import { WamInstance, createWam, liveWams, wamKey } from './wam';
 import { AuInstance, auBridge, auFromNorm, createAu } from './au';
 
@@ -60,6 +60,10 @@ export class Mix {
   /** Vrai pendant la lecture de l'arrangement : les paramètres automatisés ne sont plus pilotés par `sync`. */
   autoOn = false;
   active = new Set<AudioScheduledSourceNode>();
+  /** Repetitions are isolated per render and track; preview cannot alter export. */
+  sampleTurns = new Map<string, number>();
+  instrumentTurns = new WeakMap<AudioNode, Map<number, number>>();
+  openHats = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
 
   constructor(public ctx: BaseAudioContext, public live: boolean) {
     this.master = ctx.createGain();
@@ -451,6 +455,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
   stopAll() {
     for (const n of this.active) { try { n.stop(); } catch { /* déjà arrêté */ } }
     this.active.clear();
+    this.openHats.clear(); this.sampleTurns.clear(); this.instrumentTurns = new WeakMap();
   }
 }
 
@@ -518,16 +523,26 @@ export function playDrum(mix: Mix, dest: AudioNode, row: number, t: number, vel 
 /** Déclenche un pad : sample chargé par l'utilisateur, sinon son synthétisé. */
 export function hitPad(mix: Mix, buffers: Buffers, tr: Track, dest: AudioNode, row: number, t: number, vel = 1) {
   const pad = tr.pads?.[row], buf = pad ? buffers.get(pad.bufferId) : undefined, fx = tr.padFx?.[row];
-  if (row === 0 || row === 8) mix.kick(t);
+  if (tr.kit !== 'percussion' && (row === 0 || row === 8)) mix.kick(t);
   // Réglages du pad : volume, hauteur, panoramique.
   let out = dest;
   if (fx?.pan) { const pn = mix.ctx.createStereoPanner(); pn.pan.value = fx.pan; pn.connect(dest); out = pn; }
   const v = vel * (fx?.vol ?? 1), semis = fx?.tune ?? 0;
   // Sans sample personnel : la batterie acoustique si elle est choisie et chargée, sinon le son synthétisé.
-  const real = !buf && tr.kit === 'acoustic' ? drumSample(row) : undefined;
+  const key = tr.id + ':' + row, turn = mix.sampleTurns.get(key) ?? 0;
+  const bank = drumBank(tr.kit), layered = !!bank && bank !== 'drums';
+  const real = !buf && bank ? layered ? expressiveSample(bank, row, vel, turn)?.s : drumSample(row) : undefined;
+  if (real && layered) mix.sampleTurns.set(key, turn + 1);
+  // Never substitute a synthesized drum for a missing Studio recording.
+  if (!buf && !real && layered) return;
   if (!buf && !real) return playDrum(mix, out, row, t, v, tr.kit, semis);
   const s = mix.reg(mix.ctx.createBufferSource()), g = mix.ctx.createGain();
   s.buffer = buf ?? real!.buf; g.gain.value = v * (real ? 0.9 * real.gain : 1); s.playbackRate.value = Math.pow(2, semis / 12);
+  if (tr.kit === 'studio' && !buf && (row === 3 || row === 4)) {
+    const prev = mix.openHats.get(tr.id);
+    if (prev) { prev.gain.gain.setTargetAtTime(0, t, 0.003); try { prev.src.stop(t + 0.02); } catch { /* ended */ } }
+    if (row === 4) mix.openHats.set(tr.id, { src: s, gain: g }); else mix.openHats.delete(tr.id);
+  }
   s.connect(g).connect(out); s.start(t, real?.off ?? 0);
 }
 
@@ -579,13 +594,15 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
     s.connect(filt); srcs.push(s); level = 0.5;
   } else if (p.engine === 'multi') {
     // Vrai instrument : l'échantillon le plus proche, transposé jusqu'à la note demandée.
-    const m = p.bank ? sampleFor(p.bank, midi + p.octave * 12) : null;
+    const turns = mix.instrumentTurns.get(dest) ?? new Map<number, number>();
+    mix.instrumentTurns.set(dest, turns); const turn = turns.get(midi) ?? 0; turns.set(midi, turn + 1);
+    const m = p.bank ? sampleFor(p.bank, midi + p.octave * 12, vel, turn) : null;
     if (!m) return;
     const s = mix.reg(c.createBufferSource()); s.buffer = p.hold && m.s.held ? m.s.held.buf : m.s.buf; s.playbackRate.value = m.rate;
     if (p.hold && m.s.held) { s.loop = true; s.loopStart = m.s.held.loop.start; s.loopEnd = m.s.held.loop.end; }
     // Nuances : les sources n'ont qu'une couche par note ; une note jouée doucement est donc
     // assombrie (moins d'harmoniques aigus) et attaquée un peu moins sec, comme un vrai instrument.
-    const soft = touchSoftness(p, vel);
+    const soft = recordedDynamics(p.bank) ? 0 : touchSoftness(p, vel);
     if (soft > 0) {
       const tone = c.createBiquadFilter(); tone.type = 'lowpass'; tone.Q.value = 0.5;
       tone.frequency.value = touchCutoff(soft, freq); s.connect(tone).connect(filt); softAttack = soft * 0.015;

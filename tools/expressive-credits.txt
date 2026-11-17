@@ -1,0 +1,58 @@
+Banques expressives V17 (0.17.0)
+
+Piano : « Salamander Grand Piano v3 » par Alexander Holm.
+Licence CC BY 3.0 : https://creativecommons.org/licenses/by/3.0/
+Source : https://github.com/sfzinstruments/SalamanderGrandPiano
+Révision : 3382bf9496bba2486f5ab0de55a264d1dfc38404
+Adaptation KH Music Pro : sélection de 4 nuances (v4, v8, v12, v16),
+30 notes sources (MIDI 21 à 108, une tierce mineure), conversion MP3 stéréo
+44,1 kHz / 192 kbit/s, durée limitée à 12 secondes avec fondu final de 150 ms.
+Calage d’attaque et gain appliqués à la lecture. Ni bruits de pédale,
+ni résonances sympathiques, ni moteur SFZ/ARIA de la source ne sont inclus.
+Les fichiers SOURCE-LICENSE et SOURCE-README.md sont conservés dans salamander/.
+
+Batterie Studio : « Virtuosity Drums », Versilian Studios et Karoryfer Lecolds,
+batterie jouée par Austin McMahon. Licence CC0 1.0 :
+https://creativecommons.org/publicdomain/zero/1.0/
+Source : https://github.com/sfzinstruments/virtuosity_drums
+Révision : 9f04cf9a734527edfbb0a4eee1f674e45bbf71bc
+Adaptation KH Music Pro : 115 frappes sur 16 pads, 1 à 4 nuances et
+jusqu’à 3 variantes de répétition selon l’élément ; choix d’une prise micro,
+conversion mono 44,1 kHz / 128 kbit/s, maximum 6 secondes, fondu final 150 ms.
+Calage d’attaque et gain appliqués à la lecture. Pas de mixage multi-micros.
+Les fichiers SOURCE-LICENSE et SOURCE-README.md sont conservés dans studio_drums/.
+
+Reconstruction : python3 tools/build-expressive-banks.py (curl et ffmpeg requis).
+Provenance détaillée et empreintes SHA256 de chaque source et fichier adapté :
+expressive-provenance.json. Aucune de ces sources ne provient de Logic,
+Ableton, FL Studio ou des sons internes d’un clavier Yamaha.
+
+Extension 0.17.1 — piano électrique, basse et percussions
+
+Wurlitzer EP200 par Greg Sullivan, banque Greg Sullivan’s E-Pianos,
+portage SFZ par kinwie. Licence CC BY 3.0 : https://creativecommons.org/licenses/by/3.0/
+Source : https://github.com/sfzinstruments/GregSullivan.E-Pianos
+Révision : 8c3e581acda3594b553948ff0222d4f84a698376
+Adaptation KH Music Pro : nuances, zones de notes et corrections de justesse
+lues dans le mappage Wurlitzer EP200 ; normalisation d’attaque à la lecture,
+conversion MP3 mono 44,1 kHz / 160 kbit/s, maximum 8 secondes avec fondu final.
+Certaines notes aiguës partagent un enregistrement entre nuances, comme la source.
+Pas d’import du moteur SFZ/ARIA ni de boucle de maintien.
+
+Fashionbass, par Karoryfer Samples. Licence CC0 1.0 :
+https://creativecommons.org/publicdomain/zero/1.0/
+Source : https://github.com/sfzinstruments/karoryfer.fashionbass
+Révision : 0703973b300a6bacb837602be9b588ab64732a72
+Adaptation KH Music Pro : notes normales pincées du mappage fashionbass_clean,
+cinq nuances et deux variantes, sans bruits de corde ni effets shifty/unison.
+MP3 mono 44,1 kHz / 160 kbit/s, maximum 6 secondes avec fondu final.
+
+Percussions : Versilian Community Sample Library (VCSL), Versilian Studios.
+Licence CC0 1.0 : https://creativecommons.org/publicdomain/zero/1.0/
+Source : https://github.com/sgossner/VCSL
+Révision : c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e
+Adaptation KH Music Pro : sélection de frappes pour 16 pads, une à quatre
+nuances et jusqu’à deux variantes selon le son ; prise micro unique,
+conversion MP3 mono 44,1 kHz / 128 kbit/s, maximum 6 secondes avec fondu final.
+Toutes les adaptations utilisent les enregistrements originaux, pas des sons
+tirés de banques propriétaires d’Ableton, Logic Pro ou FL Studio.

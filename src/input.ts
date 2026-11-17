@@ -7,6 +7,10 @@ import { BAR, Clip, GRIDS, NPADS, Note, Track, chordOf, newPatternClip, snapTo, 
 export const kb = { octave: 0, chord: 1, arp: 'off' as 'off' | 'up' | 'down' | 'updown' | 'random', arpRate: 2, repeat: 0 };
 interface Held { track: Track; keys: number[]; notes: Note[]; clip?: Clip; start: number; arp?: boolean }
 const held = new Map<number, Held>();
+// CC64 : maintien tout-ou-rien, indépendant par canal MIDI. Les durées
+// enregistrées vont jusqu'au relâchement de la pédale, donc l'export les conserve.
+const pedals = new Set<number>();
+const pedalNotes = new Map<number, Set<number>>();
 
 const isRec = (tr: Track) => engine.recording === 'midi' && engine.recTrack === tr.id && engine.playing;
 
@@ -50,7 +54,7 @@ export function padHit(row: number, vel = 1, track?: Track) {
   if (!tr || tr.type !== 'drums' || row < 0 || row >= NPADS) return;
   engine.pad(tr, row, vel);
   // La frappe est rangée dans la case la plus proche, selon la résolution du motif.
-  if (isRec(tr)) { const { clip, local } = recSpot(tr, engine.currentStep()); later(() => { clip.drums![row][cellOf(clip, local)] = 1; }); }
+  if (isRec(tr)) { const { clip, local } = recSpot(tr, engine.currentStep()); const v = Math.round(Math.max(0.01, Math.min(1, vel)) * 100) / 100; later(() => { clip.drums![row][cellOf(clip, local)] = v; }); }
   if (kb.repeat) { rolls.set(row, tr); ensureClock(); }
 }
 export function padRelease(row: number) { rolls.delete(row); }
@@ -68,7 +72,7 @@ function arpPick(): number {
 engine.onStep = (s, t) => {
   if (kb.repeat && rolls.size && s % kb.repeat === 0) for (const [row, rt] of rolls) {
     engine.padAt(rt, row, t, 0.85);
-    if (isRec(rt)) { const { clip, local } = recSpot(rt, s); later(() => { clip.drums![row][cellOf(clip, local)] = 1; }); }
+    if (isRec(rt)) { const { clip, local } = recSpot(rt, s); later(() => { clip.drums![row][cellOf(clip, local)] = 0.85; }); }
   }
   const tr = arp.track;
   if (!tr || !arp.keys.length || s % kb.arpRate) return;
@@ -101,7 +105,7 @@ function arpRemove(keys: number[]) {
 export function noteOn(midi: number, vel = 0.8) {
   const tr = findTrack(S.selTrack);
   if (!tr || !Number.isFinite(midi)) return;
-  if (tr.type === 'drums') return padHit(midi - 36, Math.max(0.3, vel));
+  if (tr.type === 'drums') return padHit(midi - 36, vel);
   if (tr.type !== 'synth' || held.has(midi) || !Number.isFinite(midi) || midi < 0 || midi > 127) return;
   // Accords à un doigt : une touche joue l'accord construit dans la gamme du projet.
   const keys = kb.chord > 1 ? chordOf(S.project, midi, kb.chord) : [midi];
@@ -131,7 +135,8 @@ export function noteOff(midi: number) {
   }
 }
 
-export function allNotesOff() { for (const m of [...held.keys()]) noteOff(m); rolls.clear(); }
+export function allNotesOff() { pedals.clear(); pedalNotes.clear(); for (const m of [...held.keys()]) noteOff(m); rolls.clear(); }
+engine.onStop = allNotesOff;
 
 // ---------- Clavier maître MIDI ----------
 export const midi = { inputs: 0, supported: 'requestMIDIAccess' in navigator, onChange: () => { } };
@@ -139,6 +144,7 @@ export const midi = { inputs: 0, supported: 'requestMIDIAccess' in navigator, on
 export async function connectMidi(): Promise<number> {
   const acc = await navigator.requestMIDIAccess();
   const hook = () => {
+    allNotesOff(); // un débranchement ne doit jamais laisser une note tenue
     midi.inputs = acc.inputs.size;
     acc.inputs.forEach(i => { i.onmidimessage = e => { if (e.data) onMidi(e.data); }; });
     midi.onChange();
@@ -166,8 +172,16 @@ function applyCC(target: string, v: number) {
 }
 
 export function onMidi(d: Uint8Array | number[]) {
+  if (d.length < 3 || !d.every(x => Number.isInteger(x) && x >= 0 && x <= 255)) return;
   const cmd = d[0] & 0xf0;
+  const channel = d[0] & 0x0f;
   if (cmd === 0xb0) {
+    if (d[1] === 64) {
+      if (d[2] >= 64) pedals.add(channel);
+      else { pedals.delete(channel); for (const n of pedalNotes.get(channel) ?? []) noteOff(n); pedalNotes.delete(channel); }
+      return;
+    }
+    if (d[1] === 120 || d[1] === 123) { allNotesOff(); return; }
     const cc = String(d[1]);
     if (learn.on && learn.target) {
       for (const k of Object.keys(learn.map)) if (learn.map[k] === learn.target) delete learn.map[k];
@@ -175,6 +189,12 @@ export function onMidi(d: Uint8Array | number[]) {
     } else if (learn.map[cc]) applyCC(learn.map[cc], d[2] / 127);
     return;
   }
-  if (cmd === 0x90 && d[2] > 0) noteOn(d[1], d[2] / 127);
-  else if (cmd === 0x80 || cmd === 0x90) noteOff(d[1]);
+  if (cmd === 0x90 && d[2] > 0) {
+    if (pedalNotes.get(channel)?.delete(d[1])) noteOff(d[1]); // une répétition réattaque la note
+    noteOn(d[1], d[2] / 127);
+  } else if (cmd === 0x80 || cmd === 0x90) {
+    if (pedals.has(channel) && held.has(d[1]) && !held.get(d[1])!.arp) {
+      const notes = pedalNotes.get(channel) ?? new Set<number>(); notes.add(d[1]); pedalNotes.set(channel, notes);
+    } else noteOff(d[1]);
+  }
 }

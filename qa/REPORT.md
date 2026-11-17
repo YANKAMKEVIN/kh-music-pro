@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-305 cas réussis sur 307.
+332 cas réussis sur 332.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -151,7 +151,7 @@
 | TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
-| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : spawnSync xvfb-run ENOENT |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
 | CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
 | CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
@@ -166,7 +166,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 29 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | OK |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -232,7 +232,7 @@
 | GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
 | GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
 | GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
-| SB01 | Navigateur de sons | Les 53 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
 | SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
 | SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
 | SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
@@ -254,6 +254,30 @@
 | RG01 | Registres | D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments | OK |
 | RG02 | Registres | Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle | OK |
 | RG03 | Registres | Une gamme jouée sur trois octaves au piano reste régulière à l’export | OK |
+| EX01 | Banques expressives | Piano et kit Studio sélectionnables dans les trois langues, avec de vrais noms de pads | OK |
+| EX02 | Banques expressives | Les quatre nuances du piano sont des enregistrements distincts et jouent doucement ou fort | OK |
+| EX03 | Banques expressives | Le nouveau piano est juste dans plusieurs registres, transposition comprise, et s’arrête au relâchement | OK |
+| EX04 | Banques expressives | Les 16 pads Studio produisent un son propre, avec nuances et variantes de répétition | OK |
+| EX05 | Banques expressives | Les variantes restent reproductibles à l’export, indépendamment des pads joués avant | OK |
+| EX06 | Banques expressives | Le charleston fermé coupe le charleston ouvert du même kit | OK |
+| EX07 | Banques expressives | Un sample personnel importé remplace un pad Studio et voyage avec le projet | OK |
+| EX08 | Banques expressives | Piano expressif et batterie Studio conservés dans le fichier, après rechargement, et audibles à l’export | OK |
+| EX09 | Banques expressives | Un téléchargement incomplet reste indisponible, bloque l’export puis se recharge après réessai | OK |
+| EX10 | Banques expressives | Un ancien projet garde le piano et le kit acoustique historiques | OK |
+| MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | OK |
+| MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | OK |
+| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
+| MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | OK |
+| MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | OK |
+| BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | OK |
+| BX02 | Nouvelles banques | Le Wurlitzer couvre toutes les notes et nuances malgré ses zones irrégulières | OK |
+| BX03 | Nouvelles banques | La basse dispose de cinq nuances et de deux prises alternées, et reste juste | OK |
+| BX04 | Nouvelles banques | Les seize percussions sont audibles, sans silence dans les nuances hautes des pads à peu de couches | OK |
+| BX05 | Nouvelles banques | Un son importé reste prioritaire sur un pad de percussions et sa réinitialisation rend le bon instrument | OK |
+| BX06 | Nouvelles banques | Les trois choix survivent au fichier projet, au rechargement et à un rendu complet | OK |
+| BX07 | Nouvelles banques | Les répétitions de basse et de percussions restent indépendantes des préécoutes | OK |
+| BX08 | Nouvelles banques | Une banque de percussions incomplète est refusée puis se recharge après réessai | OK |
+| BX09 | Nouvelles banques | Les percussions restent accessibles au doigt sur un écran de téléphone | OK |
 | EM01 | Empreinte sonore | La démo exportée par le bouton Exporter garde son empreinte : niveau, spectre, enveloppe, ni clic, ni coupure, ni saturation | OK |
 | EM02 | Empreinte sonore | Notes tenues (cordes, orgue d’église, chœur, violoncelle, huit secondes chacune) : empreinte conservée, aucun trou pendant la tenue | OK |
 | EM03-trap | Empreinte sonore | Le modèle « trap » exporté garde son empreinte | OK |
@@ -269,6 +293,7 @@
 | SV06 | Sauvegarde | Sauvegarde automatique illisible au démarrage : la dernière version lisible est rouverte, avec le message de récupération | OK |
 | SV07 | Sauvegarde | Supprimer un projet de la bibliothèque supprime aussi ses versions | OK |
 | SV08 | Sauvegarde | Versions et message de récupération traduits en anglais et en espagnol | OK |
+| SV09 | Sauvegarde | Plantage reconnu en retard (le système libère l’onglet planté après le redémarrage) : le message arrive quand même et la version rouverte est marquée « récupérée » | OK |
 | DF01 | Fichiers | Navigateur : pas de commandes de la version bureau ; bureau : « Enregistrer sous… » et la liste des fichiers récents apparaissent dans le menu Projet | OK |
 | DF02 | Fichiers | Bureau : Cmd+S la première fois demande où enregistrer ; ensuite Cmd+S réécrit le même fichier sans rien demander, le titre suit | OK |
 | DF03 | Fichiers | Bureau : Cmd+O ouvre un projet du disque ; rouvrir le même fichier ne crée pas de doublon dans la bibliothèque ; annuler ne change rien | OK |
@@ -306,7 +331,7 @@
 | FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | OK |
 | FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | OK |
 | PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | OK |
-| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | ÉCHEC : la charge ne baisse pas assez : 332 % → 298 % |
+| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | OK |
 | PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | OK |
 | AW01 | Plugins du Mac | Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable | OK |
 | AW02 | Plugins du Mac | Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet | OK |
