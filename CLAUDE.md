@@ -30,4 +30,4 @@ La QA utilise Playwright 1.63.0 (`npx playwright install chromium` si le navigat
 3. `npm run qa:all` entièrement vert, puis `npm run build`.
 4. Pousser la branche ; la QA et la construction bureau tournent sur GitHub.
 5. Fusion dans `main` seulement avec l'accord du propriétaire (elle met le site en ligne à jour).
-6. Release : c'est le propriétaire qui crée l'étiquette `vX.Y.Z` depuis la page Releases ; les installateurs s'y attachent tout seuls.
+6. Release (accord du propriétaire du 17/11/2026) : juste après chaque fusion dans `main`, Claude pose l'étiquette annotée `vX.Y.Z` (numéro de `package.json`) sur `main` et la pousse ; la construction bureau publie la release avec ses installateurs. Vérifier ensuite qu'elle est « Latest » avec ses quatre installateurs (dmg Apple et Intel, exe, AppImage).
