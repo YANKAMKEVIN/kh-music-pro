@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-101 cas réussis sur 364.
+395 cas réussis sur 395.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -40,40 +40,40 @@
 | I04 | Piano roll | Déplacer une note (temps et hauteur) et l'étirer | OK |
 | I05 | Piano roll | Effacer une note par double-clic, une autre par clic droit | OK |
 | I06 | Jeu en direct | Jouer l'instrument au clavier : note tenue puis relâchée | OK |
-| I07 | Jeu en direct | Changer d'octave au clavier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| I08 | Jeu en direct | Clavier maître MIDI : note on / note off sur un instrument, pads sur une batterie | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| I09 | Sampler | Charger un son dans le sampler et le jouer à différentes hauteurs | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| R01 | Enregistrement | Enregistrer ce que l'on joue au clavier dans un nouveau clip | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| R02 | Enregistrement | Enregistrer des pads en boucle (overdub) dans le motif existant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| R03 | Enregistrement | Le clip enregistré épouse la zone de boucle | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| R04 | Enregistrement | Décompte : une mesure avant le départ | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| R05 | Enregistrement | Enregistrer le micro : un clip audio apparaît, avec du signal | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| R06 | Enregistrement | Micro avec décompte : la prise est calée sur le premier temps | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| U01 | Audio | Importer un fichier audio : le clip a la bonne durée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| U02 | Audio | Régler le gain d'un clip audio puis le scinder | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| U03 | Export | Exporter le morceau en WAV : fichier valide, audible, sans saturation | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| U04 | Mixage | Muet, solo et volume agissent sur le rendu | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| U05 | Mixage | Filtre, saturation, réverb, égaliseur et filtre général agissent sur le rendu | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| U06 | Export | Des exports successifs du même morceau sont identiques (aucune note perdue) | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| M01 | Mixeur | Une tranche par piste plus le général ; le fader règle le volume | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| M02 | Mixeur | Compresseur, muet et solo depuis le mixeur | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| M03 | Mixeur | Les vumètres bougent pendant la lecture | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| L01 | Live | Lancer un clip : il démarre à la mesure et tourne en boucle | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| L02 | Live | Enchaîner un autre clip sur la même piste : bascule à la mesure suivante | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| L03 | Live | Lancer une scène démarre toute la ligne | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| L04 | Live | Arrêter une piste, puis tout arrêter | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| L05 | Live | Filtre général et jeu par-dessus les clips en direct | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| P01 | Projet | Enregistrer le projet, en créer un nouveau, puis rouvrir le fichier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| P02 | Projet | Les sons importés voyagent avec le fichier projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| P03 | Projet | Un projet de la version précédente s'ouvre et se met à niveau | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| P04 | Projet | Un fichier invalide est refusé avec un message clair | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| P05 | Projet | Sauvegarde automatique : le travail survit au rechargement de la page | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| N-en | Langues | Interface complète en « en » : toutes les vues, aucun texte manquant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| N-es | Langues | Interface complète en « es » : toutes les vues, aucun texte manquant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| N-fr | Langues | Interface complète en « fr » : toutes les vues, aucun texte manquant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| N04 | Langues | La langue choisie est conservée après rechargement ; les noms de notes suivent la langue | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| X01 | Ergonomie | Saisir du texte ne déclenche aucun raccourci | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| X02 | Ergonomie | L'aide s'ouvre avec « ? » et se ferme avec Échap ; elle bloque les raccourcis | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
+| I07 | Jeu en direct | Changer d'octave au clavier | OK |
+| I08 | Jeu en direct | Clavier maître MIDI : note on / note off sur un instrument, pads sur une batterie | OK |
+| I09 | Sampler | Charger un son dans le sampler et le jouer à différentes hauteurs | OK |
+| R01 | Enregistrement | Enregistrer ce que l'on joue au clavier dans un nouveau clip | OK |
+| R02 | Enregistrement | Enregistrer des pads en boucle (overdub) dans le motif existant | OK |
+| R03 | Enregistrement | Le clip enregistré épouse la zone de boucle | OK |
+| R04 | Enregistrement | Décompte : une mesure avant le départ | OK |
+| R05 | Enregistrement | Enregistrer le micro : un clip audio apparaît, avec du signal | OK |
+| R06 | Enregistrement | Micro avec décompte : la prise est calée sur le premier temps | OK |
+| U01 | Audio | Importer un fichier audio : le clip a la bonne durée | OK |
+| U02 | Audio | Régler le gain d'un clip audio puis le scinder | OK |
+| U03 | Export | Exporter le morceau en WAV : fichier valide, audible, sans saturation | OK |
+| U04 | Mixage | Muet, solo et volume agissent sur le rendu | OK |
+| U05 | Mixage | Filtre, saturation, réverb, égaliseur et filtre général agissent sur le rendu | OK |
+| U06 | Export | Des exports successifs du même morceau sont identiques (aucune note perdue) | OK |
+| M01 | Mixeur | Une tranche par piste plus le général ; le fader règle le volume | OK |
+| M02 | Mixeur | Compresseur, muet et solo depuis le mixeur | OK |
+| M03 | Mixeur | Les vumètres bougent pendant la lecture | OK |
+| L01 | Live | Lancer un clip : il démarre à la mesure et tourne en boucle | OK |
+| L02 | Live | Enchaîner un autre clip sur la même piste : bascule à la mesure suivante | OK |
+| L03 | Live | Lancer une scène démarre toute la ligne | OK |
+| L04 | Live | Arrêter une piste, puis tout arrêter | OK |
+| L05 | Live | Filtre général et jeu par-dessus les clips en direct | OK |
+| P01 | Projet | Enregistrer le projet, en créer un nouveau, puis rouvrir le fichier | OK |
+| P02 | Projet | Les sons importés voyagent avec le fichier projet | OK |
+| P03 | Projet | Un projet de la version précédente s'ouvre et se met à niveau | OK |
+| P04 | Projet | Un fichier invalide est refusé avec un message clair | OK |
+| P05 | Projet | Sauvegarde automatique : le travail survit au rechargement de la page | OK |
+| N-en | Langues | Interface complète en « en » : toutes les vues, aucun texte manquant | OK |
+| N-es | Langues | Interface complète en « es » : toutes les vues, aucun texte manquant | OK |
+| N-fr | Langues | Interface complète en « fr » : toutes les vues, aucun texte manquant | OK |
+| N04 | Langues | La langue choisie est conservée après rechargement ; les noms de notes suivent la langue | OK |
+| X01 | Ergonomie | Saisir du texte ne déclenche aucun raccourci | OK |
+| X02 | Ergonomie | L'aide s'ouvre avec « ? » et se ferme avec Échap ; elle bloque les raccourcis | OK |
 | X03 | Accessibilité | Tous les boutons et champs ont un nom accessible | OK |
 | X04 | Accessibilité | Navigation au clavier : Tab atteint les commandes, Entrée active une case du séquenceur | OK |
 | X05-1024 | Ergonomie | Fenêtre 1024×700 : rien ne déborde, toutes les commandes restent atteignables | OK |
@@ -108,12 +108,12 @@
 | E03 | Passerelles | Un fichier MIDI illisible est refusé avec un message clair | OK |
 | E04 | Passerelles | Exporter les pistes séparées : une archive ZIP valide, un WAV par piste, tous de même durée | OK |
 | P06 | Projet | Un projet de la V2 s'ouvre dans la V3 avec les nouveaux réglages par défaut | OK |
-| X10 | Robustesse | Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud | ÉCHEC : la lecture s'est interrompue |
+| X10 | Robustesse | Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud | OK |
 | W01 | Application | Version construite : installable (manifeste) et utilisable hors-ligne après une première visite | OK |
 | ST01 | Tempo et hauteur | Étirer un son à 200 % : deux fois plus long, même hauteur, niveau régulier | OK |
 | ST02 | Tempo et hauteur | Transposer un son d'une octave ou d'une quinte : même durée, nouvelle hauteur | OK |
 | ST03 | Tempo et hauteur | Indiquer le BPM du son le cale sur le tempo du projet | OK |
-| IN01 | Entrée audio | Activer l'entrée : liste des micros, vumètre d'entrée, puis fermeture | ÉCHEC : aucun micro listé |
+| IN01 | Entrée audio | Activer l'entrée : liste des micros, vumètre d'entrée, puis fermeture | OK |
 | IN02 | Entrée audio | Écoute de contrôle et gain d'entrée | OK |
 | IN03 | Entrée audio | Enregistrer avec l'entrée déjà ouverte : la prise est faite et l'entrée reste disponible | OK |
 | AR01 | Arpégiateur | Les notes tenues sont égrenées dans l'ordre, au tempo, et s'arrêtent au relâchement | OK |
@@ -122,22 +122,22 @@
 | MK01 | Repères | Poser des repères, y sauter, les renommer et les supprimer | OK |
 | MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | OK |
 | MB02 | Téléphone | Au doigt : déplacer un clip et dessiner une courbe d'automation | OK |
-| OK01 | Clavier à l'écran | Afficher le clavier, jouer une touche à la souris, glisser vers une autre, changer d'octave | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| OK02 | Clavier à l'écran | Sur écran tactile : clavier affiché d'office, accord à deux doigts | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SN01 | Piano roll | Sélectionner plusieurs notes au rectangle (Maj+glisser) et les déplacer ensemble | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SN02 | Piano roll | Tout sélectionner, copier, coller à la tête de lecture, supprimer la sélection | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SN03 | Piano roll | Flèches : déplacer et transposer la sélection ; sans sélection, Suppr supprime toujours le clip | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NR01 | Pads | Répétition de notes : un pad maintenu roule au tempo, puis s'arrête au relâchement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NR02 | Pads | Un roulement joué pendant l'enregistrement est écrit sur la grille | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MA01 | Finition | Égaliseur et largeur stéréo du général : réglables et audibles | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MA02 | Finition | La mesure LUFS est juste sur des signaux de référence | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MA03 | Finition | Export au niveau streaming : le morceau sort à −14 LUFS sans saturer ; le bouton Mesurer l'affiche | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LB01 | Projets | Nouveau projet depuis un modèle ; le précédent reste dans « Mes projets » et se rouvre | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LB02 | Projets | Chaque modèle (trap, house, lo-fi, vide) donne un projet jouable, propre et dans sa gamme | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LB03 | Projets | Dupliquer et supprimer un projet ; la bibliothèque survit au rechargement de la page | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LB04 | Projets | Ouvrir un fichier .khm crée un nouveau projet sans écraser celui en cours | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CH01 | Découpage | Découper une boucle en 16 tranches : pads chargés, motif qui rejoue la boucle, piste d'origine en muet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CH02 | Découpage | Découper selon les attaques : une tranche par coup, placée sur son temps | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
+| OK01 | Clavier à l'écran | Afficher le clavier, jouer une touche à la souris, glisser vers une autre, changer d'octave | OK |
+| OK02 | Clavier à l'écran | Sur écran tactile : clavier affiché d'office, accord à deux doigts | OK |
+| SN01 | Piano roll | Sélectionner plusieurs notes au rectangle (Maj+glisser) et les déplacer ensemble | OK |
+| SN02 | Piano roll | Tout sélectionner, copier, coller à la tête de lecture, supprimer la sélection | OK |
+| SN03 | Piano roll | Flèches : déplacer et transposer la sélection ; sans sélection, Suppr supprime toujours le clip | OK |
+| NR01 | Pads | Répétition de notes : un pad maintenu roule au tempo, puis s'arrête au relâchement | OK |
+| NR02 | Pads | Un roulement joué pendant l'enregistrement est écrit sur la grille | OK |
+| MA01 | Finition | Égaliseur et largeur stéréo du général : réglables et audibles | OK |
+| MA02 | Finition | La mesure LUFS est juste sur des signaux de référence | OK |
+| MA03 | Finition | Export au niveau streaming : le morceau sort à −14 LUFS sans saturer ; le bouton Mesurer l'affiche | OK |
+| LB01 | Projets | Nouveau projet depuis un modèle ; le précédent reste dans « Mes projets » et se rouvre | OK |
+| LB02 | Projets | Chaque modèle (trap, house, lo-fi, vide) donne un projet jouable, propre et dans sa gamme | OK |
+| LB03 | Projets | Dupliquer et supprimer un projet ; la bibliothèque survit au rechargement de la page | OK |
+| LB04 | Projets | Ouvrir un fichier .khm crée un nouveau projet sans écraser celui en cours | OK |
+| CH01 | Découpage | Découper une boucle en 16 tranches : pads chargés, motif qui rejoue la boucle, piste d'origine en muet | OK |
+| CH02 | Découpage | Découper selon les attaques : une tranche par coup, placée sur son temps | OK |
 | CH03 | Découpage | Un son trop court est refusé ; 8 tranches égales fonctionne | OK |
 | FX01 | Effets Live | Écho et réverb à la volée : le son se prolonge tant que le bouton est maintenu | OK |
 | FX02 | Effets Live | Bégaiement : le dernier instant tourne en boucle, même transport arrêté, puis le son reprend normalement | OK |
@@ -157,214 +157,245 @@
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
 | PD01 | Pads | Réglages par pad : volume, hauteur et panoramique, audibles au rendu, puis retour à l'origine | OK |
 | PT01 | Batterie | Décaler le motif d'un pas et doubler sa longueur | OK |
-| MP02 | Mixeur | Appliquer un préréglage de mixage à une piste, l'entendre et l'annuler | ÉCHEC : erreur console : PAGE encodeWav is not defined |
-| NT01 | Projet | Notes du projet : écrire sans déclencher de raccourci, retrouver le texte, le garder dans le fichier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR02 | Grille fine | Triolets : trois notes par temps, placées et jouées à intervalles égaux | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR03 | Grille fine | Quantifier : recaler toutes les notes ou seulement la sélection sur la grille | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR04 | Grille fine | Batterie en triples-croches et en triolets : les coups gardent leur place, les nouveaux sonnent au bon instant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RI05 | Vrais instruments | Batterie acoustique : 16 sons enregistrés, à l'heure, différents des sons synthétisés | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RI06 | Vrais instruments | Si les sons ne peuvent pas être chargés : message clair, rien ne plante, le reste joue | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LT01 | Prises | Enregistrer en boucle : une prise par tour, alignées, à choisir ensuite ; scinder pour mêler deux prises | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LT02 | Prises | Punch : seule la zone de boucle est réenregistrée, ce qui l'entoure est conservé | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TN01 | Justesse | La correction ramène une note fausse sur la gamme, sans changer la durée ni abîmer le son | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TN02 | Justesse | Bouton « Corriger » : le clip est accordé, le message le dit, l'annulation le rétablit ; un bruit est refusé | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BS01 | Bus | Créer un bus, y envoyer des pistes, et les traiter ensemble (volume, muet, filtre) | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BS02 | Bus | Renommer et supprimer un bus ; le routage survit au fichier projet ; les vumètres du bus bougent | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EQ01 | Mixeur | Bande médium à fréquence réglable, et courbe d'égaliseur fidèle aux réglages | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CP01 | Mixeur | Compresseur réglable : seuil et taux agissent, la réduction s'affiche en lecture | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AU08 | Automation | Automatiser les envois de réverb et d'écho et le chorus | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TP01 | Tempo | Un changement de tempo en cours de morceau s'entend au bon instant, à l'export comme en lecture | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TP02 | Tempo | Poser, modifier et supprimer un changement de tempo depuis la règle | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TP03 | Tempo | Les changements de tempo voyagent dans le fichier projet et dans le MIDI | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SG01 | Signature | Passer en 3/4 : mesures de trois temps dans la règle, la boucle, les clips et les motifs | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LQ01 | Live | Calage du lancement : à la mesure, au temps ou immédiat ; les chiffres lancent les scènes | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FXC01 | Chaîne d'effets | Ouvrir la chaîne d'une piste, ajouter des effets, les régler, les réordonner, les couper, les retirer | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FXC02 | Chaîne d'effets | Chaque effet s'entend au rendu ; un effet coupé ne change rien | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FXC03 | Chaîne d'effets | Les effets fonctionnent sur un bus et voyagent dans le fichier projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WAM01 | Plugins web | Charger le plugin web fourni, le régler par sa propre interface, l'entendre en direct et à l'export, le retrouver dans le projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WAM02 | Plugins web | Plugin introuvable : message clair, le son passe quand même, l'export le signale | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LAT03 | Latence | Sans le module natif (version web), le son entre et sort toujours par le navigateur | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NAT01 | Moteur natif | Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NAT02 | Moteur natif | Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NAT03 | Moteur natif | Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NAT04 | Moteur natif | Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NAT05 | Moteur natif | Réglage et plugins du Mac en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC01 | Plugins du Mac | Les plugins d'effet du Mac sont proposés dans la chaîne d'effets, triés ; en ajouter un affiche ses réglages | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC02 | Plugins du Mac | Les curseurs d'un plugin du Mac pilotent le plugin, s'enregistrent dans le projet, s'annulent et reviennent aux réglages d'origine | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC03 | Plugins du Mac | Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d'erreur | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC04 | Plugins du Mac | Plugin du Mac qui ne se charge pas : message clair, le son passe sans lui ; huit effets au plus | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC05 | Plugins du Mac | Supprimer la piste ou ouvrir un autre projet libère ses plugins du Mac ; un effet retiré pendant son chargement n'est pas signalé en échec | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC06 | Plugins du Mac | Fréquences d'un plugin du Mac sur une échelle logarithmique : le milieu du curseur tombe vers 470 Hz, valeur lue au lecteur d'écran | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC07 | Plugins du Mac | Réglages à choix d'un plugin du Mac : liste des valeurs par leur nom, interrupteur marche/arrêt au clavier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC08 | Plugins du Mac | Préréglages d'usine d'un plugin du Mac : en charger un recopie ses réglages dans le projet ; toucher un réglage repasse en réglages personnels ; annulable | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MAC09 | Plugins du Mac | Compensation de la latence déclarée par les plugins du Mac : les autres pistes et les bus sont retardés d'autant, l'export reste calé | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BN04 | Banque généraliste | Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BN05 | Banque généraliste | Un nouveau son indisponible signale l’échec puis peut être rechargé | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BN06 | Banque généraliste | Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH01 | Notes longues | Les dix instruments à maintien restent audibles dans trois registres après huit secondes | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH02 | Notes longues | Le maintien conserve l’attaque originale et peut être désactivé sans prolonger le son | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH03 | Notes longues | Une touche tenue joue au-delà de la durée du fichier et s’arrête quand elle est relâchée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH04 | Notes longues | Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH05 | Notes longues | Arrêter le transport coupe aussi les voix bouclées sans note bloquée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH06 | Notes longues | L’export WAV contient la note longue et une fin silencieuse sans saturation | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH07 | Notes longues | Une touche du clavier du piano roll tenue à la souris joue tant qu’elle est enfoncée, puis s’arrête au relâchement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH08 | Notes longues | Au doigt : la touche tenue joue, la colonne des touches reste le moyen de défiler, et la note s’arrête même si le doigt est levé ailleurs | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH09 | Notes longues | Une touche tenue pendant que l’écran se redessine ne reste pas bloquée ; un geste annulé coupe aussi la note | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH10 | Notes longues | Accords à un doigt depuis le clavier du piano roll, à la souris : la touche tenue joue tout l’accord, le relâchement le coupe | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LH11 | Notes longues | Enregistrer en jouant sur le clavier du piano roll à la souris : la note tenue est écrite avec sa durée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GE01 | Gestes réels | Clavier à l’écran : une touche tenue pendant un redessin (enregistrement, bouton MIDI) ne reste pas bloquée, arpégiateur compris | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GE02 | Gestes réels | Effet Live tenu à la souris puis au clavier pendant un redessin : l’effet s’arrête au relâchement et le bouton reste fidèle | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GE03 | Gestes réels | Espace sur un bouton atteint au clavier actionne ce bouton ; après un clic à la souris, Espace reste la lecture | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB05 | Navigateur de sons | Choisir un instrument est annulable et conserve les sons personnels du sampler | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB06 | Navigateur de sons | La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB07 | Navigateur de sons | Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB09 | Navigateur de sons | Une préécoute indisponible signale l’échec puis fonctionne après réessai | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SB10 | Navigateur de sons | Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU01 | Nuances | Une note jouée doucement est plus sombre qu’une note jouée fort sur cinq instruments enregistrés | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU02 | Nuances | Nuances à zéro : la force ne change que le volume, pas le timbre | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU03 | Nuances | Un ancien projet garde exactement son son : nuances à zéro après ouverture | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU04 | Nuances | Le réglage Nuances s’affiche pour un instrument enregistré, s’annule et voyage dans le fichier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU05 | Nuances | Le réglage est traduit dans les trois langues | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU06 | Nuances | Le timbre s’ouvre progressivement avec la force et ne descend jamais sous le troisième harmonique | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| NU07 | Nuances | Une touche jouée doucement au clavier MIDI sonne plus sombre en direct | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LP01 | Raccords de boucle | Les 237 boucles de maintien : ni clic ni saut de niveau au raccord, mesurés note par note | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| LP02 | Raccords de boucle | Une note tenue dix secondes ne varie pas plus que l’enregistrement d’origine, sans pulsation à chaque tour | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RG01 | Registres | D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RG02 | Registres | Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| RG03 | Registres | Une gamme jouée sur trois octaves au piano reste régulière à l’export | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX01 | Banques expressives | Piano et kit Studio sélectionnables dans les trois langues, avec de vrais noms de pads | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX02 | Banques expressives | Les quatre nuances du piano sont des enregistrements distincts et jouent doucement ou fort | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX03 | Banques expressives | Le nouveau piano est juste dans plusieurs registres, transposition comprise, et s’arrête au relâchement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX04 | Banques expressives | Les 16 pads Studio produisent un son propre, avec nuances et variantes de répétition | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX05 | Banques expressives | Les variantes restent reproductibles à l’export, indépendamment des pads joués avant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX06 | Banques expressives | Le charleston fermé coupe le charleston ouvert du même kit | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX07 | Banques expressives | Un sample personnel importé remplace un pad Studio et voyage avec le projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX08 | Banques expressives | Piano expressif et batterie Studio conservés dans le fichier, après rechargement, et audibles à l’export | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX09 | Banques expressives | Un téléchargement incomplet reste indisponible, bloque l’export puis se recharge après réessai | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EX10 | Banques expressives | Un ancien projet garde le piano et le kit acoustique historiques | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX02 | Nouvelles banques | Le Wurlitzer couvre toutes les notes et nuances malgré ses zones irrégulières | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX03 | Nouvelles banques | La basse dispose de cinq nuances et de deux prises alternées, et reste juste | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX04 | Nouvelles banques | Les seize percussions sont audibles, sans silence dans les nuances hautes des pads à peu de couches | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX05 | Nouvelles banques | Un son importé reste prioritaire sur un pad de percussions et sa réinitialisation rend le bon instrument | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX06 | Nouvelles banques | Les trois choix survivent au fichier projet, au rechargement et à un rendu complet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX07 | Nouvelles banques | Les répétitions de basse et de percussions restent indépendantes des préécoutes | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX08 | Nouvelles banques | Une banque de percussions incomplète est refusée puis se recharge après réessai | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| BX09 | Nouvelles banques | Les percussions restent accessibles au doigt sur un écran de téléphone | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM01 | Empreinte sonore | La démo exportée par le bouton Exporter garde son empreinte : niveau, spectre, enveloppe, ni clic, ni coupure, ni saturation | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM02 | Empreinte sonore | Notes tenues (cordes, orgue d’église, chœur, violoncelle, huit secondes chacune) : empreinte conservée, aucun trou pendant la tenue | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM03-trap | Empreinte sonore | Le modèle « trap » exporté garde son empreinte | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM03-house | Empreinte sonore | Le modèle « house » exporté garde son empreinte | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM03-lofi | Empreinte sonore | Le modèle « lofi » exporté garde son empreinte | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM04 | Empreinte sonore | L’empreinte repère vraiment les défauts : un clic, une coupure de 30 ms, une saturation et une piste devenue muette sont signalés | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| EM05 | Empreinte sonore | Geste réel dans la durée : une touche du piano roll tenue huit secondes à la souris sonne sans trou ni chute, puis s’arrête | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV01 | Sauvegarde | Plantage de l’onglet juste après une modification au clavier : le morceau revient tel quel, un message le dit et mène aux versions | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV02 | Sauvegarde | Une fermeture normale (rechargement) n’affiche pas de message de récupération | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV03 | Sauvegarde | Versions : revenir à un état antérieur depuis le menu Projet, l’état remplacé reste gardé et Ctrl+Z annule la restauration | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV04 | Sauvegarde | Au clavier seul : ouvrir les versions, garder une version, en restaurer une avec Tab et Entrée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV05 | Sauvegarde | Les versions anciennes sont éclaircies : seules les plus récentes restent, sans laisser de données orphelines | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV06 | Sauvegarde | Sauvegarde automatique illisible au démarrage : la dernière version lisible est rouverte, avec le message de récupération | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV07 | Sauvegarde | Supprimer un projet de la bibliothèque supprime aussi ses versions | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV08 | Sauvegarde | Versions et message de récupération traduits en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| SV09 | Sauvegarde | Plantage reconnu en retard (le système libère l’onglet planté après le redémarrage) : le message arrive quand même et la version rouverte est marquée « récupérée » | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF01 | Fichiers | Navigateur : pas de commandes de la version bureau ; bureau : « Enregistrer sous… » et la liste des fichiers récents apparaissent dans le menu Projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF02 | Fichiers | Bureau : Cmd+S la première fois demande où enregistrer ; ensuite Cmd+S réécrit le même fichier sans rien demander, le titre suit | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF03 | Fichiers | Bureau : Cmd+O ouvre un projet du disque ; rouvrir le même fichier ne crée pas de doublon dans la bibliothèque ; annuler ne change rien | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF04 | Fichiers | Bureau : fichiers récents dans le menu, du plus récent au plus ancien ; un clic rouvre ; un fichier disparu est signalé et retiré | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF05 | Fichiers | Bureau : un échec d’écriture (disque plein, dossier protégé) est expliqué, le projet reste dans l’application | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF06 | Fichiers | Bureau, au clavier seul : ouvrir le menu Projet, atteindre un fichier récent avec Tab et l’ouvrir avec Entrée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF07 | Fichiers | Fichier ouvert depuis le Finder (double-clic sur un .khm) : le projet s’ouvre et le fichier est lié | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| DF08 | Fichiers | Commandes de fichiers traduites en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD01 | Gestes | Note glissée au doigt puis geste annulé par le système : la note revient, rien n’est enregistré, les mouvements suivants n’ont plus d’effet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD02 | Gestes | Deux doigts : un deuxième doigt qui bouge ou se lève ailleurs ne pilote ni ne termine le glissé de la note par le premier | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD03 | Gestes | Poignée de durée et note en cours de création : un geste annulé ne change pas la durée et ne laisse pas de note | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD04 | Gestes | Vélocité glissée puis geste annulé : les forces de frappe reviennent ; un deuxième doigt ne les change pas | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD05 | Gestes | Boucle tracée dans la règle (Maj+glisser) puis geste annulé : la boucle reste comme avant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD06 | Gestes | Clip glissé vers une autre piste puis geste annulé : il revient à sa place et sur sa piste | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD07 | Gestes | Point d’automation créé ou déplacé au doigt puis geste annulé : la courbe revient comme avant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD08 | Gestes | Séparation du panneau du bas : un deuxième doigt ne la déplace pas, un geste annulé la libère | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD09 | Gestes | Souris relâchée hors de la fenêtre pendant le glissé d’une note : le glissé se termine, il est enregistré et s’annule, la souris ne traîne plus la note | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| GD10 | Gestes | Sans incident, rien ne change : glisser une note et un clip à la souris déplace et s’annule comme avant | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP01 | Tempo | Clip audio qui suit le tempo : bouton activé à la souris, tempo tapé au clavier, le son s’étire sans changer de hauteur, à l’export comme à l’écoute | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP02 | Tempo | Changement de tempo au milieu d’un clip qui suit le tempo : chaque coup tombe sur son temps, avant et après le changement | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP03 | Tempo | Tempo d’origine saisi (boucle jouée à 60 BPM dans un morceau à 120) : le clip se raccourcit et se cale sur la grille | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP04 | Tempo | Au tempo d’origine, suivre le tempo ne change rien au son : rendu identique échantillon par échantillon | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP05 | Tempo | Scinder et rogner un clip qui suit le tempo : les coups restent sur les temps | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP06 | Tempo | Au clavier : activer le suivi du tempo avec Entrée, l’annuler ; le réglage voyage dans le fichier projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| WP07 | Tempo | Suivi du tempo traduit en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AX01 | Automation | Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AX02 | Automation | À l’écoute : pendant la lecture, l’effet suit la courbe ; à l’arrêt, il revient à son réglage fixe | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AX03 | Automation | Retirer l’effet retire ses courbes ; Annuler ramène l’effet et ses courbes ; le tout voyage dans le fichier projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AX04 | Automation | Plugin du Mac : ses réglages apparaissent dans la liste ; automatisé, il reçoit les valeurs au fil de la lecture | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AX05 | Automation | Écho automatisé (dosage) à l’export : la traîne n’apparaît que là où la courbe monte | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AX06 | Automation | Liste des réglages traduite (anglais, espagnol) | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FZ01 | Gel de piste | Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FZ02 | Gel de piste | Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FZ03 | Gel de piste | Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AW01 | Plugins du Mac | Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AW02 | Plugins du Mac | Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AW03 | Plugins du Mac | Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB01 | Barre du haut | Ordinateur : projet, jeu et sortie tiennent sur une seule ligne ; la barre d’arrangement est juste au-dessus des pistes | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB02 | Barre du haut | Menus à la souris : un clic ouvre, un clic ailleurs ou un choix referme ; un seul menu ouvert à la fois | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB03 | Barre du haut | Menus au clavier seul : Tab jusqu’à « Prise », Entrée ouvre, Espace règle le décompte, Échap referme et rend le focus | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB04 | Barre du haut | Le bouton Boucle affiche sa plage et la suit quand on la change dans « Prise » ; les raccourcis ne changent pas | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB05 | Barre du haut | Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB06 | Barre du haut | Écran moyen (1100 px) : la barre passe proprement sur deux lignes, rien n’est coupé ni caché | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TB07 | Barre du haut | Nouveaux menus et bulles traduits en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD01 | Correctifs audit | Séquenceur au clavier : une seule case atteinte par Tab, les flèches, Début et Fin passent d’une case à l’autre, Entrée allume, le focus survit au redessin | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD02 | Correctifs audit | Lettres des touches : celles du vrai clavier quand le navigateur les donne (QWERTY en français, AZERTY en anglais), sinon d’après la langue | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD03 | Correctifs audit | Une prise jouée sur trois mesures reste un seul clip, annulé d’un coup ; une seconde prise fait un clip à elle | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD04 | Correctifs audit | Tempo au centième : 93,5 BPM gardé (champ, changement de tempo, fichier MIDI) ; une saisie vide ou nulle garde le tempo | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD05 | Correctifs audit | Sauvegarde impossible (espace plein, stockage bloqué) : bandeau qui reste, bouton « Enregistrer en fichier », message de retour ; traduit | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD07 | Correctifs audit | Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| AD08 | Correctifs audit | Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TH01 | Têtes de piste | Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TH03 | Têtes de piste | Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TH04 | Têtes de piste | Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TH05 | Têtes de piste | Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| TH06 | Têtes de piste | Menu ⋯ et repère ❄ traduits en anglais et en espagnol | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT01 | Contrôles joués | Pitch bend MIDI joué en direct : la note tenue monte, descend et revient au centre | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT02 | Contrôles joués | Export audio : le pitch bend du clip change la hauteur rendue (la 440 → si 494, puis ± 12) | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT03 | Contrôles joués | Export audio : la molette ajoute du vibrato, l’aftertouch gonfle le son ; sans contrôle, rien ne bouge | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT04 | Contrôles joués | Enregistrement : note, montée du bend, molette et pression du DGX simulé sont gardés dans le clip, puis à l’export | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT05 | Contrôles joués | Molettes à l’écran à la souris : le bend revient au centre au relâchement, la modulation reste ; au clavier aussi | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT06 | Contrôles joués | Molette à l’écran au doigt pendant un enregistrement : le geste survit aux redessins et s’écrit dans le clip | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT07 | Contrôles joués | Ligne des contrôles : dessiner un bend à la souris, changer de contrôle, effacer, annuler | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT08 | Contrôles joués | Fichier MIDI : bend, molette et pression exportés puis relus ; projet sauvegardé et rouvert | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT09 | Contrôles joués | Copier, dupliquer et scinder un clip : les contrôles suivent sans être partagés | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT10 | Contrôles joués | Gros projet exporté en parallèle : le bend est rendu pareil qu’en un seul tenant ; l’arrêt remet tout au repos | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
-| CT11 | Contrôles joués | Molette assignée à un réglage du mixeur : elle garde son assignation ; textes traduits | ÉCHEC : page.evaluate: TypeError: Cannot read properties of undefined (reading 'engine') |
+| MP02 | Mixeur | Appliquer un préréglage de mixage à une piste, l'entendre et l'annuler | OK |
+| NT01 | Projet | Notes du projet : écrire sans déclencher de raccourci, retrouver le texte, le garder dans le fichier | OK |
+| GR01 | Grille fine | Triples-croches : la grille 1/32 aimante au demi-pas, et les notes sonnent au bon instant | OK |
+| GR02 | Grille fine | Triolets : trois notes par temps, placées et jouées à intervalles égaux | OK |
+| GR03 | Grille fine | Quantifier : recaler toutes les notes ou seulement la sélection sur la grille | OK |
+| GR04 | Grille fine | Batterie en triples-croches et en triolets : les coups gardent leur place, les nouveaux sonnent au bon instant | OK |
+| GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
+| GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
+| GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
+| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
+| RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
+| RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
+| RI05 | Vrais instruments | Batterie acoustique : 16 sons enregistrés, à l'heure, différents des sons synthétisés | OK |
+| RI06 | Vrais instruments | Si les sons ne peuvent pas être chargés : message clair, rien ne plante, le reste joue | OK |
+| LT01 | Prises | Enregistrer en boucle : une prise par tour, alignées, à choisir ensuite ; scinder pour mêler deux prises | OK |
+| LT02 | Prises | Punch : seule la zone de boucle est réenregistrée, ce qui l'entoure est conservé | OK |
+| TN01 | Justesse | La correction ramène une note fausse sur la gamme, sans changer la durée ni abîmer le son | OK |
+| TN02 | Justesse | Bouton « Corriger » : le clip est accordé, le message le dit, l'annulation le rétablit ; un bruit est refusé | OK |
+| BS01 | Bus | Créer un bus, y envoyer des pistes, et les traiter ensemble (volume, muet, filtre) | OK |
+| BS02 | Bus | Renommer et supprimer un bus ; le routage survit au fichier projet ; les vumètres du bus bougent | OK |
+| EQ01 | Mixeur | Bande médium à fréquence réglable, et courbe d'égaliseur fidèle aux réglages | OK |
+| CP01 | Mixeur | Compresseur réglable : seuil et taux agissent, la réduction s'affiche en lecture | OK |
+| AU08 | Automation | Automatiser les envois de réverb et d'écho et le chorus | OK |
+| TP01 | Tempo | Un changement de tempo en cours de morceau s'entend au bon instant, à l'export comme en lecture | OK |
+| TP02 | Tempo | Poser, modifier et supprimer un changement de tempo depuis la règle | OK |
+| TP03 | Tempo | Les changements de tempo voyagent dans le fichier projet et dans le MIDI | OK |
+| SG01 | Signature | Passer en 3/4 : mesures de trois temps dans la règle, la boucle, les clips et les motifs | OK |
+| LQ01 | Live | Calage du lancement : à la mesure, au temps ou immédiat ; les chiffres lancent les scènes | OK |
+| FXC01 | Chaîne d'effets | Ouvrir la chaîne d'une piste, ajouter des effets, les régler, les réordonner, les couper, les retirer | OK |
+| FXC02 | Chaîne d'effets | Chaque effet s'entend au rendu ; un effet coupé ne change rien | OK |
+| FXC03 | Chaîne d'effets | Les effets fonctionnent sur un bus et voyagent dans le fichier projet | OK |
+| WAM01 | Plugins web | Charger le plugin web fourni, le régler par sa propre interface, l'entendre en direct et à l'export, le retrouver dans le projet | OK |
+| WAM02 | Plugins web | Plugin introuvable : message clair, le son passe quand même, l'export le signale | OK |
+| WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
+| LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
+| LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
+| LAT03 | Latence | Sans le module natif (version web), le son entre et sort toujours par le navigateur | OK |
+| NAT01 | Moteur natif | Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac | OK |
+| NAT02 | Moteur natif | Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu | OK |
+| NAT03 | Moteur natif | Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée | OK |
+| NAT04 | Moteur natif | Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul | OK |
+| NAT05 | Moteur natif | Réglage et plugins du Mac en anglais et en espagnol | OK |
+| MAC01 | Plugins du Mac | Les plugins d'effet du Mac sont proposés dans la chaîne d'effets, triés ; en ajouter un affiche ses réglages | OK |
+| MAC02 | Plugins du Mac | Les curseurs d'un plugin du Mac pilotent le plugin, s'enregistrent dans le projet, s'annulent et reviennent aux réglages d'origine | OK |
+| MAC03 | Plugins du Mac | Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d'erreur | OK |
+| MAC04 | Plugins du Mac | Plugin du Mac qui ne se charge pas : message clair, le son passe sans lui ; huit effets au plus | OK |
+| MAC05 | Plugins du Mac | Supprimer la piste ou ouvrir un autre projet libère ses plugins du Mac ; un effet retiré pendant son chargement n'est pas signalé en échec | OK |
+| MAC06 | Plugins du Mac | Fréquences d'un plugin du Mac sur une échelle logarithmique : le milieu du curseur tombe vers 470 Hz, valeur lue au lecteur d'écran | OK |
+| MAC07 | Plugins du Mac | Réglages à choix d'un plugin du Mac : liste des valeurs par leur nom, interrupteur marche/arrêt au clavier | OK |
+| MAC08 | Plugins du Mac | Préréglages d'usine d'un plugin du Mac : en charger un recopie ses réglages dans le projet ; toucher un réglage repasse en réglages personnels ; annulable | OK |
+| MAC09 | Plugins du Mac | Compensation de la latence déclarée par les plugins du Mac : les autres pistes et les bus sont retardés d'autant, l'export reste calé | OK |
+| BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | OK |
+| BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | OK |
+| BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | OK |
+| BN04 | Banque généraliste | Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement | OK |
+| BN05 | Banque généraliste | Un nouveau son indisponible signale l’échec puis peut être rechargé | OK |
+| BN06 | Banque généraliste | Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt | OK |
+| LH01 | Notes longues | Les dix instruments à maintien restent audibles dans trois registres après huit secondes | OK |
+| LH02 | Notes longues | Le maintien conserve l’attaque originale et peut être désactivé sans prolonger le son | OK |
+| LH03 | Notes longues | Une touche tenue joue au-delà de la durée du fichier et s’arrête quand elle est relâchée | OK |
+| LH04 | Notes longues | Un ancien projet garde sa durée puis le maintien se règle, s’annule et voyage dans le fichier | OK |
+| LH05 | Notes longues | Arrêter le transport coupe aussi les voix bouclées sans note bloquée | OK |
+| LH06 | Notes longues | L’export WAV contient la note longue et une fin silencieuse sans saturation | OK |
+| LH07 | Notes longues | Une touche du clavier du piano roll tenue à la souris joue tant qu’elle est enfoncée, puis s’arrête au relâchement | OK |
+| LH08 | Notes longues | Au doigt : la touche tenue joue, la colonne des touches reste le moyen de défiler, et la note s’arrête même si le doigt est levé ailleurs | OK |
+| LH09 | Notes longues | Une touche tenue pendant que l’écran se redessine ne reste pas bloquée ; un geste annulé coupe aussi la note | OK |
+| LH10 | Notes longues | Accords à un doigt depuis le clavier du piano roll, à la souris : la touche tenue joue tout l’accord, le relâchement le coupe | OK |
+| LH11 | Notes longues | Enregistrer en jouant sur le clavier du piano roll à la souris : la note tenue est écrite avec sa durée | OK |
+| GE01 | Gestes réels | Clavier à l’écran : une touche tenue pendant un redessin (enregistrement, bouton MIDI) ne reste pas bloquée, arpégiateur compris | OK |
+| GE02 | Gestes réels | Effet Live tenu à la souris puis au clavier pendant un redessin : l’effet s’arrête au relâchement et le bouton reste fidèle | OK |
+| GE03 | Gestes réels | Espace sur un bouton atteint au clavier actionne ce bouton ; après un clic à la souris, Espace reste la lecture | OK |
+| GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
+| GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
+| GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
+| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
+| SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
+| SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
+| SB05 | Navigateur de sons | Choisir un instrument est annulable et conserve les sons personnels du sampler | OK |
+| SB06 | Navigateur de sons | La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste | OK |
+| SB07 | Navigateur de sons | Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt | OK |
+| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | OK |
+| SB09 | Navigateur de sons | Une préécoute indisponible signale l’échec puis fonctionne après réessai | OK |
+| SB10 | Navigateur de sons | Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste | OK |
+| NU01 | Nuances | Une note jouée doucement est plus sombre qu’une note jouée fort sur cinq instruments enregistrés | OK |
+| NU02 | Nuances | Nuances à zéro : la force ne change que le volume, pas le timbre | OK |
+| NU03 | Nuances | Un ancien projet garde exactement son son : nuances à zéro après ouverture | OK |
+| NU04 | Nuances | Le réglage Nuances s’affiche pour un instrument enregistré, s’annule et voyage dans le fichier | OK |
+| NU05 | Nuances | Le réglage est traduit dans les trois langues | OK |
+| NU06 | Nuances | Le timbre s’ouvre progressivement avec la force et ne descend jamais sous le troisième harmonique | OK |
+| NU07 | Nuances | Une touche jouée doucement au clavier MIDI sonne plus sombre en direct | OK |
+| LP01 | Raccords de boucle | Les 237 boucles de maintien : ni clic ni saut de niveau au raccord, mesurés note par note | OK |
+| LP02 | Raccords de boucle | Une note tenue dix secondes ne varie pas plus que l’enregistrement d’origine, sans pulsation à chaque tour | OK |
+| RG01 | Registres | D’une note enregistrée à sa voisine, le volume perçu ne saute pas de plus de 2 dB, sur les 29 instruments | OK |
+| RG02 | Registres | Aucune note ne sature après égalisation : la plus forte reste sous la pleine échelle | OK |
+| RG03 | Registres | Une gamme jouée sur trois octaves au piano reste régulière à l’export | OK |
+| EX01 | Banques expressives | Piano et kit Studio sélectionnables dans les trois langues, avec de vrais noms de pads | OK |
+| EX02 | Banques expressives | Les quatre nuances du piano sont des enregistrements distincts et jouent doucement ou fort | OK |
+| EX03 | Banques expressives | Le nouveau piano est juste dans plusieurs registres, transposition comprise, et s’arrête au relâchement | OK |
+| EX04 | Banques expressives | Les 16 pads Studio produisent un son propre, avec nuances et variantes de répétition | OK |
+| EX05 | Banques expressives | Les variantes restent reproductibles à l’export, indépendamment des pads joués avant | OK |
+| EX06 | Banques expressives | Le charleston fermé coupe le charleston ouvert du même kit | OK |
+| EX07 | Banques expressives | Un sample personnel importé remplace un pad Studio et voyage avec le projet | OK |
+| EX08 | Banques expressives | Piano expressif et batterie Studio conservés dans le fichier, après rechargement, et audibles à l’export | OK |
+| EX09 | Banques expressives | Un téléchargement incomplet reste indisponible, bloque l’export puis se recharge après réessai | OK |
+| EX10 | Banques expressives | Un ancien projet garde le piano et le kit acoustique historiques | OK |
+| MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | OK |
+| MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | OK |
+| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
+| MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | OK |
+| MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | OK |
+| BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | OK |
+| BX02 | Nouvelles banques | Le Wurlitzer couvre toutes les notes et nuances malgré ses zones irrégulières | OK |
+| BX03 | Nouvelles banques | La basse dispose de cinq nuances et de deux prises alternées, et reste juste | OK |
+| BX04 | Nouvelles banques | Les seize percussions sont audibles, sans silence dans les nuances hautes des pads à peu de couches | OK |
+| BX05 | Nouvelles banques | Un son importé reste prioritaire sur un pad de percussions et sa réinitialisation rend le bon instrument | OK |
+| BX06 | Nouvelles banques | Les trois choix survivent au fichier projet, au rechargement et à un rendu complet | OK |
+| BX07 | Nouvelles banques | Les répétitions de basse et de percussions restent indépendantes des préécoutes | OK |
+| BX08 | Nouvelles banques | Une banque de percussions incomplète est refusée puis se recharge après réessai | OK |
+| BX09 | Nouvelles banques | Les percussions restent accessibles au doigt sur un écran de téléphone | OK |
+| EM01 | Empreinte sonore | La démo exportée par le bouton Exporter garde son empreinte : niveau, spectre, enveloppe, ni clic, ni coupure, ni saturation | OK |
+| EM02 | Empreinte sonore | Notes tenues (cordes, orgue d’église, chœur, violoncelle, huit secondes chacune) : empreinte conservée, aucun trou pendant la tenue | OK |
+| EM03-trap | Empreinte sonore | Le modèle « trap » exporté garde son empreinte | OK |
+| EM03-house | Empreinte sonore | Le modèle « house » exporté garde son empreinte | OK |
+| EM03-lofi | Empreinte sonore | Le modèle « lofi » exporté garde son empreinte | OK |
+| EM04 | Empreinte sonore | L’empreinte repère vraiment les défauts : un clic, une coupure de 30 ms, une saturation et une piste devenue muette sont signalés | OK |
+| EM05 | Empreinte sonore | Geste réel dans la durée : une touche du piano roll tenue huit secondes à la souris sonne sans trou ni chute, puis s’arrête | OK |
+| SV01 | Sauvegarde | Plantage de l’onglet juste après une modification au clavier : le morceau revient tel quel, un message le dit et mène aux versions | OK |
+| SV02 | Sauvegarde | Une fermeture normale (rechargement) n’affiche pas de message de récupération | OK |
+| SV03 | Sauvegarde | Versions : revenir à un état antérieur depuis le menu Projet, l’état remplacé reste gardé et Ctrl+Z annule la restauration | OK |
+| SV04 | Sauvegarde | Au clavier seul : ouvrir les versions, garder une version, en restaurer une avec Tab et Entrée | OK |
+| SV05 | Sauvegarde | Les versions anciennes sont éclaircies : seules les plus récentes restent, sans laisser de données orphelines | OK |
+| SV06 | Sauvegarde | Sauvegarde automatique illisible au démarrage : la dernière version lisible est rouverte, avec le message de récupération | OK |
+| SV07 | Sauvegarde | Supprimer un projet de la bibliothèque supprime aussi ses versions | OK |
+| SV08 | Sauvegarde | Versions et message de récupération traduits en anglais et en espagnol | OK |
+| SV09 | Sauvegarde | Plantage reconnu en retard (le système libère l’onglet planté après le redémarrage) : le message arrive quand même et la version rouverte est marquée « récupérée » | OK |
+| DF01 | Fichiers | Navigateur : pas de commandes de la version bureau ; bureau : « Enregistrer sous… » et la liste des fichiers récents apparaissent dans le menu Projet | OK |
+| DF02 | Fichiers | Bureau : Cmd+S la première fois demande où enregistrer ; ensuite Cmd+S réécrit le même fichier sans rien demander, le titre suit | OK |
+| DF03 | Fichiers | Bureau : Cmd+O ouvre un projet du disque ; rouvrir le même fichier ne crée pas de doublon dans la bibliothèque ; annuler ne change rien | OK |
+| DF04 | Fichiers | Bureau : fichiers récents dans le menu, du plus récent au plus ancien ; un clic rouvre ; un fichier disparu est signalé et retiré | OK |
+| DF05 | Fichiers | Bureau : un échec d’écriture (disque plein, dossier protégé) est expliqué, le projet reste dans l’application | OK |
+| DF06 | Fichiers | Bureau, au clavier seul : ouvrir le menu Projet, atteindre un fichier récent avec Tab et l’ouvrir avec Entrée | OK |
+| DF07 | Fichiers | Fichier ouvert depuis le Finder (double-clic sur un .khm) : le projet s’ouvre et le fichier est lié | OK |
+| DF08 | Fichiers | Commandes de fichiers traduites en anglais et en espagnol | OK |
+| GD01 | Gestes | Note glissée au doigt puis geste annulé par le système : la note revient, rien n’est enregistré, les mouvements suivants n’ont plus d’effet | OK |
+| GD02 | Gestes | Deux doigts : un deuxième doigt qui bouge ou se lève ailleurs ne pilote ni ne termine le glissé de la note par le premier | OK |
+| GD03 | Gestes | Poignée de durée et note en cours de création : un geste annulé ne change pas la durée et ne laisse pas de note | OK |
+| GD04 | Gestes | Vélocité glissée puis geste annulé : les forces de frappe reviennent ; un deuxième doigt ne les change pas | OK |
+| GD05 | Gestes | Boucle tracée dans la règle (Maj+glisser) puis geste annulé : la boucle reste comme avant | OK |
+| GD06 | Gestes | Clip glissé vers une autre piste puis geste annulé : il revient à sa place et sur sa piste | OK |
+| GD07 | Gestes | Point d’automation créé ou déplacé au doigt puis geste annulé : la courbe revient comme avant | OK |
+| GD08 | Gestes | Séparation du panneau du bas : un deuxième doigt ne la déplace pas, un geste annulé la libère | OK |
+| GD09 | Gestes | Souris relâchée hors de la fenêtre pendant le glissé d’une note : le glissé se termine, il est enregistré et s’annule, la souris ne traîne plus la note | OK |
+| GD10 | Gestes | Sans incident, rien ne change : glisser une note et un clip à la souris déplace et s’annule comme avant | OK |
+| WP01 | Tempo | Clip audio qui suit le tempo : bouton activé à la souris, tempo tapé au clavier, le son s’étire sans changer de hauteur, à l’export comme à l’écoute | OK |
+| WP02 | Tempo | Changement de tempo au milieu d’un clip qui suit le tempo : chaque coup tombe sur son temps, avant et après le changement | OK |
+| WP03 | Tempo | Tempo d’origine saisi (boucle jouée à 60 BPM dans un morceau à 120) : le clip se raccourcit et se cale sur la grille | OK |
+| WP04 | Tempo | Au tempo d’origine, suivre le tempo ne change rien au son : rendu identique échantillon par échantillon | OK |
+| WP05 | Tempo | Scinder et rogner un clip qui suit le tempo : les coups restent sur les temps | OK |
+| WP06 | Tempo | Au clavier : activer le suivi du tempo avec Entrée, l’annuler ; le réglage voyage dans le fichier projet | OK |
+| WP07 | Tempo | Suivi du tempo traduit en anglais et en espagnol | OK |
+| AX01 | Automation | Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe | OK |
+| AX02 | Automation | À l’écoute : pendant la lecture, l’effet suit la courbe ; à l’arrêt, il revient à son réglage fixe | OK |
+| AX03 | Automation | Retirer l’effet retire ses courbes ; Annuler ramène l’effet et ses courbes ; le tout voyage dans le fichier projet | OK |
+| AX04 | Automation | Plugin du Mac : ses réglages apparaissent dans la liste ; automatisé, il reçoit les valeurs au fil de la lecture | OK |
+| AX05 | Automation | Écho automatisé (dosage) à l’export : la traîne n’apparaît que là où la courbe monte | OK |
+| AX06 | Automation | Liste des réglages traduite (anglais, espagnol) | OK |
+| FZ01 | Gel de piste | Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil | OK |
+| FZ02 | Gel de piste | Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel | OK |
+| FZ03 | Gel de piste | Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien | OK |
+| FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | OK |
+| FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | OK |
+| PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | OK |
+| PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | OK |
+| PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | OK |
+| AW01 | Plugins du Mac | Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable | OK |
+| AW02 | Plugins du Mac | Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet | OK |
+| AW03 | Plugins du Mac | Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit | OK |
+| TB01 | Barre du haut | Ordinateur : projet, jeu et sortie tiennent sur une seule ligne ; la barre d’arrangement est juste au-dessus des pistes | OK |
+| TB02 | Barre du haut | Menus à la souris : un clic ouvre, un clic ailleurs ou un choix referme ; un seul menu ouvert à la fois | OK |
+| TB03 | Barre du haut | Menus au clavier seul : Tab jusqu’à « Prise », Entrée ouvre, Espace règle le décompte, Échap referme et rend le focus | OK |
+| TB04 | Barre du haut | Le bouton Boucle affiche sa plage et la suit quand on la change dans « Prise » ; les raccourcis ne changent pas | OK |
+| TB05 | Barre du haut | Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise | OK |
+| TB06 | Barre du haut | Écran moyen (1100 px) : la barre passe proprement sur deux lignes, rien n’est coupé ni caché | OK |
+| TB07 | Barre du haut | Nouveaux menus et bulles traduits en anglais et en espagnol | OK |
+| AD01 | Correctifs audit | Séquenceur au clavier : une seule case atteinte par Tab, les flèches, Début et Fin passent d’une case à l’autre, Entrée allume, le focus survit au redessin | OK |
+| AD02 | Correctifs audit | Lettres des touches : celles du vrai clavier quand le navigateur les donne (QWERTY en français, AZERTY en anglais), sinon d’après la langue | OK |
+| AD03 | Correctifs audit | Une prise jouée sur trois mesures reste un seul clip, annulé d’un coup ; une seconde prise fait un clip à elle | OK |
+| AD04 | Correctifs audit | Tempo au centième : 93,5 BPM gardé (champ, changement de tempo, fichier MIDI) ; une saisie vide ou nulle garde le tempo | OK |
+| AD05 | Correctifs audit | Sauvegarde impossible (espace plein, stockage bloqué) : bandeau qui reste, bouton « Enregistrer en fichier », message de retour ; traduit | OK |
+| AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | OK |
+| AD07 | Correctifs audit | Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide | OK |
+| AD08 | Correctifs audit | Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet | OK |
+| TH01 | Têtes de piste | Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles | OK |
+| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | OK |
+| TH03 | Têtes de piste | Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus | OK |
+| TH04 | Têtes de piste | Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom | OK |
+| TH05 | Têtes de piste | Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran | OK |
+| TH06 | Têtes de piste | Menu ⋯ et repère ❄ traduits en anglais et en espagnol | OK |
+| CT01 | Contrôles joués | Pitch bend MIDI joué en direct : la note tenue monte, descend et revient au centre | OK |
+| CT02 | Contrôles joués | Export audio : le pitch bend du clip change la hauteur rendue (la 440 → si 494, puis ± 12) | OK |
+| CT03 | Contrôles joués | Export audio : la molette ajoute du vibrato, l’aftertouch gonfle le son ; sans contrôle, rien ne bouge | OK |
+| CT04 | Contrôles joués | Enregistrement : note, montée du bend, molette et pression du DGX simulé sont gardés dans le clip, puis à l’export | OK |
+| CT05 | Contrôles joués | Molettes à l’écran à la souris : le bend revient au centre au relâchement, la modulation reste ; au clavier aussi | OK |
+| CT06 | Contrôles joués | Molette à l’écran au doigt pendant un enregistrement : le geste survit aux redessins et s’écrit dans le clip | OK |
+| CT07 | Contrôles joués | Ligne des contrôles : dessiner un bend à la souris, changer de contrôle, effacer, annuler | OK |
+| CT08 | Contrôles joués | Fichier MIDI : bend, molette et pression exportés puis relus ; projet sauvegardé et rouvert | OK |
+| CT09 | Contrôles joués | Copier, dupliquer et scinder un clip : les contrôles suivent sans être partagés | OK |
+| CT10 | Contrôles joués | Gros projet exporté en parallèle : le bend est rendu pareil qu’en un seul tenant ; l’arrêt remet tout au repos | OK |
+| CT11 | Contrôles joués | Molette assignée à un réglage du mixeur : elle garde son assignation ; textes traduits | OK |
+| CT12 | Contrôles joués | Téléphone : molettes couchées au-dessus du clavier (touches assez larges), bend au doigt qui revient au centre | OK |
+| XP01 | Export | Options d’export à la souris : WAV 24 bits à 48 kHz, tout le morceau ; le réglage est gardé dans le projet | OK |
+| XP02 | Export | Exporter seulement la boucle, sans queue : durée exacte de la boucle, nom de fichier avec les mesures | OK |
+| XP03 | Export | Exporter des mesures X à Y au clavier, avec la queue de son ; une borne inversée est corrigée | OK |
+| XP04 | Export | Le début d’un extrait sonne comme ce passage dans le morceau (notes tenues comprises), et l’extrait s’arrête à sa fin | OK |
+| XP05 | Export | WAV 24 bits : chaque échantillon garde 256 fois plus de précision qu’en 16 bits | OK |
+| XP06 | Export | À 48 kHz, la hauteur et le tempo ne changent pas ; l’export parallèle d’un gros projet suit la plage | OK |
+| XP07 | Export | Pistes séparées et MP3 suivent la plage et la fréquence ; le MIDI exporte toujours tout | OK |
+| XP08 | Export | Options d’export traduites, lisibles au clavier ; Échap referme sans exporter | OK |
+| CP01 | Comping | Glisser sur la prise 2 garde la prise 2 sur les temps 2 et 3, la prise 1 ailleurs ; l’export suit | OK |
+| CP02 | Comping | Au clavier : flèches puis Entrée choisissent la prise 3 sur le dernier temps ; ↑ ↓ changent de prise | OK |
+| CP03 | Comping | Aucun clic aux jonctions entre prises (fondu enchaîné très court) | OK |
+| CP04 | Comping | Prise entière, annulation, scission et rognage à gauche gardent les portions à leur place | OK |
+| CP05 | Comping | Le comping est gardé au rechargement de la page | OK |
+| CF01 | Fondus enchaînés | Réglé au curseur sur le second clip : le premier continue en s’effaçant pendant que le second monte | OK |
+| CF02 | Fondus enchaînés | Fondu à puissance constante : pas de creux de volume à la jonction | OK |
+| CF03 | Fondus enchaînés | Le réglage n’apparaît que pour deux clips qui se touchent ; le X se dessine ; textes traduits ; annulable | OK |
+| CF04 | Fondus enchaînés | Export parallèle d’un gros projet, scission et rechargement gardent le fondu enchaîné | OK |
+| SC01 | Sidechain | Un kick audio importé fait pomper la basse : choix de la source et du réglage dans le mixeur | OK |
+| SC02 | Sidechain | Une voix fait baisser la musique tant qu’elle chante, et la musique remonte après ; réglage à 50 % | OK |
+| SC03 | Sidechain | Le kick du séquenceur reste la source par défaut ; une piste qui suit une autre source ne pompe plus sur lui | OK |
+| SC04 | Sidechain | À l’écoute : le suiveur se branche en direct ; gel de la source : la piste suit sa version audio | OK |
+| SD01 | Envois | Ajouter un envoi au clic crée un bus ; post suit le fader, pré ne le suit pas | OK |
+| SD02 | Envois | Deux envois vers deux bus traités différemment ; supprimer un bus retire ses envois, l’annulation les rend | OK |
+| SD03 | Envois | Gros projet : export parallèle identique à l’export d’un seul tenant avec envois et sidechain | OK |
+| SD04 | Envois | Envois et source du sidechain traduits, gardés au rechargement | OK |
+| QZ01 | Quantification | Force 50 % à la souris : chaque note fait la moitié du chemin vers la grille ; la durée est gardée | OK |
+| QZ02 | Quantification | Swing 66 % : une double-croche sur deux est retardée d’un tiers de pas, et l’export le fait entendre | OK |
+| QZ03 | Quantification | Humaniser : petits décalages (± 0,12 pas) et forces (± 12 %) au hasard, annulables ; sur la sélection seulement | OK |
+| QZ04 | Quantification | Légato : chaque note va jusqu’à la suivante, un accord garde une seule fin, la dernière va jusqu’au bout du clip | OK |
+| QZ05 | Quantification | Menu au clavier (Tab, Entrée, flèches), réglages gardés pendant la séance, textes traduits | OK |
