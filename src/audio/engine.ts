@@ -653,9 +653,10 @@ export async function encodeMp3(b: AudioBuffer): Promise<Blob> {
   let gain = 1;
   for (let attempt = 0; attempt < 3; attempt++) {
     const blob = encode(gain), peak = peakOf(await check.decodeAudioData(await blob.arrayBuffer()));
-    if (Number.isFinite(peak) && peak <= 0.966) return blob;
+    // Marge de -1 dB de vraie crête (0,89) : un lecteur qui rééchantillonne (44,1 → 48 kHz) fait remonter les crêtes.
+    if (Number.isFinite(peak) && peak <= 0.89) return blob;
     if (!Number.isFinite(peak)) break;
-    gain *= 0.95 / peak;
+    gain *= 0.87 / peak;
   }
   throw new Error('mp3 peak');
 }

@@ -241,6 +241,7 @@ const D: Record<string, [string, string, string]> = {
   'help.go': ['C\'est parti', 'Let\'s go', 'Vamos'],
 
   // ===== V3 =====
+  'track.menu': ['Actions de la piste', 'Track actions', 'Acciones de la pista'],
   'track.up': ['Monter la piste', 'Move track up', 'Subir la pista'],
   'track.down': ['Descendre la piste', 'Move track down', 'Bajar la pista'],
   'track.dup': ['Dupliquer la piste', 'Duplicate track', 'Duplicar la pista'],
@@ -380,6 +381,7 @@ const D: Record<string, [string, string, string]> = {
   'warp.off': ['Le clip garde sa vitesse d\'origine', 'The clip keeps its original speed', 'El clip mantiene su velocidad original'],
   'auto.track': ['Piste', 'Track', 'Pista'],
   'auto.unavailable': ['Réglage indisponible (effet retiré ou plugin non chargé)', 'Setting unavailable (effect removed or plugin not loaded)', 'Ajuste no disponible (efecto quitado o plugin no cargado)'],
+  'frz.frozen': ['Piste gelée (dégeler : menu ⋯)', 'Frozen track (unfreeze: ⋯ menu)', 'Pista congelada (descongelar: menú ⋯)'],
   'frz.freeze': ['Geler : transformer la piste en audio', 'Freeze: turn the track into audio', 'Congelar: convertir la pista en audio'],
   'frz.unfreeze': ['Dégeler : revenir à la piste d\'origine', 'Unfreeze: back to the original track', 'Descongelar: volver a la pista original'],
   'frz.working': ['Gel de « {0} » en cours…', 'Freezing “{0}”…', 'Congelando «{0}»…'],

@@ -90,9 +90,17 @@ function head(tr: Track) {
     class: `mini ${key} ${tr[key] ? 'on' : ''}`, title: t('mix.' + key), 'aria-label': t('mix.' + key), 'aria-pressed': String(tr[key]),
     onclick: (e: Event) => { e.stopPropagation(); tr[key] = !tr[key]; commit(); },
   }, txt);
-  const sm = (cls: string, txt: string, key: string, fn: () => void) => h('button', {
-    class: 'mini sm ' + cls, title: t(key), 'aria-label': `${t(key)} – ${tr.name}`, onclick: (e: Event) => { e.stopPropagation(); fn(); },
-  }, txt);
+  // Actions rares de la piste (V18) : rangées dans le menu ⋯ pour laisser toute la place au nom.
+  const tmenu = h('details', { class: 'menu tmenu' });
+  const act = (cls: string, txt: string, label: string, fn: () => void, extra: Record<string, unknown> = {}) => h('button', {
+    class: cls, title: label, 'aria-label': `${label} – ${tr.name}`, ...extra, onclick: (e: Event) => { e.stopPropagation(); tmenu.open = false; fn(); },
+  }, txt, ' ', label);
+  const frz = tr.frozen ? 'frz.unfreeze' : 'frz.freeze';
+  tmenu.append(h('summary', { class: 'mini tmore', title: t('track.menu'), 'aria-label': `${t('track.menu')} – ${tr.name}` }, '⋯'), h('div', { class: 'menu-list' },
+    act('tup', '▲', t('track.up'), () => moveTrack(tr.id, -1)), act('tdown', '▼', t('track.down'), () => moveTrack(tr.id, 1)),
+    act('tdup', '⧉', t('track.dup'), () => duplicateTrack(tr.id)),
+    ...(tr.type !== 'audio' ? [act('tfrz' + (tr.frozen ? ' on' : ''), '❄', t(frz), () => { if (tr.frozen) unfreezeTrack(tr.id); else freezeTrack(tr.id); }, { data: { act: 'freeze' }, 'aria-pressed': String(!!tr.frozen) })] : []),
+    h('hr', {}), act('del danger', '✕', t('track.delete'), () => deleteTrack(tr.id))));
   const hasAuto = Object.values(tr.auto ?? {}).some(l => l?.length);
   const vol = h('input', { type: 'range', min: '0', max: '1.25', step: '0.01', class: 'tvol', title: t('mix.volume'), 'aria-label': `${t('mix.volume')} – ${tr.name}` });
   vol.value = String(tr.vol);
@@ -103,10 +111,7 @@ function head(tr: Track) {
     onpointerdown: () => { if (S.selTrack !== tr.id) select(tr.id, ''); },
   },
     h('div', { class: 'hrow' }, h('span', { class: 'ticon', title: t('type.' + tr.type) }, ICON[tr.type]), name,
-      sm('tup', '▲', 'track.up', () => moveTrack(tr.id, -1)), sm('tdown', '▼', 'track.down', () => moveTrack(tr.id, 1)), sm('tdup', '⧉', 'track.dup', () => duplicateTrack(tr.id)),
-      tr.type !== 'audio' ? h('button', { class: 'mini sm tfrz' + (tr.frozen ? ' on' : ''), data: { act: 'freeze' }, 'aria-pressed': String(!!tr.frozen), title: t(tr.frozen ? 'frz.unfreeze' : 'frz.freeze'), 'aria-label': `${t(tr.frozen ? 'frz.unfreeze' : 'frz.freeze')} – ${tr.name}`,
-        onclick: (e: Event) => { e.stopPropagation(); if (tr.frozen) unfreezeTrack(tr.id); else freezeTrack(tr.id); } }, '❄') : '',
-      h('button', { class: 'mini del', title: t('track.delete'), 'aria-label': `${t('track.delete')} – ${tr.name}`, onclick: (e: Event) => { e.stopPropagation(); deleteTrack(tr.id); } }, '✕')),
+      tr.frozen ? h('span', { class: 'tfrzbadge', title: t('frz.frozen'), role: 'img', 'aria-label': t('frz.frozen') }, '❄') : '', tmenu),
     h('div', { class: 'hrow' }, tog('mute', 'M'), tog('solo', 'S'),
       h('button', {
         class: 'mini autob' + (tr.autoShow ? ' on' : '') + (hasAuto ? ' has' : ''), title: t('auto.toggle'), 'aria-label': `${t('auto.toggle')} – ${tr.name}`, 'aria-pressed': String(!!tr.autoShow),

@@ -696,9 +696,13 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 - QA : aides `reveal`, `clickIn`, `selectIn` (ouvrent les menus par de vrais clics avant d'atteindre un bouton rangé) ; cas TB01-TB07 (une ligne sur ordinateur, menus à la souris et au clavier, boucle, téléphone au doigt, écran moyen, traductions). Capture : `qa/shots/v18-phone.png`. MB01 adapté : la barre téléphone fait désormais deux lignes sans défilement (au plus 120 px), au lieu d'une ligne qui défilait.
 - Vérifié : campagne complète 338/339 puis MB01 corrigé et repassé avec les autres cas téléphone ; `npm run build` et démarrage de la version bureau OK.
 
+- **Têtes de piste** (`src/ui/arr.ts`, `head`) : ▲ ▼ ⧉ ❄ ✕ rangés dans un menu ⋯ (`details.menu.tmenu`, mêmes classes `tup`, `tdown`, `tdup`, `tfrz`/`data-act=freeze`, `del`) ; la liste est en position fixe à côté du bouton (sinon coupée par la zone des pistes qui défile) et se referme quand les pistes défilent. Repère ❄ à côté du nom d'une piste gelée. Sur téléphone, l'icône du type est masquée pour laisser la place au nom, et le menu ⋯ rend enfin possibles monter, descendre, dupliquer et supprimer au doigt. QA : aide `headAct`, `reveal` sait ouvrir un menu sans identifiant ; cas TH01-TH06.
+
+- **Export MP3** : marge de -1 dB de vraie crête (0,89 au lieu de 0,966) ; un lecteur qui rééchantillonne faisait remonter les crêtes au-dessus de 0,98 (MP01 instable). Ne joue que si l'encodage crée des crêtes ; le WAV ne change pas. **À écouter** : un MP3 très fort, comparé au WAV.
+- Campagne complète 345/345 sur ce Mac (après correction de cas de test : icône masquée sur téléphone, défilement qui précède l'ouverture du menu ⋯).
+
 ### Reste à faire (suite de la V18)
-- Têtes de piste : noms coupés (« Batteri ») ; garder M, S, A et le volume, ranger ▲ ▼ ⧉ ❄ ✕ dans un menu de la piste.
-- Téléphone : le morceau n'affiche qu'une mesure et demie, le séquenceur 6 pas sur 16.
+- Défauts D2 à D4 de l'audit (`docs/audit-2026-11.md`, branche `audit-2026-11`) : bouton Rétablir absent sur téléphone ; le morceau n'affiche qu'une mesure et demie, le séquenceur 6 pas sur 16 ; cibles de moins de 32 px au doigt. D5 à D11 sont corrigés par une autre session sur `v18-correctifs`.
 - Ajout de pistes : toujours dans le coin des pistes (la maquette les plaçait dans la barre d'arrangement).
 
 ### Non vérifié

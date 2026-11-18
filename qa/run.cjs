@@ -185,12 +185,18 @@ async function pick(triggerSel, file) {
 async function newBlank() { await menu('bNew'); await page.click('[data-tpl=empty]'); await sleep(150); }
 /** Ouvre, par de vrais clics, les menus déroulants (V18) qui contiennent un élément, du plus extérieur au plus intérieur. */
 async function reveal(sel, pg = page) {
-  const ids = await pg.$eval(sel, e => { const a = []; for (let d = e.parentElement?.closest('details'); d; d = d.parentElement?.closest('details')) a.unshift(d.id); return a; });
-  for (const id of ids) if (!(await pg.$eval('#' + id, d => d.open))) await pg.click(`#${id} > summary`);
+  const el = await pg.$(sel); if (!el) throw new Error('introuvable : ' + sel);
+  const n = await el.evaluate(e => { let k = 0; for (let d = e.parentElement?.closest('details'); d; d = d.parentElement?.closest('details')) k++; return k; });
+  for (let i = n - 1; i >= 0; i--) {   // du menu le plus extérieur au plus intérieur
+    const sum = await el.evaluateHandle((e, i) => { let d = e.parentElement?.closest('details'); for (let k = 0; k < i; k++) d = d.parentElement.closest('details'); return d.open ? null : d.querySelector(':scope > summary'); }, i);
+    const s = sum.asElement(); if (s) await s.click();
+  }
 }
 async function clickIn(sel) { await reveal(sel); await page.click(sel); }
 async function selectIn(sel, v) { await reveal(sel); await page.selectOption(sel, v); }
 async function menu(id) { await clickIn('#' + id); }
+/** Action rangée dans le menu ⋯ d'une piste (V18) : ouvre le menu de la n-ième tête de piste, puis clique. */
+async function headAct(n, sel) { await clickIn(`.head >> nth=${n} >> ${sel}`); }
 async function setRange(sel, v) {
   await page.$eval(sel, (el, val) => { el.value = String(val); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, v);
 }
@@ -266,7 +272,7 @@ test('A02', 'Arrangement', 'Renommer une piste', async () => {
   expect((await proj()).tracks[1].name === 'Ma basse', 'nom non enregistré');
 });
 test('A03', 'Arrangement', 'Supprimer une piste (avec confirmation)', async () => {
-  await page.click('.head >> nth=1 >> .del'); const p = await proj();
+  await headAct(1, '.del'); const p = await proj();
   near(p.tracks.length, 4, 0, 'nombre de pistes'); expect(!p.tracks.some(t => t.name === 'Basse'), 'piste encore présente');
 });
 test('A04', 'Arrangement', 'Double-clic dans une piste : crée un clip et ouvre l\'éditeur', async () => {
@@ -732,7 +738,7 @@ test('X07', 'Robustesse', 'Projet vide : lecture, export et scission ne plantent
 });
 test('X08', 'Robustesse', 'Supprimer la piste en cours de lecture ou d\'enregistrement ne plante pas', async () => {
   await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400); await S(() => window.kh.noteOn(60));
-  await page.click('.head >> nth=1 >> .del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
+  await headAct(1, '.del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
   near((await proj()).tracks.length, 4, 0, 'pistes');
 });
 test('X09', 'Robustesse', 'Changer le tempo et le zoom pendant la lecture', async () => {
@@ -922,16 +928,16 @@ test('MX02', 'Mixage', 'Durée de la réverb, temps et répétitions de l\'écho
 // ============ V3 : pistes ============
 test('TK01', 'Arrangement', 'Dupliquer une piste : copie complète, placée juste après', async () => {
   await autoOn(1, { vol: [{ s: 0, v: 0.5 }] }, '');
-  await page.click('.head >> nth=1 >> .tdup'); const p = await proj(); near(p.tracks.length, 6, 0, 'pistes');
+  await headAct(1, '.tdup'); const p = await proj(); near(p.tracks.length, 6, 0, 'pistes');
   const a = p.tracks[1], b = p.tracks[2]; expect(b.name === 'Basse 2' && b.id !== a.id && b.clips[0].id !== a.clips[0].id, 'copie mal identifiée');
   expect(b.clips[0].notes.length === a.clips[0].notes.length && b.synth.preset === a.synth.preset && b.auto.vol.length === 1, 'contenu non copié');
   expect(await S(() => window.kh.S.selTrack === window.kh.S.project.tracks[2].id), 'la copie n\'est pas sélectionnée');
 });
 test('TK02', 'Arrangement', 'Monter et descendre une piste', async () => {
   const names = async () => (await proj()).tracks.map(t => t.name).join();
-  await page.click('.head >> nth=1 >> .tdown'); expect((await names()).startsWith('Batterie 1,Accords,Basse'), `ordre ${await names()}`);
-  await page.click('.head >> nth=2 >> .tup'); expect((await names()).startsWith('Batterie 1,Basse,Accords'), 'remontée');
-  const before = await names(); await page.click('.head >> nth=0 >> .tup'); await page.click('.head >> nth=4 >> .tdown'); expect(await names() === before, 'les extrémités ne doivent pas bouger');
+  await headAct(1, '.tdown'); expect((await names()).startsWith('Batterie 1,Accords,Basse'), `ordre ${await names()}`);
+  await headAct(2, '.tup'); expect((await names()).startsWith('Batterie 1,Basse,Accords'), 'remontée');
+  const before = await names(); await headAct(0, '.tup'); await headAct(4, '.tdown'); expect(await names() === before, 'les extrémités ne doivent pas bouger');
 });
 
 // ============ V3 : passerelles (MIDI, pistes séparées) ============
@@ -981,7 +987,7 @@ test('X10', 'Robustesse', 'Automation, sidechain et accords pendant la lecture e
   await page.keyboard.press('Space'); await sleep(1500);
   await page.click(await headSel(3)); await S(() => { window.kh.noteOn(127); window.kh.noteOn(0); window.kh.noteOff(127); window.kh.noteOff(0); });
   const b = await box('.alane'); await page.mouse.click(b.x + 88, b.y + 30); await page.click('[data-act=autoclear]');
-  await page.click('.head >> nth=1 >> .del'); await sleep(500);
+  await headAct(1, '.del'); await sleep(500);
   const r = await S(async () => ({ p: window.kh.engine.playing, l: await window.qa.level() })); expect(r.p && r.l > 0.1, 'la lecture s\'est interrompue');
 });
 test('W01', 'Application', 'Version construite : installable (manifeste) et utilisable hors-ligne après une première visite', async () => {
@@ -1160,7 +1166,7 @@ test('OK02', 'Clavier à l\'écran', 'Sur écran tactile : clavier affiché d\'o
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
-    await pg.tap('.head >> nth=1 >> .ticon'); expect(await pg.$('.okb'), 'clavier absent sur écran tactile');
+    await pg.tap('.head >> nth=1 >> .tname'); expect(await pg.$('.okb'), 'clavier absent sur écran tactile');
     const a = await (await pg.$('.wk[data-m="48"]')).boundingBox(), b = await (await pg.$('.wk[data-m="55"]')).boundingBox(), cdp = await ctx2.newCDPSession(pg);
     const pt = (r, id) => ({ x: r.x + r.width / 2, y: r.y + r.height - 12, id });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pt(a, 1), pt(b, 2)] }); await pg.waitForTimeout(200);
@@ -2514,7 +2520,7 @@ test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres e
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
-    await pg.tap('.head >> nth=1 >> .ticon'); await pg.tap('[data-act=sound-browser]');
+    await pg.tap('.head >> nth=1 >> .tname'); await pg.tap('[data-act=sound-browser]');
     await pg.fill('[data-role=sound-search]', 'orgue'); await pg.selectOption('[data-role=sound-family]', 'realKeys');
     await pg.tap(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
     const fit = async () => pg.$eval('#sounds', d => { const r = d.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && d.scrollWidth <= d.clientWidth + 1; });
@@ -2926,7 +2932,7 @@ test('BX09', 'Nouvelles banques', 'Les percussions restent accessibles au doigt 
   const pg=await ctx.newPage();
   try {
     await pg.goto(BASE);await pg.waitForSelector('.clip');await pg.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(d=>d.close());window.kh.setLang('fr');});
-    await pg.click('.head >> nth=0 >> .ticon');await pg.selectOption('[data-role=kit]','percussion');await pg.evaluate(()=>window.kh.engine.prepare());await pg.click('[data-view=pads]');
+    await pg.click('.head >> nth=0 >> .tname');await pg.selectOption('[data-role=kit]','percussion');await pg.evaluate(()=>window.kh.engine.prepare());await pg.click('[data-view=pads]');
     expect(await pg.locator('.pad').count()===16,'pads manquants');
     await pg.locator('.pad[data-pad="15"]').scrollIntoViewIfNeeded();await pg.locator('.pad[data-pad="15"]').tap();
     expect((await pg.locator('.pad[data-pad="15"]').innerText()).includes('Triangle'),'dernier pad inaccessible');
@@ -3551,7 +3557,7 @@ const freezeBtn = async ti => `.head[data-id="${await page.evaluate(i => window.
 test('FZ01', 'Gel de piste', 'Geler une piste d’un clic : son rendu en audio sur une nouvelle piste juste en dessous, l’originale coupée, le morceau sonne pareil', async () => {
   await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.vol = 0.7; tr.pan = -0.4; tr.rev = 0.3; k.commit(); });
   const before = await levels(), n0 = await S(() => window.kh.S.project.tracks.length);
-  await page.click(await freezeBtn(1)); await page.waitForFunction(n => window.kh.S.project.tracks.length === n + 1, n0, { timeout: 30000 });
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(n => window.kh.S.project.tracks.length === n + 1, n0, { timeout: 30000 });
   const r = await S(() => { const t = window.kh.S.project.tracks; return { o: { frozen: t[1].frozen, mute: t[1].mute }, a: { type: t[2].type, from: t[2].frozenFrom === t[1].id, vol: t[2].vol, pan: t[2].pan, rev: t[2].rev, clips: t[2].clips.length, start: t[2].clips[0].start } }; });
   expect(r.o.frozen && r.o.mute && r.a.type === 'audio' && r.a.from && r.a.clips === 1 && r.a.start === 0, `état après gel : ${JSON.stringify(r)}`);
   expect(r.a.vol === 0.7 && r.a.pan === -0.4 && r.a.rev === 0.3, 'la piste audio doit reprendre volume, panoramique et envois');
@@ -3561,8 +3567,8 @@ test('FZ01', 'Gel de piste', 'Geler une piste d’un clic : son rendu en audio s
 });
 test('FZ02', 'Gel de piste', 'Dégeler : la piste audio disparaît, l’originale revient audible ; Ctrl+Z annule le gel comme le dégel', async () => {
   const before = await levels();
-  await page.click(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
-  await page.click(await freezeBtn(1)); await sleep(150);
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  await clickIn(await freezeBtn(1)); await sleep(150);
   let r = await S(() => ({ n: window.kh.S.project.tracks.length, f: window.kh.S.project.tracks[1].frozen, m: window.kh.S.project.tracks[1].mute, any: window.kh.S.project.tracks.some(t => t.frozenFrom) }));
   expect(r.n === 5 && !r.f && !r.m && !r.any, `dégel incomplet : ${JSON.stringify(r)}`);
   const dd = lvDiff(before, await levels());
@@ -3575,14 +3581,14 @@ test('FZ02', 'Gel de piste', 'Dégeler : la piste audio disparaît, l’original
 test('FZ03', 'Gel de piste', 'Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien', async () => {
   await S(() => { const k = window.kh, tr = k.S.project.tracks[1], i = k.newInsert('delay'); i.p.mix = 0.6; tr.inserts = [i]; tr.auto = { filter: [{ s: 0, v: -0.8 }, { s: 32, v: 0.5 }] }; k.commit(); });
   const before = await levels();
-  await page.click(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
   expect(lvDiff(before, await levels()) < 1, 'effet ou automation absents du rendu gelé');
   await S(() => { const k = window.kh; k.S.project.tracks[1].inserts = []; k.commit(); });
   expect(lvDiff(before, await levels()) < 1, 'la piste gelée ne doit plus dépendre des réglages de l’originale');
 });
 test('FZ04', 'Gel de piste', 'Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet', async () => {
   const sel = await freezeBtn(0);
-  await page.focus(sel); await page.keyboard.press('Enter');
+  await reveal(sel); await page.focus(sel); await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.kh.S.project.tracks[0].frozen, null, { timeout: 30000 });
   const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'gel.khm'); await dl.saveAs(f);
   const j = JSON.parse(fs.readFileSync(f, 'utf8')), at = j.project.tracks[1];
@@ -3646,7 +3652,7 @@ test('PF03', 'Performance', 'Gros projet allégé par le gel : les 32 pistes d�
   const before = await best();
   for (let i = 0; i < 32; i++) {
     const id = await S(() => window.kh.S.project.tracks.find(t => t.type !== 'audio' && !t.frozen)?.id);
-    await page.click(`.head[data-id="${id}"] [data-act=freeze]`);
+    await clickIn(`.head[data-id=\"${id}\"] [data-act=freeze]`);
     await page.waitForFunction(id => window.kh.S.project.tracks.find(t => t.id === id)?.frozen, id, { timeout: 60000 });
   }
   const after = await best();
@@ -3956,6 +3962,77 @@ test('AD08', 'Correctifs audit', 'Export parallèle : les kicks restent avec les
   expect(r.plain === 4, `projet de 14 pistes : ${r.plain} groupes (attendu 4)`);
   expect(r.side === 1 && r.sideParts >= 2, `sidechain : kicks et pistes pompées répartis sur ${r.side} groupes`);
   expect(r.au === null && r.solo === null && r.small === null && r.twoCores === null && r.demo === null, `découpage là où il ne faut pas : ${JSON.stringify(r)}`);
+});
+// ============ V18 : têtes de piste (noms entiers, actions rares dans le menu ⋯) ============
+test('TH01', 'Têtes de piste', 'Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles', async () => {
+  const names = await page.$$eval('.head .tname', l => l.map(i => ({ v: i.value, fit: i.scrollWidth <= i.clientWidth + 1 })));
+  expect(names.length >= 5 && names.every(n => n.fit), 'nom coupé : ' + names.filter(n => !n.fit).map(n => n.v).join(', '));
+  for (const sel of ['.tup', '.tdown', '.tdup', '[data-act=freeze]', '.del']) expect(!(await page.isVisible(`.head >> nth=1 >> ${sel}`)), sel + ' devrait être rangé dans ⋯');
+  for (const sel of ['.tmore', '.mute', '.solo', '.autob', '.tvol']) expect(await page.isVisible(`.head >> nth=1 >> ${sel}`), sel + ' devrait rester visible');
+});
+test('TH02', 'Têtes de piste', 'Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme', async () => {
+  await page.click('.head >> nth=0'); await page.click('.head >> nth=2 >> .tmore');
+  const id2 = await S(() => window.kh.S.project.tracks[2].id);
+  expect(await S(() => window.kh.S.selTrack) === id2, 'ouvrir le menu doit sélectionner la piste');
+  const list = page.locator('.head >> nth=2 >> .menu-list'); expect(await list.isVisible(), 'menu non ouvert');
+  const b = await list.boundingBox(), vp = page.viewportSize();
+  expect(b.x >= 0 && b.y >= 0 && b.x + b.width <= vp.width && b.y + b.height <= vp.height, 'menu hors écran : ' + JSON.stringify(b));
+  const top = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.tmenu'), { x: b.x + b.width / 2, y: b.y + b.height - 10 });
+  expect(top, 'le menu est caché par la zone des pistes');
+  expect((await list.innerText()).match(/Monter|Descendre|Dupliquer|Geler|Supprimer/g)?.length === 5, 'cinq actions attendues : ' + await list.innerText());
+  const n0 = (await proj()).tracks.length; await page.click('.head >> nth=2 >> .tdup');
+  expect((await proj()).tracks.length === n0 + 1 && !(await page.$('details.tmenu[open]')), 'dupliquer puis refermer');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks.length === n0, 'Ctrl+Z annule');
+  await page.click('.head >> nth=1 >> .tmore'); await page.mouse.click(900, 700); expect(!(await page.$('details.tmenu[open]')), 'un clic ailleurs referme ⋯');
+});
+test('TH03', 'Têtes de piste', 'Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus', async () => {
+  const names = async () => (await proj()).tracks.map(t => t.name).join(',');
+  const before = await names();
+  await page.focus('.head >> nth=1 >> .tmore'); await page.keyboard.press('Enter');
+  expect(await page.$eval('.head >> nth=1 >> details.tmenu', d => d.open), 'Entrée n’ouvre pas ⋯');
+  await page.keyboard.press('Tab'); expect(await page.evaluate(() => document.activeElement?.classList.contains('tup')), 'Tab doit mener à « Monter »');
+  await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+  expect((await names()) !== before, 'Entrée sur « Descendre » ne déplace pas la piste');
+  await page.keyboard.press('Control+z'); expect((await names()) === before, 'Ctrl+Z');
+  await page.focus('.head >> nth=1 >> .tmore'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
+  expect(!(await page.$('details.tmenu[open]')) && await page.evaluate(() => document.activeElement?.classList.contains('tmore')), 'Échap doit refermer et rendre le focus à ⋯');
+  expect(/Basse|Accords/.test(await page.getAttribute('.head >> nth=1 >> .tmore', 'aria-label')), 'le bouton ⋯ doit nommer sa piste');
+});
+test('TH04', 'Têtes de piste', 'Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom', async () => {
+  await page.setViewportSize({ width: 1500, height: 560 }); await sleep(150);   // zone des pistes plus basse que son contenu : elle défile
+  try {
+    await page.$eval('#arr', e => { e.scrollTop = 0; }); await page.click('.head >> nth=1 >> .tmore');
+    const moved = await page.$eval('#arr', e => { e.scrollTop = 60; return e.scrollTop; });
+    expect(moved > 10, 'la zone des pistes devrait pouvoir défiler');
+    const closed = await page.waitForFunction(() => !document.querySelector('details.tmenu[open]'), null, { timeout: 2000 }).then(() => true, () => false);   // l'évènement de défilement arrive à l'image suivante
+    expect(closed, 'le menu reste ouvert loin de son bouton');
+    await page.$eval('#arr', e => { e.scrollTop = 0; });
+  } finally { await page.setViewportSize({ width: 1500, height: 900 }); }
+  await S(() => { window.kh.S.project.tracks[1].frozen = true; window.kh.commit(); });
+  expect(await page.isVisible('.head >> nth=1 >> .tfrzbadge') && /gelée/.test(await page.getAttribute('.head >> nth=1 >> .tfrzbadge', 'aria-label')), 'repère ❄ absent');
+  await S(() => { window.kh.S.project.tracks[1].frozen = false; window.kh.commit(); });
+});
+test('TH05', 'Têtes de piste', 'Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const fit = await pg.$$eval('.head .tname', l => l.slice(0, 4).map(i => i.scrollWidth <= i.clientWidth + 1));
+    expect(fit.every(Boolean), 'noms coupés sur téléphone : ' + JSON.stringify(fit));
+    const order = () => pg.evaluate(() => window.kh.S.project.tracks.map(t => t.name).join(','));
+    const before = await order();
+    await pg.tap('.head >> nth=0 >> .tmore'); const b = await pg.locator('.head >> nth=0 >> .menu-list').boundingBox();
+    expect(b && b.x >= 0 && b.x + b.width <= 375 && b.y + b.height <= 812, 'menu hors écran : ' + JSON.stringify(b));
+    await pg.tap('.head >> nth=0 >> .tdown'); expect((await order()) !== before, 'descendre au doigt');
+  } finally { await ctx2.close(); }
+});
+test('TH06', 'Têtes de piste', 'Menu ⋯ et repère ❄ traduits en anglais et en espagnol', async () => {
+  for (const [l, w] of [['en', 'Track actions'], ['es', 'Acciones de la pista']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.getAttribute('.head >> nth=1 >> .tmore', 'aria-label')).startsWith(w), `⋯ non traduit en ${l}`);
+    expect(!/Monter|Supprimer/.test(await page.$eval('.head >> nth=1 >> .menu-list', e => e.textContent)), `actions non traduites en ${l}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
 });
 
 (async () => {
