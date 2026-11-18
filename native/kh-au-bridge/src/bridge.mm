@@ -2,8 +2,9 @@
 //
 // Échange avec l'AudioWorklet par un SharedArrayBuffer, sans copie ni message :
 //   Int32 [0] demande (le worklet l'incrémente)   [1] fait (le natif y recopie la demande traitée)
-//         [2] nombre d'échantillons du bloc        [3..15] réservé
+//         [2] nombre d'échantillons du bloc        [3] instrument : nombre d'évènements MIDI du bloc   [4..15] réservé
 //   Float32 à partir de l'octet 64 : entrée [voies][max], puis sortie [voies][max]
+//   Instrument (V19) : ensuite EVMAX évènements de deux Int32 : position dans le bloc, puis statut | donnée 1 << 8 | donnée 2 << 16.
 // Un fil natif à priorité temps réel guette la demande, fait tourner le plugin (AudioUnitRender) et rend la main.
 // Le worklet attend la réponse dans le même bloc : le pont n'ajoute aucun retard, seulement la latence propre du plugin.
 #include <node.h>
@@ -42,7 +43,10 @@ struct Slot {
   Float64 sampleTime = 0;
   AudioBufferList* abl = nullptr;
   std::string name;
+  bool inst = false;            // instrument (aumu) : pas d'entrée audio, des évènements MIDI
+  int32_t* ev = nullptr;
 };
+constexpr int EVMAX = 256;
 
 std::map<int, std::unique_ptr<Slot>> slots;
 int nextId = 1;
@@ -85,10 +89,20 @@ void loop(Slot* s) {
     idle = 0;
     UInt32 frames = UInt32(std::min(s->max, std::max(0, s->hdr[2])));
     for (int c = 0; c < s->ch; c++) { s->abl->mBuffers[c].mData = s->out + c * s->max; s->abl->mBuffers[c].mDataByteSize = frames * 4; }
+    // Instrument : les notes et contrôles du bloc, chacun à sa position (l'AudioWorklet les a rangés avant de demander le calcul).
+    if (s->inst) {
+      int n = std::min(EVMAX, std::max(0, s->hdr[3]));
+      for (int i = 0; i < n; i++) {
+        int32_t off = std::min(int32_t(frames) - 1, std::max(0, s->ev[2 * i])), m = s->ev[2 * i + 1];
+        MusicDeviceMIDIEvent(s->au, UInt32(m & 255), UInt32((m >> 8) & 127), UInt32((m >> 16) & 127), UInt32(off));
+      }
+    }
     AudioTimeStamp ts{}; ts.mSampleTime = s->sampleTime; ts.mFlags = kAudioTimeStampSampleTimeValid;
     AudioUnitRenderActionFlags fl = 0;
-    if (AudioUnitRender(s->au, &fl, &ts, 0, frames, s->abl) != noErr)
-      for (int c = 0; c < s->ch; c++) memcpy(s->out + c * s->max, s->in + c * s->max, frames * 4);   // en cas d'erreur, le son passe tel quel
+    if (AudioUnitRender(s->au, &fl, &ts, 0, frames, s->abl) != noErr) {
+      if (s->inst) for (int c = 0; c < s->ch; c++) memset(s->out + c * s->max, 0, frames * 4);   // instrument en erreur : silence
+      else for (int c = 0; c < s->ch; c++) memcpy(s->out + c * s->max, s->in + c * s->max, frames * 4);   // en cas d'erreur, le son passe tel quel
+    }
     s->sampleTime += frames;
     last = req;
     __atomic_store_n(&s->hdr[1], req, __ATOMIC_RELEASE);
@@ -115,13 +129,15 @@ void Open(const FunctionCallbackInfo<Value>& a) {
   s->sr = a[4]->NumberValue(cx).FromMaybe(48000);
   s->ch = a[5]->Int32Value(cx).FromMaybe(2);
   s->max = a[6]->Int32Value(cx).FromMaybe(128);
-  if (s->store->ByteLength() < size_t(64 + 8 * s->ch * s->max)) return err(iso, "mémoire partagée trop petite");
+  AudioComponentDescription d{ code(iso, a[1]), code(iso, a[2]), code(iso, a[3]), 0, 0 };
+  s->inst = d.componentType == kAudioUnitType_MusicDevice;
+  if (s->store->ByteLength() < size_t(64 + 8 * s->ch * s->max + (s->inst ? 8 * EVMAX : 0))) return err(iso, "mémoire partagée trop petite");
   auto* base = static_cast<uint8_t*>(s->store->Data());
   s->hdr = reinterpret_cast<int32_t*>(base);
   s->in = reinterpret_cast<float*>(base + 64);
   s->out = s->in + s->ch * s->max;
+  if (s->inst) s->ev = reinterpret_cast<int32_t*>(base + 64 + 8 * s->ch * s->max);
 
-  AudioComponentDescription d{ code(iso, a[1]), code(iso, a[2]), code(iso, a[3]), 0, 0 };
   AudioComponent comp = AudioComponentFindNext(nullptr, &d);
   if (!comp) return err(iso, "plugin introuvable");
   if (AudioComponentInstanceNew(comp, &s->au) != noErr) return err(iso, "plugin impossible à créer");
@@ -135,24 +151,66 @@ void Open(const FunctionCallbackInfo<Value>& a) {
   f.mBytesPerPacket = f.mBytesPerFrame = 4; f.mFramesPerPacket = 1; f.mChannelsPerFrame = UInt32(s->ch); f.mBitsPerChannel = 32;
   UInt32 maxf = UInt32(s->max);
   AURenderCallbackStruct cb{ feed, s.get() };
-  if (AudioUnitSetProperty(s->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &f, sizeof f) ||
-      AudioUnitSetProperty(s->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &f, sizeof f) ||
-      AudioUnitSetProperty(s->au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxf, sizeof maxf) ||
-      AudioUnitSetProperty(s->au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof cb) ||
-      AudioUnitInitialize(s->au)) {
+  // Un instrument n'a pas d'entrée audio : seule sa sortie est réglée.
+  bool bad = s->inst
+    ? (AudioUnitSetProperty(s->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &f, sizeof f) ||
+       AudioUnitSetProperty(s->au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxf, sizeof maxf))
+    : (AudioUnitSetProperty(s->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &f, sizeof f) ||
+       AudioUnitSetProperty(s->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &f, sizeof f) ||
+       AudioUnitSetProperty(s->au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxf, sizeof maxf) ||
+       AudioUnitSetProperty(s->au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof cb));
+  if (bad || AudioUnitInitialize(s->au)) {
     AudioComponentInstanceDispose(s->au);
     return err(iso, "format refusé par le plugin");
   }
   s->abl = static_cast<AudioBufferList*>(calloc(1, sizeof(AudioBufferList) + sizeof(AudioBuffer) * s->ch));
   s->abl->mNumberBuffers = UInt32(s->ch);
   for (int c = 0; c < s->ch; c++) s->abl->mBuffers[c].mNumberChannels = 1;
-  s->hdr[1] = s->hdr[0];
+  s->hdr[1] = s->hdr[0]; s->hdr[3] = 0;
   s->run = true;
   Slot* raw = s.get();
   s->th = std::thread(loop, raw);
   int id = nextId++;
   slots[id] = std::move(s);
   a.GetReturnValue().Set(id);
+}
+
+/** getState(id) → état complet du plugin (kAudioUnitProperty_ClassInfo), en base64 ; '' s'il ne le donne pas.
+ *  Indispensable pour un instrument dont le son ne tient pas dans ses seuls réglages (Serum, Kontakt…). */
+void GetState(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate();
+  Slot* s = find(a);
+  std::string out;
+  CFPropertyListRef pl = nullptr; UInt32 sz = sizeof pl;
+  if (s && AudioUnitGetProperty(s->au, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &pl, &sz) == noErr && pl) {
+    @autoreleasepool {
+      CFDataRef data = CFPropertyListCreateData(kCFAllocatorDefault, pl, kCFPropertyListBinaryFormat_v1_0, 0, nullptr);
+      if (data) { out = [[(NSData*)data base64EncodedStringWithOptions:0] UTF8String]; CFRelease(data); }
+    }
+    CFRelease(pl);
+  }
+  a.GetReturnValue().Set(String::NewFromUtf8(iso, out.c_str()).ToLocalChecked());
+}
+/** setState(id, base64) → true si le plugin a repris l'état. */
+void SetState(const FunctionCallbackInfo<Value>& a) {
+  Isolate* iso = a.GetIsolate();
+  Slot* s = find(a);
+  bool ok = false;
+  String::Utf8Value u(iso, a[1]);
+  if (s && *u && **u) {
+    @autoreleasepool {
+      NSData* data = [[NSData alloc] initWithBase64EncodedString:[NSString stringWithUTF8String:*u] options:0];
+      if (data) {
+        CFPropertyListRef pl = CFPropertyListCreateWithData(kCFAllocatorDefault, (CFDataRef)data, kCFPropertyListImmutable, nullptr, nullptr);
+        if (pl) {
+          ok = AudioUnitSetProperty(s->au, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &pl, sizeof pl) == noErr;
+          CFRelease(pl);
+        }
+        [data release];
+      }
+    }
+  }
+  a.GetReturnValue().Set(ok);
 }
 
 /** setParam(id, adresse, valeur) */
@@ -362,12 +420,13 @@ void Close(const FunctionCallbackInfo<Value>& a) {
   slots.erase(it);
 }
 
-/** list() → [{ type, subtype, manufacturer, name }] : Audio Units d'effet installés */
+/** list() → [{ type, subtype, manufacturer, name }] : Audio Units d'effet et instruments (V19) installés */
 void List(const FunctionCallbackInfo<Value>& a) {
   Isolate* iso = a.GetIsolate(); auto cx = iso->GetCurrentContext();
   Local<Array> arr = Array::New(iso); uint32_t n = 0;
-  AudioComponentDescription d{ kAudioUnitType_Effect, 0, 0, 0, 0 };
   auto str = [&](OSType t) { char c[5] = { char(t >> 24), char(t >> 16), char(t >> 8), char(t), 0 }; return String::NewFromUtf8(iso, c).ToLocalChecked(); };
+  for (OSType kind : { OSType(kAudioUnitType_Effect), OSType(kAudioUnitType_MusicDevice) })
+  for (AudioComponentDescription d{ kind, 0, 0, 0, 0 }; ; ) {
   for (AudioComponent c = AudioComponentFindNext(nullptr, &d); c; c = AudioComponentFindNext(c, &d)) {
     AudioComponentDescription cd; AudioComponentGetDescription(c, &cd);
     CFStringRef nm = nullptr; char buf[256] = "?";
@@ -378,6 +437,8 @@ void List(const FunctionCallbackInfo<Value>& a) {
     o->Set(cx, String::NewFromUtf8Literal(iso, "manufacturer"), str(cd.componentManufacturer)).Check();
     o->Set(cx, String::NewFromUtf8Literal(iso, "name"), String::NewFromUtf8(iso, buf).ToLocalChecked()).Check();
     arr->Set(cx, n++, o).Check();
+  }
+  break;
   }
   a.GetReturnValue().Set(arr);
 }
@@ -392,6 +453,7 @@ NODE_MODULE_INIT(/* exports, module, context */) {
     exports->Set(context, String::NewFromUtf8(iso, n).ToLocalChecked(), FunctionTemplate::New(iso, f)->GetFunction(context).ToLocalChecked()).Check();
   };
   add("open", Open); add("setParam", SetParam); add("info", Info); add("close", Close); add("list", List); add("params", Params); add("presets", Presets); add("setPreset", SetPreset);
+  add("getState", GetState); add("setState", SetState);
   add("uiOpen", UiOpen); add("uiClose", UiClose); add("uiIsOpen", UiIsOpen); add("uiPump", UiPump);
   RegisterIO(iso, exports, context);
 }

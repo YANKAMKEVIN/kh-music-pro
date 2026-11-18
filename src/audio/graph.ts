@@ -1,6 +1,6 @@
 import { drumBank, recordedDynamics, drumSample, expressiveSample, sampleFor } from './banks';
 import { WamInstance, createWam, liveWams, wamKey } from './wam';
-import { AuInstance, auBridge, auFromNorm, createAu } from './au';
+import { AuInstance, AuInstrument, auBridge, auFromNorm, createAu, createAuInstrument } from './au';
 
 /** Plugin d'une chaîne d'effets : web (WAM) ou, dans la version bureau native, Audio Unit. */
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
@@ -27,6 +27,8 @@ export interface TrackNodes {
   sc?: { node: AudioWorkletNode; src: string };
   /** Envois libres (V19) vers les bus. */
   sends: Map<string, { g: GainNode; key: string }>;
+  /** Instrument du Mac (V19) joué par cette piste ; `url` = celui demandé (le chargement est asynchrone). */
+  inst?: { url: string; au?: AuInstrument; loading?: boolean };
 }
 /** `pitch` est branché sur le désaccord (detune) de chaque voix de la piste : le pitch bend et le vibrato bougent toutes les notes tenues. */
 export interface CtlNodes { pitch: GainNode; bend: ConstantSourceNode; lfo: OscillatorNode; gMod: GainNode; gAt: GainNode; range: number }
@@ -56,6 +58,10 @@ function driveCurve(amount: number) {
   return c;
 }
 
+/** Instrument du Mac qui joue à l'écoute pour une piste (branché par le moteur) : l'export reprend son état. */
+export let liveInstOf: ((trackId: string) => AuInstrument | undefined) | undefined;
+export const setLiveInstOf = (f: typeof liveInstOf) => { liveInstOf = f; };
+
 /** Graphe de mixage. Le même code sert au temps réel et au rendu hors-ligne (export). */
 export class Mix {
   tracks = new Map<string, TrackNodes>();
@@ -74,6 +80,10 @@ export class Mix {
   openHats = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
   /** Entrée d'une piste d'instrument → son réglage de hauteur commun (pitch bend, vibrato), pour les voix qui y jouent. */
   pitchFor = new WeakMap<AudioNode, AudioNode>();
+  /** Entrée d'une piste → l'instrument du Mac qui y joue (V19). */
+  instFor = new WeakMap<AudioNode, AuInstrument>();
+  /** Prévenu quand un instrument du Mac est prêt (ou a échoué). */
+  onInst?: (trackId: string, ok: boolean) => void;
 
   constructor(public ctx: BaseAudioContext, public live: boolean) {
     this.master = ctx.createGain();
@@ -227,7 +237,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
   private stripLatency(t: Track, n: TrackNodes): number {
     let l = 0;
     for (const i of t.inserts ?? []) if (i.on && i.type === 'au') l += (n.ins.get(i.id)?.wam as AuInstance | undefined)?.info.latency ?? 0;
-    return l;
+    return l + (n.inst?.au?.info.latency ?? 0);
   }
   /**
    * Compensation de la latence des plugins (comme dans les logiciels de studio) : un plugin qui déclare une latence
@@ -255,8 +265,10 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
   /** Rendu hors-ligne : crée les plugins web sur ce contexte, avec l'état de ceux en service. Renvoie le nombre d'échecs. */
   /** Après un rendu hors-ligne : libère les plugins créés pour lui (les Audio Units ont un fil natif à arrêter). */
   disposePlugins() {
-    for (const n of this.tracks.values()) for (const node of n.ins.values()) node.wam?.audioNode.destroy?.();
+    for (const n of this.tracks.values()) { for (const node of n.ins.values()) node.wam?.audioNode.destroy?.(); n.inst?.au?.audioNode.destroy?.(); }
   }
+  /** Rendu hors-ligne : tous les évènements des instruments du Mac sont arrivés avant le calcul. */
+  async flushInsts() { await Promise.all([...this.tracks.values()].map(n => n.inst?.au?.flush())); }
 
   async loadWams(p: Project): Promise<number> {
     let failed = 0;
@@ -266,6 +278,15 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       try {
         const live = liveWams.get(wamKey(t.id, i.id)), state = live?.audioNode.getState ? await live.audioNode.getState() : i.state;
         this.attachWam(node, await createPlugin(this.ctx, i, state));
+      } catch { failed++; }
+    }
+    // Instruments du Mac (V19) : recréés pour ce rendu, avec l'état de celui qui joue à l'écoute (sinon celui du projet).
+    for (const t of p.tracks) {
+      const n = this.tracks.get(t.id), sp = t.synth;
+      if (!n || t.frozen || sp?.engine !== 'au' || !sp.auUrl) continue;
+      try {
+        const live = liveInstOf?.(t.id), state = live?.getState() || sp.auState || '';
+        this.attachInst(n, await createAuInstrument(this.ctx, sp.auUrl, state, sp.bend ?? 2)); n.inst!.url = sp.auUrl;
       } catch { failed++; }
     }
     this.compensate(p);   // les plugins du rendu sont chargés : leurs latences sont connues
@@ -374,6 +395,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       }
       this.syncInserts(t, n, p);
       if (t.type === 'synth' && !t.frozen) this.ctlNodes(n).range = t.synth?.bend ?? 2;
+      this.syncInst(t, n);
       const audible = !t.mute && (isBus || !anySolo || t.solo);
       this.set(n.fader.gain, audible ? t.vol : 0);
       if (!au?.pan?.length) this.set(n.pan.pan, t.pan);
@@ -385,7 +407,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     this.compensate(p);
     for (const [id, n] of this.tracks) if (!p.tracks.some(t => t.id === id) && !busIds.has(id)) {
       n.pan.disconnect(); n.revSend.disconnect(); n.dlySend.disconnect(); n.pdc.disconnect(); n.pdc.connect(n.fader); this.tracks.delete(id);
-      n.sc?.node.disconnect(); for (const e of n.sends.values()) e.g.disconnect();
+      n.sc?.node.disconnect(); for (const e of n.sends.values()) e.g.disconnect(); this.dropInst(n);
       // Piste supprimée (ou autre projet ouvert) : ses plugins sont libérés (un Audio Unit a un fil natif à arrêter).
       for (const [iid, node] of n.ins) { node.out.disconnect(); node.wam?.audioNode.destroy?.(); liveWams.delete(wamKey(id, iid)); }
     }
@@ -499,6 +521,35 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     return out;
   }
 
+  // ---------- Instruments du Mac (V19) ----------
+  private dropInst(n: TrackNodes) {
+    if (!n.inst) return;
+    if (n.inst.au) { this.instFor.delete(n.input); n.inst.au.audioNode.disconnect(); n.inst.au.audioNode.destroy?.(); }
+    n.inst = undefined;
+  }
+  /** Branche l'instrument d'une piste (« aumu:… ») ; à l'écoute il se crée en arrière-plan, pour un export par `loadWams`. */
+  private syncInst(t: Track, n: TrackNodes) {
+    const url = t.type === 'synth' && !t.frozen && t.synth?.engine === 'au' ? t.synth.auUrl ?? '' : '';
+    if (n.inst && n.inst.url !== url) this.dropInst(n);
+    if (!url || n.inst || !this.live || !auBridge()) return;
+    const slot: NonNullable<TrackNodes['inst']> = n.inst = { url, loading: true };
+    createAuInstrument(this.ctx, url, t.synth!.auState ?? '', t.synth!.bend ?? 2).then(au => {
+      if (n.inst !== slot) { au.audioNode.destroy?.(); return; }
+      this.attachInst(n, au); slot.loading = false; this.onInst?.(t.id, true);
+    }, () => { if (n.inst === slot) slot.loading = false; this.onInst?.(t.id, false); });
+  }
+  private attachInst(n: TrackNodes, au: AuInstrument) {
+    n.inst ??= { url: '' }; n.inst.au = au; au.audioNode.connect(n.input); this.instFor.set(n.input, au);
+  }
+  /** Instrument du Mac d'une piste, s'il est chargé. */
+  instOf(trackId: string): AuInstrument | undefined { return this.tracks.get(trackId)?.inst?.au; }
+  /** Message MIDI d'un contrôle joué, pour un instrument du Mac : pitch bend sur 14 bits, molette (CC1), pression de canal. */
+  private ctlMidi(au: AuInstrument, k: CtlKind, v: number, at: number) {
+    if (k === 'pb') { const x = Math.max(0, Math.min(16383, Math.round(8192 + v * (v < 0 ? 8192 : 8191)))); au.midi(0xe0, x & 127, x >> 7, at); }
+    else if (k === 'mod') au.midi(0xb0, 1, Math.round(v * 127), at);
+    else au.midi(0xd0, Math.round(v * 127), 0, at);
+  }
+
   // ---------- Contrôles joués (V19) : pitch bend, modulation, aftertouch ----------
   /** Crée (une fois) les nœuds de contrôle d'une piste d'instrument. */
   private ctlNodes(n: TrackNodes): CtlNodes {
@@ -523,6 +574,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     if (!n?.ctl) return;
     const now = this.ctx.currentTime;
     for (const [prm, map] of this.ctlParams(n, k)) { prm.cancelScheduledValues(now); prm.setTargetAtTime(map(v), now, 0.004); }
+    if (n.inst?.au) this.ctlMidi(n.inst.au, k, v, 0);
   }
   /** Remet tous les contrôles d'une piste au repos (arrêt, fin de clip). */
   ctlRest(n: TrackNodes, at: number, cancel: boolean) {
@@ -538,7 +590,8 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const k of CTL_KINDS) {
       const pts = c.ctl[k];
       if (!pts?.length) continue;
-      const prms = this.ctlParams(n, k), put = (v: number, at: number, ramp: boolean) => { for (const [prm, map] of prms) ramp ? prm.linearRampToValueAtTime(map(v), at) : prm.setValueAtTime(map(v), at); };
+      const prms = this.ctlParams(n, k), au = n.inst?.au;
+      const put = (v: number, at: number, ramp: boolean) => { if (au) { this.ctlMidi(au, k, v, at); return; } for (const [prm, map] of prms) ramp ? prm.linearRampToValueAtTime(map(v), at) : prm.setValueAtTime(map(v), at); };
       // Début du clip (ou reprise de la boucle du motif) : la valeur de ce point du motif, posée d'un coup.
       if (first || local < 1e-6) put(ctlAt(pts, local, k), t, false);
       pts.forEach((pt, i) => { const f = pt.s - local; if (f >= 0 && f < 1 && f < remain) put(pt.v, t + f * dur, i > 0 && !(first && f === 0)); });
@@ -566,6 +619,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
   }
 
   stopAll() {
+    for (const n of this.tracks.values()) if (n.inst?.au) { const au = n.inst.au; au.midi(0xb0, 123, 0, 0); au.midi(0xb0, 64, 0, 0); au.midi(0xe0, 0, 64, 0); au.midi(0xb0, 1, 0, 0); }
     for (const n of this.active) { try { n.stop(); } catch { /* déjà arrêté */ } }
     this.active.clear();
     this.openHats.clear(); this.sampleTurns.clear(); this.instrumentTurns = new WeakMap();
@@ -690,6 +744,14 @@ export const touchCutoff = (soft: number, freq: number) => Math.min(18000, freq 
  */
 export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number, t: number, dur: number | null, vel = 0.8, buffers?: Buffers): Voice | undefined {
   const c = mix.ctx;
+  // Instrument du Mac (V19) : la note part en message MIDI vers le plugin, à l'échantillon près.
+  if (p.engine === 'au') {
+    const au = mix.instFor.get(dest), key = Math.max(0, Math.min(127, midi + p.octave * 12));
+    if (!au) return;
+    au.midi(0x90, key, Math.max(1, Math.round(Math.min(1, vel) * 127)), t);
+    if (dur !== null) { au.midi(0x80, key, 0, t + dur); return; }
+    return { release(at: number) { au.midi(0x80, key, 0, at); } };
+  }
   const freq = 440 * Math.pow(2, (midi - 69) / 12 + p.octave);
   const vca = c.createGain(), filt = c.createBiquadFilter();
   const srcs: AudioScheduledSourceNode[] = [];

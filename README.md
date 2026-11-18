@@ -26,7 +26,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 - **Vrai sidechain** : dans le mixeur, sous le réglage « Sidechain », la source peut être le kick du séquenceur (comme avant) ou n'importe quelle autre piste — un kick importé en audio, une voix qui fait baisser la musique. La source est prise avant son volume : même coupée, elle fait pomper (« kick fantôme »).
 - **Envois libres** : « ＋ Envoi » sur une piste du mixeur ; autant d'envois que voulu, chacun vers le bus choisi (un bus est créé s'il n'y en a pas), avec son niveau, pris avant (Pré) ou après (Post) le volume de la piste.
 - **Quantification fine** : menu ▾ à côté de 🧲 dans le piano roll. Force (100 % sur la grille, 50 % à mi-chemin), swing appliqué aux notes (66 % ≈ ternaire), humanisation (petits décalages et forces au hasard), légato (chaque note jusqu'à la suivante). Sur les notes sélectionnées, ou toutes.
-- **Plugins instruments du Mac** : étude chiffrée soumise à Kevin (`docs/etude-au-instruments.md`), pas encore construits.
+- **Instruments du Mac** (version bureau macOS) : dans les réglages d'une piste d'instrument, la liste « Instrument du Mac » propose les instruments Audio Unit installés (DLSMusicDevice, AUSampler d'Apple, et Serum, Arturia, Kontakt… s'ils sont installés). La piste joue alors ce plugin : clavier MIDI, clavier à l'écran, enregistrement, piano roll, pitch bend, molette, aftertouch et pédale lui sont transmis, à l'échantillon près. « Fenêtre de l'instrument » ouvre son interface ; ce qu'on y règle est gardé dans le projet (état complet du plugin) et rechargé à l'export. Sur le web, une telle piste reste muette et le dit. Essai réel : `node qa/au-instrument.cjs`.
 
 ## Barre du haut repensée (v0.18)
 

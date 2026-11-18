@@ -2,7 +2,7 @@ import { SUSTAIN_BANKS } from './audio/sustain';
 import { t } from './i18n';
 
 export type TrackType = 'drums' | 'synth' | 'audio';
-export type Engine = 'sub' | 'fm' | 'pluck' | 'sampler' | 'multi';
+export type Engine = 'sub' | 'fm' | 'pluck' | 'sampler' | 'multi' | 'au';
 
 /** p = hauteur MIDI, s = début (en pas), l = durée (en pas), v = vélocité 0..1. s et l peuvent être fractionnaires (triolets, triples-croches). */
 export interface Note { p: number; s: number; l: number; v: number }
@@ -104,6 +104,8 @@ export interface SynthParams {
   touch: number;                          // nuances : jouer doucement assombrit le timbre (0 = volume seul)
   bank?: string;                          // instrument échantillonné (moteur « multi »)
   bend?: number;                          // plage du pitch bend en demi-tons (V19, 2 par défaut)
+  /** Instrument du Mac (V19, moteur « au ») : identifiant « aumu:sous-type:fabricant », nom affiché, état complet (base64). */
+  auUrl?: string; auName?: string; auState?: string;
 }
 
 /** Effet ajouté dans la chaîne d'une tranche. `p` = réglages ; pour un plugin web : `url`, `name` et `state`. */

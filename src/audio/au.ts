@@ -52,6 +52,9 @@ export interface Bridge {
   uiClose?(id: number): void;
   uiIsOpen?(id: number): boolean;
   uiPump?(): void;
+  /** État complet du plugin, en base64 (V19, instruments) ; absent d'un module natif plus ancien. */
+  getState?(id: number): string;
+  setState?(id: number, b64: string): boolean;
 }
 
 export const auBridge = (): Bridge | null => (window as unknown as { khNative?: Bridge }).khNative ?? null;
@@ -72,21 +75,29 @@ export function shareSab(sab: SharedArrayBuffer): Promise<string> {
 export function auList(): AuDesc[] {
   try { return (auBridge()?.list() ?? []).filter(d => d.type === 'aufx').sort((a, b) => a.name.localeCompare(b.name)); } catch { return []; }
 }
+/** Instruments du Mac (V19) : Audio Units de type « aumu » (DLSMusicDevice, AUSampler, et ceux qu'on installe). */
+export function auInstruments(): AuDesc[] {
+  try { return (auBridge()?.list() ?? []).filter(d => d.type === 'aumu').sort((a, b) => a.name.localeCompare(b.name)); } catch { return []; }
+}
 /** Nom à afficher : sans le préfixe du fabricant ni le « AU » d'Apple (« Apple: AUDelay » → « Delay »). */
 export const auName = (name: string) => name.replace(/^[^:]*:\s*/, '').replace(/^AU(?=[A-Z])/, '');
 
-const MAX = 128, CH = 2;
+const MAX = 128, CH = 2, EVMAX = 256;
+// Instrument (V19) : la page envoie les évènements MIDI datés à l'échantillon près ({ ev: [[échantillon, message], ...] }) ;
+// à chaque bloc, le worklet range ceux qui y tombent (ou sont en retard) dans la mémoire partagée avant de demander le calcul.
 const WORKLET = `class KhAU extends AudioWorkletProcessor{
 constructor(o){super();const s=o.processorOptions.sab;this.h=new Int32Array(s,0,16);this.i=new Float32Array(s,64,${CH * MAX});this.o=new Float32Array(s,64+${4 * CH * MAX},${CH * MAX});
+this.inst=!!o.processorOptions.inst;if(this.inst)this.e=new Int32Array(s,64+${8 * CH * MAX},${2 * EVMAX});this.q=[];
 this.seq=0;this.miss=0;this.n=0;this.spin=0;this.alive=true;
-this.port.onmessage=e=>{if(e.data==='stop')this.alive=false;else this.port.postMessage({miss:this.miss,n:this.n,spin:this.spin})}}
+this.port.onmessage=e=>{const d=e.data;if(d==='stop')this.alive=false;else if(d&&d.ev){for(const x of d.ev)this.q.push(x);this.q.sort((a,b)=>a[0]-b[0]);if(d.ack)this.port.postMessage({ack:d.ack})}else this.port.postMessage({miss:this.miss,n:this.n,spin:this.spin})}}
 process(ins,outs){const a=ins[0],b=outs[0],f=b[0].length;
 for(let c=0;c<${CH};c++){const x=a[c]||a[0];if(x)this.i.set(x,c*${MAX});else this.i.fill(0,c*${MAX},c*${MAX}+f)}
+if(this.inst){let k=0;const end=currentFrame+f;while(k<this.q.length&&k<${EVMAX}&&this.q[k][0]<end){this.e[2*k]=Math.max(0,this.q[k][0]-currentFrame);this.e[2*k+1]=this.q[k][1];k++}this.q.splice(0,k);this.h[3]=k}
 this.h[2]=f;const s=++this.seq;Atomics.store(this.h,0,s);this.n++;
 let k=0;const t=Date.now();
 while(Atomics.load(this.h,1)!==s){if(++k%256===0&&Date.now()-t>3)break}
 if(k>this.spin)this.spin=k;
-if(Atomics.load(this.h,1)!==s){this.miss++;for(let c=0;c<b.length;c++)b[c].set(this.i.subarray(c*${MAX},c*${MAX}+f))}
+if(Atomics.load(this.h,1)!==s){this.miss++;for(let c=0;c<b.length;c++){if(this.inst)b[c].fill(0);else b[c].set(this.i.subarray(c*${MAX},c*${MAX}+f))}}
 else for(let c=0;c<b.length;c++)b[c].set(this.o.subarray(c*${MAX},c*${MAX}+f));
 return this.alive}}
 registerProcessor('kh-au',KhAU)`;
@@ -140,5 +151,60 @@ export async function createAu(ctx: BaseAudioContext, url: string, params: Recor
   return {
     audioNode: node, auId: id, info, descriptor: { name: info.name, vendor: man }, params: list, apply, presets, preset,
     stats: () => new Promise(r => { node.port.onmessage = e => r(e.data); node.port.postMessage('stats'); }),
+  };
+}
+
+// ---------- Instruments du Mac (V19) ----------
+export type AuInstrument = AuInstance & {
+  /** Envoie un message MIDI (statut, donnée 1, donnée 2) qui sonnera à l'instant `t` (secondes du contexte ; dans le passé = tout de suite). */
+  midi(st: number, d1: number, d2: number, t: number): void;
+  /** Rendu hors-ligne : s'assure que tous les évènements envoyés sont arrivés au worklet avant de lancer le calcul. */
+  flush(): Promise<void>;
+  /** État complet du plugin (base64, '' s'il ne le donne pas), et rechargement d'un état. */
+  getState(): string;
+  setState(b64: string): boolean;
+};
+/** Crée l'instrument `url` (« aumu:dls :appl ») sur ce contexte ; `state` = état complet gardé dans le projet ; `bend` = plage du pitch bend (demi-tons). */
+export async function createAuInstrument(ctx: BaseAudioContext, url: string, state = '', bend = 2): Promise<AuInstrument> {
+  const br = auBridge();
+  if (!br) throw new Error('native bridge unavailable');
+  if (typeof SharedArrayBuffer === 'undefined') throw new Error('SharedArrayBuffer unavailable');
+  const [type, sub, man] = url.split(':');
+  let l = loaded.get(ctx);
+  if (!l) { l = ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }))); loaded.set(ctx, l); }
+  await l;
+  const sab = new SharedArrayBuffer(64 + 8 * CH * MAX + 8 * EVMAX);
+  const key = await shareSab(sab);
+  let id: number;
+  try { id = br.open(key, type, sub, man, ctx.sampleRate, CH, MAX); } catch (e) { br.forget(key); throw e; }
+  if (state) { try { br.setState?.(id, state); } catch { /* état illisible : le plugin garde ses réglages d'origine */ } }
+  const node = new AudioWorkletNode(ctx, 'kh-au', {
+    numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [CH], channelCount: CH, channelCountMode: 'explicit', processorOptions: { sab, inst: true },
+  }) as AudioWorkletNode & { destroy?: () => void };
+  let closed = false;
+  node.destroy = () => { if (closed) return; closed = true; node.port.postMessage('stop'); setTimeout(() => { br.close(id); br.forget(key); }, 50); };
+  // Les évènements d'un même instant de la page partent ensemble (un message par tâche, pas un par note).
+  let batch: [number, number][] = [], acks = 0;
+  const waiting = new Map<number, () => void>();
+  const send = () => { if (batch.length) { node.port.postMessage({ ev: batch }); batch = []; } };
+  node.port.onmessage = e => { const w = waiting.get(e.data?.ack); if (w) { waiting.delete(e.data.ack); w(); } };
+  const midi = (st: number, d1: number, d2: number, t: number) => {
+    if (closed) return;
+    if (!batch.length) queueMicrotask(send);
+    batch.push([Math.max(0, Math.round(t * ctx.sampleRate)), (st & 255) | ((d1 & 127) << 8) | ((d2 & 127) << 16)]);
+  };
+  // Plage du pitch bend (RPN 0), pour que le bend joue comme sur les instruments intégrés.
+  for (const [cc, v] of [[101, 0], [100, 0], [6, Math.round(bend)], [38, 0], [101, 127], [100, 127]]) midi(0xb0, cc, v, 0);
+  const info = br.info(id);
+  let list: AuParam[] = [];
+  try { list = br.params(id) ?? []; } catch { /* plugin sans liste de réglages */ }
+  return {
+    audioNode: node, auId: id, info, descriptor: { name: info.name, vendor: man }, params: list, presets: [], preset: () => null,
+    apply: (p: Record<string, number>) => { for (const [k, v] of Object.entries(p)) if (Number.isFinite(v)) br.setParam(id, Number(k), v); },
+    stats: () => new Promise(r => { const prev = node.port.onmessage; node.port.onmessage = e => { if (e.data?.n !== undefined) { node.port.onmessage = prev; r(e.data); } else prev?.call(node.port, e); }; node.port.postMessage('stats'); }),
+    midi,
+    flush: () => new Promise<void>(ok => { const a = ++acks; waiting.set(a, ok); node.port.postMessage({ ev: batch, ack: a }); batch = []; }),
+    getState: () => { try { return br.getState?.(id) ?? ''; } catch { return ''; } },
+    setState: (b64: string) => { try { return !!br.setState?.(id, b64); } catch { return false; } },
   };
 }

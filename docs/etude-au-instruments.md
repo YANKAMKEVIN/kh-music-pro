@@ -1,6 +1,6 @@
 # Étude : plugins instruments Audio Unit sur le Mac (V19, chantier 6)
 
-Rédigée le 18/11/2026 pour décision de Kevin. **Aucun code n'a été écrit pour ce chantier** : la règle est de soumettre l'étude avant de toucher au module natif (`native/kh-au-bridge`).
+Rédigée le 18/11/2026 pour décision de Kevin. **Décision du 19/11/2026 : « Oui, on y va ».** Réalisation et vérifications : section 17 de `docs/PASSATION.md`.
 
 ## Ce que tu gagnerais
 

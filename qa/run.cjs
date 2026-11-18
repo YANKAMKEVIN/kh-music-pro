@@ -93,6 +93,8 @@ const PAGE_HELPERS = () => {
         ui: {}, pumps: 0,
         uiOpen: id => { calls.push(['uiOpen', id]); f.ui[id] = true; return { generic: false, width: 400, height: 300 }; },
         uiClose: id => { f.ui[id] = false; }, uiIsOpen: id => !!f.ui[id], uiPump: () => { f.pumps++; },
+        // État complet d'un instrument (V19) : le dernier état reçu, sinon un état d'usine.
+        states: {}, getState: id => f.states[id] ?? 'RVRBVC1VU0lORQ==', setState: (id, b) => { calls.push(['setState', id, b]); f.states[id] = b; return true; },
       };
       window.__fakeListen ??= e => { const w = window.khNative; if (w?.sabs && e.data?.khSab instanceof SharedArrayBuffer) { w.sabs.add(e.data.key); window.postMessage({ khSabOk: e.data.key }, '*'); } };
       removeEventListener('message', window.__fakeListen); addEventListener('message', window.__fakeListen);
@@ -4669,6 +4671,71 @@ test('QZ05', 'Quantification', 'Menu au clavier (Tab, Entrée, flèches), régla
     expect((await page.textContent('.qmenu .menu-list')).includes(w), 'non traduit en ' + l); await page.keyboard.press('Escape');
   }
   await page.evaluate(() => window.kh.setLang('fr'));
+});
+
+
+// ============ V19 — chantier 6 : instruments Audio Unit du Mac (module natif simulé ; l'essai réel est qa/au-instrument.cjs) ============
+/** Branche le module simulé, choisit DLSMusicDevice sur la piste « Basse » par la liste, et espionne les messages MIDI envoyés au plugin. */
+async function macInstrument() {
+  await S(() => { window.qa.fakeNative(); window.kh.setLang('fr'); });
+  await page.click(await headSel(1)); await S(() => { window.kh.S.selClip = ''; window.kh.commit(); });
+  await page.selectOption('[data-role=auinst]', 'aumu:dls :appl');
+  await page.waitForSelector('[data-act=auiwindow]:not([disabled])', { timeout: 5000 });
+  await S(() => { const k = window.kh, au = k.engine.mix.instOf(k.S.project.tracks[1].id); window.__midi = []; const m = au.midi; au.midi = (st, a, b, t) => { window.__midi.push([st, a, b, t]); m(st, a, b, t); }; });
+}
+test('AI01', 'Instruments du Mac', 'Choisir un instrument du Mac dans la liste : la piste le joue, ses réglages sont dans sa fenêtre', async () => {
+  await macInstrument();
+  const r = await S(() => { const k = window.kh, sp = k.S.project.tracks[1].synth, f = window.khNative; return { sp, open: f.calls.filter(c => c[0] === 'open').map(c => c[1]) }; });
+  expect(r.sp.engine === 'au' && r.sp.auUrl === 'aumu:dls :appl' && /DLSMusicDevice/.test(r.sp.auName), 'instrument non gardé : ' + JSON.stringify(r.sp));
+  expect(r.open.includes('aumu:dls :appl'), 'le plugin n’a pas été ouvert : ' + JSON.stringify(r.open));
+  expect(!(await page.$('.synth .sl')) || await page.$$eval('.synth .sl .lb', l => l.every(x => /Octave|pitch bend/i.test(x.textContent))), 'réglages du synthé intégré encore affichés');
+  expect((await page.$eval('[data-role=preset]', s => s.selectedOptions[0].textContent)).includes('DLSMusicDevice'), 'le son affiché n’est pas l’instrument du Mac');
+  await page.click('[data-act=auiwindow]'); expect(await S(() => window.khNative.calls.some(c => c[0] === 'uiOpen')), 'fenêtre de l’instrument non ouverte');
+  await page.selectOption('[data-role=preset]', 'r_salamander'); expect((await proj()).tracks[1].synth.engine === 'multi', 'retour à un son intégré');
+});
+test('AI02', 'Instruments du Mac', 'Jeu au clavier MIDI : note, relâchement, pitch bend, molette et pédale partent vers le plugin', async () => {
+  await macInstrument();
+  const m = await S(async () => { const k = window.kh, w = ms => new Promise(r => setTimeout(r, ms)); k.onMidi([0x90, 60, 100]); k.onMidi([0xe0, 0x7f, 0x7f]); k.onMidi([0xb0, 1, 64]); await w(50); k.onMidi([0x80, 60, 0]); k.onMidi([0xe0, 0, 0x40]); return window.__midi.map(x => x.slice(0, 3)); });
+  const has = x => m.some(y => y.join() === x.join());
+  expect(has([0x90, 60, 100]) && has([0x80, 60, 0]) && has([0xe0, 127, 127]) && has([0xe0, 0, 64]) && has([0xb0, 1, 64]), 'messages : ' + JSON.stringify(m));
+  await S(() => { window.__midi.length = 0; const k = window.kh; k.onMidi([0xb0, 64, 127]); k.onMidi([0x90, 62, 90]); k.onMidi([0x80, 62, 0]); });
+  expect(!(await S(() => window.__midi.some(x => x[0] === 0x80))), 'la pédale doit retenir le relâchement');
+  await S(() => window.kh.onMidi([0xb0, 64, 0])); expect(await S(() => window.__midi.some(x => x[0] === 0x80 && x[1] === 62)), 'relâchement au lever de la pédale');
+});
+test('AI03', 'Instruments du Mac', 'Lecture d’un clip : chaque note part à son instant et se relâche à sa fin ; l’arrêt coupe tout', async () => {
+  await macInstrument();
+  await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[1]; p.bpm = 120; p.loop = false; p.tracks.forEach(t => { if (t !== tr) t.clips = []; }); tr.clips = [{ id: 'ai', name: 'n', start: 0, len: 16, offset: 0, patLen: 16, notes: [{ p: 60, s: 0, l: 2, v: 1 }, { p: 64, s: 4, l: 2, v: 0.5 }], ctl: { pb: [{ s: 6, v: 1 }] } }]; k.commit(); window.__midi.length = 0; });
+  await S(() => window.kh.engine.play()); await sleep(1300);
+  const r = await S(() => { const m = window.__midi, on = m.filter(x => x[0] === 0x90), off = m.filter(x => x[0] === 0x80); return { on, off, pb: m.filter(x => x[0] === 0xe0) }; });
+  expect(r.on.length >= 2 && r.on[0][1] === 60 && r.on[1][1] === 64 && r.on[1][2] === 64, 'notes : ' + JSON.stringify(r.on));
+  near(r.on[1][3] - r.on[0][3], 0.5, 0.002, 'écart entre les deux notes (4 pas à 120 BPM)');
+  near(r.off[0][3] - r.on[0][3], 0.245, 0.01, 'durée de la première note');
+  expect(r.pb.some(x => x[1] === 127 && x[2] === 127), 'le pitch bend du clip ne part pas vers le plugin : ' + JSON.stringify(r.pb));
+  await S(() => window.kh.engine.stop()); await sleep(100);
+  expect(await S(() => window.__midi.some(x => x[0] === 0xb0 && x[1] === 123)), 'l’arrêt n’envoie pas « toutes les notes coupées »');
+});
+test('AI04', 'Instruments du Mac', 'L’état réglé dans la fenêtre est gardé dans le projet, rechargé dans le plugin, et l’export reste d’un seul tenant', async () => {
+  await macInstrument();
+  await page.click('[data-act=auiwindow]');
+  await S(() => { const f = window.khNative, k = window.kh, id = k.engine.mix.instOf(k.S.project.tracks[1].id).auId; f.states[id] = 'TU9OLVNPTg=='; f.ui[id] = false; });
+  await until(() => S(() => window.kh.S.project.tracks[1].synth.auState === 'TU9OLVNPTg=='), 'état non recopié à la fermeture de la fenêtre', 3000);
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].synth.auState !== 'TU9OLVNPTg==', 'l’annulation doit défaire l’état recopié');
+  await page.keyboard.press('Control+y');
+  // Nouvel instrument (projet rouvert) : il reçoit l'état gardé.
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.synth.auUrl = 'aumu:samp:appl'; k.commit(); tr.synth.auUrl = 'aumu:dls :appl'; k.commit(); });
+  await until(() => S(() => window.khNative.calls.some(c => c[0] === 'setState' && c[2] === 'TU9OLVNPTg==')), 'état non rechargé dans le plugin', 3000);
+  const g = await S(() => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), base = p.tracks[0]; for (let i = 0; i < 12; i++) { const t = JSON.parse(JSON.stringify(base)); t.id = 'z' + i; p.tracks.push(t); } return k.renderGroups(p, 8); });
+  expect(g === null, 'un projet avec un instrument du Mac doit être rendu d’un seul tenant');
+});
+test('AI05', 'Instruments du Mac', 'Version web : pas de liste, piste muette annoncée, export possible ; textes traduits', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; Object.assign(tr.synth, { engine: 'au', auUrl: 'aumu:dls :appl', auName: 'Apple: DLSMusicDevice' }); k.S.selTrack = tr.id; k.S.selClip = ''; k.commit(); });
+  expect(!(await page.$('[data-role=auinst]')), 'liste des instruments du Mac affichée sans le module natif');
+  expect(/version bureau/.test(await page.textContent('[data-aui=state]')), 'piste muette non annoncée');
+  const st = await S(() => window.qa.stats(window.kh.S.project)); expect(st.bad === 0 && st.peak > 0.05, 'l’export doit marcher avec les autres pistes');
+  await S(() => { window.qa.fakeNative(); window.kh.setLang('en'); });
+  expect((await page.textContent('.synth')).includes('Mac instrument'), 'non traduit en anglais');
+  await S(() => window.kh.setLang('es')); expect((await page.textContent('.synth')).includes('Instrumento del Mac'), 'non traduit en espagnol');
+  await S(() => window.kh.setLang('fr'));
 });
 
 (async () => {

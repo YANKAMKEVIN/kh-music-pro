@@ -1,7 +1,7 @@
 import { ensureBanks, loadBank, setDecoder, usedBanks, bankReady, drumBank } from './banks';
 import { gainLimit, lufs, peakOf } from './loudness';
 import { detectPitch } from './pitch';
-import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT, warmWarp } from './graph';
+import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, setLiveInstOf, swingT, warmWarp } from './graph';
 import { S, buffers } from '../store';
 import { IoOptions, NativeIO, nativeName } from './native-io';
 import { BAR, CtlKind, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
@@ -518,6 +518,7 @@ class Engine {
 }
 
 export const engine = new Engine();
+setLiveInstOf(id => engine.mix.instOf(id));
 
 // ---------- Export : rendu hors-ligne + encodage WAV ----------
 /** Ce que le dernier rendu n'a pas pu inclure. */
@@ -540,6 +541,7 @@ async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, li
     if (q <= 0) { fns.forEach(f => f()); continue; }
     off.suspend(q * 128 / sr).then(() => { fns.forEach(f => f()); off.resume(); });
   }
+  await mix.flushInsts();   // instruments du Mac : toutes leurs notes sont arrivées avant le calcul
   const out = await off.startRendering();
   mix.active.clear(); mix.disposePlugins();
   return { out, wamFailed, pdc: mix.pdcMax };
@@ -554,7 +556,7 @@ async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, li
 export function renderGroups(p: Project, cores = navigator.hardwareConcurrency || 2): Project[] | null {
   const n = Math.min(4, cores - 1);
   if (p.tracks.length < 12 || n < 2) return null;
-  if ([...p.tracks, ...p.buses].some(t => t.solo || (t.inserts ?? []).some(i => i.type === 'au'))) return null;
+  if ([...p.tracks, ...p.buses].some(t => t.solo || t.synth?.engine === 'au' || (t.inserts ?? []).some(i => i.type === 'au'))) return null;
   // Ce qui doit rester dans le même rendu est réuni (union de groupes) : une piste et le bus où elle sort ou envoie (V19),
   // une piste et la source de son sidechain (V19), les kicks du séquenceur et les pistes qu'ils font pomper.
   const busIds = new Set(p.buses.map(b => b.id)), ids = new Set(p.tracks.map(t => t.id)), up = new Map<string, string>();
@@ -649,6 +651,7 @@ export async function measureLoad(p: Project, from = 0, sec = 4): Promise<{ rati
   await mix.loadWams(p);
   const t0 = timeOf(p, from);
   for (let s = from; s < end && timeOf(p, s) - t0 < sec; s++) { const t = timeOf(p, s) - t0; mix.applyAuto(p, s, t); scheduleStep(mix, p, buffers, s, swingT(p, s, t + t0) - t0, s === from, null); }
+  await mix.flushInsts();
   const a = performance.now(); await off.startRendering(); const ms = performance.now() - a;
   mix.active.clear(); mix.disposePlugins();
   return { ratio: ms / 1000 / sec, ms, sec, tracks: p.tracks.length, inserts: p.tracks.reduce((n, t) => n + (t.inserts?.filter(i => i.on).length ?? 0), 0) };

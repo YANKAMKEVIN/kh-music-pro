@@ -41,6 +41,9 @@ if (m) {
     params: id => m.params(num(id)),
     presets: id => m.presets(num(id)),
     setPreset: (id, n) => m.setPreset(num(id), num(n)),
+    // État complet d'un plugin (V19, instruments) : chaîne base64.
+    getState: id => (m.getState ? m.getState(num(id)) : ''),
+    setState: (id, b64) => (m.setState ? m.setState(num(id), str(b64)) : false),
     info: id => m.info(num(id)),
     close: id => m.close(num(id)),
     // Fenêtre graphique du plugin (V17) : vue Cocoa du plugin ou vue générique d'Apple, dans une fenêtre native.

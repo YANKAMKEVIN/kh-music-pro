@@ -319,6 +319,15 @@ const D: Record<string, [string, string, string]> = {
 
   // ===== V5 =====
   'okb.title': ['Clavier', 'Keyboard', 'Teclado'],
+  // V19 : instruments du Mac
+  'aui.label': ['Instrument du Mac', 'Mac instrument', 'Instrumento del Mac'],
+  'aui.pick': ['Choisir un instrument du Mac', 'Choose a Mac instrument', 'Elegir un instrumento del Mac'],
+  'aui.pickTip': ['Jouer cette piste avec un instrument Audio Unit installé sur le Mac (Serum, Arturia, Kontakt…)', 'Play this track with an Audio Unit instrument installed on the Mac (Serum, Arturia, Kontakt…)', 'Tocar esta pista con un instrumento Audio Unit instalado en el Mac (Serum, Arturia, Kontakt…)'],
+  'aui.window': ['Fenêtre de l’instrument', 'Instrument window', 'Ventana del instrumento'],
+  'aui.windowTip': ['Ouvrir la fenêtre de l’instrument : ce qu’on y règle est gardé dans le projet', 'Open the instrument window: what you set there is kept in the project', 'Abrir la ventana del instrumento: lo que ajustes ahí se guarda en el proyecto'],
+  'aui.loading': ['Instrument en cours de chargement…', 'Loading the instrument…', 'Cargando el instrumento…'],
+  'aui.missing': ['Instrument du Mac : disponible seulement dans la version bureau sur Mac. Cette piste reste muette ici.', 'Mac instrument: only available in the desktop version on a Mac. This track stays silent here.', 'Instrumento del Mac: solo disponible en la versión de escritorio en Mac. Esta pista queda en silencio aquí.'],
+  'toast.auInstFail': ['Instrument du Mac impossible à charger : {0}', 'Could not load the Mac instrument: {0}', 'No se pudo cargar el instrumento del Mac: {0}'],
   // V19 : quantification fine
   'q.menu': ['Réglages de quantification, humanisation, légato', 'Quantize, humanize and legato settings', 'Ajustes de cuantización, humanización y legato'],
   'q.str': ['Force', 'Strength', 'Fuerza'],
