@@ -4366,7 +4366,7 @@ async function takesClip() {
 const pitchAt = ts => page.evaluate(async ts => { const k = window.kh, b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0), sr = b.sampleRate; return ts.map(t => Math.round(k.detectPitch(d.slice(Math.floor(t * sr), Math.floor(t * sr) + 4096), sr))); }, ts);
 test('CP01', 'Comping', 'Glisser sur la prise 2 garde la prise 2 sur les temps 2 et 3, la prise 1 ailleurs ; l’export suit', async () => {
   await takesClip(); await tab('editor');
-  const l = await box('.ctake[data-take="1"]'), beat = l.width / 4;
+  const l = await box('.ctake[data-lane="1"]'), beat = l.width / 4;
   await drag(l.x + beat * 1.3, l.y + l.height / 2, beat * 1.2, 0);
   const c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
   expect(JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 0 }, { s: 4, take: 1 }, { s: 12, take: 0 }]), 'comping : ' + JSON.stringify(c.comp));
@@ -4376,11 +4376,11 @@ test('CP01', 'Comping', 'Glisser sur la prise 2 garde la prise 2 sur les temps 2
 });
 test('CP02', 'Comping', 'Au clavier : flèches puis Entrée choisissent la prise 3 sur le dernier temps ; ↑ ↓ changent de prise', async () => {
   await takesClip(); await tab('editor');
-  await page.focus('.ctake[data-take="0"]'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
-  expect(await page.evaluate(() => document.activeElement.dataset.take) === '2', 'la flèche ↓ ne descend pas d’une prise');
+  await page.focus('.ctake[data-lane="0"]'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
+  expect(await page.evaluate(() => document.activeElement.dataset.lane) === '2', 'la flèche ↓ ne descend pas d’une prise');
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter'); await sleep(100);
-  expect(await page.evaluate(() => document.activeElement.dataset.take) === '2', 'le focus quitte la prise après le choix');
+  expect(await page.evaluate(() => document.activeElement.dataset.lane) === '2', 'le focus quitte la prise après le choix');
   const c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
   expect(JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 0 }, { s: 12, take: 2 }]), 'comping : ' + JSON.stringify(c.comp));
   const hz = await pitchAt([1.2, 1.75]); expect(Math.abs(hz[0] - 330) < 6 && Math.abs(hz[1] - 550) < 10, 'hauteurs : ' + hz);
@@ -4397,7 +4397,7 @@ test('CP03', 'Comping', 'Aucun clic aux jonctions entre prises (fondu enchaîné
 test('CP04', 'Comping', 'Prise entière, annulation, scission et rognage à gauche gardent les portions à leur place', async () => {
   await takesClip(); await tab('editor');
   await S(() => { const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[0]; c.comp = [{ s: 0, take: 0 }, { s: 4, take: 1 }, { s: 12, take: 2 }]; k.commit(); });
-  await page.click('.ctk[data-take="1"]'); let c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
+  await page.click('.segs [data-take="1"]'); let c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
   expect(!c.comp && c.take === 1, 'prise entière : ' + JSON.stringify(c));
   await page.keyboard.press('Control+z'); c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
   expect(c.comp && c.comp.length === 3, 'annulation du choix de prise entière');

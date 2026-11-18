@@ -648,7 +648,7 @@ function compPanel(c: Clip) {
   if (compCur >= c.len) compCur = 0;
   const row = (k: number) => {
     const cv = h('canvas', { class: 'cwave' });
-    const lane = h('div', { class: 'ctake', tabIndex: 0, role: 'group', data: { take: String(k) }, 'aria-label': t('comp.row', k + 1), title: t('comp.rowTip') }, cv);
+    const lane = h('div', { class: 'ctake', tabIndex: 0, role: 'group', data: { lane: String(k) }, 'aria-label': t('comp.row', k + 1), title: t('comp.rowTip') }, cv);
     // Portions où cette prise est jouée, et curseur clavier.
     const segs = c.comp ?? [{ s: 0, take: c.take ?? 0 }];
     segs.forEach((sg, i) => { if (sg.take !== k) return; const b = i + 1 < segs.length ? segs[i + 1].s : c.len; lane.append(h('i', { class: 'cused', style: `left:${sg.s / c.len * 100}%;width:${(b - sg.s) / c.len * 100}%` })); });
@@ -671,14 +671,14 @@ function compPanel(c: Clip) {
       const move = (d: number) => { compCur = clamp(compCur + d, 0, Math.max(0, Math.ceil(c.len / g) - 1) * g); lane.querySelector<HTMLElement>('.ccur')!.style.left = compCur / c.len * 100 + '%'; };
       if (e.key === 'ArrowRight') move(g); else if (e.key === 'ArrowLeft') move(-g);
       else if (e.key === 'Home') move(-c.len); else if (e.key === 'End') move(c.len);
-      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') document.querySelector<HTMLElement>(`.ctake[data-take="${clamp(k + (e.key === 'ArrowDown' ? 1 : -1), 0, n - 1)}"]`)?.focus();
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') document.querySelector<HTMLElement>(`.ctake[data-lane="${clamp(k + (e.key === 'ArrowDown' ? 1 : -1), 0, n - 1)}"]`)?.focus();
       else if (e.key === 'Enter' || e.key === ' ') { compTake(k, compCur, compCur + g); refocus(k); }
       else return;
       e.preventDefault(); e.stopPropagation();
     };
-    return h('div', { class: 'crow' }, h('button', { class: 'pill ctk' + (!c.comp && c.take === k ? ' on' : ''), data: { take: String(k) }, title: t('take.tip'), onclick: () => chooseTake(k) }, `${t('clip.take')} ${k + 1}`), lane);
+    return h('div', { class: 'crow' }, h('span', { class: 'ctk' + (c.comp ? '' : c.take === k ? ' on' : ''), 'aria-hidden': 'true' }, `${t('clip.take')} ${k + 1}`), lane);
   };
-  const refocus = (k: number) => queueMicrotask(() => document.querySelector<HTMLElement>(`.ctake[data-take="${k}"]`)?.focus());
+  const refocus = (k: number) => queueMicrotask(() => document.querySelector<HTMLElement>(`.ctake[data-lane="${k}"]`)?.focus());
   return h('div', { class: 'comp', role: 'group', 'aria-label': t('comp.title') },
     h('div', { class: 'chead' }, h('span', { class: 'sect' }, t('comp.title')), h('span', { class: 'tip' }, t('comp.tip')),
       h('span', { class: 'cstat', role: 'status' }, c.comp ? t('comp.state', c.comp.length) : t('comp.single', (c.take ?? 0) + 1))),
