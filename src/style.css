@@ -606,3 +606,10 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 .ccur { position: absolute; bottom: 0; height: 4px; background: #fff; opacity: 0; pointer-events: none; }
 .ctake:focus-visible .ccur { opacity: .9; }
 @media (max-width: 760px) { .crow .ctk { width: 64px; height: 44px; } .ctake { height: 44px; } }
+.sends { display: grid; gap: 4px; }
+.send { display: grid; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; }
+.send .srow { display: flex; gap: 4px; align-items: center; }
+.send .srow select { flex: 1; min-width: 0; }
+.qmenu > .menu-list { min-width: 260px; }
+.qmenu .sl { padding: 2px 8px; }
+.qmenu .tip { margin: 0 8px; font-size: 11px; line-height: 1.35; max-width: 240px; }

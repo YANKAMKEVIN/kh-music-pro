@@ -1,7 +1,7 @@
 import { SUSTAIN_BANKS } from '../audio/sustain';
 import { drumBank, recordedDynamics } from '../audio/banks';
 import { chooseSound, showSounds } from './sounds';
-import { audioFiles, compTake, leftNeighbour, setXfade, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
+import { audioFiles, humanizeNotes, legatoNotes, compTake, leftNeighbour, setXfade, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
@@ -408,13 +408,30 @@ export function notesKey(e: KeyboardEvent): boolean {
 
 // ---------- Grille des notes ----------
 function gridTools(c: Clip) {
+  const target = () => { const sel2 = c.notes!.filter(n => selNotes.has(n)); return sel2.length ? sel2 : c.notes!; };
   const sel = h('select', { 'aria-label': t('ed.grid'), title: t('ed.gridTip'), data: { role: 'notegrid' } },
     ...[['16', '1/16'], ['32', '1/32'], ['8t', t('grid.8t')], ['16t', t('grid.16t')], ['free', t('grid.free')]].map(([v, l]) => h('option', { value: v, selected: S.grid === v }, l)));
   sel.onchange = () => { S.grid = sel.value; emit(); };
   const has = !!c.ctl && Object.values(c.ctl).some(p => p?.length), on = S.ctlShow || has;
   return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.grid'), sel),
     h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'ctlshow' }, 'aria-pressed': String(on), disabled: has, title: t('ctl.showTip'), onclick: () => { S.ctlShow = !S.ctlShow; emit(); } }, '〰 ' + t('ctl.lane')),
-    h('button', { title: t('tip.quantize'), data: { act: 'quantize' }, onclick: () => { const sel2 = c.notes!.filter(n => selNotes.has(n)); quantizeNotes(sel2.length ? sel2 : c.notes!, GRIDS[S.grid] ?? 1, c.patLen!); } }, '🧲 ' + t('act.quantize')));
+    h('button', { title: t('tip.quantize'), data: { act: 'quantize' }, onclick: () => quantizeNotes(target(), GRIDS[S.grid] ?? 1, c.patLen!, S.quant) }, '🧲 ' + t('act.quantize') + (S.quant.str < 1 || S.quant.swing ? ` ${Math.round(S.quant.str * 100)} %` : '')),
+    quantMenu(c, target));
+}
+/** Réglages de la quantification (V19) : force, swing, humanisation, légato. */
+function quantMenu(c: Clip, target: () => Note[]) {
+  const d = h('details', { class: 'menu tmenu qmenu' });
+  const q = S.quant;
+  const btn = (act: string, icon: string, fn: () => void) => h('button', { data: { act }, title: t('q.' + act + 'Tip'), onclick: () => { d.open = false; fn(); } }, `${icon} ${t('q.' + act)}`);
+  d.append(h('summary', { class: 'pill', title: t('q.menu'), 'aria-label': t('q.menu'), data: { act: 'qmenu' } }, '▾'), h('div', { class: 'menu-list' },
+    slider(t('q.str'), 0, 1, 0.05, q.str, v => { q.str = v; }, pct, 'qstr', true),
+    slider(t('q.swing'), 0, 1, 0.01, q.swing, v => { q.swing = v; }, pct, 'qswing', true),
+    btn('apply', '🧲', () => quantizeNotes(target(), GRIDS[S.grid] ?? 1, c.patLen!, q)),
+    h('p', { class: 'tip' }, t('q.swingTip')),
+    slider(t('q.hum'), 0, 1, 0.05, q.hum, v => { q.hum = v; }, pct, 'qhum', true),
+    btn('humanize', '🎲', () => humanizeNotes(target(), q.hum, c.patLen!)),
+    btn('legato', '⟿', () => legatoNotes(target(), c.notes!, c.patLen!))));
+  return d;
 }
 
 // ---------- Gamme et accords ----------

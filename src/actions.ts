@@ -46,7 +46,7 @@ export async function freezeTrack(id: string) {
   toast(t('frz.working', tr.name));
   const copy: Track = JSON.parse(JSON.stringify(tr)), moved: NonNullable<Track['auto']> = {};
   // Le rendu s'arrête avant le fader : volume, panoramique, envois, sortie et sidechain restent réglables sur la piste audio.
-  Object.assign(copy, { vol: 1, pan: 0, rev: 0, dly: 0, out: '', duck: 0, mute: false, solo: false });
+  Object.assign(copy, { vol: 1, pan: 0, rev: 0, dly: 0, out: '', duck: 0, mute: false, solo: false, sends: [] }); delete copy.sc;
   for (const k of ['vol', 'pan', 'rev', 'dly'] as const) if (copy.auto?.[k]) { moved[k] = copy.auto[k]; delete copy.auto[k]; }
   let buf: AudioBuffer;
   try { buf = await renderOffline({ ...p, tracks: [copy], loop: false }, false); }
@@ -55,7 +55,9 @@ export async function freezeTrack(id: string) {
   const bid = uid(); addBuffer(bid, buf);
   let len = 0; while (timeOf(S.project, len) < buf.duration && len < 100000) len++;
   const at: Track = newTrack('audio', p.tracks.filter(x => x.type === 'audio').length + 1);
-  Object.assign(at, { name: `${tr.name} ❄`, color: tr.color, vol: tr.vol, pan: tr.pan, rev: tr.rev, dly: tr.dly, out: tr.out, duck: tr.duck, frozenFrom: tr.id, auto: Object.keys(moved).length ? moved : undefined });
+  Object.assign(at, { name: `${tr.name} ❄`, color: tr.color, vol: tr.vol, pan: tr.pan, rev: tr.rev, dly: tr.dly, out: tr.out, duck: tr.duck, sc: tr.sc, sends: tr.sends ? JSON.parse(JSON.stringify(tr.sends)) : undefined, frozenFrom: tr.id, auto: Object.keys(moved).length ? moved : undefined });
+  // Les pistes que celle-ci faisait pomper suivent désormais sa version audio (la piste gelée ne joue plus).
+  for (const x of p.tracks) if (x.sc === tr.id) x.sc = at.id;
   at.clips = [{ id: uid(), name: `${tr.name} ❄`, start: 0, len: Math.max(1, len), offset: 0, bufferId: bid, gain: 1 }];
   tr.frozen = true; tr.mute = true;
   p.tracks.splice(p.tracks.indexOf(tr) + 1, 0, at);
@@ -65,7 +67,9 @@ export async function freezeTrack(id: string) {
 /** Dégeler : la piste audio du gel disparaît, la piste d'origine revient telle qu'elle était. */
 export function unfreezeTrack(id: string) {
   const tr = findTrack(id); if (!tr?.frozen) return;
+  const gone = S.project.tracks.filter(x => x.frozenFrom === tr.id).map(x => x.id);
   S.project.tracks = S.project.tracks.filter(x => x.frozenFrom !== tr.id);
+  for (const x of S.project.tracks) if (x.sc && gone.includes(x.sc)) x.sc = tr.id;
   tr.frozen = false; tr.mute = false; S.selTrack = tr.id; S.selClip = tr.clips[0]?.id ?? '';
   commit(); toast(t('frz.undone', tr.name));
 }
@@ -233,13 +237,37 @@ export async function exportMp3() {
   } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
 }
 
-/** Recale les notes sélectionnées (ou toutes) sur la grille du piano roll. */
-export function quantizeNotes(notes: { s: number; l: number }[], g: number, patLen: number) {
+/**
+ * Recale les notes sélectionnées (ou toutes) sur la grille du piano roll. V19 : `str` = force (1 = sur la grille, 0,5 = à
+ * mi-chemin, pour garder un peu du jeu), `swing` = les points pairs de la grille gardent leur place, les impairs sont retardés de
+ * `swing` × une demi-division (même règle que le swing du séquenceur : 0,66 ≈ croches ternaires). À 100 % sans swing, la durée
+ * est aussi recalée, comme avant ; sinon seul le début bouge et la durée est gardée.
+ */
+export function quantizeNotes(notes: { s: number; l: number }[], g: number, patLen: number, o: { str?: number; swing?: number } = {}) {
+  const str = Math.max(0, Math.min(1, o.str ?? 1)), sw = Math.max(0, Math.min(1, o.swing ?? 0)), last = snapTo(Math.floor((patLen - 1e-6) / g) * g, g);
   for (const n of notes) {
-    n.s = Math.min(snapTo(n.s, g), snapTo(Math.floor((patLen - 1e-6) / g) * g, g));
-    n.l = Math.max(g, Math.min(snapTo(n.l, g), patLen - n.s));
+    const k = Math.round(Math.min(snapTo(n.s, g), last) / g), target = k * g + (k % 2 ? sw * g * 0.5 : 0);
+    if (str === 1 && !sw) { n.s = Math.min(snapTo(n.s, g), last); n.l = Math.max(g, Math.min(snapTo(n.l, g), patLen - n.s)); continue; }
+    n.s = Math.round(Math.max(0, Math.min(patLen - 1 / 24, n.s + (target - n.s) * str)) * 1e4) / 1e4;
+    n.l = Math.max(1 / 24, Math.min(n.l, patLen - n.s));
   }
   commit(); toast(t('toast.quantized', notes.length));
+}
+/** Humanise (V19) : décale chaque début d'au plus ± 0,12 pas (± 15 ms à 120 BPM) et chaque force d'au plus ± 12 %, selon `amt` (0..1). */
+export function humanizeNotes(notes: { s: number; l: number; v: number }[], amt: number, patLen: number) {
+  const a = Math.max(0, Math.min(1, amt)), r = () => Math.random() * 2 - 1;
+  for (const n of notes) {
+    n.s = Math.round(Math.max(0, Math.min(patLen - 1 / 24, n.s + r() * 0.12 * a)) * 1e4) / 1e4;
+    n.l = Math.max(1 / 24, Math.min(n.l, patLen - n.s));
+    n.v = Math.round(Math.max(0.05, Math.min(1, n.v * (1 + r() * 0.12 * a))) * 100) / 100;
+  }
+  commit(); toast(t('toast.humanized', notes.length));
+}
+/** Légato (V19) : chaque note dure jusqu'au début de la note suivante du clip (les notes d'un accord gardent la même fin). */
+export function legatoNotes(notes: { s: number; l: number }[], all: { s: number }[], patLen: number) {
+  const starts = [...new Set(all.map(n => n.s))].sort((a, b) => a - b);
+  for (const n of notes) { const next = starts.find(x => x > n.s + 1e-6) ?? patLen; n.l = Math.max(1 / 24, next - n.s); }
+  commit(); toast(t('toast.legato', notes.length));
 }
 
 // ---------- Chaîne d'effets ----------
@@ -317,9 +345,17 @@ export function addBus() {
 export function deleteBus(id: string) {
   const p = S.project;
   p.buses = p.buses.filter(b => b.id !== id);
-  for (const tr of p.tracks) if (tr.out === id) tr.out = ''; // les pistes qui y étaient envoyées reviennent au général
+  for (const tr of p.tracks) { if (tr.out === id) tr.out = ''; if (tr.sends) tr.sends = tr.sends.filter(sd => sd.bus !== id); } // les pistes qui y sortaient reviennent au général ; leurs envois vers ce bus disparaissent
   commit();
 }
+
+/** Envoi libre (V19) : nouvel envoi de la piste vers le premier bus (créé s'il n'en existe aucun), après le volume. */
+export function addSend(tr: Track) {
+  let bus = S.project.buses[0];
+  if (!bus) { bus = newBus(1); S.project.buses.push(bus); }
+  (tr.sends ??= []).push({ id: uid(), bus: bus.id, amt: 0.5, pre: false }); commit();
+}
+export function removeSend(tr: Track, id: string) { tr.sends = (tr.sends ?? []).filter(sd => sd.id !== id); if (!tr.sends.length) delete tr.sends; commit(); }
 
 export function applyMixPreset(tr: Track, key: string) {
   const p = MIX_PRESETS[key];

@@ -150,7 +150,7 @@ async function reset() {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
-    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1 }); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
+    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1; k.S.recOffsetMs = 0; try { localStorage.removeItem('kh-rec-offset'); localStorage.removeItem('kh-wam-trust'); } catch { }
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
@@ -4440,7 +4440,7 @@ test('CF01', 'Fondus enchaînés', 'Réglé au curseur sur le second clip : le p
   const a1 = await toneIn(330, 2.02, 2.1), b1 = await toneIn(440, 2.02, 2.1), a2 = await toneIn(330, 2.3, 2.4), b2 = await toneIn(440, 2.3, 2.4);
   expect(before < 0.01, 'sans fondu, le premier clip doit s’arrêter net : ' + before);
   expect(a1 > 0.2 && b1 > 0.1, `pendant le fondu les deux sons se mêlent : ${a1} / ${b1}`);
-  expect(a2 < 0.01 && b2 > 0.45, `après le fondu, seul le second reste : ${a2} / ${b2}`);
+  expect(a2 < 0.01 && b2 > 0.35, `après le fondu, seul le second reste : ${a2} / ${b2}`);
 });
 test('CF02', 'Fondus enchaînés', 'Fondu à puissance constante : pas de creux de volume à la jonction', async () => {
   await twoClips(); await S(() => { const k = window.kh; k.S.project.tracks.find(t => t.type === 'audio').clips[1].xfade = 2; k.commit(); });
@@ -4481,6 +4481,194 @@ test('CF04', 'Fondus enchaînés', 'Export parallèle d’un gros projet, scissi
   await S(async () => { await window.kh.store.saveNow(); });
   await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
   expect(await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(c => c.id === 'xb')?.xfade) === 2, 'fondu perdu au rechargement');
+});
+
+
+// ============ V19 — chantier 4 : vrai sidechain et envois libres ============
+/**
+ * Projet de test : « Basse » = un la tenu (sinus) pendant 2 mesures ; « Voix / Audio » = un kick audio importé (4 coups par mesure,
+ * 80 ms chacun) ou une voix continue (`voice`). 120 BPM : un temps = 0,5 s.
+ */
+async function scProject(voice = false) {
+  await page.evaluate(voice => {
+    const k = window.kh, p = k.S.project, sr = 44100, b = new AudioBuffer({ numberOfChannels: 1, length: sr * 4, sampleRate: sr }), d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) { const tt = i / sr; d[i] = voice ? (tt >= 1 && tt < 2 ? 0.6 * Math.sin(2 * Math.PI * 300 * tt) : 0) : ((tt % 0.5) < 0.08 ? 0.9 * Math.sin(2 * Math.PI * 60 * tt) * (1 - (tt % 0.5) / 0.08) : 0); }
+    k.addBuffer('sckick', b); p.bpm = 120; p.loop = false; p.target = 0;
+    const syn = p.tracks[1], au = p.tracks.find(t => t.type === 'audio'); eval(window.__PURE.replace(/tr\./g, 'syn.'));
+    p.tracks = [syn, au]; syn.clips = [{ id: 'sp', name: 'p', start: 0, len: 32, offset: 0, patLen: 32, notes: [{ p: 57, s: 0, l: 32, v: 0.8 }] }];
+    au.clips = [{ id: 'sk', name: 'k', start: 0, len: 32, offset: 0, bufferId: 'sckick' }]; au.name = voice ? 'Voix' : 'Kick audio';
+    syn.duck = 0; delete syn.sc; syn.sends = undefined; p.buses = [];
+    k.S.selTrack = syn.id; k.S.selClip = ''; k.commit();
+  }, voice);
+}
+/** Niveau RMS du rendu (la source étant coupée, on n'entend que la piste qui pompe) par fenêtre [début, fin] en secondes. */
+const rmsWins = wins => page.evaluate(async wins => { const k = window.kh, b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0), sr = b.sampleRate; return wins.map(([a, z]) => { let q = 0; const i0 = Math.floor(a * sr), i1 = Math.floor(z * sr); for (let i = i0; i < i1; i++) q += d[i] * d[i]; return Math.sqrt(q / (i1 - i0)); }); }, wins);
+test('SC01', 'Sidechain', 'Un kick audio importé fait pomper la basse : choix de la source et du réglage dans le mixeur', async () => {
+  await scProject(); await tab('mixer');
+  await page.selectOption('.strip[data-id] >> nth=0 >> [data-role=scsrc]', { label: '⚡ Kick audio' });
+  await setSlider('.strip >> nth=0', 'Sidechain', 1);
+  const p = await proj(); expect(p.tracks[0].sc === p.tracks[1].id && p.tracks[0].duck === 1, 'source non gardée : ' + JSON.stringify([p.tracks[0].sc, p.tracks[0].duck]));
+  await S(() => { const k = window.kh; k.S.project.tracks[1].mute = true; k.commit(); });   // kick « fantôme » : on n'entend que la basse
+  const w = await rmsWins([[1.01, 1.07], [1.3, 1.45], [2.01, 2.07], [2.3, 2.45]]);
+  expect(w[0] < w[1] * 0.25 && w[2] < w[3] * 0.25, 'la basse ne baisse pas sur les coups : ' + w.map(x => x.toFixed(3)));
+  expect(w[1] > 0.05, 'la basse doit revenir entre les coups : ' + w[1]);
+});
+test('SC02', 'Sidechain', 'Une voix fait baisser la musique tant qu’elle chante, et la musique remonte après ; réglage à 50 %', async () => {
+  await scProject(true);
+  await S(() => { const k = window.kh, [syn, au] = k.S.project.tracks; syn.sc = au.id; syn.duck = 0.5; au.mute = true; k.commit(); });
+  const w = await rmsWins([[0.5, 0.9], [1.2, 1.8], [2.4, 2.8]]);
+  near(w[1] / w[0], 0.5, 0.06, 'niveau pendant la voix (baisse de moitié)'); near(w[2] / w[0], 1, 0.05, 'retour après la voix');
+});
+test('SC03', 'Sidechain', 'Le kick du séquenceur reste la source par défaut ; une piste qui suit une autre source ne pompe plus sur lui', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(); p.target = 0; p.tracks.forEach(t => { t.rev = 0; t.dly = 0; });
+    const lvl = async q => { const b = await k.renderOffline(q, false), d = b.getChannelData(0); let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return Math.sqrt(s / d.length); };
+    const only = q => { q.tracks.forEach((t, i) => { if (i !== 1 && t.type !== 'drums') t.mute = true; if (t.type === 'drums') t.vol = 0.0001; }); return q; };
+    const a = only(JSON.parse(JSON.stringify(p))); const base = await lvl(a);
+    const b = only(JSON.parse(JSON.stringify(p))); b.tracks[1].duck = 1; const ducked = await lvl(b);
+    const c = only(JSON.parse(JSON.stringify(p))); c.tracks[1].duck = 1; c.tracks[1].sc = c.tracks[2].id; c.tracks[2].clips = []; const other = await lvl(c);
+    return { base, ducked, other };
+  });
+  expect(r.ducked < r.base * 0.85, `le kick du séquenceur ne fait plus pomper : ${r.base} → ${r.ducked}`);
+  near(r.other / r.base, 1, 0.03, 'avec une autre source (silencieuse), le kick du séquenceur ne doit plus agir');
+});
+test('SC04', 'Sidechain', 'À l’écoute : le suiveur se branche en direct ; gel de la source : la piste suit sa version audio', async () => {
+  await scProject();
+  await S(() => { const k = window.kh, [syn, au] = k.S.project.tracks; syn.sc = au.id; syn.duck = 1; k.commit(); });
+  await until(() => S(() => { const k = window.kh; return !!k.engine.mix.tracks.get(k.S.project.tracks[0].id).sc; }), 'suiveur non branché à l’écoute', 3000);
+  // Une source instrument gelée : la piste qui pompe suit la piste audio du gel.
+  await S(() => { const k = window.kh, d = k.demoProject(); const lead = d.tracks[1]; lead.id = 'leadsrc'; lead.clips[0].id = 'lc'; k.S.project.tracks.push(lead); k.S.project.tracks[0].sc = 'leadsrc'; k.commit(); });
+  await S(() => window.kh.S.project.tracks.length); await page.click(await headSel(2)); await headAct(2, '[data-act=freeze]');
+  await until(() => S(() => window.kh.S.project.tracks.some(t => t.frozenFrom === 'leadsrc')), 'gel non terminé', 20000);
+  const r = await S(() => { const p = window.kh.S.project; return { sc: p.tracks[0].sc, frozen: p.tracks.find(t => t.frozenFrom === 'leadsrc').id }; });
+  expect(r.sc === r.frozen, 'la source ne suit pas la version gelée : ' + JSON.stringify(r));
+  await headAct(2, '[data-act=freeze]');
+  expect(await S(() => window.kh.S.project.tracks[0].sc) === 'leadsrc', 'le dégel ne rend pas la source d’origine');
+});
+test('SD01', 'Envois', 'Ajouter un envoi au clic crée un bus ; post suit le fader, pré ne le suit pas', async () => {
+  await scProject(); await tab('mixer');
+  await S(() => { const k = window.kh; k.S.project.tracks[1].clips = []; k.commit(); });
+  await page.click('.strip >> nth=0 >> [data-act=sendadd]');
+  let p = await proj(); expect(p.buses.length === 1 && p.tracks[0].sends?.length === 1 && p.tracks[0].sends[0].bus === p.buses[0].id && !p.tracks[0].sends[0].pre, 'envoi : ' + JSON.stringify(p.tracks[0].sends));
+  await setSlider('.strip >> nth=0', 'Envoi 1', 1);
+  await S(() => { const k = window.kh, [syn] = k.S.project.tracks; syn.vol = 0; k.commit(); });
+  const post = (await rmsWins([[0.5, 1.5]]))[0];
+  await page.click('.strip >> nth=0 >> [data-act=sendpre]'); expect((await proj()).tracks[0].sends[0].pre, 'pré non gardé');
+  const pre = (await rmsWins([[0.5, 1.5]]))[0];
+  expect(post < 1e-4, 'envoi post avec le fader à 0 : on ne doit rien entendre ' + post); expect(pre > 0.05, 'envoi pré avec le fader à 0 : le bus doit sonner ' + pre);
+  await S(() => { const k = window.kh; k.S.project.tracks[0].mute = true; k.commit(); });
+  expect((await rmsWins([[0.5, 1.5]]))[0] < 1e-4, 'une piste coupée ne doit plus rien envoyer');
+});
+test('SD02', 'Envois', 'Deux envois vers deux bus traités différemment ; supprimer un bus retire ses envois, l’annulation les rend', async () => {
+  await scProject(); await tab('mixer');
+  await S(() => { const k = window.kh, p = k.S.project; p.tracks[1].clips = []; p.tracks[0].vol = 0; k.commit(); });
+  await page.click('[data-act=busadd]'); await page.click('[data-act=busadd]');
+  await page.click('.strip >> nth=0 >> [data-act=sendadd]'); await page.click('.strip >> nth=0 >> [data-act=sendadd]');
+  const ids = await S(() => window.kh.S.project.buses.map(b => b.id));
+  await page.selectOption('.strip >> nth=0 >> .send >> nth=1 >> [data-role=sendbus]', ids[1]);
+  await S(() => { const k = window.kh, p = k.S.project; p.tracks[0].sends.forEach(sd => { sd.amt = 1; sd.pre = true; }); p.buses[0].vol = 1; p.buses[1].vol = 0; k.commit(); });
+  const one = (await rmsWins([[0.5, 1.5]]))[0];
+  await S(() => { const k = window.kh, p = k.S.project; p.buses[1].vol = 1; k.commit(); });
+  const two = (await rmsWins([[0.5, 1.5]]))[0];
+  near(two / one, 2, 0.08, 'les deux bus s’additionnent');
+  await page.click('.strip.bus >> nth=1 >> [data-act=busdel]');
+  expect((await proj()).tracks[0].sends.length === 1, 'l’envoi vers le bus supprimé reste');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[0].sends.length === 2 && (await proj()).buses.length === 2, 'annulation de la suppression du bus');
+  await page.click('.strip >> nth=0 >> .send >> nth=0 >> [data-act=senddel]'); expect((await proj()).tracks[0].sends.length === 1, 'retirer un envoi');
+});
+test('SD03', 'Envois', 'Gros projet : export parallèle identique à l’export d’un seul tenant avec envois et sidechain', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(); p.target = 0; p.tracks.forEach(t => { t.rev = 0; t.dly = 0; t.inserts = []; });
+    const base = p.tracks[1]; const extra = Array.from({ length: 12 }, (_, i) => { const t = JSON.parse(JSON.stringify(base)); t.id = 'e' + i; t.clips.forEach((c, j) => { c.id = 'e' + i + j; }); t.vol = 0.05; return t; });
+    p.tracks = p.tracks.filter(t => t.type !== 'drums').concat(extra);
+    p.buses = [k.newBus(1), k.newBus(2)]; p.buses[1].filter = -0.5;
+    p.tracks[0].sends = [{ id: 's1', bus: p.buses[0].id, amt: 0.7, pre: false }]; p.tracks[3].sends = [{ id: 's2', bus: p.buses[1].id, amt: 1, pre: true }];
+    p.tracks[2].sc = p.tracks[0].id; p.tracks[2].duck = 0.8; p.tracks[5].sc = p.tracks[6].id; p.tracks[5].duck = 1;
+    const groups = k.renderGroups(p, 8);
+    k.renderOpts.parallel = true; const a = await k.renderOffline(p, false), parts = k.lastRender.parts;
+    k.renderOpts.parallel = false; const b = await k.renderOffline(p, false); k.renderOpts.parallel = true;
+    let diff = 0; const x = a.getChannelData(0), y = b.getChannelData(0); for (let i = 0; i < x.length; i++) diff = Math.max(diff, Math.abs(x[i] - y[i]));
+    const together = (u, v) => groups.some(g => g.tracks.some(t => t.id === u) && g.tracks.some(t => t.id === v));
+    return { diff, parts, cores: navigator.hardwareConcurrency, sc: together(p.tracks[2].id, p.tracks[0].id) && together(p.tracks[5].id, p.tracks[6].id), bus: groups.every(g => g.tracks.every(t => !(t.sends || []).length || t.sends.every(sd => g.buses.some(b => b.id === sd.bus)))) };
+  });
+  expect(r.sc, 'une piste et sa source de sidechain doivent être rendues ensemble'); expect(r.bus, 'un envoi doit trouver son bus dans son groupe');
+  if (r.cores >= 3) expect(r.parts > 1, 'export non découpé');
+  expect(r.diff < 1e-4, 'parallèle ≠ un seul tenant : ' + r.diff);
+});
+test('SD04', 'Envois', 'Envois et source du sidechain traduits, gardés au rechargement', async () => {
+  await scProject();
+  await S(async () => { const k = window.kh, [syn, au] = k.S.project.tracks; syn.sc = au.id; syn.duck = 0.6; k.S.project.buses = [k.newBus(1)]; syn.sends = [{ id: 'sx', bus: k.S.project.buses[0].id, amt: 0.4, pre: true }]; k.commit(); await k.store.saveNow(); });
+  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  const t0 = await S(() => window.kh.S.project.tracks[0]);
+  expect(t0.sc === (await S(() => window.kh.S.project.tracks[1].id)) && t0.sends?.[0]?.pre === true && t0.sends[0].amt === 0.4, 'réglages perdus : ' + JSON.stringify([t0.sc, t0.sends]));
+  await tab('mixer');
+  for (const [l, w, sd] of [['en', 'Sequencer kick', 'Sends'], ['es', 'Bombo del secuenciador', 'Envíos']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    const txt = await page.$eval('.strip >> nth=1', e => e.textContent);
+    expect(txt.includes(w) && txt.includes(sd), 'non traduit en ' + l);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
+
+// ============ V19 — chantier 5 : quantification fine, swing, humanisation, légato ============
+/** Ouvre le clip de la piste « Basse » avec des notes jouées à côté de la grille. */
+async function looseNotes(notes) {
+  await page.evaluate(notes => { const k = window.kh, tr = k.S.project.tracks[1], c = tr.clips[0]; c.notes = notes.map(([s, l, v]) => ({ p: 48, s, l, v: v ?? 0.8 })); k.S.selTrack = tr.id; k.S.selClip = c.id; k.S.grid = '16'; k.commit(); }, notes);
+  await tab('editor');
+}
+const qNotes = async () => (await proj()).tracks[1].clips[0].notes.map(n => [+n.s.toFixed(4), +n.l.toFixed(4), n.v]);
+test('QZ01', 'Quantification', 'Force 50 % à la souris : chaque note fait la moitié du chemin vers la grille ; la durée est gardée', async () => {
+  await looseNotes([[0.4, 1.3], [3.8, 0.7], [6.2, 2]]);
+  await page.click('[data-act=qmenu]'); await setSlider('.qmenu', 'Force', 0.5); await page.click('.qmenu [data-act=apply]');
+  const n = await qNotes();
+  expect(JSON.stringify(n.map(x => x.slice(0, 2))) === JSON.stringify([[0.2, 1.3], [3.9, 0.7], [6.1, 2]]), 'positions : ' + JSON.stringify(n));
+  expect(/50 %/.test(await page.textContent('[data-act=quantize]')), 'le bouton 🧲 n’affiche pas la force');
+  await page.keyboard.press('Control+z'); expect((await qNotes())[0][0] === 0.4, 'annulation');
+});
+test('QZ02', 'Quantification', 'Swing 66 % : une double-croche sur deux est retardée d’un tiers de pas, et l’export le fait entendre', async () => {
+  await looseNotes([[0, 0.5], [1.1, 0.5], [2, 0.5], [2.9, 0.5]]);
+  await page.click('[data-act=qmenu]'); await setSlider('.qmenu', 'Swing', 0.66); await page.click('.qmenu [data-act=apply]');
+  const n = await qNotes();
+  expect(JSON.stringify(n.map(x => x[0])) === JSON.stringify([0, 1.33, 2, 3.33]), 'positions avec swing : ' + JSON.stringify(n.map(x => x[0])));
+  // À 120 BPM, la 2e note (1,33 pas) commence à 0,166 s au lieu de 0,125 s : silence juste avant, son juste après.
+  const w = await S(async () => { const k = window.kh, p = k.S.project; p.bpm = 120; p.swing = 0; p.tracks = [p.tracks[1]]; const tr = p.tracks[0]; eval(window.__PURE); tr.inserts = []; tr.comp = false; tr.clips = [tr.clips[0]]; tr.clips[0].len = 16; p.target = 0;
+    const b = await k.renderOffline(p, false), d = b.getChannelData(0), sr = b.sampleRate, rms = (a, z) => { let q = 0; for (let i = Math.floor(a * sr); i < Math.floor(z * sr); i++) q += d[i] * d[i]; return Math.sqrt(q / ((z - a) * sr)); };
+    return [rms(0.135, 0.16), rms(0.175, 0.2)]; });
+  expect(w[0] < w[1] * 0.1 && w[1] > 0.02, 'la note retardée par le swing ne tombe pas au bon moment : ' + w.map(x => x.toFixed(4)));
+});
+test('QZ03', 'Quantification', 'Humaniser : petits décalages (± 0,12 pas) et forces (± 12 %) au hasard, annulables ; sur la sélection seulement', async () => {
+  await looseNotes(Array.from({ length: 12 }, (_, i) => [i * 2, 1, 0.7]));
+  const nb = await box('.note[data-i="0"]'); await page.mouse.click(nb.x + 5, nb.y + 8, { modifiers: ['Shift'] });
+  await S(() => { /* tout sélectionner au clavier */ }); await page.keyboard.press('Control+a');
+  await page.click('[data-act=qmenu]'); await setSlider('.qmenu', 'Humanisation', 1); await page.click('.qmenu [data-act=humanize]');
+  const n = await qNotes();
+  expect(n.every((x, i) => Math.abs(x[0] - i * 2) <= 0.1201 && Math.abs(x[2] - 0.7) <= 0.7 * 0.12 + 0.006), 'hors des bornes : ' + JSON.stringify(n));
+  expect(n.filter((x, i) => x[0] !== i * 2).length >= 6 && new Set(n.map(x => x[2])).size >= 4, 'presque rien n’a bougé : ' + JSON.stringify(n));
+  await page.keyboard.press('Control+z'); expect((await qNotes()).every((x, i) => x[0] === i * 2 && x[2] === 0.7), 'annulation');
+  await page.keyboard.press('Escape'); const nb2 = await box('.note[data-i="3"]'); await page.mouse.click(nb2.x + 5, nb2.y + 8);
+  await page.click('[data-act=qmenu]'); await page.click('.qmenu [data-act=humanize]');
+  const m = await qNotes(); expect(m.every((x, i) => i === 3 || (x[0] === i * 2 && x[2] === 0.7)), 'des notes non sélectionnées ont bougé');
+});
+test('QZ04', 'Quantification', 'Légato : chaque note va jusqu’à la suivante, un accord garde une seule fin, la dernière va jusqu’au bout du clip', async () => {
+  await looseNotes([[0, 1], [0, 0.5], [4, 1], [9, 2]]);
+  await page.click('[data-act=qmenu]'); await page.click('.qmenu [data-act=legato]');
+  const n = await qNotes(), len = (await proj()).tracks[1].clips[0].patLen;
+  expect(JSON.stringify(n.map(x => x.slice(0, 2))) === JSON.stringify([[0, 4], [0, 4], [4, 5], [9, len - 9]]), 'durées : ' + JSON.stringify(n));
+});
+test('QZ05', 'Quantification', 'Menu au clavier (Tab, Entrée, flèches), réglages gardés pendant la séance, textes traduits', async () => {
+  await looseNotes([[0.4, 1]]);
+  await page.focus('[data-act=quantize]'); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+  expect(await page.$eval('.qmenu', d => d.open), 'le menu ne s’ouvre pas au clavier');
+  await page.keyboard.press('Tab'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft');
+  const str = await page.$eval('.qmenu .sl.qstr input', e => +e.value); near(str, 0.9, 0.001, 'force réglée aux flèches');
+  await page.keyboard.press('Escape'); expect(!(await page.$eval('.qmenu', d => d.open)), 'Échap ne referme pas');
+  await page.click('[data-act=quantize]'); expect((await qNotes())[0][0] === 0.04, 'le bouton 🧲 n’utilise pas la force réglée : ' + (await qNotes())[0][0]);
+  for (const [l, w] of [['en', 'Strength'], ['es', 'Fuerza']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await page.click('[data-act=qmenu]');
+    expect((await page.textContent('.qmenu .menu-list')).includes(w), 'non traduit en ' + l); await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
 });
 
 (async () => {

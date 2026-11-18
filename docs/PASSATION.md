@@ -710,3 +710,31 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 ### Non vérifié
 - Un vrai téléphone et un vrai lecteur d'écran (testé dans un navigateur qui simule le tactile).
 
+
+## 17. V19 — les manques prioritaires de l'audit (version 0.19.0, branche `v19`, 18/11/2026)
+
+Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.md`, branche `audit-2026-11`), un chantier à la fois. Branche `v19` partie de `v18` à `59bb5e4`. Pas de fusion dans `main` sans l'accord de Kevin.
+
+### Ce qui a été fait
+
+1. **Pitch bend, molette (CC1), aftertouch** (`input.ts` `ctlIn`, `graph.ts` `CtlNodes`/`schedCtl`, `files.ts`). Chaque piste d'instrument a une « hauteur commune » (`pitch`, un GainNode) branchée sur le `detune` de toutes ses voix : un ConstantSource pour le bend (plage `synth.bend`, ± 2 demi-tons par défaut), un LFO de 5,5 Hz pour le vibrato de la molette (40 cents à fond) et de l'aftertouch (20 cents), et l'aftertouch gonfle aussi l'entrée de la tranche (× 1,4 à fond). Les points sont gardés dans le clip (`clip.ctl`, positions en pas dans le motif, comme les notes) et programmés à chaque pas par le même code à l'écoute et à l'export. Remise au repos à la fin de chaque clip et à l'arrêt. Export MIDI : 0xE0 (14 bits), CC1, 0xD0 ; relus à l'import. Molettes à l'écran (couchées sur téléphone), ligne des contrôles sous le piano roll. Une molette déjà assignée à un réglage du mixeur garde son assignation. Cas CT01-CT12.
+   - Piège de test : le navigateur ne calcule pas un réglage audio qu'aucune voix n'utilise ; `bend.offset.value` ne se lit donc qu'avec une note tenue.
+2. **Export d'une plage, 24 bits, 48 kHz** (`engine.ts` `renderOffline(p, normalize, range)`, `encodeWav(b, bits)`, `top.ts` `showExportOptions`). Réglages gardés dans le projet (`p.exp`, valeurs par défaut dans `migrate`). Le morceau est rendu depuis le début puis découpé : l'extrait sonne comme dans le morceau (notes tenues, réverb en cours) ; les sons s'arrêtent à la fin de la plage, avec ou sans 2,5 s de queue. Le MP3 et les pistes séparées suivent. Cas XP01-XP08, P06 étendu.
+3. **Comping et fondus enchaînés** (`types.ts` `compSet`/`compSlice`/`normComp`, `graph.ts` `audioPieces`). Un clip à prises a `comp` (portions triées, chacune avec sa prise) ; au rendu il devient une suite de morceaux, chacun lu dans sa prise. Deux morceaux qui se touchent reçoivent un fondu enchaîné à puissance constante placé juste après la jonction (le morceau de gauche continue en s'effaçant) : 12 ms entre portions d'un comping, durée choisie (`clip.xfade`, en pas) entre deux clips. Scission, rognage, étirement et inversion tiennent compte des portions. Cas CP01-CP05, CF01-CF04.
+4. **Sidechain depuis n'importe quelle piste et envois libres** (`graph.ts` `syncRouting`, `initEnv`). Sidechain : suiveur d'enveloppe en AudioWorklet (attaque 3 ms, maintien 15 ms, relâchement de constante 60 ms : le volume revient en 0,2 s environ) branché sur la piste source avant son volume, qui pilote le gain `duck` de la piste ; chargé aussi dans chaque rendu d'export. Sans source choisie, le kick du séquenceur agit comme avant. Envois : un GainNode par envoi, pris avant le volume (`pdc`) ou après (`pan`), vers l'entrée du bus ; muet et solo s'y appliquent. Sources et envois partent toujours d'une piste, jamais d'un bus : pas de boucle possible. L'export par groupes garde ensemble une piste, ses bus et la source de son sidechain (union de groupes). Le gel d'une source fait suivre sa version audio. Cas SC01-SC04, SD01-SD04.
+5. **Quantification fine** (`actions.ts` `quantizeNotes` avec force et swing, `humanizeNotes`, `legatoNotes` ; menu ▾ à côté de 🧲). À 100 % sans swing, le comportement d'avant est gardé (début et durée recalés). Cas QZ01-QZ05.
+6. **Plugins instruments Audio Unit** : étude chiffrée seulement, **aucun code**, dans `docs/etude-au-instruments.md` (3 à 4 sessions, risques, décision demandée à Kevin).
+
+### Méthode de QA apprise
+
+- Une campagne lancée sur le serveur de développement du dossier de travail est faussée par toute modification de fichier pendant qu'elle tourne (rechargement de la page). La campagne complète tourne donc sur une copie figée du dossier (`rsync` sans `node_modules`, lien vers celui du dossier), comme le fait `qa/all.sh` sur le port 5199.
+
+### Non vérifié
+
+- **L'oreille** : vibrato, gonflement de l'aftertouch, fondus enchaînés, pompage du sidechain et humanisation ne sont jugés que par mesure.
+- **Le vrai DGX-670** : pitch bend et molette testés par messages MIDI simulés ; le DGX-670 n'envoie pas d'aftertouch (à confirmer avec le manuel), celui-ci ne sert qu'à d'autres claviers.
+- **Un vrai micro** pour le comping : les prises de test sont des sons de synthèse.
+- **Windows** et **un vrai téléphone**.
+- Mode Live : un clip à comping y joue la prise principale sur toute sa durée ; les fondus enchaînés ne s'y appliquent pas.
+- Fondu enchaîné sur un clip qui suit le tempo (« Suit le tempo ») : la montée du clip de droite s'applique, mais le clip de gauche ne se prolonge pas.
+- Compensation de latence des plugins du Mac sur un envoi qui va vers un bus où la piste ne sort pas : non calée (cas rare).

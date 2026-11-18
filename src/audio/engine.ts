@@ -528,7 +528,9 @@ export const lastRender = { wamFailed: 0, pdc: 0, parts: 1 };
  *  `stem` : la sortie s'arrête au volume général, avant sa chaîne (filtre, égaliseur, largeur, limiteur), appliquée ensuite une seule fois. */
 async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, limit: number | null = null) {
   const off = new OfflineAudioContext(2, Math.ceil((timeOf(p, end) + 2.5) * sr), sr);
-  const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
+  const mix = new Mix(off, false); mix.autoOn = true;
+  if (p.tracks.some(t => t.sc && t.duck > 0)) await mix.initEnv();   // sidechain : le suiveur d'enveloppe doit exister avant le graphe
+  mix.sync(p);
   if (stem) mix.stemOut();
   const wamFailed = await mix.loadWams(p); // plugins web : recréés pour ce rendu
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
@@ -553,20 +555,25 @@ export function renderGroups(p: Project, cores = navigator.hardwareConcurrency |
   const n = Math.min(4, cores - 1);
   if (p.tracks.length < 12 || n < 2) return null;
   if ([...p.tracks, ...p.buses].some(t => t.solo || (t.inserts ?? []).some(i => i.type === 'au'))) return null;
-  const busIds = new Set(p.buses.map(b => b.id)), unitOf = new Map<string, string>();
-  for (const t of p.tracks) unitOf.set(t.id, busIds.has(t.out) ? 'bus:' + t.out : t.id);
-  if (p.tracks.some(t => t.duck > 0)) {
-    const tied = new Set(p.tracks.filter(t => t.duck > 0 || t.type === 'drums').map(t => unitOf.get(t.id)!));
-    for (const t of p.tracks) if (tied.has(unitOf.get(t.id)!)) unitOf.set(t.id, 'sidechain');
+  // Ce qui doit rester dans le même rendu est réuni (union de groupes) : une piste et le bus où elle sort ou envoie (V19),
+  // une piste et la source de son sidechain (V19), les kicks du séquenceur et les pistes qu'ils font pomper.
+  const busIds = new Set(p.buses.map(b => b.id)), ids = new Set(p.tracks.map(t => t.id)), up = new Map<string, string>();
+  const root = (x: string): string => { let r = x; while (up.has(r)) r = up.get(r)!; return r; };
+  const join = (a: string, b: string) => { const x = root(a), y = root(b); if (x !== y) up.set(x, y); };
+  for (const t of p.tracks) {
+    if (busIds.has(t.out)) join(t.id, 'bus:' + t.out);
+    for (const sd of t.sends ?? []) if (busIds.has(sd.bus)) join(t.id, 'bus:' + sd.bus);
+    if (t.duck > 0 && t.sc && ids.has(t.sc)) join(t.id, t.sc);
+    if (t.duck > 0 && !t.sc) { join(t.id, 'kick'); for (const d of p.tracks) if (d.type === 'drums') join(d.id, 'kick'); }
   }
   const units = new Map<string, Project['tracks']>();
-  for (const t of p.tracks) { const u = unitOf.get(t.id)!; if (!units.has(u)) units.set(u, []); units.get(u)!.push(t); }
+  for (const t of p.tracks) { const u = root(t.id); if (!units.has(u)) units.set(u, []); units.get(u)!.push(t); }
   if (units.size < 2) return null;
   // Répartition par coût estimé (une piste, plus ses effets ; une réverb compte davantage), du plus lourd au plus léger.
   const cost = (ts: Project['tracks']) => ts.reduce((a, t) => a + 1 + (t.inserts ?? []).reduce((b, i) => b + (i.type === 'reverb' ? 4 : 1), 0), 0);
   const bins = Array.from({ length: Math.min(n, units.size) }, () => ({ w: 0, tracks: [] as Project['tracks'] }));
   for (const ts of [...units.values()].sort((a, b) => cost(b) - cost(a))) { const b = bins.reduce((x, y) => (y.w < x.w ? y : x)); b.tracks.push(...ts); b.w += cost(ts); }
-  return bins.map(b => ({ ...p, tracks: b.tracks, buses: p.buses.filter(x => b.tracks.some(t => t.out === x.id)) }));
+  return bins.map(b => ({ ...p, tracks: b.tracks, buses: p.buses.filter(x => b.tracks.some(t => t.out === x.id || t.sends?.some(sd => sd.bus === x.id))) }));
 }
 
 /** Rendu parallèle des gros projets (désactivable pour la QA et les comparaisons). */
@@ -636,7 +643,9 @@ export async function renderOffline(p: Project, normalize = true, range: RenderR
 export async function measureLoad(p: Project, from = 0, sec = 4): Promise<{ ratio: number; ms: number; sec: number; tracks: number; inserts: number }> {
   await ensureBanks(p);
   const sr = 44100, end = Math.max(contentEnd(p), from + 1), off = new OfflineAudioContext(2, Math.ceil(sec * sr), sr);
-  const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
+  const mix = new Mix(off, false); mix.autoOn = true;
+  if (p.tracks.some(t => t.sc && t.duck > 0)) await mix.initEnv();
+  mix.sync(p);
   await mix.loadWams(p);
   const t0 = timeOf(p, from);
   for (let s = from; s < end && timeOf(p, s) - t0 < sec; s++) { const t = timeOf(p, s) - t0; mix.applyAuto(p, s, t); scheduleStep(mix, p, buffers, s, swingT(p, s, t + t0) - t0, s === from, null); }

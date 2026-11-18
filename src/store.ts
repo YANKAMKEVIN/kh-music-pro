@@ -17,6 +17,7 @@ export const S = {
   tuneAmt: 1,                                         // force de la correction de justesse
   stretch: { clip: '', pct: 100, semis: 0 },          // étirement en attente pour le clip audio ouvert
   synthOpen: false, // réglages détaillés de l'instrument dépliés dans le piano roll
+  quant: { str: 1, swing: 0, hum: 0.5 }, // V19 : force et swing de la quantification, force de l'humanisation (réglages de séance)
   ctlShow: false, ctlKind: 'pb' as 'pb' | 'mod' | 'at', // V19 : ligne des contrôles joués sous le piano roll, et contrôle affiché
   px: 11,     // pixels par pas dans l'arrangement
   snap: 4,    // grille magnétique, en pas

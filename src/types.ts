@@ -153,7 +153,11 @@ export interface Track {
   comp: boolean; rev: number; dly: number;
   drive: number;   // saturation 0..1
   filter: number;  // -1..0 passe-bas, 0..1 passe-haut
-  duck: number;    // sidechain : atténuation à chaque coup de kick, 0..1
+  duck: number;    // sidechain : atténuation à chaque coup de kick (ou de la piste source), 0..1
+  /** Sidechain (V19) : piste dont le son fait baisser celle-ci ; absent = le kick du séquenceur, comme avant. */
+  sc?: string;
+  /** Envois libres (V19) vers les bus, avant ou après le volume de la piste. */
+  sends?: Send[];
   chorus: number; trem: number; crush: number; // modulation : chorus, trémolo (à la croche), lo-fi, 0..1
   eqMidF: number;                    // fréquence de la bande médium (Hz)
   compThr: number; compRatio: number; // compresseur : seuil (dB) et taux
@@ -171,6 +175,9 @@ export interface Track {
   padFx?: Record<number, PadFx>;
   clips: Clip[];
 }
+
+/** Envoi vers un bus : niveau 0..1 ; `pre` = pris avant le volume de la piste (indépendant du fader), sinon après. */
+export interface Send { id: string; bus: string; amt: number; pre: boolean }
 
 export interface Project {
   name: string; bpm: number; swing: number;

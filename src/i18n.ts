@@ -319,6 +319,33 @@ const D: Record<string, [string, string, string]> = {
 
   // ===== V5 =====
   'okb.title': ['Clavier', 'Keyboard', 'Teclado'],
+  // V19 : quantification fine
+  'q.menu': ['Réglages de quantification, humanisation, légato', 'Quantize, humanize and legato settings', 'Ajustes de cuantización, humanización y legato'],
+  'q.str': ['Force', 'Strength', 'Fuerza'],
+  'q.swing': ['Swing', 'Swing', 'Swing'],
+  'q.swingTip': ['Force : 100 % pose les notes sur la grille, 50 % les en rapproche de moitié. Swing : retarde une division sur deux (66 % ≈ ternaire).', 'Strength: 100% puts notes on the grid, 50% moves them halfway. Swing: delays every other division (66% ≈ triplet feel).', 'Fuerza: 100 % pone las notas en la rejilla, 50 % las acerca a mitad. Swing: retrasa una división de cada dos (66 % ≈ ternario).'],
+  'q.apply': ['Quantifier avec ces réglages', 'Quantize with these settings', 'Cuantizar con estos ajustes'],
+  'q.applyTip': ['Recaler les notes sélectionnées (ou toutes) avec la force et le swing choisis', 'Snap the selected notes (or all) with the chosen strength and swing', 'Ajustar las notas seleccionadas (o todas) con la fuerza y el swing elegidos'],
+  'q.hum': ['Humanisation', 'Humanize amount', 'Humanización'],
+  'q.humanize': ['Humaniser', 'Humanize', 'Humanizar'],
+  'q.humanizeTip': ['Décaler un peu chaque note et sa force, au hasard, pour un jeu moins mécanique', 'Shift each note and its velocity slightly at random, for a less mechanical feel', 'Desplazar un poco cada nota y su fuerza al azar, para un toque menos mecánico'],
+  'q.legato': ['Légato', 'Legato', 'Legato'],
+  'q.legatoTip': ['Allonger chaque note jusqu’à la suivante, sans trou entre elles', 'Lengthen each note up to the next one, with no gap', 'Alargar cada nota hasta la siguiente, sin huecos'],
+  'toast.humanized': ['{0} note(s) humanisée(s)', '{0} note(s) humanized', '{0} nota(s) humanizada(s)'],
+  'toast.legato': ['{0} note(s) liée(s) en légato', '{0} note(s) made legato', '{0} nota(s) en legato'],
+  // V19 : sidechain et envois libres
+  'sc.src': ['Source du sidechain', 'Sidechain source', 'Fuente del sidechain'],
+  'sc.srcTip': ['Ce qui fait baisser le volume de cette piste (réglage « Sidechain ») : le kick du séquenceur, ou n’importe quelle autre piste (kick audio, voix…). La source est prise avant son volume : même coupée, elle fait pomper.', 'What lowers this track’s volume (“Sidechain” setting): the sequencer kick, or any other track (audio kick, vocals…). The source is taken before its volume: even muted, it still pumps.', 'Lo que baja el volumen de esta pista (ajuste «Sidechain»): el bombo del secuenciador o cualquier otra pista (bombo de audio, voz…). La fuente se toma antes de su volumen: aunque esté silenciada, sigue bombeando.'],
+  'sc.kick': ['Kick du séquenceur', 'Sequencer kick', 'Bombo del secuenciador'],
+  'send.title': ['Envois', 'Sends', 'Envíos'],
+  'send.bus': ['Envoi', 'Send', 'Envío'],
+  'send.level': ['Envoi', 'Send', 'Envío'],
+  'send.pre': ['Pré', 'Pre', 'Pre'],
+  'send.post': ['Post', 'Post', 'Post'],
+  'send.preTip': ['Pré : l’envoi est pris avant le volume de la piste (il ne bouge pas avec le fader). Post : après le volume et le panoramique.', 'Pre: the send is taken before the track volume (it does not follow the fader). Post: after volume and pan.', 'Pre: el envío se toma antes del volumen de la pista (no sigue al fader). Post: después del volumen y el panorama.'],
+  'send.del': ['Retirer l’envoi', 'Remove send', 'Quitar envío'],
+  'send.add': ['Envoi', 'Send', 'Envío'],
+  'send.addTip': ['Ajouter un envoi vers un bus (un bus est créé s’il n’y en a pas)', 'Add a send to a bus (a bus is created if there is none)', 'Añadir un envío a un bus (se crea un bus si no hay ninguno)'],
   // V19 : comping et fondus enchaînés
   'comp.title': ['Comping', 'Comping', 'Comping'],
   'comp.tip': ['Glissez sur une prise pour la garder sur ce passage (au clavier : flèches, puis Entrée).', 'Drag over a take to keep it for that passage (keyboard: arrows, then Enter).', 'Arrastra sobre una toma para conservarla en ese pasaje (teclado: flechas y luego Intro).'],

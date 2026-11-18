@@ -1,4 +1,4 @@
-import { addBus, analyzeMix, applyMixPreset, deleteBus } from '../actions';
+import { addBus, addSend, analyzeMix, applyMixPreset, deleteBus, removeSend } from '../actions';
 import { engine, measureLoad } from '../audio/engine';
 import { t } from '../i18n';
 import { clearMidiMap, ccOf, learn } from '../input';
@@ -62,7 +62,9 @@ function strip(tr: Track, i: number, bus = false) {
         T(slider(t('mix.drive'), 0, 1, 0.01, tr.drive, v => tr.drive = v, pct), 'drive'),
         T(slider(t('mix.reverb'), 0, 1, 0.01, tr.rev, v => tr.rev = v, pct), 'rev'),
         T(slider(t('mix.echo'), 0, 1, 0.01, tr.dly, v => tr.dly = v, pct), 'dly'),
+        !bus && sends(tr),
         T(slider(t('mix.duck'), 0, 1, 0.01, tr.duck, v => tr.duck = v, pct), 'duck'),
+        !bus && scSource(tr),
         T(slider(t('mix.chorus'), 0, 1, 0.01, tr.chorus, v => tr.chorus = v, pct), 'chorus'),
         T(slider(t('mix.trem'), 0, 1, 0.01, tr.trem, v => tr.trem = v, pct), 'trem'),
         T(slider(t('mix.crush'), 0, 1, 0.01, tr.crush, v => tr.crush = v, pct), 'crush'),
@@ -76,6 +78,28 @@ function strip(tr: Track, i: number, bus = false) {
         h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: tr.id } })), bus ? f.inp : tag(f.inp, `${i}:vol`)),
         f.out,
         h('div', { class: 'srow' }, tog('mute', 'M'), !bus && tog('solo', 'S')))));
+}
+
+// ---------- Sidechain et envois libres (V19) ----------
+/** Source du sidechain : le kick du séquenceur (comme avant) ou n'importe quelle autre piste. */
+function scSource(tr: Track) {
+  const sel = h('select', { class: 'mpreset', 'aria-label': `${t('sc.src')} – ${tr.name}`, title: t('sc.srcTip'), data: { role: 'scsrc' } },
+    h('option', { value: '', selected: !tr.sc }, '⚡ ' + t('sc.kick')),
+    ...S.project.tracks.filter(x => x !== tr && !x.frozen).map(x => h('option', { value: x.id, selected: tr.sc === x.id }, '⚡ ' + x.name)));
+  sel.onchange = () => { if (sel.value) tr.sc = sel.value; else delete tr.sc; commit(); };
+  return sel;
+}
+/** Envois de la piste vers les bus : bus, niveau, avant ou après le volume. */
+function sends(tr: Track) {
+  const rows = (tr.sends ?? []).map((sd, j) => {
+    const bus = h('select', { class: 'mpreset', 'aria-label': `${t('send.bus')} ${j + 1} – ${tr.name}`, data: { role: 'sendbus' } }, ...S.project.buses.map(b => h('option', { value: b.id, selected: sd.bus === b.id }, '→ ' + b.name)));
+    bus.onchange = () => { sd.bus = bus.value; commit(); };
+    const pre = h('button', { class: 'mini' + (sd.pre ? ' on' : ''), data: { act: 'sendpre' }, 'aria-pressed': String(sd.pre), title: t('send.preTip'), 'aria-label': `${t('send.pre')} – ${t('send.bus')} ${j + 1}`, onclick: () => { sd.pre = !sd.pre; commit(); } }, sd.pre ? t('send.pre') : t('send.post'));
+    const del = h('button', { class: 'mini del', data: { act: 'senddel' }, title: t('send.del'), 'aria-label': `${t('send.del')} ${j + 1} – ${tr.name}`, onclick: () => removeSend(tr, sd.id) }, '✕');
+    return h('div', { class: 'send', data: { send: sd.id } }, h('div', { class: 'srow' }, bus, pre, del), slider(`${t('send.level')} ${j + 1}`, 0, 1, 0.01, sd.amt, v => { sd.amt = v; }, pct, 'sendl'));
+  });
+  return h('div', { class: 'sends' }, h('span', { class: 'sect' }, t('send.title')), ...rows,
+    h('button', { class: 'mini', data: { act: 'sendadd' }, title: t('send.addTip'), onclick: () => addSend(tr) }, '＋ ' + t('send.add')));
 }
 
 let lastResult = '';

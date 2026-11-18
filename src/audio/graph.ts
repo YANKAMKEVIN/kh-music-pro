@@ -23,6 +23,10 @@ export interface TrackNodes {
   crush: WaveShaperNode; crushIn: GainNode; crushOut: GainNode; crushVal?: number; chWet: GainNode; trem: GainNode; tremDepth: GainNode; tremLfo: OscillatorNode;
   /** Contrôles joués (V19), pistes d'instrument : hauteur commune à toutes les voix (pitch bend + vibrato), plage du bend en demi-tons. */
   ctl?: CtlNodes;
+  /** Sidechain (V19) : suiveur d'enveloppe branché sur la piste source, qui baisse le volume de celle-ci. */
+  sc?: { node: AudioWorkletNode; src: string };
+  /** Envois libres (V19) vers les bus. */
+  sends: Map<string, { g: GainNode; key: string }>;
 }
 /** `pitch` est branché sur le désaccord (detune) de chaque voix de la piste : le pitch bend et le vibrato bougent toutes les notes tenues. */
 export interface CtlNodes { pitch: GainNode; bend: ConstantSourceNode; lfo: OscillatorNode; gMod: GainNode; gAt: GainNode; range: number }
@@ -117,6 +121,19 @@ export class Mix {
   stemOut() { this.master.disconnect(this.mlp); this.master.connect(this.ctx.destination); }
   /** Branche une source à l'entrée de la chaîne du général (après son volume, déjà appliqué dans les groupes). */
   masterChainIn(src: AudioNode) { src.connect(this.mlp); }
+
+  /** Suiveur d'enveloppe du sidechain (V19) : chargé une fois par contexte, à l'écoute comme pour chaque rendu d'export. */
+  envReady = false;
+  private envLoading?: Promise<void>;
+  initEnv(): Promise<void> {
+    // Attaque 3 ms, maintien 15 ms, relâchement 60 ms (constante de temps : le volume revient en 0,2 s environ) ; baisse complète quand la source dépasse -13 dB environ.
+    const code = `class KhEnv extends AudioWorkletProcessor{static get parameterDescriptors(){return[{name:'amt',defaultValue:0,minValue:0,maxValue:1,automationRate:'k-rate'}]}
+constructor(){super();this.e=0;this.h=0;this.a=1-Math.exp(-1/(sampleRate*0.003));this.r=1-Math.exp(-1/(sampleRate*0.06));this.H=Math.round(sampleRate*0.015)}
+process(i,o,P){const x=i[0]||[],y=o[0][0],n=y.length,amt=P.amt[0];for(let k=0;k<n;k++){let v=0;for(let c=0;c<x.length;c++){const s=Math.abs(x[c][k]);if(s>v)v=s}
+if(v>=this.e){this.e+=this.a*(v-this.e);this.h=this.H}else if(this.h>0)this.h--;else this.e+=this.r*(v-this.e);
+y[k]=-amt*Math.min(1,Math.max(0,(this.e-0.02)/0.2))}return true}}registerProcessor('kh-env',KhEnv)`;
+    return (this.envLoading ??= this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))).then(() => { this.envReady = true; }));
+  }
 
   /** Insère le bégaiement (boucle des derniers instants) juste avant le limiteur. */
   async initStutter() {
@@ -275,7 +292,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       low: c.createBiquadFilter(), mid: c.createBiquadFilter(), high: c.createBiquadFilter(),
       comp: c.createDynamicsCompressor(), makeup: c.createGain(), fader: c.createGain(), auto: c.createGain(), duck: c.createGain(), pan: c.createStereoPanner(),
       insIn: c.createGain(), insOut: c.createGain(), ins: new Map(), pdc: c.createDelay(1),
-      revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0, chVoices: [],
+      revSend: c.createGain(), dlySend: c.createGain(), duckAmt: 0, chVoices: [], sends: new Map(),
       crush: c.createWaveShaper(), crushIn: c.createGain(), crushOut: c.createGain(), chWet: c.createGain(), trem: c.createGain(), tremDepth: c.createGain(), tremLfo: c.createOscillator(),
     };
     n.lp.type = 'lowpass'; n.lp.frequency.value = 20000; n.hp.type = 'highpass'; n.hp.frequency.value = 20;
@@ -334,7 +351,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       if (!au?.filter?.length) { const [lp, hp] = djFreqs(t.filter); this.set(n.lp.frequency, lp); this.set(n.hp.frequency, hp); }
       const swept = !!t.auto?.filter?.length;
       this.set(n.lp.Q, swept || t.filter < 0 ? SWEEP_Q : REST_Q); this.set(n.hp.Q, swept || t.filter > 0 ? SWEEP_Q : REST_Q);
-      n.duckAmt = t.duck;
+      n.duckAmt = t.sc ? 0 : t.duck;   // une piste qui suit une autre source ne pompe plus sur le kick du séquenceur
       // Le signal est amplifié avant la réduction puis ramené à son niveau : l'effet reste audible sur un son faible.
       if (n.crushVal !== t.crush) { n.crush.curve = t.crush > 0 ? crushCurve(t.crush) : null; n.crushIn.gain.value = t.crush > 0 ? 3 : 1; n.crushOut.gain.value = t.crush > 0 ? 1 / 3 : 1; n.crushVal = t.crush; }
       if (!au?.chorus?.length) this.set(n.chWet.gain, t.chorus * 0.8);
@@ -363,13 +380,48 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       if (!au?.rev?.length) this.set(n.revSend.gain, t.rev);
       if (!au?.dly?.length) this.set(n.dlySend.gain, t.dly);
     }
+    this.syncRouting(p, anySolo);
     this.lastProject = p;
     this.compensate(p);
     for (const [id, n] of this.tracks) if (!p.tracks.some(t => t.id === id) && !busIds.has(id)) {
-      n.pan.disconnect(); n.revSend.disconnect(); n.dlySend.disconnect(); this.tracks.delete(id);
+      n.pan.disconnect(); n.revSend.disconnect(); n.dlySend.disconnect(); n.pdc.disconnect(); n.pdc.connect(n.fader); this.tracks.delete(id);
+      n.sc?.node.disconnect(); for (const e of n.sends.values()) e.g.disconnect();
       // Piste supprimée (ou autre projet ouvert) : ses plugins sont libérés (un Audio Unit a un fil natif à arrêter).
       for (const [iid, node] of n.ins) { node.out.disconnect(); node.wam?.audioNode.destroy?.(); liveWams.delete(wamKey(id, iid)); }
     }
+  }
+
+  /**
+   * Sidechain et envois libres (V19), une fois toutes les tranches créées. Sidechain : le son de la source est pris avant son
+   * volume (comme le réglage par défaut d'Ableton) : une source coupée fait toujours pomper (astuce du « kick fantôme »).
+   * Les sources et les envois partent toujours d'une piste, jamais d'un bus : aucune boucle n'est possible dans le graphe.
+   */
+  private syncRouting(p: Project, anySolo: boolean) {
+    const ids = new Set(p.tracks.map(t => t.id)), busIds = new Set(p.buses.map(b => b.id));
+    let needEnv = false;
+    for (const t of p.tracks) {
+      const n = this.tracks.get(t.id)!, src = t.sc && t.sc !== t.id && ids.has(t.sc) && t.duck > 0 ? t.sc : '';
+      if (src) needEnv = true;
+      if (n.sc && (n.sc.src !== src || !src)) { n.sc.node.disconnect(); this.tracks.get(n.sc.src)?.pdc.disconnect(n.sc.node); n.sc = undefined; }
+      if (src && !n.sc && this.envReady) {
+        const node = new AudioWorkletNode(this.ctx, 'kh-env', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+        this.tracks.get(src)!.pdc.connect(node); node.connect(n.duck.gain); n.sc = { node, src };
+      }
+      if (n.sc) this.set(n.sc.node.parameters.get('amt')!, t.duck);
+      // Envois : un nœud par envoi, du point choisi (avant ou après le volume) vers l'entrée du bus.
+      const want = new Set<string>();
+      for (const sd of t.sends ?? []) {
+        if (!busIds.has(sd.bus)) continue;
+        const key = `${sd.bus}|${sd.pre}`, bus = this.tracks.get(sd.bus)!;
+        let e = n.sends.get(sd.id);
+        if (e && e.key !== key) { e.g.disconnect(); n.sends.delete(sd.id); e = undefined; }
+        if (!e) { const g = this.ctx.createGain(); g.gain.value = 0; (sd.pre ? n.pdc : n.pan).connect(g); g.connect(bus.input); e = { g, key }; n.sends.set(sd.id, e); }
+        const audible = !t.mute && (!anySolo || t.solo);
+        this.set(e.g.gain, audible ? sd.amt : 0); want.add(sd.id);
+      }
+      for (const [id, e] of n.sends) if (!want.has(id)) { e.g.disconnect(); n.sends.delete(id); }
+    }
+    if (needEnv && !this.envReady) this.initEnv().then(() => { if (this.lastProject) this.sync(this.lastProject); }, () => { /* navigateur sans AudioWorklet : pas de sidechain */ });
   }
 
   /** Automation : programme la rampe du pas `s` (instant `t`) vers le pas suivant. */
