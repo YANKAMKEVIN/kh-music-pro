@@ -701,6 +701,8 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 - **Export MP3** : marge de -1 dB de vraie crête (0,89 au lieu de 0,966) ; un lecteur qui rééchantillonne faisait remonter les crêtes au-dessus de 0,98 (MP01 instable). Ne joue que si l'encodage crée des crêtes ; le WAV ne change pas. **À écouter** : un MP3 très fort, comparé au WAV.
 - Campagne complète 345/345 sur ce Mac (après correction de cas de test : icône masquée sur téléphone, défilement qui précède l'ouverture du menu ⋯).
 
+- **Correctifs de l'audit** (session d'audit, branche `v18-correctifs`, fusionnée dans `v18` en avance rapide à `0007113` avec l'accord du propriétaire) : D5 séquenceur au clavier (une seule case dans l'ordre de Tab, flèches, Début, Fin), D6 prise d'un seul tenant, D7 tempo au centième, D8 bandeau de sauvegarde impossible avec « Enregistrer en fichier », D9 vraie disposition du clavier, D10 accordeur confirmé sur 3 mesures sur 5, D11 export des projets de 12 pistes ou plus rendu par groupes en parallèle (42 s → 22,9 s pour le gros projet de 40 pistes). Cas AD01-AD08, en fin de `qa/run.cjs`. Détail, mesures et non-vérifié : `docs/correctifs-audit-2026-11.md`. Campagne 353/353 (session d'audit).
+
 ### Reste à faire (suite de la V18)
 - Défauts D2 à D4 de l'audit (`docs/audit-2026-11.md`, branche `audit-2026-11`) : bouton Rétablir absent sur téléphone ; le morceau n'affiche qu'une mesure et demie, le séquenceur 6 pas sur 16 ; cibles de moins de 32 px au doigt. D5 à D11 sont corrigés par une autre session sur `v18-correctifs`.
 - Ajout de pistes : toujours dans le coin des pistes (la maquette les plaçait dans la barre d'arrangement).

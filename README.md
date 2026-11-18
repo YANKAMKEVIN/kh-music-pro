@@ -28,6 +28,8 @@ Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transp
 
 **Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom.
 
+**Correctifs de l'audit de novembre 2026** (détail : `docs/correctifs-audit-2026-11.md`) : séquenceur au clavier avec les flèches, une prise sur plusieurs mesures donne un seul clip, tempo au centième (93,5), bandeau quand la sauvegarde devient impossible (appareil plein) avec « Enregistrer en fichier », lettres du clavier prises de la vraie disposition, accordeur plus stable sur une machine chargée, export des gros projets environ deux fois plus rapide (pistes rendues par groupes sur plusieurs cœurs).
+
 Les menus s'ouvrent d'un clic ou d'un toucher et se referment d'un clic ailleurs ou avec Échap (le focus revient au bouton). Les raccourcis clavier ne changent pas.
 
 ## Piano électrique, basse et percussions (v0.17.1)
@@ -158,7 +160,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 345 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 353 cas).
 Le plus simple, serveur compris :
 
 ```bash
