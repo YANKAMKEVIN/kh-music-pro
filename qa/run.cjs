@@ -3812,6 +3812,152 @@ test('TB07', 'Barre du haut', 'Nouveaux menus et bulles traduits en anglais et e
   await page.evaluate(() => window.kh.setLang('fr'));
 });
 
+
+// ============ Correctifs de l'audit de novembre 2026 (docs/audit-2026-11.md) ============
+test('AD01', 'Correctifs audit', 'Séquenceur au clavier : une seule case atteinte par Tab, les flèches, Début et Fin passent d’une case à l’autre, Entrée allume, le focus survit au redessin', async () => {
+  const cells = await page.$$eval('.dgrid .cell', els => ({ n: els.length, tab: els.filter(e => e.tabIndex === 0).length }));
+  expect(cells.n === 256 && cells.tab === 1, `cases atteignables par Tab : ${cells.tab} sur ${cells.n}`);
+  expect(await page.getAttribute('.dgrid', 'role') === 'group' && (await page.getAttribute('.dgrid', 'aria-label')).includes('flèches'), 'grille sans nom pour le lecteur d’écran');
+  await page.keyboard.press('Tab'); await page.focus('.dgrid .cell[tabindex="0"]');
+  const at = () => page.evaluate(() => { const a = document.activeElement; return a.classList.contains('cell') ? a.dataset.r + ',' + a.dataset.s : 'hors grille'; });
+  expect(await at() === '0,0', `départ ${await at()}`);
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowDown');
+  expect(await at() === '1,2', `après →→↓ : ${await at()}`);
+  await page.keyboard.press('End'); expect(await at() === '1,15', `Fin : ${await at()}`);
+  await page.keyboard.press('ArrowRight'); expect(await at() === '1,15', 'la flèche sort de la grille');
+  await page.keyboard.press('Home'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); expect(await at() === '0,0', `Début puis ↑ : ${await at()}`);
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter'); await sleep(150);
+  expect((await proj()).tracks[0].clips[0].drums[1][1] === 1, 'Entrée n’allume pas la case');
+  expect(await at() === '1,1', `focus perdu après le redessin : ${await at()}`);
+  expect(await S(() => window.kh.engine.playing) === false, 'une flèche ou Entrée a lancé la lecture');
+  await page.keyboard.press('Tab');
+  expect(await at() === 'hors grille', 'Tab ne quitte pas la grille en un appui');
+  await page.keyboard.press('Shift+Tab'); expect(await at() === '1,1', `Maj+Tab ne revient pas sur la dernière case : ${await at()}`);
+});
+test('AD02', 'Correctifs audit', 'Lettres des touches : celles du vrai clavier quand le navigateur les donne (QWERTY en français, AZERTY en anglais), sinon d’après la langue', async () => {
+  const label = () => page.$eval('.drow:nth-child(9) .dlabel kbd', e => e.textContent);   // pad 9 = touche physique « A » d'un QWERTY
+  const qwerty = { KeyA: 'a', KeyQ: 'q', KeyW: 'w', KeyZ: 'z', KeyS: 's' }, azerty = { KeyA: 'q', KeyQ: 'a', KeyW: 'z', KeyZ: 'w', KeyS: 's' };
+  try {
+    await S(() => window.kh.setKeyboardLayout(null)); expect(await label() === 'Q', 'sans disposition connue, le français suppose un AZERTY');
+    await page.evaluate(m => window.kh.setKeyboardLayout(m), qwerty); expect(await label() === 'A', `clavier QWERTY en français : ${await label()}`);
+    await page.evaluate(() => window.kh.setLang('en')); await page.evaluate(m => window.kh.setKeyboardLayout(m), azerty);
+    expect(await label() === 'Q', `clavier AZERTY en anglais : ${await label()}`);
+    expect((await page.textContent('#help')).includes('Q'), 'l’aide ne reprend pas les vraies lettres');
+  } finally { await S(() => { window.kh.setKeyboardLayout(null); window.kh.setLang('fr'); }); }
+});
+test('AD03', 'Correctifs audit', 'Une prise jouée sur trois mesures reste un seul clip, annulé d’un coup ; une seconde prise fait un clip à elle', async () => {
+  await S(() => { const p = window.kh.S.project; p.loop = false; p.bpm = 240; p.tracks[1].clips = []; window.kh.commit(); window.kh.engine.seek(0); });
+  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(150);
+  expect(await S(() => window.kh.engine.recording === 'midi'), 'enregistrement non démarré');
+  await S(() => window.kh.noteOn(48)); await sleep(150); await S(() => window.kh.noteOff(48));
+  await page.waitForFunction(() => window.kh.engine.currentStep() >= 34, null, { timeout: 5000 });   // milieu de la mesure 3 (une mesure dure 1 s à 240)
+  await S(() => window.kh.noteOn(55)); await sleep(150); await S(() => window.kh.noteOff(55)); await sleep(400);
+  await page.keyboard.press('Space'); await sleep(500);
+  let c = (await proj()).tracks[1].clips;
+  expect(c.length === 1 && c[0].start === 0 && c[0].len === 48 && c[0].notes.length === 2, `prise en ${c.length} clip(s) : ${JSON.stringify(c.map(x => [x.start, x.len, x.notes.length]))}`);
+  const s2 = c[0].notes.find(n => n.p === 55).s; expect(s2 >= 32 && s2 < 48, `seconde note mal placée (${s2})`);
+  // Seconde prise plus loin : clip à part, la première n'est pas allongée.
+  await S(() => window.kh.engine.seek(96)); await page.keyboard.press('r'); await sleep(150);
+  await S(() => window.kh.noteOn(50)); await sleep(150); await S(() => window.kh.noteOff(50)); await sleep(400);
+  await page.keyboard.press('Space'); await sleep(500);
+  c = (await proj()).tracks[1].clips.sort((a, b) => a.start - b.start);
+  expect(c.length === 2 && c[0].len === 48 && c[1].start === 96, `seconde prise : ${JSON.stringify(c.map(x => [x.start, x.len]))}`);
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  expect((await proj()).tracks[1].clips.length === 0, 'les deux prises ne s’annulent pas en deux appuis');
+});
+test('AD04', 'Correctifs audit', 'Tempo au centième : 93,5 BPM gardé (champ, changement de tempo, fichier MIDI) ; une saisie vide ou nulle garde le tempo', async () => {
+  await page.fill('#bpm', '93.5'); await page.keyboard.press('Tab'); await sleep(100);
+  expect((await proj()).bpm === 93.5 && await page.inputValue('#bpm') === '93.5', `tempo ${(await proj()).bpm}`);
+  for (const v of ['', '0']) { await page.fill('#bpm', v); await page.keyboard.press('Tab'); await sleep(80); expect((await proj()).bpm === 93.5 && await page.inputValue('#bpm') === '93.5', `« ${v} » a changé le tempo`); }
+  await page.fill('#bpm', '300'); await page.keyboard.press('Tab'); await sleep(80); expect((await proj()).bpm === 240, 'tempo non borné à 240');
+  await page.keyboard.press('Control+z'); expect((await proj()).bpm === 93.5, 'annulation');
+  await S(() => window.kh.engine.seek(32)); dialogText = '87,25'; try { await clickIn('#bTempoAdd'); await sleep(150); } finally { dialogText = undefined; }
+  const tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].bpm === 87.25, `changement de tempo : ${JSON.stringify(tp)}`);
+  const back = await S(() => { const k = window.kh, m = k.exportMidi(k.S.project), r = k.importMidi(m.buffer.slice(m.byteOffset, m.byteOffset + m.byteLength)); return { bpm: r.bpm, t: r.tempos.map(x => x.bpm) }; });
+  expect(back.bpm === 93.5 && back.t[0] === 87.25, `MIDI aller-retour : ${JSON.stringify(back)}`);
+});
+test('AD05', 'Correctifs audit', 'Sauvegarde impossible (espace plein, stockage bloqué) : bandeau qui reste, bouton « Enregistrer en fichier », message de retour ; traduit', async () => {
+  const fail = name => page.evaluate(n => { window.__put = window.__put || IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function () { throw new DOMException('plein', n); }; }, name);
+  const heal = () => page.evaluate(() => { if (window.__put) IDBObjectStore.prototype.put = window.__put; });
+  try {
+    await fail('QuotaExceededError'); await S(() => { window.kh.S.project.name = 'Plein'; window.kh.commit(); });
+    await page.waitForSelector('#saveAlert', { timeout: 3000 });
+    expect(await page.getAttribute('#saveAlert', 'role') === 'alert' && (await page.textContent('#saveAlert')).includes('plein'), 'bandeau absent ou sans le mot « plein »');
+    const b = await page.locator('#saveAlert [data-act=savefile]').boundingBox(); expect(b.height >= 44, `bouton trop petit au doigt (${b.height} px)`);
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 3000 }), page.click('#saveAlert [data-act=savefile]')]);
+    expect(dl.suggestedFilename().endsWith('.khm'), `fichier proposé : ${dl.suggestedFilename()}`);
+    await sleep(1000); expect(await page.isVisible('#saveAlert'), 'le bandeau a disparu alors que la sauvegarde échoue toujours');
+    await fail('UnknownError'); await S(() => { window.kh.S.project.name = 'Bloqué'; window.kh.commit(); }); await sleep(900);
+    expect((await page.textContent('#saveAlert')).includes('bloqué'), 'stockage bloqué : message non adapté');
+    await heal(); await S(() => { window.kh.S.project.name = 'Rétabli'; window.kh.commit(); }); await sleep(900);
+    expect(!(await page.$('#saveAlert')) && (await page.textContent('#toast')).includes('rétablie'), 'bandeau resté ou retour non annoncé');
+    for (const [l, w] of [['en', 'out of space'], ['es', 'no tiene espacio']]) {
+      await page.evaluate(l => window.kh.setLang(l), l); await fail('QuotaExceededError'); await S(() => { window.kh.S.project.name = 'x' + Math.random(); window.kh.commit(); }); await sleep(900);
+      expect((await page.textContent('#saveAlert')).includes(w), `bandeau non traduit en ${l}`);
+      await heal(); await S(() => { window.kh.S.project.name = 'y' + Math.random(); window.kh.commit(); }); await sleep(900);
+    }
+  } finally { await heal(); await page.evaluate(() => { document.getElementById('saveAlert')?.remove(); window.kh.setLang('fr'); }); }
+});
+test('AD06', 'Correctifs audit', 'Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée', async () => {
+  await page.click(await headSel(4)); await page.click('[data-act=inopen]');
+  expect(await page.waitForSelector('.tuner', { timeout: 3000 }).catch(() => null), 'accordeur absent');
+  const shown = await page.evaluate(async () => {
+    const e = window.kh.engine, orig = e.inputPitch.bind(e), seq = [466.16, 440, 440.3, 439.8, 440, 440, 440, 440];
+    e.inputPitch = () => seq.length ? seq.shift() : 440;
+    const seen = []; const mo = new MutationObserver(() => { const n = document.querySelector('.tnote')?.textContent, c = document.querySelector('.tcents')?.textContent; if (n && n !== '—') seen.push(n + '|' + c); });
+    mo.observe(document.querySelector('.tuner'), { subtree: true, childList: true, characterData: true });
+    await new Promise(r => setTimeout(r, 800)); mo.disconnect(); e.inputPitch = orig; return [...new Set(seen)];
+  });
+  expect(shown.length && shown.every(s => /^La4\|[+-]?[0-2]$/.test(s)), `valeurs affichées : ${JSON.stringify(shown)}`);
+  await page.click('[data-act=inopen]');
+});
+
+test('AD07', 'Correctifs audit', 'Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(), sy = p.tracks.find(t => t.type === 'synth'), sr = 44100;
+    const b = new AudioBuffer({ length: sr, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 330 * i / sr) * 0.5; k.buffers.set('ad07-sine', b);
+    // Rien de tiré au hasard (ni batterie, ni réverb) : les deux rendus doivent coïncider.
+    p.loop = false; p.countIn = false; p.tracks = []; p.buses = [k.newBus ? Object.assign(k.newBus(), { id: 'ad07bus' }) : undefined].filter(Boolean);
+    for (let i = 0; i < 16; i++) { const tr = JSON.parse(JSON.stringify(sy)); Object.assign(tr, { id: 'ad7-' + i, name: 'P' + i, auto: {}, rev: 0, dly: 0.2, duck: 0, out: i < 3 && p.buses.length ? 'ad07bus' : '', vol: 0.3, pan: (i % 5 - 2) / 3 });
+      tr.inserts = ['eq', 'delay', 'phaser'].map(x => k.newInsert(x));
+      if (i % 2) { tr.type = 'audio'; delete tr.synth; tr.clips = [0, 16, 32].map((st, j) => ({ id: `a7${i}-${j}`, name: 's', start: st + i % 4, len: 8, offset: 0, bufferId: 'ad07-sine', gain: 0.6 })); }
+      else tr.clips = [{ id: 'n7' + i, name: 'n', start: 0, len: 64, offset: 0, patLen: 16, notes: [{ p: 48 + i, s: 0, l: 3, v: 0.7 }, { p: 55 + i, s: 8, l: 2, v: 0.5 }] }];
+      p.tracks.push(tr); }
+    const groups = k.renderGroups(p, 8);
+    k.renderOpts.parallel = false; let a = performance.now(); const one = await k.renderOffline(p); const tOne = performance.now() - a;
+    k.renderOpts.parallel = true; a = performance.now(); const par = await k.renderOffline(p); const tPar = performance.now() - a, parts = k.lastRender.parts;
+    let diff = 0, peak = 0; for (let c = 0; c < 2; c++) { const x = one.getChannelData(c), y = par.getChannelData(c); for (let i = 0; i < x.length; i++) { diff = Math.max(diff, Math.abs(x[i] - y[i])); peak = Math.max(peak, Math.abs(x[i])); } }
+    return { groups: groups && groups.map(g => g.tracks.length), bus: groups && groups.find(g => g.tracks.some(t => t.id === 'ad7-0'))?.tracks.filter(t => t.out === 'ad07bus').length, parts, diff, peak, len: [one.length, par.length], tOne, tPar, cores: navigator.hardwareConcurrency };
+  });
+  console.log('        export parallèle :', JSON.stringify({ groupes: r.groups, 'un seul tenant': (r.tOne / 1000).toFixed(1) + ' s', parallèle: (r.tPar / 1000).toFixed(1) + ' s', écart: r.diff.toExponential(1) }));
+  expect(r.peak > 0.05 && r.len[0] === r.len[1], `rendus vides ou de longueurs différentes : ${JSON.stringify(r.len)}`);
+  if (r.cores >= 3) {
+    expect(r.parts >= 2 && r.groups.reduce((a, b) => a + b, 0) === 16, `pas de rendu parallèle : ${JSON.stringify(r.groups)}, ${r.parts} rendu(s)`);
+    expect(r.bus === 3, 'les pistes d’un même bus ont été séparées');
+  }
+  expect(r.diff < 1e-4, `le rendu parallèle diffère : écart maximal ${r.diff}`);
+});
+test('AD08', 'Correctifs audit', 'Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet', async () => {
+  const r = await S(() => {
+    const k = window.kh, base = k.demoProject(), dr = base.tracks.find(t => t.type === 'drums'), sy = base.tracks.find(t => t.type === 'synth');
+    const mk = f => { const p = JSON.parse(JSON.stringify(base)); p.buses = []; p.tracks = Array.from({ length: 14 }, (_, i) => Object.assign(JSON.parse(JSON.stringify(i < 2 ? dr : sy)), { id: 'g' + i, duck: 0, solo: false, out: '', inserts: [] })); f(p); return p; };
+    const where = (g, id) => g.findIndex(x => x.tracks.some(t => t.id === id));
+    const sc = k.renderGroups(mk(p => { p.tracks[9].duck = 0.6; p.tracks[12].duck = 0.4; }), 8);
+    return {
+      plain: k.renderGroups(mk(() => { }), 8)?.length,
+      side: sc && new Set(['g0', 'g1', 'g9', 'g12'].map(id => where(sc, id))).size, sideParts: sc?.length,
+      au: k.renderGroups(mk(p => { p.tracks[5].inserts = [{ id: 'x', type: 'au', on: true, url: 'aufx:lpas:appl', p: {} }]; }), 8),
+      solo: k.renderGroups(mk(p => { p.tracks[3].solo = true; }), 8),
+      small: k.renderGroups(mk(p => { p.tracks.length = 8; }), 8),
+      twoCores: k.renderGroups(mk(() => { }), 2),
+      demo: k.renderGroups(k.demoProject(), 8),
+    };
+  });
+  expect(r.plain === 4, `projet de 14 pistes : ${r.plain} groupes (attendu 4)`);
+  expect(r.side === 1 && r.sideParts >= 2, `sidechain : kicks et pistes pompées répartis sur ${r.side} groupes`);
+  expect(r.au === null && r.solo === null && r.small === null && r.twoCores === null && r.demo === null, `découpage là où il ne faut pas : ${JSON.stringify(r)}`);
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

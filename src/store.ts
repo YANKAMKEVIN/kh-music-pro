@@ -98,6 +98,8 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
   return new Promise((res, rej) => {
     const t = d.transaction('kv', mode), r = fn(t.objectStore('kv'));
     t.oncomplete = () => res(r.result); t.onerror = () => rej(t.error);
+    // Espace plein : la transaction est abandonnée à la validation, sans « error » ; sans ceci la promesse ne finirait jamais.
+    t.onabort = () => rej(t.error ?? new DOMException('Transaction abandonnée', 'AbortError'));
   });
 }
 const idbSet = (k: string, v: unknown) => tx('readwrite', s => s.put(v, k));
@@ -126,7 +128,20 @@ export function usedBuffers(p: Project): Set<string> {
 
 export function addBuffer(id: string, b: AudioBuffer) {
   buffers.set(id, b);
-  idbSet('buf:' + id, toRaw(b)).catch(() => { /* stockage indisponible */ });
+  idbSet('buf:' + id, toRaw(b)).then(saveOk, saveFailed);
+}
+
+// ---------- Sauvegarde impossible : on le dit, au lieu de s'arrêter en silence ----------
+/** Appelé quand l'enregistrement dans l'appareil échoue (`full` : espace plein) ou refonctionne après un échec. */
+export const saveHealth = { failing: false, full: false, onChange: (_failing: boolean, _full: boolean) => { /* branché par main.ts */ } };
+function saveFailed(e: unknown) {
+  const full = (e as { name?: string } | null)?.name === 'QuotaExceededError';
+  if (saveHealth.failing && saveHealth.full === full) return;
+  saveHealth.failing = true; saveHealth.full = full; saveHealth.onChange(true, full);
+}
+function saveOk() {
+  if (!saveHealth.failing) return;
+  saveHealth.failing = false; saveHealth.full = false; saveHealth.onChange(false, false);
 }
 
 // ---------- Bibliothèque : plusieurs projets gardés dans le navigateur ----------
@@ -144,8 +159,8 @@ export async function saveNow() {
   const id = S.pid, e = library.find(x => x.id === id), now = Date.now();
   if (e) { e.name = S.project.name; e.updated = now; } else library.push({ id, name: S.project.name, updated: now });
   const json = JSON.stringify(S.project);
-  await idbSet('proj:' + id, json); await idbSet('lib', library); await idbSet('current', id);
-  saved.at = now;
+  try { await idbSet('proj:' + id, json); await idbSet('lib', library); await idbSet('current', id); } catch (e) { saveFailed(e); throw e; }
+  saved.at = now; saveOk();
   if (now - versioning.last >= versioning.every) await snapshot('auto', json);
 }
 

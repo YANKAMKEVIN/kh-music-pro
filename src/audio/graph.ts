@@ -107,6 +107,11 @@ export class Mix {
     for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
   }
 
+  /** Rendu par groupes (export d'un gros projet) : le volume général sort directement, sans sa chaîne. */
+  stemOut() { this.master.disconnect(this.mlp); this.master.connect(this.ctx.destination); }
+  /** Branche une source à l'entrée de la chaîne du général (après son volume, déjà appliqué dans les groupes). */
+  masterChainIn(src: AudioNode) { src.connect(this.mlp); }
+
   /** Insère le bégaiement (boucle des derniers instants) juste avant le limiteur. */
   async initStutter() {
     if (this.stutter || !this.live) return;

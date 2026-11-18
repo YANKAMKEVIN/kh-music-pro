@@ -12,6 +12,8 @@ const held = new Map<number, Held>();
 const pedals = new Set<number>();
 const pedalNotes = new Map<number, Set<number>>();
 
+/** Clip créé par la prise en cours sur chaque piste (`run` : instant de départ du transport, propre à chaque prise). */
+const takes = new Map<string, { id: string; run: number }>();
 const isRec = (tr: Track) => engine.recording === 'midi' && engine.recTrack === tr.id && engine.playing;
 
 /** Trouve (ou crée) le clip sous la tête de lecture et renvoie la position locale à écrire. */
@@ -20,6 +22,19 @@ function recSpot(tr: Track, at?: number): { clip: Clip; local: number } {
   let abs = at ?? Math.round(engine.currentStep());
   if (p.loop && abs > le - 1e-6 && abs < le + 1) abs = ls + (abs - le);
   let clip = tr.clips.find(c => abs >= c.start && abs < c.start + c.len);
+  // Une prise jouée sur plusieurs mesures reste un seul clip : le clip créé par cette même prise s'allonge
+  // jusqu'à la mesure jouée, tant qu'aucun autre clip ne se trouve entre les deux.
+  const take = takes.get(tr.id);
+  const prev = !clip && take && take.run === engine.runStart ? tr.clips.find(c => c.id === take.id) : undefined;
+  if (prev && abs >= prev.start + prev.len && !(p.loop && abs >= ls && abs < le)) {
+    const end = (Math.floor(abs / BAR) + 1) * BAR;
+    const next = Math.min(...tr.clips.filter(c => c !== prev && c.start >= prev.start + prev.len).map(c => c.start), Infinity);
+    if (next >= end && end - prev.start <= 128) {
+      prev.len = end - prev.start; prev.patLen = prev.len;
+      if (prev.drums) { const n = Math.round(prev.patLen * (prev.res ?? 1)); prev.drums = prev.drums.map(r => Array.from({ length: n }, (_, i) => r[i] ?? 0)); }
+      clip = prev;
+    }
+  }
   if (!clip) {
     let start = Math.floor(abs / BAR) * BAR, len = BAR;
     if (p.loop && abs >= ls && abs < le) { start = ls; len = le - ls; }
@@ -29,6 +44,7 @@ function recSpot(tr: Track, at?: number): { clip: Clip; local: number } {
     clip.len = len; clip.patLen = Math.min(len, 128);
     if (clip.drums) clip.drums = clip.drums.map(() => new Array(clip!.patLen!).fill(0));
     tr.clips.push(clip); S.selClip = clip.id;
+    if (isRec(tr)) takes.set(tr.id, { id: clip.id, run: engine.runStart });
   }
   return { clip, local: (abs - clip.start + clip.offset) % clip.patLen! };
 }

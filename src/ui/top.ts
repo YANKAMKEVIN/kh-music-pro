@@ -47,7 +47,9 @@ export function buildTop(onLang: () => void) {
     const s = clamp(Math.round(+$<HTMLInputElement>('loopS').value) || 1, 1, 999), e = Math.max(s, Math.round(+$<HTMLInputElement>('loopE').value) || s);
     S.project.loopStart = s - 1; S.project.loopLen = e - s + 1; commit();
   };
-  const bpm = num('bpm', t('top.tempo'), 40, 240, () => { S.project.bpm = clamp(Math.round(+bpm.value) || 120, 40, 240); bpm.value = String(S.project.bpm); commit(); });
+  // Tempo au centième près (une boucle à 93,5 BPM se cale exactement) ; une saisie vide ou nulle garde le tempo actuel.
+  const bpm = num('bpm', t('top.tempo'), 40, 240, () => { const v = parseFloat(bpm.value.replace(',', '.')); if (v > 0) { S.project.bpm = clamp(Math.round(v * 100) / 100, 40, 240); commit(); } bpm.value = String(S.project.bpm); });
+  bpm.step = '0.01';
   const snap = h('select', { id: 'snap', 'aria-label': t('top.gridTip') },
     h('option', { value: '16' }, t('grid.bar')), h('option', { value: '4' }, t('grid.beat')), h('option', { value: '1' }, '1/16'));
   snap.onchange = () => { S.snap = +snap.value; };

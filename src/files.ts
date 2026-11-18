@@ -118,7 +118,7 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
       if (st === 0xff) {
         const type = u[o++], l = rv();
         if (type === 0x51) {
-          const v = Math.round(60e6 / ((u[o] << 16) | (u[o + 1] << 8) | u[o + 2]));
+          const v = Math.round(60e6 / ((u[o] << 16) | (u[o + 1] << 8) | u[o + 2]) * 100) / 100;
           if (bpm === null && tick === 0) bpm = v; else if (v >= 40 && v <= 240) tempos.push({ s: Math.round(toStep(tick)), bpm: v });
           if (bpm === null) bpm = v;
         }

@@ -315,7 +315,7 @@ export function applyMixPreset(tr: Track, key: string) {
 
 /** Demande un tempo (40 à 240) ; renvoie null si la saisie est annulée ou invalide. */
 function askTempo(current: number): number | null {
-  const v = Math.round(+(prompt(t('tempo.ask'), String(current)) ?? ''));
+  const v = Math.round(parseFloat((prompt(t('tempo.ask'), String(current)) ?? '').replace(',', '.')) * 100) / 100;
   if (!v) return null;
   if (v < 40 || v > 240) { toast(t('tempo.range'), 'error'); return null; }
   return v;

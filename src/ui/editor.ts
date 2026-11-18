@@ -18,14 +18,28 @@ const RH = 16, SW = 28, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150;
 const SOLF = { fr: ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], es: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], en: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] };
 const isBlack = (p: number) => [1, 3, 6, 8, 10].includes(p % 12);
 export const noteName = (p: number) => SOLF[lang()][p % 12] + (Math.floor(p / 12) - 1);
-/** Étiquette d'une touche physique selon la disposition la plus probable (AZERTY en français). */
-export const keyLabel = (k: string) => lang() === 'fr' ? ({ A: 'Q', Q: 'A', W: 'Z', Z: 'W' } as Record<string, string>)[k] ?? k : k;
+/** Disposition réelle du clavier, quand le navigateur la donne (Chromium, version bureau) : code physique → lettre imprimée. */
+let layout: Map<string, string> | null = null;
+export function readKeyboardLayout(done: () => void) {
+  const kbd = (navigator as unknown as { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }).keyboard;
+  kbd?.getLayoutMap?.().then(m => { const before = layout && [...layout].join(); layout = m; if (before !== [...m].join()) done(); }).catch(() => { });
+}
+export const setKeyboardLayout = (m: Map<string, string> | null) => { layout = m; };
+/** Étiquette d'une touche physique (code « KeyA », écrit ici « A ») : la lettre réellement imprimée sur le clavier quand on la connaît,
+ *  sinon la disposition la plus probable selon la langue (AZERTY en français). */
+export const keyLabel = (k: string) => {
+  const real = /^[A-Z]$/.test(k) ? layout?.get('Key' + k) : undefined;
+  if (real && /^\p{L}$/u.test(real)) return real.toUpperCase();
+  return lang() === 'fr' ? ({ A: 'Q', Q: 'A', W: 'Z', Z: 'W' } as Record<string, string>)[k] ?? k : k;
+};
 export const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
 export const padName = (tr: Track, r: number) => tr.pads?.[r]?.name ?? t(tr.kit === 'percussion' ? 'perc.' + r : drumBank(tr.kit) && hasKey('da' + r) ? 'da' + r : 'd' + r);
 
 let lastLen = 2;
 let scrollKey = '', scrollPos = { x: 0, y: 0 };
 let edStepW = 0, edRes = 1;
+/** Case du séquenceur qui reçoit le focus au clavier (une seule est atteignable par Tab). */
+let gridPos = { r: 0, s: 0 };
 
 function lengthSelect(c: Clip, opts: number[]) {
   const sel = h('select', { 'aria-label': t('ed.length'), title: t('ed.length'), data: { role: 'length' } });
@@ -142,12 +156,17 @@ function drumEditor(tr: Track, c: Clip | null) {
   const grid = h('div', { class: 'dgrid ed-grid', style: `--cw:${cw}px` });
   // Regroupement visuel par temps : le pas d'une case vaut 1/res double-croche.
   const beat = (s: number) => Math.floor(s / res / 4 + 1e-6), isBar = (s: number) => s > 0 && Math.abs(s / res / BAR - Math.round(s / res / BAR)) < 1e-6;
+  // Une seule case atteignable par Tab (la dernière visitée) ; les flèches passent d'une case à l'autre.
+  const rows = c.drums!.length, cols = c.drums![0]?.length ?? 0;
+  gridPos = { r: clamp(gridPos.r, 0, rows - 1), s: clamp(gridPos.s, 0, cols - 1) };
+  grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', t('drum.grid'));
   c.drums!.forEach((row, r) => {
     const line = h('div', { class: 'drow' },
       h('button', { class: 'dlabel', title: t('drum.listen', padName(tr, r)), onclick: () => engine.pad(tr, r) }, h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', {}, padName(tr, r))));
     row.forEach((v, s) => line.append(h('button', {
       class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}`,
       data: { r: String(r), s: String(s) }, 'aria-label': `${padName(tr, r)} ${s + 1}`, 'aria-pressed': String(!!v),
+      tabindex: r === gridPos.r && s === gridPos.s ? '0' : '-1',
     })));
     grid.append(line);
   });
@@ -169,9 +188,24 @@ function drumEditor(tr: Track, c: Clip | null) {
     followDrag(e, mv, () => commit());
   };
   grid.oncontextmenu = e => e.preventDefault();
+  const moveTo = (r: number, s: number) => {
+    const x = grid.querySelector<HTMLElement>(`.cell[data-r="${clamp(r, 0, rows - 1)}"][data-s="${clamp(s, 0, cols - 1)}"]`);
+    if (x) x.focus();
+  };
+  grid.addEventListener('focusin', e => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('.cell');
+    if (!el) return;
+    gridPos = { r: +el.dataset.r!, s: +el.dataset.s! };
+    grid.querySelectorAll<HTMLElement>('.cell[tabindex="0"]').forEach(x => { if (x !== el) x.tabIndex = -1; });
+    el.tabIndex = 0;
+  });
   grid.onkeydown = e => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('.cell');
-    if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); setCell(el, c.drums![+el.dataset.r!][+el.dataset.s!] ? 0 : 1); commit(); }
+    if (!el) return;
+    const r = +el.dataset.r!, s = +el.dataset.s!;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setCell(el, c.drums![r][s] ? 0 : 1); commit(); return; }
+    const to = ({ ArrowRight: [r, s + 1], ArrowLeft: [r, s - 1], ArrowDown: [r + 1, s], ArrowUp: [r - 1, s], Home: [r, 0], End: [r, cols - 1] } as Record<string, number[]>)[e.key];
+    if (to && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); moveTo(to[0], to[1]); }
   };
   grid.append(h('div', { class: 'ed-ph' }));
   edStepW = cw + 4; edRes = res;
@@ -531,12 +565,23 @@ export function renderEditor(): HTMLElement {
 
 /** Accordeur : affiche la note reçue et son écart (lissé pour rester lisible). */
 let tunerHz = 0, tunerMiss = 0;
+/** Dernières mesures brutes : une note ne s'affiche qu'une fois confirmée par 3 mesures concordantes (à 3 % près),
+ *  pour qu'une trame abîmée (ordinateur chargé, attaque, bruit) ne donne pas un écart faux. */
+const tunerRaw: number[] = [];
 export function updateTuner() {
   const el = document.querySelector<HTMLElement>('.tuner');
   if (!el) return;
   const hz = engine.inputPitch();
-  if (hz) { tunerHz = tunerHz && Math.abs(Math.log2(hz / tunerHz)) < 0.03 ? tunerHz * 0.7 + hz * 0.3 : hz; tunerMiss = 0; }
-  else if (++tunerMiss > 30) tunerHz = 0;
+  if (hz) {
+    tunerRaw.push(hz); if (tunerRaw.length > 5) tunerRaw.shift();
+    const med = [...tunerRaw].sort((a, b) => a - b)[tunerRaw.length >> 1];
+    const agree = tunerRaw.filter(v => Math.abs(Math.log2(v / med)) < 0.03);
+    if (agree.length >= 3) {
+      const est = agree.reduce((a, v) => a + Math.log2(v), 0) / agree.length, f = 2 ** est;
+      tunerHz = tunerHz && Math.abs(Math.log2(f / tunerHz)) < 0.03 ? tunerHz * 0.7 + f * 0.3 : f;
+    }
+    tunerMiss = 0;
+  } else if (++tunerMiss > 30) { tunerHz = 0; tunerRaw.length = 0; }
   const [note, bar, cents] = el.children as unknown as HTMLElement[];
   if (!tunerHz) { note.textContent = '—'; cents.textContent = ''; el.classList.remove('ok'); (bar.firstChild as HTMLElement).style.left = '50%'; return; }
   const n = noteOf(tunerHz);

@@ -677,4 +677,11 @@ const D: Record<string, [string, string, string]> = {
   "syn.hold": ["Notes longues", "Long notes", "Notas largas"],
   "syn.holdTip": ["Prolonger le son jusqu’au relâchement de la note, avec une fin progressive.", "Sustain the sound until the note is released, with a smooth ending.", "Mantener el sonido hasta soltar la nota, con un final suave."],
 
+  // Correctifs de l'audit de novembre 2026
+  "drum.grid": ["Grille du séquenceur : flèches pour se déplacer, Entrée ou Espace pour allumer une case", "Step sequencer grid: arrow keys to move, Enter or Space to toggle a step", "Cuadrícula del secuenciador: flechas para moverse, Intro o Espacio para activar un paso"],
+  "save.failed": ["Le morceau ne peut plus être enregistré sur cet appareil (stockage bloqué). Enregistrez-le en fichier pour ne rien perdre.", "The song can no longer be saved on this device (storage blocked). Save it as a file so nothing is lost.", "La canción ya no se puede guardar en este dispositivo (almacenamiento bloqueado). Guárdala como archivo para no perder nada."],
+  "save.full": ["L'espace de cet appareil est plein : le morceau n'est plus enregistré. Enregistrez-le en fichier, puis libérez de la place (anciens projets, versions).", "This device is out of space: the song is no longer being saved. Save it as a file, then free up space (old projects, versions).", "Este dispositivo no tiene espacio: la canción ya no se guarda. Guárdala como archivo y libera espacio (proyectos antiguos, versiones)."],
+  "save.toFile": ["Enregistrer en fichier", "Save as file", "Guardar como archivo"],
+  "save.hide": ["Masquer cet avertissement", "Hide this warning", "Ocultar este aviso"],
+  "save.back": ["Sauvegarde automatique rétablie", "Autosave is working again", "Guardado automático restablecido"],
 };

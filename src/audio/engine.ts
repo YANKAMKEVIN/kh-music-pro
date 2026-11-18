@@ -35,6 +35,8 @@ class Engine {
   private nextStep = 0;
   private nextTime = 0;
   private t0 = 0;
+  /** Instant de départ de la lecture en cours : distingue une prise de la suivante. */
+  get runStart() { return this.t0; }
   private seg = true;
   private marks: { t: number; s: number }[] = [];
   private timer = 0;
@@ -510,17 +512,17 @@ export const engine = new Engine();
 
 // ---------- Export : rendu hors-ligne + encodage WAV ----------
 /** Ce que le dernier rendu n'a pas pu inclure. */
-export const lastRender = { wamFailed: 0, pdc: 0 };
+/** `parts` : nombre de rendus menés en parallèle pour le dernier export (1 = d'un seul tenant). */
+export const lastRender = { wamFailed: 0, pdc: 0, parts: 1 };
 
-export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
-  const end = contentEnd(p);
-  if (!end) throw new Error('empty');
-  const failed = await ensureBanks(p);
-  if (failed.length) throw new Error('bank');
+/** Rend une partie du projet (toutes ses pistes, ou un groupe d'entre elles) jusqu'au pas `end`.
+ *  `stem` : la sortie s'arrête au volume général, avant sa chaîne (filtre, égaliseur, largeur, limiteur), appliquée ensuite une seule fois. */
+async function renderPart(p: Project, end: number, stem: boolean) {
   const sr = 44100;
   const off = new OfflineAudioContext(2, Math.ceil((timeOf(p, end) + 2.5) * sr), sr);
   const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
-  lastRender.wamFailed = await mix.loadWams(p); // plugins web : recréés pour ce rendu
+  if (stem) mix.stemOut();
+  const wamFailed = await mix.loadWams(p); // plugins web : recréés pour ce rendu
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
   for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
   // Automation des plugins du Mac : le rendu s'arrête à chaque changement le temps de l'envoyer au plugin.
@@ -530,11 +532,65 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   }
   const out = await off.startRendering();
   mix.active.clear(); mix.disposePlugins();
+  return { out, wamFailed, pdc: mix.pdcMax };
+}
+
+/**
+ * Groupes de pistes rendus en parallèle (un fil de calcul par groupe) pour un gros projet, ou null pour un rendu d'un seul tenant.
+ * Le mixage est linéaire jusqu'au volume général : la somme des groupes est le même son. Restent ensemble ce qui interagit :
+ * un bus et ses pistes ; les kicks et les pistes qu'ils font « pomper » (sidechain). Pas de découpage avec un plugin du Mac
+ * (sa latence est compensée sur tout le projet) ni avec une piste en solo.
+ */
+export function renderGroups(p: Project, cores = navigator.hardwareConcurrency || 2): Project[] | null {
+  const n = Math.min(4, cores - 1);
+  if (p.tracks.length < 12 || n < 2) return null;
+  if ([...p.tracks, ...p.buses].some(t => t.solo || (t.inserts ?? []).some(i => i.type === 'au'))) return null;
+  const busIds = new Set(p.buses.map(b => b.id)), unitOf = new Map<string, string>();
+  for (const t of p.tracks) unitOf.set(t.id, busIds.has(t.out) ? 'bus:' + t.out : t.id);
+  if (p.tracks.some(t => t.duck > 0)) {
+    const tied = new Set(p.tracks.filter(t => t.duck > 0 || t.type === 'drums').map(t => unitOf.get(t.id)!));
+    for (const t of p.tracks) if (tied.has(unitOf.get(t.id)!)) unitOf.set(t.id, 'sidechain');
+  }
+  const units = new Map<string, Project['tracks']>();
+  for (const t of p.tracks) { const u = unitOf.get(t.id)!; if (!units.has(u)) units.set(u, []); units.get(u)!.push(t); }
+  if (units.size < 2) return null;
+  // Répartition par coût estimé (une piste, plus ses effets ; une réverb compte davantage), du plus lourd au plus léger.
+  const cost = (ts: Project['tracks']) => ts.reduce((a, t) => a + 1 + (t.inserts ?? []).reduce((b, i) => b + (i.type === 'reverb' ? 4 : 1), 0), 0);
+  const bins = Array.from({ length: Math.min(n, units.size) }, () => ({ w: 0, tracks: [] as Project['tracks'] }));
+  for (const ts of [...units.values()].sort((a, b) => cost(b) - cost(a))) { const b = bins.reduce((x, y) => (y.w < x.w ? y : x)); b.tracks.push(...ts); b.w += cost(ts); }
+  return bins.map(b => ({ ...p, tracks: b.tracks, buses: p.buses.filter(x => b.tracks.some(t => t.out === x.id)) }));
+}
+
+/** Rendu parallèle des gros projets (désactivable pour la QA et les comparaisons). */
+export const renderOpts = { parallel: true };
+
+export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
+  const end = contentEnd(p);
+  if (!end) throw new Error('empty');
+  const failed = await ensureBanks(p);
+  if (failed.length) throw new Error('bank');
+  const sr = 44100, groups = renderOpts.parallel ? renderGroups(p) : null;
+  let out: AudioBuffer, pdc = 0;
+  if (!groups) {
+    const r = await renderPart(p, end, false);
+    out = r.out; pdc = r.pdc; lastRender.wamFailed = r.wamFailed;
+  } else {
+    // Gros projet (V18) : chaque groupe dans son propre rendu, en même temps, puis la somme passe une fois par la chaîne du général.
+    const parts = await Promise.all(groups.map(g => renderPart(g, end, true)));
+    lastRender.wamFailed = parts.reduce((a, r) => a + r.wamFailed, 0);
+    const len = parts[0].out.length, sum = new AudioBuffer({ numberOfChannels: 2, length: len, sampleRate: sr });
+    for (let c = 0; c < 2; c++) { const d = sum.getChannelData(c); for (const r of parts) { const x = r.out.getChannelData(c); for (let i = 0; i < len; i++) d[i] += x[i]; } }
+    const off = new OfflineAudioContext(2, len, sr), mix = new Mix(off, false);
+    mix.sync({ ...p, tracks: [], buses: [] });
+    const src = off.createBufferSource(); src.buffer = sum; mix.masterChainIn(src); src.start(0);
+    out = await off.startRendering();
+  }
+  lastRender.parts = groups?.length ?? 1;
   // Compensation de latence des plugins : tout le mixage sort en retard de `pdcMax` ; on le ramène au début du fichier,
   // pour que l'export (et les pistes séparées) reste calé sur la grille.
-  const shift = Math.round(mix.pdcMax * sr);
+  const shift = Math.round(pdc * sr);
   if (shift > 0) for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); d.copyWithin(0, shift); d.fill(0, d.length - shift); }
-  lastRender.pdc = mix.pdcMax;
+  lastRender.pdc = pdc;
   if (!normalize) return out;
   if (p.target < 0) {
     // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.

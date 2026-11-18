@@ -1,0 +1,10 @@
+/* Bandeau « sauvegarde impossible » (src/ui/savealert.ts) : fichier à part pour ne pas toucher à style.css. */
+.save-alert {
+  position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: min(92vw, 640px);
+  padding: 10px 12px 10px 16px; border-radius: 12px; background: rgba(40, 10, 20, .97);
+  border: 1px solid var(--rec); box-shadow: 0 0 26px rgba(255, 77, 109, .4); user-select: text;
+}
+.save-alert span { flex: 1 1 240px; }
+.save-alert button { min-height: 44px; }
+.save-alert .x { min-width: 44px; background: none; border: 0; font-size: 18px; }
