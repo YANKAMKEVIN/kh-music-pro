@@ -156,8 +156,13 @@ export interface Project {
   tempos: { s: number; bpm: number }[];      // changements de tempo en cours de morceau (triés par position)
   sig: number;                               // temps par mesure (signature x/4)
   liveQ: number;                             // mode Live : calage du lancement des clips, en pas (0 = à la mesure)
+  exp: ExportOpts;                           // réglages d'export (V19)
   tracks: Track[];
 }
+
+/** Export (V19) : plage (tout, zone de boucle, ou mesures `from` à `to` comprises), queue de son après la fin, résolution et fréquence du WAV. */
+export interface ExportOpts { range: 'all' | 'loop' | 'bars'; from: number; to: number; tail: boolean; bits: 16 | 24; rate: 44100 | 48000 }
+export const defaultExport = (): ExportOpts => ({ range: 'all', from: 1, to: 4, tail: true, bits: 16, rate: 44100 });
 
 /** Longueur d'une mesure en pas. Suit la signature rythmique du projet ouvert (4/4 = 16 pas, 3/4 = 12…). */
 export let BAR = 16;
@@ -329,7 +334,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, liveQ: 0,
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, liveQ: 0, exp: defaultExport(),
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -339,7 +344,7 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.liveQ ??= 0;
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.liveQ ??= 0; p.exp = { ...defaultExport(), ...p.exp };
   for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; b.inserts ??= []; }
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4; tr.inserts ??= [];

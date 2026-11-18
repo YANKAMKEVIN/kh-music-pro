@@ -1,4 +1,4 @@
-import { analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from './audio/engine';
+import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from './audio/engine';
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
@@ -211,10 +211,22 @@ export function pasteClip(): boolean {
   return true;
 }
 
+/** Plage et fréquence de l'export choisies dans les options (V19). Le MIDI exporte toujours tout le morceau. */
+export function exportRange(p = S.project): RenderRange {
+  const e = p.exp, r: RenderRange = { tail: e.tail, rate: e.rate };
+  if (e.range === 'loop') { r.from = p.loopStart * BAR; r.to = (p.loopStart + p.loopLen) * BAR; }
+  else if (e.range === 'bars') { const a = Math.max(1, Math.round(e.from)), b = Math.max(a, Math.round(e.to)); r.from = (a - 1) * BAR; r.to = b * BAR; }
+  return r;
+}
+/** Suffixe du nom de fichier : la plage exportée, pour ne pas confondre un extrait avec le morceau entier. */
+function rangeName(): string {
+  const e = S.project.exp, p = S.project;
+  return e.range === 'loop' ? `_m${p.loopStart + 1}-${p.loopStart + p.loopLen}` : e.range === 'bars' ? `_m${Math.round(e.from)}-${Math.max(Math.round(e.from), Math.round(e.to))}` : '';
+}
 export async function exportMp3() {
   try {
     toast(t('toast.rendering'));
-    download(await encodeMp3(await renderOffline(S.project)), safeName() + '.mp3');
+    download(await encodeMp3(await renderOffline(S.project, true, exportRange())), safeName() + rangeName() + '.mp3');
     toast(t('toast.mp3Exported'));
   } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
 }
@@ -542,7 +554,7 @@ engine.onRecEnd = kind => { allNotesOff(); if (kind === 'midi') setTimeout(commi
 export async function exportWav() {
   try {
     toast(t('toast.rendering'));
-    download(encodeWav(await renderOffline(S.project)), safeName() + '.wav');
+    download(encodeWav(await renderOffline(S.project, true, exportRange()), S.project.exp.bits), safeName() + rangeName() + '.wav');
     toast(lastRender.wamFailed ? t('toast.exportedNoWam', lastRender.wamFailed) : t('toast.exported'), lastRender.wamFailed ? 'error' : 'info');
   } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
 }
@@ -557,10 +569,10 @@ export async function exportStems() {
     for (const [i, tr] of list.entries()) {
       toast(t('toast.stem', i + 1, list.length));
       const solo: typeof p = { ...p, tracks: p.tracks.map(x => ({ ...x, solo: false, mute: x.id !== tr.id })) };
-      const wav = encodeWav(await renderOffline(solo, false));
+      const wav = encodeWav(await renderOffline(solo, false, exportRange()), p.exp.bits);
       files.push({ name: `${String(i + 1).padStart(2, '0')}_${ascii(tr.name)}.wav`, data: new Uint8Array(await wav.arrayBuffer()) });
     }
-    download(zip(files), safeName() + '_stems.zip');
+    download(zip(files), safeName() + rangeName() + '_stems.zip');
     toast(t('toast.stemsDone', files.length));
   } catch { toast(t('toast.exportFail'), 'error'); }
 }

@@ -116,7 +116,8 @@ export function buildTop(onLang: () => void) {
     h('div', { class: 'mrow' }, h('label', { class: 'mini-in' }, '⟲ ' + t('top.from'), num('loopS', t('top.loopS'), 1, 999, setLoop)),
       h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop))));
   const exportMore = drop('mExport', ['▾'], t('top.exportMore'),
-    item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile));
+    item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile),
+    item('bExpOpts', '⚙ ' + t('exp.menu'), showExportOptions));
   const settings = drop('mSettings', ['⚙'], t('top.settings'),
     item('bMidi', '🎛 ' + t('top.midiTip'), midiConnect), item('bAudio', '🔧 ' + t('aud.title'), showAudio),
     h('label', { class: 'mini-in mrow' }, t('top.lang'), langSel));
@@ -162,6 +163,46 @@ export function buildTop(onLang: () => void) {
   buildHelp();
 }
 
+/** Résumé des réglages d'export (bulle du bouton Exporter, fenêtre des options). */
+export function exportSummary(): string {
+  const e = S.project.exp, p = S.project;
+  const range = e.range === 'loop' ? t('exp.sumLoop', p.loopStart + 1, p.loopStart + p.loopLen) : e.range === 'bars' ? t('exp.sumBars', Math.round(e.from), Math.max(Math.round(e.from), Math.round(e.to))) : t('exp.sumAll');
+  return `WAV ${e.bits} ${t('exp.bitsUnit')} · ${e.rate === 48000 ? '48' : '44,1'} kHz · ${range}`;
+}
+/** Options d'export (V19) : plage (tout, boucle, mesures X à Y), queue de son, WAV 16 ou 24 bits, 44,1 ou 48 kHz. Gardées dans le projet. */
+export function showExportOptions() {
+  const d = $<HTMLDialogElement>('expopts'), p = S.project, e = p.exp;
+  const set = (fn: () => void) => { fn(); commit(); sum.textContent = exportSummary(); bars(); };
+  const radio = (v: typeof e.range, label: string) => {
+    const r = h('input', { type: 'radio', name: 'exprange', value: v, checked: e.range === v, data: { range: v } });
+    r.onchange = () => { if (r.checked) set(() => { e.range = v; }); };
+    return h('label', { class: 'eopt' }, r, label);
+  };
+  const num = (k: 'from' | 'to', label: string) => {
+    const i = h('input', { type: 'number', min: '1', max: '999', step: '1', value: String(e[k]), 'aria-label': label, data: { role: 'exp' + k } });
+    i.onchange = () => { const v = Math.round(+i.value); if (v >= 1 && v <= 999) set(() => { e[k] = v; if (e.to < e.from) { if (k === 'from') e.to = v; else e.from = v; } }); i.value = String(e[k]); };
+    return i;
+  };
+  const from = num('from', t('exp.from')), to = num('to', t('exp.to'));
+  const bars = () => { from.disabled = to.disabled = e.range !== 'bars'; from.value = String(e.from); to.value = String(e.to); };
+  const tail = h('input', { type: 'checkbox', checked: e.tail, data: { role: 'exptail' } }); tail.onchange = () => set(() => { e.tail = tail.checked; });
+  const bits = h('select', { 'aria-label': t('exp.bits'), data: { role: 'expbits' } }, ...[16, 24].map(b => h('option', { value: String(b), selected: e.bits === b }, t('exp.bitsOpt' + b))));
+  bits.onchange = () => set(() => { e.bits = +bits.value as 16 | 24; });
+  const rate = h('select', { 'aria-label': t('exp.rate'), data: { role: 'exprate' } }, ...[[44100, '44,1 kHz'], [48000, '48 kHz']].map(([v, l]) => h('option', { value: String(v), selected: e.rate === v }, String(l))));
+  rate.onchange = () => set(() => { e.rate = +rate.value as 44100 | 48000; });
+  const sum = h('p', { class: 'tip', role: 'status', id: 'expSum' }, exportSummary());
+  d.replaceChildren(h('h2', {}, '⚙ ' + t('exp.title')),
+    h('fieldset', { class: 'eset' }, h('legend', {}, t('exp.range')),
+      radio('all', t('exp.all')), radio('loop', t('exp.loop', p.loopStart + 1, p.loopStart + p.loopLen)),
+      h('div', { class: 'eopt' }, radio('bars', t('exp.bars')), h('label', { class: 'mini-in' }, t('exp.from'), from), h('label', { class: 'mini-in' }, t('exp.to'), to)),
+      h('label', { class: 'eopt' }, tail, t('exp.tail'))),
+    h('fieldset', { class: 'eset' }, h('legend', {}, t('exp.format')),
+      h('label', { class: 'fld' }, t('exp.bits'), bits), h('label', { class: 'fld' }, t('exp.rate'), rate), h('p', { class: 'tip' }, t('exp.formatTip'))),
+    sum,
+    h('form', { method: 'dialog', class: 'erow' }, h('button', { type: 'button', class: 'pill accent', id: 'bExpGo', onclick: () => { d.close(); exportWav(); } }, t('exp.go')), h('button', { class: 'pill' }, t('lib.close'))));
+  bars(); d.showModal();
+}
+
 /** Bloc-notes du projet : paroles, idées, liste de choses à faire. */
 function showNotes() {
   const d = $<HTMLDialogElement>('notes'), area = h('textarea', { id: 'notesText', 'aria-label': t('notes.title'), placeholder: t('notes.placeholder'), spellcheck: true });
@@ -180,6 +221,7 @@ export function renderTop() {
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
   const lr = t('top.loopRange', p.loopStart + 1, p.loopStart + p.loopLen);
   $('bLoop').textContent = `⟲ ${p.loopStart + 1} → ${p.loopStart + p.loopLen}`; $('bLoop').title = t('top.loopTip') + ' — ' + lr; $('bLoop').setAttribute('aria-label', t('top.loop') + ' — ' + lr);
+  $('bExport').title = t('top.exportTip') + ' — ' + exportSummary();
   $<HTMLSelectElement>('snap').value = String(S.snap);
   $<HTMLSelectElement>('sig').value = String(p.sig);
   for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bPunch', p.punch], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {

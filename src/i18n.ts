@@ -319,6 +319,27 @@ const D: Record<string, [string, string, string]> = {
 
   // ===== V5 =====
   'okb.title': ['Clavier', 'Keyboard', 'Teclado'],
+  // V19 : options d'export
+  'exp.menu': ['Options d’export…', 'Export options…', 'Opciones de exportación…'],
+  'exp.title': ['Options d’export', 'Export options', 'Opciones de exportación'],
+  'exp.range': ['Partie exportée', 'Exported part', 'Parte exportada'],
+  'exp.all': ['Tout le morceau', 'Whole song', 'Toda la canción'],
+  'exp.loop': ['La zone de boucle (mesures {0} à {1})', 'The loop range (bars {0} to {1})', 'La zona de bucle (compases {0} a {1})'],
+  'exp.bars': ['Des mesures', 'Bars', 'Compases'],
+  'exp.from': ['de', 'from', 'de'],
+  'exp.to': ['à', 'to', 'a'],
+  'exp.tail': ['Garder la fin du son après la dernière mesure (2,5 s de réverb et de relâchement)', 'Keep the sound’s tail after the last bar (2.5 s of reverb and release)', 'Conservar la cola del sonido tras el último compás (2,5 s de reverb y relajación)'],
+  'exp.format': ['Format du WAV', 'WAV format', 'Formato del WAV'],
+  'exp.bits': ['Résolution', 'Bit depth', 'Resolución'],
+  'exp.bitsOpt16': ['16 bits (CD, streaming)', '16-bit (CD, streaming)', '16 bits (CD, streaming)'],
+  'exp.bitsOpt24': ['24 bits (studio, mastering)', '24-bit (studio, mastering)', '24 bits (estudio, mastering)'],
+  'exp.rate': ['Fréquence', 'Sample rate', 'Frecuencia'],
+  'exp.formatTip': ['Le MP3 et les pistes séparées suivent aussi la partie et la fréquence choisies ; le MIDI exporte toujours tout le morceau.', 'MP3 and stems also follow the chosen part and sample rate; MIDI always exports the whole song.', 'El MP3 y las pistas separadas también siguen la parte y la frecuencia elegidas; el MIDI siempre exporta toda la canción.'],
+  'exp.go': ['Exporter en WAV', 'Export as WAV', 'Exportar en WAV'],
+  'exp.bitsUnit': ['bits', 'bit', 'bits'],
+  'exp.sumAll': ['tout le morceau', 'whole song', 'toda la canción'],
+  'exp.sumLoop': ['boucle, mesures {0} à {1}', 'loop, bars {0} to {1}', 'bucle, compases {0} a {1}'],
+  'exp.sumBars': ['mesures {0} à {1}', 'bars {0} to {1}', 'compases {0} a {1}'],
   // V19 : contrôles joués
   'syn.bend': ['Plage du pitch bend', 'Pitch bend range', 'Rango del pitch bend'],
   'ctl.pb': ['Pitch bend', 'Pitch bend', 'Pitch bend'],

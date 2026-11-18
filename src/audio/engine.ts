@@ -526,14 +526,13 @@ export const lastRender = { wamFailed: 0, pdc: 0, parts: 1 };
 
 /** Rend une partie du projet (toutes ses pistes, ou un groupe d'entre elles) jusqu'au pas `end`.
  *  `stem` : la sortie s'arrête au volume général, avant sa chaîne (filtre, égaliseur, largeur, limiteur), appliquée ensuite une seule fois. */
-async function renderPart(p: Project, end: number, stem: boolean) {
-  const sr = 44100;
+async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, limit: number | null = null) {
   const off = new OfflineAudioContext(2, Math.ceil((timeOf(p, end) + 2.5) * sr), sr);
   const mix = new Mix(off, false); mix.autoOn = true; mix.sync(p);
   if (stem) mix.stemOut();
   const wamFailed = await mix.loadWams(p); // plugins web : recréés pour ce rendu
   for (let s = 0; s < end; s++) mix.applyAuto(p, s, timeOf(p, s));
-  for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, null);
+  for (let s = 0; s < end; s++) scheduleStep(mix, p, buffers, s, swingT(p, s, timeOf(p, s)), s === 0, limit);
   // Automation des plugins du Mac : le rendu s'arrête à chaque changement le temps de l'envoyer au plugin.
   for (const [q, fns] of mix.auEvents) {
     if (q <= 0) { fns.forEach(f => f()); continue; }
@@ -573,19 +572,24 @@ export function renderGroups(p: Project, cores = navigator.hardwareConcurrency |
 /** Rendu parallèle des gros projets (désactivable pour la QA et les comparaisons). */
 export const renderOpts = { parallel: true };
 
-export async function renderOffline(p: Project, normalize = true): Promise<AudioBuffer> {
-  const end = contentEnd(p);
-  if (!end) throw new Error('empty');
+/** Plage d'un export (V19) : du pas `from` au pas `to`, queue de son de 2,5 s après la fin ou non, fréquence d'échantillonnage. */
+export interface RenderRange { from?: number; to?: number; tail?: boolean; rate?: number }
+export async function renderOffline(p: Project, normalize = true, range: RenderRange = {}): Promise<AudioBuffer> {
+  const full = contentEnd(p), from = Math.max(0, range.from ?? 0), end = Math.max(from, range.to ?? full);
+  if (!full || end <= from) throw new Error('empty');
   const failed = await ensureBanks(p);
   if (failed.length) throw new Error('bank');
-  const sr = 44100, groups = renderOpts.parallel ? renderGroups(p) : null;
+  // Une plage qui finit avant la fin du morceau coupe les notes et les sons à sa fin (comme la fin d'une boucle) ; il ne reste
+  // après que les queues (relâchement, réverb, écho). Tout ce qui précède la plage est rendu, puis retiré : le début sonne
+  // exactement comme dans le morceau (notes tenues, réverb en cours).
+  const sr = range.rate ?? 44100, limit = end < full ? end : null, groups = renderOpts.parallel ? renderGroups(p) : null;
   let out: AudioBuffer, pdc = 0;
   if (!groups) {
-    const r = await renderPart(p, end, false);
+    const r = await renderPart(p, end, false, sr, limit);
     out = r.out; pdc = r.pdc; lastRender.wamFailed = r.wamFailed;
   } else {
     // Gros projet (V18) : chaque groupe dans son propre rendu, en même temps, puis la somme passe une fois par la chaîne du général.
-    const parts = await Promise.all(groups.map(g => renderPart(g, end, true)));
+    const parts = await Promise.all(groups.map(g => renderPart(g, end, true, sr, limit)));
     lastRender.wamFailed = parts.reduce((a, r) => a + r.wamFailed, 0);
     const len = parts[0].out.length, sum = new AudioBuffer({ numberOfChannels: 2, length: len, sampleRate: sr });
     for (let c = 0; c < 2; c++) { const d = sum.getChannelData(c); for (const r of parts) { const x = r.out.getChannelData(c); for (let i = 0; i < len; i++) d[i] += x[i]; } }
@@ -600,6 +604,12 @@ export async function renderOffline(p: Project, normalize = true): Promise<Audio
   const shift = Math.round(pdc * sr);
   if (shift > 0) for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); d.copyWithin(0, shift); d.fill(0, d.length - shift); }
   lastRender.pdc = pdc;
+  const i0 = Math.round(timeOf(p, from) * sr), i1 = Math.min(out.length, Math.round((timeOf(p, end) + (range.tail === false ? 0 : 2.5)) * sr));
+  if (i0 > 0 || i1 < out.length) {
+    const cut = new AudioBuffer({ numberOfChannels: out.numberOfChannels, length: Math.max(1, i1 - i0), sampleRate: sr });
+    for (let c = 0; c < out.numberOfChannels; c++) cut.copyToChannel(out.getChannelData(c).subarray(i0, i1), c);
+    out = cut;
+  }
   if (!normalize) return out;
   if (p.target < 0) {
     // Export au niveau d'une plateforme : on vise le volume perçu demandé, crêtes retenues par un limiteur.
@@ -670,18 +680,20 @@ export async function encodeMp3(b: AudioBuffer): Promise<Blob> {
   throw new Error('mp3 peak');
 }
 
-export function encodeWav(b: AudioBuffer): Blob {
-  const ch = b.numberOfChannels, n = b.length, v = new DataView(new ArrayBuffer(44 + n * ch * 2));
+/** WAV PCM en 16 ou 24 bits (V19), à la fréquence du rendu. */
+export function encodeWav(b: AudioBuffer, bits: 16 | 24 = 16): Blob {
+  const ch = b.numberOfChannels, n = b.length, B = bits / 8, v = new DataView(new ArrayBuffer(44 + n * ch * B));
   const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, 'RIFF'); v.setUint32(4, 36 + n * ch * 2, true); str(8, 'WAVEfmt ');
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * ch * B, true); str(8, 'WAVEfmt ');
   v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true);
-  v.setUint32(24, b.sampleRate, true); v.setUint32(28, b.sampleRate * ch * 2, true);
-  v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, n * ch * 2, true);
+  v.setUint32(24, b.sampleRate, true); v.setUint32(28, b.sampleRate * ch * B, true);
+  v.setUint16(32, ch * B, true); v.setUint16(34, bits, true); str(36, 'data'); v.setUint32(40, n * ch * B, true);
   const data = Array.from({ length: ch }, (_, i) => b.getChannelData(i));
   let o = 44;
   for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) {
     const x = Math.max(-1, Math.min(1, data[c][i]));
-    v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); o += 2;
+    if (bits === 16) { v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); o += 2; }
+    else { const q = Math.round(x < 0 ? x * 0x800000 : x * 0x7fffff); v.setUint8(o, q & 255); v.setUint8(o + 1, (q >> 8) & 255); v.setUint8(o + 2, (q >> 16) & 255); o += 3; }
   }
   return new Blob([v], { type: 'audio/wav' });
 }

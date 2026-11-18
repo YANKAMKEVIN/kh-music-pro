@@ -977,9 +977,9 @@ test('E04', 'Passerelles', 'Exporter les pistes séparées : une archive ZIP val
 
 // ============ V3 : projet, robustesse, application installable ============
 test('P06', 'Projet', 'Un projet de la V2 s\'ouvre dans la V3 avec les nouveaux réglages par défaut', async () => {
-  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers', 'notes', 'target', 'width']) delete p[k]; delete p.buses; delete p.punch; delete p.tempos; delete p.sig; delete p.liveQ; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; delete t.out; delete t.inserts; delete t.eqMidF; delete t.compThr; delete t.compRatio; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
+  const data = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.demoProject())); for (const k of ['revSize', 'dlySteps', 'dlyFb', 'key', 'scale', 'markers', 'notes', 'target', 'width']) delete p[k]; delete p.buses; delete p.punch; delete p.tempos; delete p.sig; delete p.liveQ; delete p.exp; p.tracks.forEach(t => { delete t.duck; delete t.chorus; delete t.trem; delete t.crush; delete t.out; delete t.inserts; delete t.eqMidF; delete t.compThr; delete t.compRatio; }); return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} }); });
   const f = path.join(TMP, 'v2.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(400);
-  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0 && t.out === '' && Array.isArray(t.inserts) && t.eqMidF === 1000 && t.compThr === -24 && t.compRatio === 4) && Array.isArray(p.buses) && p.punch === false && Array.isArray(p.tempos) && p.sig === 4 && p.liveQ === 0 && Array.isArray(p.markers), 'valeurs par défaut absentes');
+  const p = await proj(); expect(p.revSize === 2.4 && p.dlySteps === 3 && p.dlyFb === 0.38 && p.scale === 'off' && p.key === 0 && p.tracks.every(t => t.duck === 0 && t.chorus === 0 && t.trem === 0 && t.crush === 0 && t.out === '' && Array.isArray(t.inserts) && t.eqMidF === 1000 && t.compThr === -24 && t.compRatio === 4) && Array.isArray(p.buses) && p.punch === false && Array.isArray(p.tempos) && p.sig === 4 && p.liveQ === 0 && Array.isArray(p.markers) && p.exp && p.exp.range === 'all' && p.exp.bits === 16 && p.exp.rate === 44100 && p.exp.tail === true, 'valeurs par défaut absentes');
   const a = await S(() => window.qa.stats(window.kh.S.project)), b = await S(() => window.qa.stats(window.kh.demoProject())); near(a.rms / b.rms, 1, 0.08, 'le projet doit sonner comme avant'); // la réverb est tirée au hasard à chaque rendu
 });
 test('X10', 'Robustesse', 'Automation, sidechain et accords pendant la lecture en boucle, puis suppression à chaud', async () => {
@@ -4212,6 +4212,120 @@ test('CT11', 'Contrôles joués', 'Molette assignée à un réglage du mixeur : 
     expect(!/Contrôles|Effacer/.test(await page.$eval('.ctl-row', e => e.textContent + e.querySelector('[data-act=ctlclear]').title)), 'ligne non traduite en ' + l);
   }
   await page.evaluate(() => window.kh.setLang('fr'));
+});
+
+
+// ============ V19 — chantier 2 : export d'une plage, 24 bits, 48 kHz ============
+/** En-tête d'un fichier WAV (ou de chaque WAV d'une archive ZIP sans compression) : canaux, fréquence, bits, durée. */
+function wavInfos(buf) {
+  const out = [];
+  for (let o = buf.indexOf('RIFF'); o >= 0; o = buf.indexOf('RIFF', o + 4)) {
+    if (buf.toString('latin1', o + 8, o + 12) !== 'WAVE') continue;
+    const ch = buf.readUInt16LE(o + 22), rate = buf.readUInt32LE(o + 24), bits = buf.readUInt16LE(o + 34), size = buf.readUInt32LE(o + 40);
+    out.push({ ch, rate, bits, frames: size / (ch * bits / 8), dur: size / (ch * bits / 8) / rate, data: o + 44 });
+  }
+  return out;
+}
+async function expDownload(trigger, name) { const [dl] = await Promise.all([page.waitForEvent('download'), trigger()]); const f = path.join(TMP, name); await dl.saveAs(f); return { buf: fs.readFileSync(f), name: dl.suggestedFilename() }; }
+const songSec = () => S(() => { const k = window.kh, p = k.S.project; return k.timeOf(p, Math.max(...p.tracks.flatMap(t => t.clips.map(c => c.start + c.len)))); });
+test('XP01', 'Export', 'Options d’export à la souris : WAV 24 bits à 48 kHz, tout le morceau ; le réglage est gardé dans le projet', async () => {
+  await menu('bExpOpts'); expect(await page.$eval('#expopts', d => d.open), 'fenêtre des options fermée');
+  await page.selectOption('[data-role=expbits]', '24'); await page.selectOption('[data-role=exprate]', '48000');
+  expect(/24 bits · 48 kHz · tout le morceau/.test(await page.textContent('#expSum')), 'résumé : ' + await page.textContent('#expSum'));
+  const { buf, name } = await expDownload(() => page.click('#bExpGo'), 'x24.wav');
+  const w = wavInfos(buf)[0], sec = await songSec();
+  expect(w.ch === 2 && w.rate === 48000 && w.bits === 24, 'en-tête : ' + JSON.stringify(w)); near(w.dur, sec + 2.5, 0.01, 'durée (morceau + 2,5 s de queue)');
+  expect(/\.wav$/.test(name) && !/_m\d/.test(name), 'nom de fichier : ' + name);
+  const e = (await proj()).exp; expect(e.bits === 24 && e.rate === 48000, 'réglage non gardé dans le projet');
+  expect((await page.getAttribute('#bExport', 'title')).includes('24 bits · 48 kHz'), 'bulle du bouton Exporter');
+  await page.keyboard.press('Control+z'); expect((await proj()).exp.rate === 44100, 'l’annulation ramène la fréquence');
+});
+test('XP02', 'Export', 'Exporter seulement la boucle, sans queue : durée exacte de la boucle, nom de fichier avec les mesures', async () => {
+  await S(() => { const p = window.kh.S.project; p.loopStart = 1; p.loopLen = 2; window.kh.commit(); });
+  await menu('bExpOpts'); await page.check('[data-range=loop]'); await page.uncheck('[data-role=exptail]');
+  expect(/mesures 2 à 3/.test(await page.textContent('#expopts')), 'plage de la boucle non affichée');
+  const { buf, name } = await expDownload(() => page.click('#bExpGo'), 'loop.wav');
+  const w = wavInfos(buf)[0], want = await S(() => { const k = window.kh, p = k.S.project; return k.timeOf(p, 48) - k.timeOf(p, 16); });
+  near(w.dur, want, 1 / 44100 * 2, 'durée de la boucle'); expect(w.bits === 16 && w.rate === 44100, 'format par défaut');
+  expect(/_m2-3\.wav$/.test(name), 'nom de fichier : ' + name);
+});
+test('XP03', 'Export', 'Exporter des mesures X à Y au clavier, avec la queue de son ; une borne inversée est corrigée', async () => {
+  await menu('bExpOpts'); await page.focus('[data-range=bars]'); await page.keyboard.press('Space');
+  expect(!(await page.isDisabled('[data-role=expfrom]')), 'champs des mesures inactifs');
+  await page.fill('[data-role=expfrom]', '3'); await page.keyboard.press('Tab'); await page.fill('[data-role=expto]', '2'); await page.keyboard.press('Tab');
+  let e = (await proj()).exp; expect(e.range === 'bars' && e.from === 2 && e.to === 2, 'borne inversée : ' + JSON.stringify(e));
+  await page.fill('[data-role=expto]', '4'); await page.keyboard.press('Tab');
+  const { buf, name } = await expDownload(() => page.click('#bExpGo'), 'bars.wav');
+  const w = wavInfos(buf)[0], want = await S(() => { const k = window.kh, p = k.S.project; return k.timeOf(p, 64) - k.timeOf(p, 16) + 2.5; });
+  near(w.dur, want, 2 / 44100, 'durée des mesures 2 à 4 avec la queue'); expect(/_m2-4\.wav$/.test(name), 'nom : ' + name);
+});
+test('XP04', 'Export', 'Le début d’un extrait sonne comme ce passage dans le morceau (notes tenues comprises), et l’extrait s’arrête à sa fin', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(); p.tracks = p.tracks.filter(t => t.type === 'synth'); p.tracks.forEach(t => { t.rev = 0; t.dly = 0; t.inserts = []; }); p.target = 0;
+    const full = await k.renderOffline(p, false), part = await k.renderOffline(p, false, { from: 16, to: 32, tail: false });
+    const i0 = Math.round(k.timeOf(p, 16) * 44100), a = full.getChannelData(0), b = part.getChannelData(0); let diff = 0, lvl = 0;
+    for (let i = 0; i < b.length - 64; i++) { diff = Math.max(diff, Math.abs(a[i0 + i] - b[i])); lvl = Math.max(lvl, Math.abs(b[i])); }
+    let headLvl = 0; for (let i = 0; i < 2000; i++) headLvl = Math.max(headLvl, Math.abs(b[i]));
+    return { diff, lvl, headLvl, len: b.length, want: Math.round((k.timeOf(p, 32) - k.timeOf(p, 16)) * 44100) };
+  });
+  expect(r.lvl > 0.05, 'extrait silencieux'); near(r.len, r.want, 1, 'longueur');
+  expect(r.diff < 0.02, 'l’extrait diffère du passage dans le morceau : ' + r.diff);
+  expect(r.headLvl > 0.005, 'les notes tenues depuis avant l’extrait manquent au début');
+});
+test('XP05', 'Export', 'WAV 24 bits : chaque échantillon garde 256 fois plus de précision qu’en 16 bits', async () => {
+  const r = await S(async () => {
+    const k = window.kh, b = new AudioBuffer({ numberOfChannels: 2, length: 4800, sampleRate: 48000 });
+    for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = 0.001 * Math.sin(i / 7) + (c ? -0.3 : 0.3) * (i % 100 === 0); }
+    const read = async (bits) => new DataView(await k.encodeWav(b, bits).arrayBuffer());
+    const err = async bits => { const v = await read(bits), B = bits / 8; let m = 0; for (let i = 0; i < 4800; i++) for (let c = 0; c < 2; c++) { const o = 44 + (i * 2 + c) * B; let x = bits === 16 ? v.getInt16(o, true) / 32768 : ((v.getUint8(o) | v.getUint8(o + 1) << 8 | v.getInt8(o + 2) << 16) / 8388608); m = Math.max(m, Math.abs(x - b.getChannelData(c)[i])); } return { m, rate: v.getUint32(24, true), bits: v.getUint16(34, true), size: v.getUint32(40, true) }; };
+    return { e16: await err(16), e24: await err(24) };
+  });
+  expect(r.e24.bits === 24 && r.e24.rate === 48000 && r.e24.size === 4800 * 2 * 3, 'en-tête 24 bits : ' + JSON.stringify(r.e24));
+  expect(r.e16.m > 1e-5 && r.e24.m < 2 / 8388608, `précision 16 → 24 bits : ${r.e16.m} → ${r.e24.m}`);
+});
+test('XP06', 'Export', 'À 48 kHz, la hauteur et le tempo ne changent pas ; l’export parallèle d’un gros projet suit la plage', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(); p.tracks = [p.tracks[1]]; const tr = p.tracks[0]; eval(window.__PURE); p.target = 0; p.bpm = 120;
+    tr.clips = [{ id: 'c', name: 'c', start: 0, len: 32, offset: 0, patLen: 32, notes: [{ p: 69, s: 0, l: 32, v: 0.8 }] }];
+    const a = await k.renderOffline(p, false, { rate: 48000 }), b = await k.renderOffline(p, false);
+    const hz = x => k.detectPitch(x.getChannelData(0).slice(Math.floor(x.sampleRate), Math.floor(x.sampleRate) + 4096), x.sampleRate);
+    const big = k.demoProject(); big.target = 0; const base = big.tracks[1];
+    big.tracks = Array.from({ length: 13 }, (_, i) => { const t = JSON.parse(JSON.stringify(base)); t.id = 'g' + i; t.clips.forEach((c, j) => { c.id = 'g' + i + '_' + j; }); t.rev = 0; t.dly = 0; t.inserts = []; return t; });
+    k.renderOpts.parallel = true; const par = await k.renderOffline(big, false, { from: 16, to: 48, tail: false, rate: 48000 }), parts = k.lastRender.parts;
+    k.renderOpts.parallel = false; const one = await k.renderOffline(big, false, { from: 16, to: 48, tail: false, rate: 48000 }); k.renderOpts.parallel = true;
+    let diff = 0; const x = par.getChannelData(0), y = one.getChannelData(0); for (let i = 0; i < x.length; i++) diff = Math.max(diff, Math.abs(x[i] - y[i]));
+    return { ha: hz(a), hb: hz(b), la: a.duration, lb: b.duration, rate: a.sampleRate, parts, plen: par.length, want: Math.round((k.timeOf(big, 48) - k.timeOf(big, 16)) * 48000), diff, cores: navigator.hardwareConcurrency };
+  });
+  expect(r.rate === 48000, 'fréquence du rendu'); near(cents(r.ha, 440), 0, 10, 'la 440 à 48 kHz'); near(cents(r.hb, 440), 0, 10, 'la 440 à 44,1 kHz');
+  near(r.la, r.lb, 0.001, 'même durée à 48 et 44,1 kHz');
+  if (r.cores >= 3) expect(r.parts > 1, 'gros projet non découpé'); near(r.plen, r.want, 1, 'longueur de la plage en parallèle');
+  expect(r.diff < 1e-4, 'export parallèle ≠ export d’un seul tenant : ' + r.diff);
+});
+test('XP07', 'Export', 'Pistes séparées et MP3 suivent la plage et la fréquence ; le MIDI exporte toujours tout', async () => {
+  await S(() => { const p = window.kh.S.project; Object.assign(p.exp, { range: 'bars', from: 1, to: 2, tail: false, bits: 24, rate: 48000 }); window.kh.commit(); });
+  const st = await expDownload(() => menu('bStems'), 'stems.zip'); const ws = wavInfos(st.buf);
+  const want = await S(() => window.kh.timeOf(window.kh.S.project, 32));
+  expect(ws.length >= 4 && ws.every(w => w.rate === 48000 && w.bits === 24 && Math.abs(w.dur - want) < 1e-3), 'pistes séparées : ' + JSON.stringify(ws.map(w => [w.rate, w.bits, +w.dur.toFixed(3)])));
+  expect(/_m1-2_stems\.zip$/.test(st.name), 'nom de l’archive : ' + st.name);
+  const mp3 = await expDownload(() => menu('bMp3'), 'x.mp3');
+  const d = await page.evaluate(async b64 => { const u = Uint8Array.from(atob(b64), c => c.charCodeAt(0)), b = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(u.buffer); return b.duration; }, mp3.buf.toString('base64'));
+  near(d, want, 0.08, 'durée du MP3'); expect(/_m1-2\.mp3$/.test(mp3.name), 'nom du MP3 : ' + mp3.name);
+  const mid = await expDownload(() => menu('bMidiOut'), 'x.mid');
+  const steps = await page.evaluate(b64 => { const k = window.kh, m = k.importMidi(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); return Math.max(...m.tracks.flatMap(t => t.clips.map(c => c.len))); }, mid.buf.toString('base64'));
+  expect(steps > 32, 'le MIDI doit garder tout le morceau : ' + steps);
+});
+test('XP08', 'Export', 'Options d’export traduites, lisibles au clavier ; Échap referme sans exporter', async () => {
+  for (const [l, w] of [['en', 'Export options'], ['es', 'Opciones de exportación']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bExpOpts');
+    const txt = await page.textContent('#expopts'); expect(txt.includes(w) && !/Partie exportée|Tout le morceau/.test(txt), 'non traduit en ' + l);
+    await page.keyboard.press('Escape'); expect(!(await page.$eval('#expopts', d => d.open)), 'Échap ne referme pas');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+  await menu('bExpOpts'); await page.focus('[data-range=all]'); await page.keyboard.press('ArrowDown');
+  expect((await proj()).exp.range === 'loop', 'flèche : le choix suivant n’est pas pris');
+  const sizes = await page.$$eval('#expopts input[type=radio], #expopts input[type=checkbox]', l => l.map(e => e.getBoundingClientRect().width));
+  expect(sizes.every(w => w >= 20), 'cases trop petites : ' + sizes);
+  await page.keyboard.press('Escape');
 });
 
 (async () => {
