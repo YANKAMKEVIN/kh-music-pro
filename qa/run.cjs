@@ -4133,11 +4133,14 @@ test('CT06', 'Contrôles joués', 'Molette à l’écran au doigt pendant un enr
   await page.click(await headSel(1)); await page.click('[data-act=okb]');
   await S(async () => { const k = window.kh, tr = k.S.project.tracks[1]; tr.clips = []; k.S.project.loop = false; k.commit(); await k.engine.recordMidi(tr.id, 0); k.onMidi([0x90, 69, 90]); });
   const b = await box('.wheel[data-ctl=pb]'), cdp = await page.context().newCDPSession(page), x = b.x + b.width / 2;
+  // Écran tactile déclaré : sans lui, Chromium sous Linux ne change pas les touchers en gestes du doigt (pointeurs).
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: b.y + b.height / 2 }] });
   for (let i = 1; i <= 12; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: b.y + b.height / 2 - (b.height / 2 - 3) * i / 12 }] }); await sleep(60); }
   await sleep(500);   // plusieurs redessins (écriture différée des points) pendant que le doigt reste posé
   const held = await S(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl.bend.offset.value; });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach();
   await S(() => { window.kh.onMidi([0x80, 69, 0]); window.kh.engine.stop(); }); await sleep(400);
   near(held, 200, 20, 'bend tenu au doigt malgré les redessins');
   const pb = ((await proj()).tracks[1].clips[0]?.ctl?.pb ?? []).map(p => p.v);
