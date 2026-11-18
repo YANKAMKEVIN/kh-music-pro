@@ -4214,6 +4214,27 @@ test('CT11', 'Contrôles joués', 'Molette assignée à un réglage du mixeur : 
   await page.evaluate(() => window.kh.setLang('fr'));
 });
 
+test('CT12', 'Contrôles joués', 'Téléphone : molettes couchées au-dessus du clavier (touches assez larges), bend au doigt qui revient au centre', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.addInitScript(PAGE_HELPERS); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await pg.evaluate(() => { const k = window.kh, tr = k.S.project.tracks[1]; k.S.selTrack = tr.id; k.S.selClip = ''; k.S.kbShow = true; k.S.tab = 'editor'; k.commit(); k.onMidi([0x90, 69, 90]); });
+    await pg.waitForSelector('.wheel.flat[data-ctl=pb]');
+    const kw = await pg.$$eval('.okb .wk', l => Math.min(...l.map(e => e.getBoundingClientRect().width)));
+    expect(kw >= 26, 'touches trop étroites : ' + kw);
+    expect(await pg.getAttribute('.wheel[data-ctl=pb]', 'aria-orientation') === 'horizontal', 'molette non couchée');
+    const b = await pg.locator('.wheel[data-ctl=pb]').boundingBox(), cdp = await ctx2.newCDPSession(pg), y = b.y + b.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + b.width / 2, y }] });
+    for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x + b.width / 2 + (b.width / 2 - 3) * i / 6, y }] });
+    await pg.waitForTimeout(150);
+    const off = () => pg.evaluate(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl.bend.offset.value; });
+    const held = await off();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150);
+    const back = await off(); await pg.evaluate(() => window.kh.onMidi([0x80, 69, 0]));
+    near(held, 200, 20, 'bend au doigt'); near(back, 0, 1, 'retour au centre');
+  } finally { await ctx2.close(); }
+});
 
 // ============ V19 — chantier 2 : export d'une plage, 24 bits, 48 kHz ============
 /** En-tête d'un fichier WAV (ou de chaque WAV d'une archive ZIP sans compression) : canaux, fréquence, bits, durée. */
@@ -4326,6 +4347,140 @@ test('XP08', 'Export', 'Options d’export traduites, lisibles au clavier ; Éch
   const sizes = await page.$$eval('#expopts input[type=radio], #expopts input[type=checkbox]', l => l.map(e => e.getBoundingClientRect().width));
   expect(sizes.every(w => w >= 20), 'cases trop petites : ' + sizes);
   await page.keyboard.press('Escape');
+});
+
+
+// ============ V19 — chantier 3 : comping et fondus enchaînés ============
+/** Piste audio « Voix » de la démo avec un clip de 3 prises d'une mesure (120 BPM, 2 s chacune) : mi 330, la 440, do# 550 Hz. */
+async function takesClip() {
+  await S(() => {
+    const k = window.kh, p = k.S.project, sr = 44100, b = new AudioBuffer({ numberOfChannels: 1, length: sr * 6, sampleRate: sr }), d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin(2 * Math.PI * [330, 440, 550][Math.floor(i / (2 * sr))] * i / sr);
+    k.addBuffer('takes3', b); p.bpm = 120; p.loop = false;
+    const tr = p.tracks.find(t => t.type === 'audio'); p.tracks.forEach(t => { if (t !== tr) t.clips = []; });
+    tr.clips = [{ id: 'ctk', name: 'Prise', start: 0, len: 16, offset: 0, bufferId: 'takes3', takes: [0, 2, 4], take: 0 }];
+    k.S.selTrack = tr.id; k.S.selClip = 'ctk'; k.S.snap = 4; k.commit();
+  });
+}
+/** Hauteur rendue par fenêtre (secondes) du projet courant. */
+const pitchAt = ts => page.evaluate(async ts => { const k = window.kh, b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0), sr = b.sampleRate; return ts.map(t => Math.round(k.detectPitch(d.slice(Math.floor(t * sr), Math.floor(t * sr) + 4096), sr))); }, ts);
+test('CP01', 'Comping', 'Glisser sur la prise 2 garde la prise 2 sur les temps 2 et 3, la prise 1 ailleurs ; l’export suit', async () => {
+  await takesClip(); await tab('editor');
+  const l = await box('.ctake[data-take="1"]'), beat = l.width / 4;
+  await drag(l.x + beat * 1.3, l.y + l.height / 2, beat * 1.2, 0);
+  const c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
+  expect(JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 0 }, { s: 4, take: 1 }, { s: 12, take: 0 }]), 'comping : ' + JSON.stringify(c.comp));
+  const hz = await pitchAt([0.2, 0.7, 1.2, 1.7]);
+  expect(Math.abs(hz[0] - 330) < 6 && Math.abs(hz[1] - 440) < 8 && Math.abs(hz[2] - 440) < 8 && Math.abs(hz[3] - 330) < 6, 'hauteurs rendues : ' + hz);
+  expect(/3 portions/.test(await page.textContent('.cstat')), 'état du comping non annoncé');
+});
+test('CP02', 'Comping', 'Au clavier : flèches puis Entrée choisissent la prise 3 sur le dernier temps ; ↑ ↓ changent de prise', async () => {
+  await takesClip(); await tab('editor');
+  await page.focus('.ctake[data-take="0"]'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
+  expect(await page.evaluate(() => document.activeElement.dataset.take) === '2', 'la flèche ↓ ne descend pas d’une prise');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter'); await sleep(100);
+  expect(await page.evaluate(() => document.activeElement.dataset.take) === '2', 'le focus quitte la prise après le choix');
+  const c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
+  expect(JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 0 }, { s: 12, take: 2 }]), 'comping : ' + JSON.stringify(c.comp));
+  const hz = await pitchAt([1.2, 1.75]); expect(Math.abs(hz[0] - 330) < 6 && Math.abs(hz[1] - 550) < 10, 'hauteurs : ' + hz);
+});
+test('CP03', 'Comping', 'Aucun clic aux jonctions entre prises (fondu enchaîné très court)', async () => {
+  await takesClip();
+  const r = await S(async () => {
+    const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[0]; c.comp = [{ s: 0, take: 0 }, { s: 5, take: 1 }, { s: 9, take: 2 }, { s: 13, take: 0 }]; k.commit();
+    const b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0); let jump = 0; for (let i = 1; i < Math.floor(b.sampleRate * 1.95); i++) jump = Math.max(jump, Math.abs(d[i] - d[i - 1]));
+    return jump;
+  });
+  expect(r < 0.06, 'saut d’un échantillon à l’autre (clic) : ' + r);
+});
+test('CP04', 'Comping', 'Prise entière, annulation, scission et rognage à gauche gardent les portions à leur place', async () => {
+  await takesClip(); await tab('editor');
+  await S(() => { const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[0]; c.comp = [{ s: 0, take: 0 }, { s: 4, take: 1 }, { s: 12, take: 2 }]; k.commit(); });
+  await page.click('.ctk[data-take="1"]'); let c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
+  expect(!c.comp && c.take === 1, 'prise entière : ' + JSON.stringify(c));
+  await page.keyboard.press('Control+z'); c = (await proj()).tracks.find(t => t.type === 'audio').clips[0];
+  expect(c.comp && c.comp.length === 3, 'annulation du choix de prise entière');
+  await page.click('.clip[data-id="ctk"]'); await S(() => window.kh.engine.seek(8)); await page.keyboard.press('Control+e');
+  const cs = (await proj()).tracks.find(t => t.type === 'audio').clips.sort((a, b) => a.start - b.start);
+  expect(JSON.stringify(cs[0].comp) === JSON.stringify([{ s: 0, take: 0 }, { s: 4, take: 1 }]) && JSON.stringify(cs[1].comp) === JSON.stringify([{ s: 0, take: 1 }, { s: 4, take: 2 }]), 'scission : ' + JSON.stringify(cs.map(x => x.comp)));
+  const hz = await pitchAt([0.2, 0.7, 1.2, 1.7]); expect(Math.abs(hz[0] - 330) < 6 && Math.abs(hz[1] - 440) < 8 && Math.abs(hz[2] - 440) < 8 && Math.abs(hz[3] - 550) < 10, 'hauteurs après scission : ' + hz);
+  // Rognage du bord gauche du second morceau d'un temps (4 pas) à la souris : la portion « prise 3 » reste à 1,5 s.
+  const b = await box(`.clip[data-id="${cs[1].id}"]`); await drag(b.x + 3, b.y + 30, 11 * 4, 0);
+  const r = (await proj()).tracks.find(t => t.type === 'audio').clips.find(x => x.id === cs[1].id);
+  expect(r.start === 12 && JSON.stringify(r.comp || null) === 'null' && r.take === 2, 'rognage : ' + JSON.stringify(r));
+  const hz2 = await pitchAt([1.7]); expect(Math.abs(hz2[0] - 550) < 10, 'hauteur après rognage : ' + hz2);
+});
+test('CP05', 'Comping', 'Le comping est gardé au rechargement de la page', async () => {
+  await takesClip();
+  await S(async () => { const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[0]; c.comp = [{ s: 0, take: 2 }, { s: 8, take: 1 }]; k.commit(); await k.store.saveNow(); });
+  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  const c = await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(x => x.id === 'ctk'));
+  expect(c && JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 2 }, { s: 8, take: 1 }]), 'comping perdu : ' + JSON.stringify(c && c.comp));
+  const hz = await pitchAt([0.5, 1.5]); expect(Math.abs(hz[0] - 550) < 10 && Math.abs(hz[1] - 440) < 8, 'hauteurs après rechargement : ' + hz);
+});
+/** Deux clips audio qui se touchent au temps 2 s (pas 16) : mi 330 Hz puis la 440 Hz, chacun lu dans un son plus long que le clip. */
+async function twoClips() {
+  await S(() => {
+    const k = window.kh, p = k.S.project, sr = 44100, mk = f => { const b = new AudioBuffer({ numberOfChannels: 1, length: sr * 4, sampleRate: sr }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin(2 * Math.PI * f * i / sr); return b; };
+    k.addBuffer('xa', mk(330)); k.addBuffer('xb', mk(440)); p.bpm = 120; p.loop = false;
+    const tr = p.tracks.find(t => t.type === 'audio'); p.tracks.forEach(t => { if (t !== tr) t.clips = []; });
+    tr.clips = [{ id: 'xa', name: 'A', start: 0, len: 16, offset: 0, bufferId: 'xa' }, { id: 'xb', name: 'B', start: 16, len: 16, offset: 1, bufferId: 'xb' }];
+    k.S.selTrack = tr.id; k.S.selClip = 'xb'; k.commit();
+  });
+}
+/** Amplitude d'une fréquence dans une fenêtre du rendu (Goertzel). */
+const toneIn = (f, t0, t1) => page.evaluate(async ([f, t0, t1]) => { const k = window.kh, b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0), sr = b.sampleRate, i0 = Math.floor(t0 * sr), i1 = Math.floor(t1 * sr); let re = 0, im = 0; for (let i = i0; i < i1; i++) { const a = 2 * Math.PI * f * i / sr; re += d[i] * Math.cos(a); im += d[i] * Math.sin(a); } return 2 * Math.hypot(re, im) / (i1 - i0); }, [f, t0, t1]);
+test('CF01', 'Fondus enchaînés', 'Réglé au curseur sur le second clip : le premier continue en s’effaçant pendant que le second monte', async () => {
+  await twoClips(); await tab('editor');
+  expect(await page.$('.sl.xf'), 'réglage du fondu enchaîné absent');
+  const before = await toneIn(330, 2.02, 2.1);
+  await setSlider('#panel', 'Fondu enchaîné', 2);   // 2 pas = 0,25 s
+  expect((await proj()).tracks.find(t => t.type === 'audio').clips.find(c => c.id === 'xb').xfade === 2, 'fondu non gardé');
+  const a1 = await toneIn(330, 2.02, 2.1), b1 = await toneIn(440, 2.02, 2.1), a2 = await toneIn(330, 2.3, 2.4), b2 = await toneIn(440, 2.3, 2.4);
+  expect(before < 0.01, 'sans fondu, le premier clip doit s’arrêter net : ' + before);
+  expect(a1 > 0.2 && b1 > 0.1, `pendant le fondu les deux sons se mêlent : ${a1} / ${b1}`);
+  expect(a2 < 0.01 && b2 > 0.45, `après le fondu, seul le second reste : ${a2} / ${b2}`);
+});
+test('CF02', 'Fondus enchaînés', 'Fondu à puissance constante : pas de creux de volume à la jonction', async () => {
+  await twoClips(); await S(() => { const k = window.kh; k.S.project.tracks.find(t => t.type === 'audio').clips[1].xfade = 2; k.commit(); });
+  const r = await S(async () => {
+    const k = window.kh, b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0), sr = b.sampleRate;
+    const rms = (t0, t1) => { let q = 0; const i0 = Math.floor(t0 * sr), i1 = Math.floor(t1 * sr); for (let i = i0; i < i1; i++) q += d[i] * d[i]; return Math.sqrt(q / (i1 - i0)); };
+    return [rms(1.8, 1.95), rms(2.0, 2.25), rms(2.4, 2.6)];
+  });
+  expect(r[1] > r[0] * 0.85 && r[1] < r[0] * 1.2 && Math.abs(r[2] / r[0] - 1) < 0.05, 'niveaux autour de la jonction : ' + r.map(x => x.toFixed(3)));
+});
+test('CF03', 'Fondus enchaînés', 'Le réglage n’apparaît que pour deux clips qui se touchent ; le X se dessine ; textes traduits ; annulable', async () => {
+  await twoClips(); await S(() => { const k = window.kh; k.S.selClip = 'xa'; k.commit(); }); await tab('editor');
+  expect(!(await page.$('.sl.xf')), 'réglage affiché sans clip voisin à gauche');
+  await S(() => { const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[1]; c.start = 17; k.S.selClip = 'xb'; k.commit(); });
+  expect(!(await page.$('.sl.xf')), 'réglage affiché alors que les clips ne se touchent pas');
+  await S(() => { const k = window.kh; k.S.project.tracks.find(t => t.type === 'audio').clips[1].start = 16; k.commit(); });
+  await setSlider('#panel', 'Fondu enchaîné', 4);
+  await page.keyboard.press('Control+z'); expect(!(await proj()).tracks.find(t => t.type === 'audio').clips[1].xfade, 'annulation du fondu');
+  await page.keyboard.press('Control+y');
+  const lit = await page.$eval('.clip[data-id="xb"] canvas', cv => { const g = cv.getContext('2d'), w = cv.width, h = cv.height, px = g.getImageData(Math.round(w * 0.06), Math.round(h * 0.25), 1, 1).data; return px[0] + px[1] + px[2]; });
+  expect(lit > 300, 'le X du fondu enchaîné n’est pas dessiné : ' + lit);
+  for (const [l, w] of [['en', 'Crossfade'], ['es', 'Fundido encadenado']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect(await page.$eval('.sl.xf .lb', e => e.textContent) === w, 'non traduit en ' + l);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+test('CF04', 'Fondus enchaînés', 'Export parallèle d’un gros projet, scission et rechargement gardent le fondu enchaîné', async () => {
+  await twoClips(); await S(() => { const k = window.kh; k.S.project.tracks.find(t => t.type === 'audio').clips[1].xfade = 2; k.commit(); });
+  const r = await S(async () => {
+    const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), au = p.tracks.find(t => t.type === 'audio'), base = p.tracks[1];
+    p.tracks = [au, ...Array.from({ length: 12 }, (_, i) => { const t = JSON.parse(JSON.stringify(base)); t.id = 'f' + i; t.clips = []; return t; })];
+    k.renderOpts.parallel = true; const a = await k.renderOffline(p, false), parts = k.lastRender.parts; k.renderOpts.parallel = false; const b = await k.renderOffline(p, false); k.renderOpts.parallel = true;
+    let diff = 0; const x = a.getChannelData(0), y = b.getChannelData(0); for (let i = 0; i < x.length; i++) diff = Math.max(diff, Math.abs(x[i] - y[i])); return { diff, parts };
+  });
+  expect(r.diff < 1e-4, 'parallèle ≠ un seul tenant : ' + r.diff);
+  expect(await toneIn(330, 2.02, 2.1) > 0.2, 'fondu absent de l’export');
+  await S(async () => { await window.kh.store.saveNow(); });
+  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  expect(await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(c => c.id === 'xb')?.xfade) === 2, 'fondu perdu au rechargement');
 });
 
 (async () => {

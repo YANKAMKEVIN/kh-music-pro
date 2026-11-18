@@ -6,7 +6,7 @@ import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loa
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
+import { BAR, Clip, MIX_PRESETS, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
 import { toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -99,7 +99,7 @@ function rewriteClip(fn: (src: Float32Array, dst: Float32Array) => void, after?:
 export function reverseClip() {
   rewriteClip((a, b) => { for (let i = 0, n = a.length; i < n; i++) b[i] = a[n - 1 - i]; }, (clip, buf) => {
     const lenSec = clip.len * srcStep(S.project, clip);
-    clip.offset = Math.max(0, buf.duration - clip.offset - lenSec); delete clip.takes; delete clip.take;
+    clip.offset = Math.max(0, buf.duration - clip.offset - lenSec); delete clip.takes; delete clip.take; delete clip.comp;
     [clip.fadeIn, clip.fadeOut] = [clip.fadeOut ?? 0, clip.fadeIn ?? 0];
   });
 }
@@ -147,6 +147,8 @@ export function stretchClip(pct: number, semis: number) {
   addBuffer(id, out); clip.bufferId = id;
   clip.offset *= r; if (clip.takes) clip.takes = clip.takes.map(x => x * r); clip.len = Math.max(1, Math.min(Math.round(clip.len * r), Math.ceil((out.duration - clip.offset) / stepDur(S.project.bpm))));
   clip.fadeIn = Math.round((clip.fadeIn ?? 0) * r); clip.fadeOut = Math.round((clip.fadeOut ?? 0) * r);
+  if (clip.comp) { clip.comp = clip.comp.map(x => ({ s: Math.round(x.s * r), take: x.take })); compSlice(clip, 0, clip.len); }
+  if (clip.xfade) clip.xfade = Math.round(clip.xfade * r);
   S.stretch = { clip: '', pct: 100, semis: 0 };
   commit(); toast(t('toast.stretched'));
 }
@@ -428,8 +430,8 @@ function clearZone(tr: Track, a: number, b: number) {
   for (const c of tr.clips) {
     const end = c.start + c.len;
     if (end <= a || c.start >= b) { out.push(c); continue; }
-    if (c.start < a) { const left: Clip = JSON.parse(JSON.stringify(c)); left.id = c.id; left.len = a - c.start; left.fadeOut = 0; out.push(left); }
-    if (end > b) { const right: Clip = JSON.parse(JSON.stringify(c)); right.id = c.start < a ? uid() : c.id; shiftAudio(right, (b - c.start) * dur); right.start = b; right.len = end - b; right.fadeIn = 0; out.push(right); }
+    if (c.start < a) { const left: Clip = JSON.parse(JSON.stringify(c)); left.id = c.id; left.len = a - c.start; left.fadeOut = 0; compSlice(left, 0, left.len); out.push(left); }
+    if (end > b) { const right: Clip = JSON.parse(JSON.stringify(c)); right.id = c.start < a ? uid() : c.id; shiftAudio(right, (b - c.start) * dur); right.start = b; right.len = end - b; right.fadeIn = 0; delete right.xfade; compSlice(right, b - c.start, c.len); out.push(right); }
   }
   tr.clips = out;
 }
@@ -438,8 +440,22 @@ function clearZone(tr: Track, a: number, b: number) {
 export function chooseTake(i: number) {
   const c = findClip(S.selClip)?.clip;
   if (!c?.takes || i < 0 || i >= c.takes.length) return;
-  c.take = i; c.offset = c.takes[i]; commit();
+  c.take = i; c.offset = c.takes[i]; delete c.comp; commit();
 }
+/** Comping (V19) : la prise `i` est jouée sur la portion [a, b[ du clip ouvert (en pas depuis son début). */
+export function compTake(i: number, a: number, b: number) {
+  const c = findClip(S.selClip)?.clip;
+  if (!c?.takes || i < 0 || i >= c.takes.length) return;
+  compSet(c, Math.max(0, a), Math.min(c.len, b), i); commit();
+}
+/** Fondu enchaîné (V19) entre le clip ouvert et le clip audio qui finit juste où il commence, en pas (0 = aucun). */
+export function setXfade(steps: number) {
+  const c = findClip(S.selClip)?.clip;
+  if (!c) return;
+  if (steps > 0) c.xfade = steps; else delete c.xfade;
+}
+/** Clip audio de la même piste qui se termine exactement là où commence le clip `c`. */
+export function leftNeighbour(tr: Track, c: Clip) { return tr.clips.find(x => x !== c && Math.abs(x.start + x.len - c.start) < 1e-6); }
 
 /** Ramène le son du clip vers les notes de la gamme du projet (toutes les notes si la gamme est libre). */
 export function tuneClip(amount: number) {
@@ -460,7 +476,9 @@ export function splitClip() {
   right.id = uid(); right.start = at; right.len = clip.start + clip.len - at;
   if (track.type === 'audio') shiftAudio(right, (at - clip.start) * srcStep(S.project, clip));
   else right.offset = (clip.offset + at - clip.start) % clip.patLen!;
-  clip.len = at - clip.start;
+  // Comping : chaque moitié garde les portions qui la concernent ; la moitié droite n'a pas de fondu enchaîné à elle.
+  delete right.xfade; compSlice(right, at - clip.start, clip.len);
+  clip.len = at - clip.start; compSlice(clip, 0, clip.len);
   track.clips.push(right); commit();
 }
 

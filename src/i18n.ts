@@ -319,6 +319,15 @@ const D: Record<string, [string, string, string]> = {
 
   // ===== V5 =====
   'okb.title': ['Clavier', 'Keyboard', 'Teclado'],
+  // V19 : comping et fondus enchaînés
+  'comp.title': ['Comping', 'Comping', 'Comping'],
+  'comp.tip': ['Glissez sur une prise pour la garder sur ce passage (au clavier : flèches, puis Entrée).', 'Drag over a take to keep it for that passage (keyboard: arrows, then Enter).', 'Arrastra sobre una toma para conservarla en ese pasaje (teclado: flechas y luego Intro).'],
+  'comp.row': ['Prise {0} : choisir cette prise sur une portion', 'Take {0}: use this take for a portion', 'Toma {0}: usar esta toma en una parte'],
+  'comp.rowTip': ['Glisser pour garder cette prise sur le passage parcouru ; flèches ← → pour se déplacer, Entrée pour garder ce temps, ↑ ↓ pour changer de prise', 'Drag to keep this take over the swept passage; ← → arrows to move, Enter to keep this beat, ↑ ↓ to change take', 'Arrastra para conservar esta toma en el pasaje; flechas ← → para moverte, Intro para conservar este tiempo, ↑ ↓ para cambiar de toma'],
+  'comp.state': ['{0} portions, lues dans leurs prises', '{0} portions, each from its take', '{0} partes, cada una de su toma'],
+  'comp.single': ['Prise {0} sur tout le clip', 'Take {0} for the whole clip', 'Toma {0} en todo el clip'],
+  'xf.label': ['Fondu enchaîné', 'Crossfade', 'Fundido encadenado'],
+  'xf.none': ['aucun', 'none', 'ninguno'],
   // V19 : options d'export
   'exp.menu': ['Options d’export…', 'Export options…', 'Opciones de exportación…'],
   'exp.title': ['Options d’export', 'Export options', 'Opciones de exportación'],

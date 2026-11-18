@@ -20,6 +20,9 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
   - **Molettes à l'écran**, à gauche du clavier à l'écran : pitch bend (revient au centre au relâchement) et modulation (reste où on la laisse), à la souris, au doigt ou au clavier (flèches).
   - **Ligne des contrôles** sous le piano roll (bouton « 〰 Contrôles ») : voir, dessiner à la souris ou au doigt, effacer le bend, la modulation ou la pression d'un clip.
   - Une molette déjà assignée à un réglage du mixeur garde son assignation.
+- **Exporter une partie seulement** et **WAV 24 bits / 48 kHz** : menu ▾ à côté d'Exporter, « Options d'export… ». Tout le morceau, la zone de boucle, ou de la mesure X à la mesure Y ; avec ou sans la fin du son (2,5 s de réverb et de relâchement). WAV en 16 bits (CD, streaming) ou 24 bits (studio, mastering), à 44,1 ou 48 kHz. Le MP3 et les pistes séparées suivent la même partie et la même fréquence ; le nom du fichier indique les mesures (« _m2-3 »). Le passage exporté sonne exactement comme dans le morceau (les notes tenues depuis avant y sont). Le MIDI exporte toujours tout.
+- **Comping** : un clip enregistré en boucle (plusieurs prises) montre une ligne par prise dans l'éditeur. Glisser sur une prise la garde sur ce passage, à la souris ou au doigt ; au clavier, flèches puis Entrée. Les jonctions entre prises ont un fondu très court, sans clic. Le bouton « Prise N » reprend une prise sur tout le clip.
+- **Fondus enchaînés** entre deux clips audio qui se touchent : réglage « Fondu enchaîné » du clip de droite. Le clip de gauche continue en s'effaçant pendant que celui de droite monte (à puissance constante, sans creux de volume) ; un X le montre dans l'arrangement.
 
 ## Barre du haut repensée (v0.18)
 

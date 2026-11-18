@@ -1,14 +1,14 @@
 import { SUSTAIN_BANKS } from '../audio/sustain';
 import { drumBank, recordedDynamics } from '../audio/banks';
 import { chooseSound, showSounds } from './sounds';
-import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
+import { audioFiles, compTake, leftNeighbour, setXfade, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
 import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
 import { BAR, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
-import { ICON, drawFades, drawWave } from './arr';
+import { ICON, drawAudio, drawFades, drawWave } from './arr';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
@@ -303,15 +303,16 @@ function screenKeys() {
     addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
   };
   const oct = (d: number, label: string) => h('button', { class: 'pill', data: { act: d < 0 ? 'octdown' : 'octup' }, 'aria-label': t('help.k.octave') + ' ' + label, title: t('help.k.octave'), onclick: () => { kb.octave = clamp(kb.octave + d, -3, 3); emit(); } }, label);
-  return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, wheel('pb'), wheel('mod'), oct(-1, '−'), el, oct(1, '+'));
+  return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, h('div', { class: 'wheels' }, wheel('pb'), wheel('mod')), oct(-1, '−'), el, oct(1, '+'));
 }
 
 // ---------- Molettes à l'écran (V19) : pitch bend (revient au centre au relâchement) et modulation (reste où on la laisse) ----------
 let bendHeld = 0;
 const ctlFmt = (k: CtlKind, v: number) => k === 'pb' ? (v > 0 ? '+' : '') + Math.round(v * 100) + ' %' : Math.round(v * 100) + ' %';
 function wheel(k: 'pb' | 'mod') {
-  const lo = k === 'pb' ? -1 : 0, v0 = k === 'pb' ? bendHeld : engine.ctlNow.get(S.selTrack)?.mod ?? 0;
-  const el = h('div', { class: 'wheel ' + k, role: 'slider', tabIndex: 0, 'aria-label': t('ctl.' + k), title: t('ctl.' + k + 'Tip'), 'aria-orientation': 'vertical',
+  // Sur téléphone, les molettes sont couchées au-dessus du clavier, pour laisser aux touches toute la largeur.
+  const lo = k === 'pb' ? -1 : 0, v0 = k === 'pb' ? bendHeld : engine.ctlNow.get(S.selTrack)?.mod ?? 0, flat = innerWidth < 760;
+  const el = h('div', { class: 'wheel ' + k + (flat ? ' flat' : ''), role: 'slider', tabIndex: 0, 'aria-label': t('ctl.' + k), title: t('ctl.' + k + 'Tip'), 'aria-orientation': flat ? 'horizontal' : 'vertical',
     'aria-valuemin': String(lo), 'aria-valuemax': '1', 'aria-valuenow': v0.toFixed(2), 'aria-valuetext': ctlFmt(k, v0), data: { ctl: k }, style: `--v:${(v0 - lo) / (1 - lo)}` },
     h('i', {}), h('span', { class: 'wl', 'aria-hidden': 'true' }, k === 'pb' ? '↕' : '〰'));
   // Le glissé est suivi sur la fenêtre et l'affichage retrouvé par sélecteur : un redessin pendant le geste ne l'interrompt pas.
@@ -324,7 +325,7 @@ function wheel(k: 'pb' | 'mod') {
   const back = () => { if (k === 'pb') set(0); };
   el.onpointerdown = e => {
     e.preventDefault(); el.focus();
-    const r = el.getBoundingClientRect(), at = (ev: PointerEvent) => lo + (1 - lo) * (r.bottom - ev.clientY) / r.height;
+    const r = el.getBoundingClientRect(), at = (ev: PointerEvent) => lo + (1 - lo) * (flat ? (ev.clientX - r.left) / r.width : (r.bottom - ev.clientY) / r.height);
     set(at(e)); followDrag(e, ev => set(at(ev)), back, back);
   };
   const cur = () => +(document.querySelector(`.wheel[data-ctl=${k}]`)?.getAttribute('aria-valuenow') ?? 0);
@@ -583,7 +584,7 @@ function audioEditor(tr: Track, c: Clip) {
     const w = cv.clientWidth || 800, hgt = cv.clientHeight || 120;
     cv.width = w; cv.height = hgt;
     const g = cv.getContext('2d')!; g.fillStyle = tr.color;
-    if (c.bufferId) { drawWave(g, c.bufferId, c.offset, c.offset + c.len * srcStep(S.project, c), w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
+    if (c.bufferId) { drawAudio(g, c, w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
   });
   const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
   const act = (key: string, icon: string, fn: () => void) => h('button', { title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
@@ -605,7 +606,10 @@ function audioEditor(tr: Track, c: Clip) {
         i.onchange = () => setWarpBpm(+i.value); return i;
       })()),
       (c.takes?.length ?? 0) > 1 && h('div', { class: 'segs', role: 'group', 'aria-label': t('take.title'), title: t('take.tip') },
-        ...c.takes!.map((_, i) => h('button', { class: 'seg' + (c.take === i ? ' on' : ''), data: { take: String(i) }, 'aria-pressed': String(c.take === i), onclick: () => chooseTake(i) }, `${t('clip.take')} ${i + 1}`)))),
+        ...c.takes!.map((_, i) => h('button', { class: 'seg' + (c.take === i && !c.comp ? ' on' : ''), data: { take: String(i) }, 'aria-pressed': String(c.take === i && !c.comp), onclick: () => chooseTake(i) }, `${t('clip.take')} ${i + 1}`))),
+      // Fondu enchaîné (V19) : seulement quand un autre clip audio finit juste où celui-ci commence.
+      leftNeighbour(tr, c) && slider(t('xf.label'), 0, Math.max(1, Math.min(8, c.len)), 0.25, Math.min(c.xfade ?? 0, 8), v => setXfade(v), v => v ? sec(v) : t('xf.none'), 'xf')),
+    (c.takes?.length ?? 0) > 1 && compPanel(c),
     h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),
       slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true),
       h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
@@ -617,6 +621,51 @@ function audioEditor(tr: Track, c: Clip) {
       h('span', { class: 'sect' }, t('chop.title')), chopMode,
       act('chop', '🔪', () => chopClip(+chopMode.value))),
     inputPanel(), cv, h('p', { class: 'tip pad-x' }, t('hint.audioClip')));
+}
+
+// ---------- Comping (V19) : la meilleure prise, portion par portion ----------
+/** Position du curseur clavier dans les lignes de prises (pas depuis le début du clip). */
+let compCur = 0;
+function compPanel(c: Clip) {
+  const g = Math.max(1, S.snap), st = srcStep(S.project, c), n = c.takes!.length;
+  if (compCur >= c.len) compCur = 0;
+  const row = (k: number) => {
+    const cv = h('canvas', { class: 'cwave' });
+    const lane = h('div', { class: 'ctake', tabIndex: 0, role: 'group', data: { take: String(k) }, 'aria-label': t('comp.row', k + 1), title: t('comp.rowTip') }, cv);
+    // Portions où cette prise est jouée, et curseur clavier.
+    const segs = c.comp ?? [{ s: 0, take: c.take ?? 0 }];
+    segs.forEach((sg, i) => { if (sg.take !== k) return; const b = i + 1 < segs.length ? segs[i + 1].s : c.len; lane.append(h('i', { class: 'cused', style: `left:${sg.s / c.len * 100}%;width:${(b - sg.s) / c.len * 100}%` })); });
+    lane.append(h('b', { class: 'ccur', style: `left:${compCur / c.len * 100}%;width:${Math.min(g, c.len - compCur) / c.len * 100}%` }));
+    queueMicrotask(() => {
+      const w = cv.clientWidth || 600, hh = cv.clientHeight || 40; cv.width = w; cv.height = hh;
+      const x = cv.getContext('2d')!; x.fillStyle = 'rgba(220,230,255,.55)';
+      if (c.bufferId) drawWave(x, c.bufferId, c.takes![k], c.takes![k] + c.len * st, w, hh);
+    });
+    const cell = (ev: PointerEvent) => { const r = lane.getBoundingClientRect(); return clamp(Math.floor((ev.clientX - r.left) / r.width * c.len / g) * g, 0, Math.max(0, c.len - 1e-9)); };
+    lane.onpointerdown = e => {
+      e.preventDefault(); lane.focus();
+      const s0 = cell(e); let s1 = s0;
+      const box = h('i', { class: 'csel' }); lane.append(box);
+      const show = () => { const lo = Math.min(s0, s1), hi = Math.min(c.len, Math.max(s0, s1) + g); box.style.cssText = `left:${lo / c.len * 100}%;width:${(hi - lo) / c.len * 100}%`; };
+      show();
+      followDrag(e, ev => { s1 = cell(ev); show(); }, () => { box.remove(); compCur = Math.min(s0, s1); compTake(k, Math.min(s0, s1), Math.max(s0, s1) + g); refocus(k); }, () => box.remove());
+    };
+    lane.onkeydown = e => {
+      const move = (d: number) => { compCur = clamp(compCur + d, 0, Math.max(0, Math.ceil(c.len / g) - 1) * g); lane.querySelector<HTMLElement>('.ccur')!.style.left = compCur / c.len * 100 + '%'; };
+      if (e.key === 'ArrowRight') move(g); else if (e.key === 'ArrowLeft') move(-g);
+      else if (e.key === 'Home') move(-c.len); else if (e.key === 'End') move(c.len);
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') document.querySelector<HTMLElement>(`.ctake[data-take="${clamp(k + (e.key === 'ArrowDown' ? 1 : -1), 0, n - 1)}"]`)?.focus();
+      else if (e.key === 'Enter' || e.key === ' ') { compTake(k, compCur, compCur + g); refocus(k); }
+      else return;
+      e.preventDefault(); e.stopPropagation();
+    };
+    return h('div', { class: 'crow' }, h('button', { class: 'pill ctk' + (!c.comp && c.take === k ? ' on' : ''), data: { take: String(k) }, title: t('take.tip'), onclick: () => chooseTake(k) }, `${t('clip.take')} ${k + 1}`), lane);
+  };
+  const refocus = (k: number) => queueMicrotask(() => document.querySelector<HTMLElement>(`.ctake[data-take="${k}"]`)?.focus());
+  return h('div', { class: 'comp', role: 'group', 'aria-label': t('comp.title') },
+    h('div', { class: 'chead' }, h('span', { class: 'sect' }, t('comp.title')), h('span', { class: 'tip' }, t('comp.tip')),
+      h('span', { class: 'cstat', role: 'status' }, c.comp ? t('comp.state', c.comp.length) : t('comp.single', (c.take ?? 0) + 1))),
+    ...c.takes!.map((_, k) => row(k)));
 }
 
 function emptyState(tr?: Track) {

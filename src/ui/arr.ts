@@ -2,7 +2,7 @@ import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, freezeTra
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
-import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
+import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { clamp, followDrag, h } from './dom';
@@ -61,9 +61,21 @@ function drawPreview(cv: HTMLCanvasElement, tr: Track, c: Clip, wCss: number, hg
       g.fillRect(x * sw, (hi - n.p + (span - (hi - lo + 1)) / 2) * (hgt / span), Math.max(2, n.l * sw - 1), nh);
     }
   } else if (c.bufferId) {
-    drawWave(g, c.bufferId, c.offset, c.offset + c.len * srcStep(S.project, c), w, hgt);
+    drawAudio(g, c, w, hgt);
     drawFades(g, c, w, hgt);
   }
+}
+
+/** Forme d'onde d'un clip audio ; avec un comping, chaque portion est lue dans sa prise, séparée par un trait. */
+export function drawAudio(g: CanvasRenderingContext2D, c: Clip, w: number, hgt: number) {
+  const st = srcStep(S.project, c);
+  if (!c.comp?.length || !c.takes) { drawWave(g, c.bufferId!, c.offset, c.offset + c.len * st, w, hgt); return; }
+  const sw = w / c.len;
+  c.comp.forEach((seg, i) => {
+    const a = seg.s, b = i + 1 < c.comp!.length ? c.comp![i + 1].s : c.len, x0 = Math.round(a * sw), x1 = Math.round(b * sw), o = (c.takes![seg.take] ?? c.offset) + a * st;
+    g.save(); g.translate(x0, 0); drawWave(g, c.bufferId!, o, o + (b - a) * st, Math.max(1, x1 - x0), hgt); g.restore();
+    if (i) { g.save(); g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(x0, 0, 1, hgt); g.restore(); }
+  });
 }
 
 /** Dessine les fondus d'un clip audio sous forme de coins clairs. */
@@ -72,6 +84,8 @@ export function drawFades(g: CanvasRenderingContext2D, c: Clip, w: number, hgt: 
   g.save(); g.fillStyle = 'rgba(255,255,255,.5)';
   if (c.fadeIn) tri(0, c.fadeIn * sw);
   if (c.fadeOut) tri(w, w - c.fadeOut * sw);
+  // Fondu enchaîné avec le clip précédent : un X sur la zone où les deux sons se mêlent.
+  if (c.xfade) { const x = Math.min(w, c.xfade * sw); g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, 0); g.lineTo(x, hgt); g.moveTo(0, hgt); g.lineTo(x, 0); g.stroke(); }
   g.restore();
 }
 
@@ -245,7 +259,7 @@ function laneDown(e: PointerEvent, tr: Track) {
   const grouped = S.selMore.size > 0 && (S.selMore.has(clip.id) || S.selClip === clip.id);
   if (!grouped) select(tr.id, clip.id);
   e.preventDefault();
-  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset, takes: clip.takes }, r = el.getBoundingClientRect(), dur = srcStep(S.project, clip);
+  const px = S.px, sx = e.clientX, o = { start: clip.start, len: clip.len, offset: clip.offset, takes: clip.takes, comp: clip.comp }, r = el.getBoundingClientRect(), dur = srcStep(S.project, clip);
   const resize = e.clientX > r.right - 10, trim = !resize && e.clientX < r.left + 8 && r.width > 30;
   const buf = clip.bufferId ? buffers.get(clip.bufferId) : undefined;
   const maxLen = buf ? Math.ceil((buf.duration - clip.offset) / dur) : Infinity;
@@ -255,13 +269,15 @@ function laneDown(e: PointerEvent, tr: Track) {
   let changed = false, target = tr;
   const mv = (ev: PointerEvent) => {
     let d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
-    if (resize) clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen);
+    if (resize) { clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen); if (o.comp) { clip.comp = o.comp.map(x => ({ ...x })); compSlice(clip, 0, clip.len); } }
     else if (trim) {
       // Bord gauche : le début avance ou recule, le contenu reste en place sur la timeline.
       d = clamp(d, Math.max(-o.start, buf ? -Math.floor(o.offset / dur) : -o.start), o.len - Math.min(S.snap, o.len));
       clip.start = o.start + d; clip.len = o.len - d;
       if (buf && o.takes) clip.takes = o.takes.map(x => x + d * dur);
       clip.offset = buf ? Math.max(0, o.offset + d * dur) : ((o.offset + d) % clip.patLen! + clip.patLen!) % clip.patLen!;
+      // Comping : les portions restent à leur place sur la timeline (elles sont comptées depuis le début du clip).
+      if (o.comp) { clip.comp = o.comp.map(x => ({ ...x })); compSlice(clip, d, o.len); }
     } else {
       d = Math.max(-minStart, d); clip.start = o.start + d;
       for (const x of others) { x.c.start = x.s + d; if (x.el) x.el.style.left = x.c.start * px + 'px'; }

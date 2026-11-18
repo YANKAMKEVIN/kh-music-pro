@@ -6,7 +6,7 @@ import { AuInstance, auBridge, auFromNorm, createAu } from './au';
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
 const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
   i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
-import { AT_CENTS, AT_GAIN, CTL_KINDS, CTL_REST, Clip, CtlKind, FX, Insert, KITS, MOD_CENTS, Project, Pt, SynthParams, Track, autoAt, ctlAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, stepDur as sd, timeOf } from '../types';
+import { AT_CENTS, AT_GAIN, COMP_XFADE, CTL_KINDS, CTL_REST, Clip, CtlKind, FX, Insert, KITS, MOD_CENTS, Project, Pt, SynthParams, Track, autoAt, ctlAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, stepDur as sd, timeOf } from '../types';
 import { stretchBuffer } from './stretch';
 
 export interface TrackNodes {
@@ -762,6 +762,43 @@ export function warmWarp(p: Project, buffers: Buffers) {
 }
 export const warpCacheSize = () => warpCache.size;
 
+// ---------- Comping et fondus enchaînés (V19) ----------
+/** Morceau de clip audio tel qu'il est joué : une portion de comping, ou le clip entier. `xIn` / `xOut` : fondus enchaînés en secondes. */
+export interface Piece extends Clip { xIn?: number; xOut?: number }
+/**
+ * Clips d'une piste audio tels qu'ils sont joués : un clip à comping devient une portion par prise choisie, et deux morceaux
+ * qui se touchent reçoivent leur fondu enchaîné (celui choisi par l'utilisateur, ou un fondu très court entre deux portions).
+ * Le fondu se place juste après la jonction : le morceau de gauche continue de jouer en s'effaçant pendant que celui de droite
+ * monte. Le temps de chaque morceau reste donc sur la grille.
+ */
+export function audioPieces(p: Project, tr: Track): Piece[] {
+  if (!tr.clips.some(c => c.comp || c.xfade)) return tr.clips;
+  const out: Piece[] = [];
+  for (const c of tr.clips) {
+    if (!c.comp?.length || !c.takes?.length) { out.push({ ...c }); continue; }
+    const warp = !!(c.warp && c.srcBpm);
+    c.comp.forEach((seg, i) => {
+      const a = seg.s, b = i + 1 < c.comp!.length ? c.comp![i + 1].s : c.len;
+      if (b <= a) return;
+      const into = warp ? a * 15 / c.srcBpm! : timeOf(p, c.start + a) - timeOf(p, c.start);
+      out.push({ ...c, id: c.id + '#' + i, start: c.start + a, len: b - a, offset: (c.takes![seg.take] ?? c.offset) + into, fadeIn: a === 0 ? c.fadeIn : 0, fadeOut: b === c.len ? c.fadeOut : 0, xfade: a === 0 ? c.xfade : undefined, xIn: a > 0 ? COMP_XFADE : undefined });
+    });
+  }
+  for (const b of out) {
+    const a = out.find(x => x !== b && Math.abs(x.start + x.len - b.start) < 1e-6);
+    if (!a) { delete b.xIn; continue; }
+    const x = b.xIn ?? (b.xfade ? timeOf(p, b.start + Math.min(b.xfade, b.len)) - timeOf(p, b.start) : 0);
+    if (x > 0) { b.xIn = x; a.xOut = x; }
+  }
+  return out;
+}
+/** Courbe à puissance constante : montée (sinus) ou descente (cosinus), à partir de la phase `ph0` (0..1). */
+function eqPower(up: boolean, ph0: number): Float32Array {
+  const n = 32, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const ph = (ph0 + (1 - ph0) * i / (n - 1)) * Math.PI / 2; c[i] = up ? Math.sin(ph) : Math.cos(ph); }
+  return c;
+}
+
 /** Décalage de swing : les double-croches impaires sont retardées. */
 export const swingT = (p: Project, s: number, t: number) => t + (s % 2 ? p.swing * durAt(p, s) * 0.5 : 0);
 
@@ -790,10 +827,22 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       const x0 = Math.max(rel, c.len - fo);
       g.gain.setValueAtTime(gAt(x0), t + (x0 - rel) * dur); g.gain.linearRampToValueAtTime(gAt(endRel), t + remain * dur);
     }
-    g.connect(n.input);
+    // Fondus enchaînés (V19) : montée au début du morceau, et, à sa fin, quelques instants de plus en s'effaçant.
+    const pc = c as Piece, reachesEnd = endRel >= c.len - 1e-9;
+    let out: AudioNode = g, extra = 0;
+    if ((pc.xIn && elapsedSec < pc.xIn) || (pc.xOut && reachesEnd && !warp)) {
+      const xg = mix.ctx.createGain(); g.connect(xg); out = xg;
+      let busyUntil = t;
+      if (pc.xIn && elapsedSec < pc.xIn) { const d = pc.xIn - elapsedSec; xg.gain.setValueCurveAtTime(eqPower(true, elapsedSec / pc.xIn), t, d); busyUntil = t + d; }
+      if (pc.xOut && reachesEnd && !warp) {
+        extra = Math.max(0, Math.min(pc.xOut, buf.duration - off - remainSec));
+        if (extra > 0.001 && t + remainSec >= busyUntil) xg.gain.setValueCurveAtTime(eqPower(false, 0), t + remainSec, extra); else extra = 0;
+      }
+    }
+    out.connect(n.input);
     if (!warp) {
       src.buffer = buf; src.connect(g);
-      src.start(t, Math.max(0, off), remainSec);
+      src.start(t, Math.max(0, off), remainSec + extra);
       onSrc?.(tr.id, src);
       return;
     }
@@ -843,7 +892,7 @@ export function scheduleStep(mix: Mix, p: Project, buffers: Buffers, s: number, 
   for (const tr of p.tracks) {
     const n = mix.tracks.get(tr.id);
     if (!n || tr.frozen) continue;   // piste gelée : sa version audio joue à sa place, elle ne calcule plus rien
-    for (const c of tr.clips) {
+    for (const c of tr.type === 'audio' ? audioPieces(p, tr) : tr.clips) {
       if (s < c.start || s >= c.start + c.len) continue;
       const remain = Math.min(c.start + c.len, endLimit ?? Infinity) - s;
       fireClip(mix, p, buffers, tr, n, c, s - c.start, remain, t, s === c.start || segStart, undefined,
