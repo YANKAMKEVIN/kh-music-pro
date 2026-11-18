@@ -7,7 +7,7 @@ Rédigé à la fin de la V14a, mis à jour pour la V15.1, la version 0.16.0 en l
 - **But** : un logiciel de création musicale « à la Ableton / Logic / FL Studio », accessible, pour un musicien (beatmaker, enregistrement, mixage, scène).
 - **État** : version **0.16.0 en ligne** sur `main` depuis le 15/11/2026 (fusion de la V15, banque de sons, et de la V14b, moteur natif et plugins du Mac : PR #2). 239 cas de QA. Site : https://yankamkevin.github.io/kh-music-pro/ ; installable (PWA) ; installateurs Windows, macOS (Apple et Intel) et Linux dans la release v0.16.0. Installée sur le Mac du propriétaire (`/Applications/KH Music Pro.app`).
 - **Dépôt** : `YANKAMKEVIN/kh-music-pro`. `main` = version en ligne. Releases publiées : v0.8.0, v0.10.0, v0.13.0, v0.16.0 à v0.16.2, **v0.17.1** (17/11/2026, la v0.17.0 n'a pas eu de release). Depuis le 17/11/2026, Claude publie la release après chaque fusion dans `main` (CLAUDE.md). Les branches `v14b-prototype-natif`, `v15-banque-generaliste` et `integration-v15-natif` sont fusionnées : tout nouveau travail part de `main`.
-- **Prochaine étape** : la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5, 9, 13, 14 et 15). Ses retours passent avant toute nouvelle fonction. La V17 (0.17.0) est en ligne sur `main` (PR #6) ; la V17.1 (0.17.1, sections 14 et 15) attend sur `v17-expressive-banks` (PR #5) : pas de fusion sans son accord.
+- **Prochaine étape** : la V18 (refonte ciblée de l'interface, section 16) sur la branche `v18`, et la séance d'écoute et de jeu du propriétaire (listes en fin de sections 5, 9, 13, 14 et 15). Ses retours passent avant toute nouvelle fonction. La V17 (0.17.0) est en ligne sur `main` (PR #6) ; la V17.1 (0.17.1, sections 14 et 15) attend sur `v17-expressive-banks` (PR #5) : pas de fusion sans son accord.
 - **Liste des fonctions** : section « Fonctions » du README.
 
 ## 2. Architecture
@@ -681,3 +681,26 @@ Suite à la demande du propriétaire « vas y rajoute » : ajout des trois famil
 `node qa/expressive-demo.cjs --ensemble` produit une démo `.khm`, quatre écoutes WAV et deux captures dans `livrables/v0.17.1/`. Installateur Apple : `release/KH Music Pro-0.17.1-arm64.dmg`. Lanceur d’essai local avec profil distinct ; application installée et version en ligne non remplacées.
 
 Restent à faire avec le propriétaire : écoute humaine, toucher du DGX-670, vraie pédale, Focusrite et micro, latence et appareils mobiles réels. Pas de nouveaux plugins instruments natifs ; ces banques utilisent le lecteur d’échantillons intégré.
+
+## 16. V18 — barre du haut repensée (version 0.18.0, branche `v18`, 18/11/2026)
+
+Demande du propriétaire : refonte ciblée de l'interface, en commençant par la barre du haut ; maquette validée avant le code.
+
+### Ce qui a été fait
+- **Barre du haut en trois groupes** (`src/ui/top.ts`) : projet (nom, menu Projet, annuler, rétablir), jeu (transport, compteur, Tap, mesure, métronome, boucle avec sa plage, menu **Prise** : décompte, punch, plage de la boucle), sortie (Exporter + menu ▾ des autres formats, réglages ⚙ : MIDI, carte son, langue ; aide). Tous les identifiants des boutons sont gardés : raccourcis, visite guidée et QA les retrouvent.
+- **Barre d'arrangement** `#abar` (nouvel élément de `index.html`, entre la barre du haut et les pistes) : grille, zoom, changement de tempo, repère, notes.
+- **Menus** : des `<details>` ; un clic ailleurs ou Échap referme (le focus revient au bouton), un seul ouvert à la fois. Les boutons-symboles (⚙, ▾, ☰) ont un nom accessible ; « Projet » et « Prise » gardent leur mot visible comme nom.
+- **Téléphone** (≤ 760 px) : deux lignes sans défilement horizontal ; le groupe de sortie est dans ☰ (toujours ouvert sur ordinateur, bouton caché) ; les listes des menus prennent la largeur de l'écran, sous le bouton qui les ouvre ; « Renommer le projet… » dans le menu Projet (le champ du nom est masqué).
+- Sous 1 500 px, le texte « MUSIC PRO » à côté du logo est masqué pour que la barre tienne sur une ligne ; vers 1 100 px elle passe proprement sur deux lignes.
+- « Exporter WAV » devient « Exporter » (le format est dans la bulle et le menu ▾). Textes nouveaux en trois langues.
+- QA : aides `reveal`, `clickIn`, `selectIn` (ouvrent les menus par de vrais clics avant d'atteindre un bouton rangé) ; cas TB01-TB07 (une ligne sur ordinateur, menus à la souris et au clavier, boucle, téléphone au doigt, écran moyen, traductions). Capture : `qa/shots/v18-phone.png`. MB01 adapté : la barre téléphone fait désormais deux lignes sans défilement (au plus 120 px), au lieu d'une ligne qui défilait.
+- Vérifié : campagne complète 338/339 puis MB01 corrigé et repassé avec les autres cas téléphone ; `npm run build` et démarrage de la version bureau OK.
+
+### Reste à faire (suite de la V18)
+- Têtes de piste : noms coupés (« Batteri ») ; garder M, S, A et le volume, ranger ▲ ▼ ⧉ ❄ ✕ dans un menu de la piste.
+- Téléphone : le morceau n'affiche qu'une mesure et demie, le séquenceur 6 pas sur 16.
+- Ajout de pistes : toujours dans le coin des pistes (la maquette les plaçait dans la barre d'arrangement).
+
+### Non vérifié
+- Un vrai téléphone et un vrai lecteur d'écran (testé dans un navigateur qui simule le tactile).
+

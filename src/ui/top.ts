@@ -17,10 +17,30 @@ async function midiConnect() {
   catch { toast(t('midi.denied'), 'error'); }
 }
 
+// Un menu ouvert se referme quand on touche ailleurs ou qu'on appuie sur Échap (le focus revient à son bouton).
+let menusWired = false;
+function wireMenus() {
+  if (menusWired) return; menusWired = true;
+  const openMenus = () => [...document.querySelectorAll<HTMLDetailsElement>('details.menu[open], details.more[open]')].filter(d => !(d.id === 'more' && matchMedia('(min-width: 761px)').matches));
+  document.addEventListener('pointerdown', e => { for (const d of openMenus()) if (!d.contains(e.target as Node)) d.open = false; });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const inner = openMenus().filter(d => d.contains(document.activeElement)).pop() ?? openMenus().pop();
+    if (inner) { inner.open = false; inner.querySelector('summary')?.focus(); e.stopPropagation(); }
+  }, true);
+  // Téléphone : la liste s'affiche sur toute la largeur, juste sous le bouton qui l'a ouverte.
+  document.addEventListener('toggle', e => {
+    const d = e.target as HTMLDetailsElement;
+    if (!d.open || !d.matches?.('details.menu, details.more') || matchMedia('(min-width: 761px)').matches) return;
+    const list = d.querySelector<HTMLElement>(':scope > .menu-list, :scope > .grp.out'), r = d.querySelector('summary')!.getBoundingClientRect();
+    if (list) list.style.top = Math.round(r.bottom + 6) + 'px';
+  }, true);
+}
+
 /** Construit la barre supérieure dans la langue courante. */
 export function buildTop(onLang: () => void) {
   const b = (id: string, cls: string, label: string, tip: string, fn: () => void) => h('button', { id, class: cls, title: tip, 'aria-label': tip, onclick: fn }, label);
-  const tgl = (id: string, label: string, tip: string, fn: () => void) => h('button', { id, class: 'pill', title: tip, 'aria-pressed': 'false', onclick: fn }, label);
+  const tgl = (id: string, label: string, tip: string, fn: () => void) => h('button', { id, class: 'pill', title: tip, 'aria-label': tip, 'aria-pressed': 'false', onclick: fn }, label);
   const num = (id: string, label: string, min: number, max: number, fn: () => void) => { const i = h('input', { id, type: 'number', min: String(min), max: String(max), step: '1', 'aria-label': label, title: label }); i.onchange = fn; return i; };
 
   const setLoop = () => {
@@ -39,56 +59,81 @@ export function buildTop(onLang: () => void) {
   const langSel = h('select', { id: 'lang', 'aria-label': t('top.lang'), title: t('top.lang') }, ...LANGS.map(([v, n]) => h('option', { value: v, selected: v === lang() }, n)));
   langSel.onchange = () => { setLang(langSel.value as Lang); onLang(); };
 
-  const menu = h('details', { class: 'menu', id: 'menu' });
-  const item = (id: string, label: string, fn: () => void) => h('button', { id, onclick: () => { menu.open = false; fn(); } }, label);
+  wireMenus();
+  // Menus déroulants (V18) : un clic ouvre, un clic ailleurs, Échap ou un choix referment.
+  const drop = (id: string, summary: (string | Node)[], tip: string, ...items: Node[]) => {
+    const d = h('details', { class: 'menu', id });
+    // Un symbole seul (⚙, ▾) reçoit un nom accessible ; un mot visible (Projet, Prise) reste son propre nom.
+    const named = summary.length === 1 && typeof summary[0] === 'string' && summary[0].replace(/[▾\s]/g, '').length > 1;
+    d.append(h('summary', { class: 'pill', title: tip, ...(named ? {} : { 'aria-label': tip }) }, ...summary), h('div', { class: 'menu-list' }, ...items));
+    return d;
+  };
+  const close = (el: HTMLElement) => { const d = el.closest('details'); if (d && d.id !== 'more') d.open = false; };
+  const item = (id: string, label: string, fn: () => void) => { const x: HTMLButtonElement = h('button', { id, onclick: () => { close(x); fn(); } }, label); return x; };
+
   // Version bureau : Enregistrer sous et fichiers récents (liste relue à chaque ouverture du menu).
   const desk = deskFiles(), recent = h('div', { id: 'recent', class: 'recent', role: 'group', 'aria-label': t('file.recent') });
   const fillRecent = async () => {
     if (!desk) return;
     const list = await desk.recent().catch(() => []);
     recent.replaceChildren(h('small', { class: 'mhead' }, t('file.recent')),
-      ...(list.length ? list.map(f => h('button', { class: 'rfile', data: { path: f.path }, title: f.path, onclick: () => { menu.open = false; openRecentFile(f.path, f.name); } }, '🎵 ' + f.name))
+      ...(list.length ? list.map(f => { const x: HTMLButtonElement = h('button', { class: 'rfile', data: { path: f.path }, title: f.path, onclick: () => { close(x); openRecentFile(f.path, f.name); } }, '🎵 ' + f.name); return x; })
         : [h('small', { class: 'mnone' }, t('file.none'))]),
       ...(list.length ? [h('button', { id: 'bRecentClear', class: 'rclear', onclick: async () => { await desk.clearRecent(); fillRecent(); } }, t('file.clear'))] : []));
   };
-  menu.addEventListener('toggle', () => { if (menu.open) fillRecent(); });
-  menu.append(h('summary', { class: 'pill' }, t('top.project') + ' ▾'), h('div', { class: 'menu-list' },
+  const menu = drop('menu', [t('top.project') + ' ▾'], t('top.project'),
+    item('bRename', t('top.rename'), () => { const n = prompt(t('top.pname'), S.project.name)?.trim(); if (n) { S.project.name = n; commit(); } }),
     item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bVersions', t('ver.menu'), showVersions), item('bOpen', t('top.open'), openProjectFile),
     item('bSave', t('top.save'), saveFile), ...(desk ? [item('bSaveAs', t('file.saveAs'), saveFileAs)] : []), item('bImport', t('top.import'), () => pickAudio()),
-    ...(desk ? [recent] : []),
-    item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()), h('hr', {}),
-    item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile)));
+    ...(desk ? [recent] : []), item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()));
+  menu.addEventListener('toggle', () => { if (menu.open) fillRecent(); });
+
+  const take = drop('mTake', [t('top.take') + ' ▾'], t('top.takeTip'),
+    tgl('bCount', t('top.countIn'), t('top.countInTip'), () => { S.project.countIn = !S.project.countIn; commit(); }),
+    tgl('bPunch', t('top.punch'), t('top.punchTip'), () => { S.project.punch = !S.project.punch; commit(); }),
+    h('div', { class: 'mrow' }, h('label', { class: 'mini-in' }, '⟲ ' + t('top.from'), num('loopS', t('top.loopS'), 1, 999, setLoop)),
+      h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop))));
+  const exportMore = drop('mExport', ['▾'], t('top.exportMore'),
+    item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile));
+  const settings = drop('mSettings', ['⚙'], t('top.settings'),
+    item('bMidi', '🎛 ' + t('top.midiTip'), midiConnect), item('bAudio', '🔧 ' + t('aud.title'), showAudio),
+    h('label', { class: 'mini-in mrow' }, t('top.lang'), langSel));
+  // Tout ce qui sort du morceau : export, réglages, aide. Toujours ouvert sur ordinateur ; menu ☰ sur téléphone.
+  const more = h('details', { class: 'more', id: 'more' });
+  more.append(h('summary', { class: 'pill', title: t('top.more'), 'aria-label': t('top.more') }, '☰'),
+    h('div', { class: 'grp out' },
+      h('div', { class: 'split-btn' }, b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav), exportMore),
+      settings, b('bHelp', 'icon', '?', t('top.help'), () => $<HTMLDialogElement>('help').showModal())));
+  const wide = matchMedia('(min-width: 761px)');
+  const syncMore = () => { more.open = wide.matches; };
+  syncMore(); wide.onchange = syncMore;
 
   $('top').replaceChildren(
     h('div', { class: 'brand', 'aria-label': 'KH Music Pro' }, h('span', { class: 'logo' }, 'KH'), h('span', { class: 'bname' }, 'MUSIC PRO')),
+    h('div', { class: 'grp proj', role: 'group', 'aria-label': t('top.project') }, pname, menu,
+      b('bUndo', 'icon', '↶', t('top.undo'), undo), b('bRedo', 'icon', '↷', t('top.redo'), redo)),
     h('div', { class: 'grp transport', role: 'group' },
       b('bStop', 'tbtn', '■', t('top.stop'), () => engine.stop()),
       b('bPlay', 'tbtn play', '▶', t('top.play'), () => engine.toggle()),
       b('bRec', 'tbtn rec', '●', t('top.rec'), () => toggleRecord())),
     h('div', { class: 'grp display' },
       h('div', {}, h('span', { id: 'pos' }, '1.1.1'), h('small', {}, t('top.bar'))),
-      h('div', {}, h('span', { id: 'time' }, '0:00.0'), h('small', {}, t('top.time'))),
+      h('div', { class: 'dtime' }, h('span', { id: 'time' }, '0:00.0'), h('small', {}, t('top.time'))),
       h('label', {}, bpm, h('small', {}, 'BPM'))),
-    h('div', { class: 'grp' },
-      b('bTap', 'pill', 'Tap', t('top.tapTip'), tapTempo),
-      b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo), sig,
-      tgl('bMetro', t('top.metro'), t('top.metroTip'), () => { S.project.metronome = !S.project.metronome; commit(); }),
-      tgl('bCount', t('top.countIn'), t('top.countInTip'), () => { S.project.countIn = !S.project.countIn; commit(); }),
-      tgl('bPunch', t('top.punch'), t('top.punchTip'), () => { S.project.punch = !S.project.punch; commit(); }),
-      tgl('bLoop', '⟲ ' + t('top.loop'), t('top.loopTip'), () => { S.project.loop = !S.project.loop; commit(); }),
-      h('label', { class: 'mini-in' }, t('top.from'), num('loopS', t('top.loopS'), 1, 999, setLoop)),
-      h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop)),
-      b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', '📝', t('notes.title'), showNotes)),
-    h('div', { class: 'grp right' },
-      h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
-      b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
-      b('bUndo', 'icon', '↶', t('top.undo'), undo), b('bRedo', 'icon', '↷', t('top.redo'), redo),
-      b('bMidi', 'pill', '🎛 MIDI', t('top.midiTip'), midiConnect),
-      b('bAudio', 'icon', '🔧', t('aud.title'), showAudio),
-      pname, menu,
-      b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav),
-      langSel,
-      b('bHelp', 'icon', '?', t('top.help'), () => $<HTMLDialogElement>('help').showModal())));
+    h('div', { class: 'grp play', role: 'group' },
+      b('bTap', 'pill', 'Tap', t('top.tapTip'), tapTempo), sig,
+      tgl('bMetro', '♪', t('top.metroTip'), () => { S.project.metronome = !S.project.metronome; commit(); }),
+      tgl('bLoop', '⟲', t('top.loopTip'), () => { S.project.loop = !S.project.loop; commit(); }),
+      take),
+    more);
+
+  // Barre d'arrangement (V18), juste au-dessus des pistes : grille, zoom, tempo, repères, notes.
+  $('abar').setAttribute('aria-label', t('abar.label'));
+  $('abar').replaceChildren(
+    h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
+    b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
+    b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo),
+    b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', '📝', t('notes.title'), showNotes));
 
   document.querySelectorAll<HTMLElement>('#tabs button').forEach(x => { x.textContent = t('tab.' + x.dataset.tab); });
   $('split').title = t('split.tip');
@@ -111,6 +156,8 @@ export function renderTop() {
   document.title = (S.file.path ? S.file.name : p.name) + ' — KH Music Pro';
   $<HTMLInputElement>('loopS').value = String(p.loopStart + 1);
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
+  const lr = t('top.loopRange', p.loopStart + 1, p.loopStart + p.loopLen);
+  $('bLoop').textContent = `⟲ ${p.loopStart + 1} → ${p.loopStart + p.loopLen}`; $('bLoop').title = t('top.loopTip') + ' — ' + lr; $('bLoop').setAttribute('aria-label', t('top.loop') + ' — ' + lr);
   $<HTMLSelectElement>('snap').value = String(S.snap);
   $<HTMLSelectElement>('sig').value = String(p.sig);
   for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bPunch', p.punch], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {

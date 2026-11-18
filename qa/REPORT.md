@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-332 cas réussis sur 332.
+338 cas réussis sur 339.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -120,7 +120,7 @@
 | AR02 | Arpégiateur | Modes descendant et aller-retour, avec un accord à un doigt | OK |
 | AR03 | Arpégiateur | En enregistrement, l'arpège est calé sur la grille et écrit dans le clip | OK |
 | MK01 | Repères | Poser des repères, y sauter, les renommer et les supprimer | OK |
-| MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | OK |
+| MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | ÉCHEC : barre supérieure non compacte (109 px) |
 | MB02 | Téléphone | Au doigt : déplacer un clip et dessiner une courbe d'automation | OK |
 | OK01 | Clavier à l'écran | Afficher le clavier, jouer une touche à la souris, glisser vers une autre, changer d'octave | OK |
 | OK02 | Clavier à l'écran | Sur écran tactile : clavier affiché d'office, accord à deux doigts | OK |
@@ -336,3 +336,10 @@
 | AW01 | Plugins du Mac | Fenêtre du plugin : un clic l’ouvre ; un réglage changé dans la fenêtre est recopié dans le projet, affiché, annulable | OK |
 | AW02 | Plugins du Mac | Pendant la lecture d’une automation de ce plugin, les valeurs de la courbe ne sont pas recopiées dans le projet | OK |
 | AW03 | Plugins du Mac | Module natif plus ancien (sans fenêtre) : pas de bouton ; au clavier, le bouton s’atteint et s’active avec Entrée ; traduit | OK |
+| TB01 | Barre du haut | Ordinateur : projet, jeu et sortie tiennent sur une seule ligne ; la barre d’arrangement est juste au-dessus des pistes | OK |
+| TB02 | Barre du haut | Menus à la souris : un clic ouvre, un clic ailleurs ou un choix referme ; un seul menu ouvert à la fois | OK |
+| TB03 | Barre du haut | Menus au clavier seul : Tab jusqu’à « Prise », Entrée ouvre, Espace règle le décompte, Échap referme et rend le focus | OK |
+| TB04 | Barre du haut | Le bouton Boucle affiche sa plage et la suit quand on la change dans « Prise » ; les raccourcis ne changent pas | OK |
+| TB05 | Barre du haut | Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise | OK |
+| TB06 | Barre du haut | Écran moyen (1100 px) : la barre passe proprement sur deux lignes, rien n’est coupé ni caché | OK |
+| TB07 | Barre du haut | Nouveaux menus et bulles traduits en anglais et en espagnol | OK |

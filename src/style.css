@@ -12,7 +12,7 @@ body {
   font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--txt);
   background: radial-gradient(1100px 500px at 12% -10%, rgba(34, 211, 238, .16), transparent 60%),
     radial-gradient(900px 500px at 95% 0%, rgba(167, 139, 250, .16), transparent 60%), var(--bg);
-  display: grid; grid-template-rows: auto 1fr; overflow: hidden; user-select: none;
+  display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; user-select: none;
 }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -22,7 +22,7 @@ small { color: var(--dim); font-size: 10px; letter-spacing: .08em; text-transfor
 
 /* ---------- Barre supérieure ---------- */
 #top {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; position: relative; z-index: 20;
   background: rgba(10, 14, 30, .72); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; }
@@ -57,6 +57,33 @@ small { color: var(--dim); font-size: 10px; letter-spacing: .08em; text-transfor
 .mini-in { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
 .mini-in input { width: 56px; padding: 0 6px; text-align: center; }
 .pname { width: 120px; font-weight: 600; background: transparent; }
+
+/* V18 : trois groupes (projet, jeu, sortie), menus déroulants, barre d'arrangement */
+.grp.proj { gap: 4px; }
+.grp.proj .pname { border-radius: 10px 0 0 10px; border-right: 0; }
+.grp.proj #menu > summary { border-radius: 0 10px 10px 0; margin-right: 6px; }
+.grp.play #bMetro, .grp.play #bLoop { min-width: 40px; font-size: 15px; }
+.grp.play #bLoop { font-variant-numeric: tabular-nums; }
+#more { margin-left: auto; }
+#more > summary { display: none; }
+.grp.out { gap: 6px; }
+.split-btn { display: flex; }
+.split-btn #bExport { border-radius: 10px 0 0 10px; }
+.split-btn #mExport > summary { border-radius: 0 10px 10px 0; border-left: 1px solid rgba(5, 8, 22, .35); background: var(--grad); color: #050816; border-width: 0 0 0 1px; padding: 0 9px; }
+#menu .menu-list, #mTake .menu-list { left: 0; right: auto; }
+.menu-list .pill { text-align: left; }
+.menu-list .mrow { display: flex; gap: 10px; align-items: center; padding: 4px 8px; }
+#mTake .menu-list { min-width: 240px; }
+#bRename { display: none; }
+#mSettings .menu-list { min-width: 320px; }
+#abar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 16px; overflow-x: auto; scrollbar-width: none;
+  background: rgba(10, 14, 30, .55); border-bottom: 1px solid var(--line);
+}
+#abar::-webkit-scrollbar { display: none; }
+#abar > * { flex: none; }
+#abar .pill, #abar .icon, #abar select { height: 32px; }
+@media (max-width: 1500px) { .bname { display: none; } }
 select option { background: #121831; }
 .danger:hover { border-color: var(--rec) !important; color: var(--rec); }
 
@@ -337,11 +364,17 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
 /* Téléphone : barre supérieure sur une ligne défilante, en-têtes de piste compacts */
 @media (max-width: 760px) {
   :root { --headw: 128px; }
-  #top { flex-wrap: nowrap; overflow-x: auto; padding: 8px 10px; gap: 10px; backdrop-filter: none; background: #0a0e1e; scrollbar-width: none; }
-  #top::-webkit-scrollbar { display: none; }
-  #top > * { flex: none; }
-  .grp.right { margin-left: 0; flex-wrap: nowrap; }
-  .menu-list { position: fixed; right: 8px; top: 64px; }
+  /* Téléphone (V18) : ligne 1 = ☰, transport, compteur ; ligne 2 = projet, métronome, boucle, prise */
+  #top { padding: 8px 10px; gap: 8px; backdrop-filter: none; background: #0a0e1e; justify-content: space-between; }
+  .brand, .dtime, #bTap, #sig, #bRedo { display: none !important; }
+  #more { order: -1; margin-left: 0; }
+  #more > summary { display: flex; width: 40px; justify-content: center; font-size: 18px; }
+  #more > .grp.out { position: fixed; left: 8px; right: 8px; z-index: 30; flex-wrap: wrap; padding: 10px; border-radius: 12px; background: rgba(15, 21, 44, .98); border: 1px solid var(--line); box-shadow: 0 12px 40px rgba(0, 0, 0, .6); }
+  .grp.proj { order: 3; } .grp.play { order: 4; margin-left: auto; gap: 6px; } #bRename { display: block; }
+  .grp.proj .pname { display: none; } .grp.proj #menu > summary { border-radius: 10px; }
+  .menu-list { position: fixed; left: 8px; right: 8px; min-width: 0 !important; }
+  #menu .menu-list, #mTake .menu-list { left: 8px; right: 8px; }
+  #abar { padding: 4px 10px; gap: 6px; }
   .tbtn { width: 40px; height: 40px; } .tbtn.play { width: 48px; height: 48px; }
   .display { gap: 10px; padding: 4px 8px; } .display span, .display input { min-width: 52px; width: 52px; font-size: 15px; }
   .head { padding: 6px 4px 6px 10px; } .head .sm, .head .tvol, .head .del { display: none; }

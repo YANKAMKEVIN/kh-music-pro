@@ -183,7 +183,14 @@ async function pick(triggerSel, file) {
 }
 /** Nouveau projet vide, par la fenêtre des projets. */
 async function newBlank() { await menu('bNew'); await page.click('[data-tpl=empty]'); await sleep(150); }
-async function menu(id) { await page.click('#menu summary'); await page.click('#' + id); }
+/** Ouvre, par de vrais clics, les menus déroulants (V18) qui contiennent un élément, du plus extérieur au plus intérieur. */
+async function reveal(sel, pg = page) {
+  const ids = await pg.$eval(sel, e => { const a = []; for (let d = e.parentElement?.closest('details'); d; d = d.parentElement?.closest('details')) a.unshift(d.id); return a; });
+  for (const id of ids) if (!(await pg.$eval('#' + id, d => d.open))) await pg.click(`#${id} > summary`);
+}
+async function clickIn(sel) { await reveal(sel); await page.click(sel); }
+async function selectIn(sel, v) { await reveal(sel); await page.selectOption(sel, v); }
+async function menu(id) { await clickIn('#' + id); }
 async function setRange(sel, v) {
   await page.$eval(sel, (el, val) => { el.value = String(val); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, v);
 }
@@ -237,7 +244,7 @@ test('T06', 'Transport', 'Tap tempo : quatre tapes régulières règlent le temp
 });
 test('T07', 'Transport', 'Métronome, décompte et boucle s\'activent (boutons et raccourcis L / M)', async () => {
   const a = await proj();
-  await page.keyboard.press('m'); await page.keyboard.press('l'); await page.click('#bCount');
+  await page.keyboard.press('m'); await page.keyboard.press('l'); await clickIn('#bCount');
   const b = await proj();
   expect(b.metronome !== a.metronome && b.loop !== a.loop && b.countIn !== a.countIn, 'bascule non prise en compte');
   expect(await page.getAttribute('#bMetro', 'aria-pressed') === String(b.metronome), 'état aria du bouton');
@@ -637,7 +644,7 @@ test('P05', 'Projet', 'Sauvegarde automatique : le travail survit au rechargemen
 for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es', 'Editor', 'Mezclador', 'Batería'], ['fr', 'Éditeur', 'Mixeur', 'Batterie']]) {
   test('N-' + code, 'Langues', `Interface complète en « ${code} » : toutes les vues, aucun texte manquant`, async () => {
     const n0 = errors.length;
-    await page.selectOption('#lang', code); await sleep(150);
+    await selectIn('#lang', code); await sleep(150);
     expect(await S(() => document.documentElement.lang) === code, 'attribut lang');
     expect((await page.textContent('#tabs [data-tab=editor]')) === ed && (await page.textContent('#tabs [data-tab=mixer]')) === mix, 'onglets non traduits');
     expect((await page.textContent('[data-add=drums]')).includes(drums), 'boutons non traduits');
@@ -647,7 +654,7 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     await S(() => { const k = window.kh; k.S.project.tracks.forEach(t => { t.autoShow = 'vol'; }); k.commit(); }); text += await page.innerText('#arr');
     await page.click(await clipSel(0, 0)); await page.click('[data-view=pads]'); await page.click('.pad[data-pad="1"] [data-act=padfx]'); text += await page.innerText('#panel');
     await page.click('#bNotes'); text += await page.innerText('#notes'); await page.keyboard.press('Escape');
-    await page.click('#bAudio'); await sleep(150); text += await page.innerText('#audio'); await page.keyboard.press('Escape');
+    await clickIn('#bAudio'); await sleep(150); text += await page.innerText('#audio'); await page.keyboard.press('Escape');
     await S(() => { const k = window.kh, t = k.S.project.tracks[0]; t.inserts = ['delay', 'reverb', 'phaser', 'autopan', 'eq', 'gain'].map(x => k.newInsert(x)); k.commit(); k.showRack(t.id); }); text += await page.innerText('#fx'); await page.keyboard.press('Escape');
     await S(() => { const k = window.kh; window.qa.sine('qa-sine'); const t = k.S.project.tracks[4]; t.clips = [{ id: 'qa-n', name: 'Son', start: 0, len: 8, offset: 0, bufferId: 'qa-sine', gain: 1, takes: [0, 0.2], take: 0 }]; k.S.selTrack = t.id; k.S.selClip = 'qa-n'; k.learn.on = true; k.S.project.buses.push(k.newBus(1)); k.S.project.tracks[0].comp = true; k.commit(); }); text += await page.innerText('#panel');
     await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'sampler'); text += await page.innerText('#panel');
@@ -658,8 +665,10 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
     for (let i = 0; i < 8; i++) { await sleep(60); text += await page.innerText('.tbub'); await page.click('[data-act=tournext]'); }
     await menu('bLib'); text += await page.innerText('#lib'); await page.keyboard.press('Escape');
     await page.click('#menu summary'); text += await page.innerText('#top'); await page.click('#menu summary');
+    for (const m of ['mTake', 'mExport', 'mSettings']) { await page.click(`#${m} > summary`); text += await page.innerText(`#${m}`) + (await page.getAttribute(`#${m} > summary`, 'title')); await page.keyboard.press('Escape'); }
+    text += await page.innerText('#abar') + (await page.getAttribute('#abar', 'aria-label')) + (await page.getAttribute('#bLoop', 'aria-label'));
     const titles = await page.$$eval('[title], [aria-label]', els => els.map(e => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' | '));
-    const raw = (text + titles).match(/\b(top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune|bus|tempo|fxn|fxp|wam|aud)\.[a-zA-Z0-9.]+/g);
+    const raw = (text + titles).match(/\b(abar|top|mix|syn|hint|toast|live|help|tip|act|ins|cat|drum|pad|smp|ed|clip|track|type|kit|wave|grid|tab|midi|confirm|proj|demo|auto|scale|chord|st|in|arp|mark|okb|lib|tpl|chop|fx|learn|tuner|tour|pat|mp|notes|take|tune|bus|tempo|fxn|fxp|wam|aud)\.[a-zA-Z0-9.]+/g);
     expect(!raw, `clés non traduites : ${raw && [...new Set(raw)].join(', ')}`);
     const miss = errors.slice(n0).filter(e => e.includes('i18n')); expect(!miss.length, miss.join(' ; '));
     if (code !== 'fr') expect(!/Éditeur|Supprimer|Enregistrer|Longueur/.test(text), 'du français subsiste');
@@ -668,11 +677,11 @@ for (const [code, ed, mix, drums] of [['en', 'Editor', 'Mixer', 'Drums'], ['es',
   });
 }
 test('N04', 'Langues', 'La langue choisie est conservée après rechargement ; les noms de notes suivent la langue', async () => {
-  await page.selectOption('#lang', 'en'); await page.click(await clipSel(1, 0));
+  await selectIn('#lang', 'en'); await page.click(await clipSel(1, 0));
   expect((await page.$$eval('.key.c', e => e.map(x => x.textContent))).includes('C4'), 'notes non anglicisées');
   await page.reload(); await page.waitForSelector('.clip');
   expect(await S(() => document.documentElement.lang) === 'en' && (await page.inputValue('#lang')) === 'en', 'langue perdue');
-  await page.selectOption('#lang', 'fr'); await page.click(await clipSel(1, 0));
+  await selectIn('#lang', 'fr'); await page.click(await clipSel(1, 0));
   expect((await page.$$eval('.key.c', e => e.map(x => x.textContent))).includes('Do4'), 'notes non francisées');
 });
 
@@ -1105,7 +1114,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
     const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
     await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
     const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
-    expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top < 80 && lay.topScroll > lay.iw, `barre supérieure non compacte (${lay.top} px)`);
+    expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top <= 120 && lay.topScroll <= lay.iw + 1, `barre supérieure non compacte ou qui déborde (${lay.top} px, ${lay.topScroll} px de large)`);   // V18 : deux lignes sans défilement
     expect(lay.panel > 250 && lay.arr > 180 && lay.lane < 140, `zones mal réparties (${JSON.stringify(lay)})`);
     await pg.tap('#bPlay'); await pg.waitForTimeout(500); expect(await pg.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1), 'la lecture ne démarre pas au doigt');
     await pg.tap('#bPlay'); expect(await pg.evaluate(() => !window.kh.engine.playing), 'la lecture ne s\'arrête pas');
@@ -1715,7 +1724,7 @@ test('LT02', 'Prises', 'Punch : seule la zone de boucle est réenregistrée, ce 
   await S(() => { const k = window.kh, p = k.S.project; p.bpm = 240; p.loop = true; p.loopStart = 1; p.loopLen = 1;
     const b = new AudioBuffer({ length: 44100 * 4, numberOfChannels: 1, sampleRate: 44100 }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * 200 * i / 44100); k.buffers.set('qa-old', b);
     const t = p.tracks[4]; t.clips = [{ id: 'old', name: 'Ancien', start: 0, len: 48, offset: 0, bufferId: 'qa-old', gain: 1 }]; k.S.selTrack = t.id; k.S.selClip = ''; k.commit(); });
-  await page.click('#bPunch'); expect((await proj()).punch && await page.getAttribute('#bPunch', 'aria-pressed') === 'true', 'punch non activé');
+  await clickIn('#bPunch'); expect((await proj()).punch && await page.getAttribute('#bPunch', 'aria-pressed') === 'true', 'punch non activé');
   await page.keyboard.press('r'); await sleep(500); expect(await S(() => window.kh.engine.recMode === 'punch' && window.kh.engine.currentStep() < 16), 'le punch doit partir une mesure avant la zone');
   await sleep(2600); expect(await S(() => !window.kh.engine.recording && !window.kh.engine.playing), 'le punch ne s\'arrête pas seul à la fin de la zone');
   await sleep(500); const cl = (await proj()).tracks[4].clips.slice().sort((a, b) => a.start - b.start);
@@ -1960,7 +1969,7 @@ test('WAM03', 'Plugins web', 'Un plugin venu d\'un autre site demande un accord 
   } finally { page.off('dialog', onDlg); dialogText = undefined; refuseConfirm = false; }
 });
 test('LAT01', 'Latence', 'Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur', async () => {
-  await page.click('#bAudio'); expect(await page.$eval('#audio', d => d.open), 'fenêtre non ouverte');
+  await clickIn('#bAudio'); expect(await page.$eval('#audio', d => d.open), 'fenêtre non ouverte');
   expect(/Sortie : \d+ ms · Entrée : (—|\d+ ms) · \d{5} Hz/.test(await page.textContent('[data-role=latinfo]')), `latence : ${await page.textContent('[data-role=latinfo]')}`);
   const outs = await page.$$eval('[data-role=audout] option', e => e.map(o => o.value)); expect(outs.length >= 1 && outs[0] === '', 'liste des sorties');
   if (outs.length > 1) { await page.selectOption('[data-role=audout]', outs[1]); await sleep(300); expect(await S(() => window.kh.engine.ctx.sinkId) === outs[1] && await S(() => window.kh.S.outputDevice) === outs[1], 'sortie non changée'); await page.selectOption('[data-role=audout]', ''); await sleep(200); }
@@ -1988,7 +1997,7 @@ test('LAT03', 'Latence', 'Sans le module natif (version web), le son entre et so
 const natSw = '#audio [data-act=native]';
 const waitSw = v => page.waitForFunction(([s, v]) => { const b = document.querySelector(s); return b && b.getAttribute('aria-checked') === v && !b.disabled; }, [natSw, v], { timeout: 5000 });
 test('NAT01', 'Moteur natif', 'Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac', async () => {
-  await page.click('#bAudio'); await sleep(200);
+  await clickIn('#bAudio'); await sleep(200);
   expect(!(await page.$('#audio [data-role=native]')), 'le réglage ne doit pas apparaître sans module natif');
   expect(!/navigateur|chemin natif/.test(await page.textContent('[data-role=latinfo]')), 'la latence ne doit pas parler de chemin sans module natif');
   await page.keyboard.press('Escape'); await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
@@ -1996,7 +2005,7 @@ test('NAT01', 'Moteur natif', 'Sans module natif (site web, Windows, Linux) : ni
 });
 test('NAT02', 'Moteur natif', 'Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu', async () => {
   await S(() => { window.qa.fakeNative(); });
-  await page.click('#bAudio'); await page.waitForSelector(natSw);
+  await clickIn('#bAudio'); await page.waitForSelector(natSw);
   const b0 = await page.$eval(natSw, b => ({ role: b.getAttribute('role'), on: b.getAttribute('aria-checked'), txt: b.textContent, state: document.querySelector('[data-role=natstate]').textContent, help: document.querySelector('[data-role=native]').textContent }));
   expect(b0.role === 'switch' && b0.on === 'false' && b0.txt === 'Désactivé' && b0.state.includes('navigateur') && b0.help.includes('74 ms'), `état de départ : ${JSON.stringify(b0)}`);
   expect((await page.textContent('[data-role=latinfo]')).includes('· navigateur'), 'la latence doit indiquer le chemin du navigateur');
@@ -2011,7 +2020,7 @@ test('NAT02', 'Moteur natif', 'Avec le module : réglage désactivé par défaut
 });
 test('NAT03', 'Moteur natif', 'Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée', async () => {
   await S(() => { window.qa.fakeNative({ failStart: true }); });
-  await page.click('#bAudio'); await page.waitForSelector(natSw); await page.click(natSw); await waitSw('false');
+  await clickIn('#bAudio'); await page.waitForSelector(natSw); await page.click(natSw); await waitSw('false');
   const r = await S(() => { const e = window.kh.engine; return { native: !!e.native, out: e.out === e.ctx.destination, err: document.querySelector('[data-role=naterr]')?.textContent ?? '', role: document.querySelector('[data-role=naterr]')?.getAttribute('role'), toast: document.querySelector('#toast').className + ' ' + document.querySelector('#toast').textContent, sink: e.ctx.sinkId }; });
   expect(!r.native && r.out && r.sink === '', `le son doit rester au navigateur : ${JSON.stringify(r)}`);
   expect(r.err === 'Le moteur natif n\'a pas pu démarrer (carte son refusée). Le son passe par le navigateur.' && r.role === 'alert', `message dans les réglages : ${r.err}`);
@@ -2028,7 +2037,7 @@ test('NAT04', 'Moteur natif', 'Le choix est retenu : au lancement suivant, le mo
 test('NAT05', 'Moteur natif', 'Réglage et plugins du Mac en anglais et en espagnol', async () => {
   await S(() => { window.qa.fakeNative(); });
   for (const [l, title, off, grp] of [['en', 'Native audio engine', 'Off', 'Mac plugins'], ['es', 'Motor de audio nativo', 'Desactivado', 'Plugins del Mac']]) {
-    await page.evaluate(l2 => window.kh.setLang(l2), l); await page.click('#bAudio'); await page.waitForSelector(natSw);
+    await page.evaluate(l2 => window.kh.setLang(l2), l); await clickIn('#bAudio'); await page.waitForSelector(natSw);
     const r = await page.$eval('#audio', d => ({ h: d.querySelector('[data-role=native] h3').textContent, sw: d.querySelector('[data-act=native]').textContent, label: d.querySelector('[data-act=native]').getAttribute('aria-label') }));
     expect(r.h.includes(title) && r.sw === off && r.label === title, `${l} : ${JSON.stringify(r)}`);
     await page.keyboard.press('Escape'); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id));
@@ -3705,6 +3714,102 @@ test('AW03', 'Plugins du Mac', 'Module natif plus ancien (sans fenêtre) : pas d
     await page.evaluate(l => window.kh.setLang(l), l); await S(() => window.kh.showRack(window.kh.S.project.tracks[1].id)); await page.waitForSelector('#fx [data-act=auwindow]');
     expect((await page.textContent('#fx [data-act=auwindow]')).includes(w), `bouton en ${l}`);
   }
+});
+
+// ============ V18 : barre du haut en trois groupes, menus, barre d'arrangement, téléphone ============
+/** Lignes occupées par les groupes de la barre (regroupés par leur centre vertical). */
+const topRows = pg => pg.$$eval('#top > *', els => {
+  const mids = els.filter(e => getComputedStyle(e).display !== 'none').map(e => { const r = e.getBoundingClientRect(); return (r.top + r.bottom) / 2; }).sort((a, b) => a - b);
+  return mids.reduce((rows, m) => (rows.length && m - rows[rows.length - 1] < 24 ? rows : [...rows, m]), []);   // centres à moins de 24 px = même ligne
+});
+test('TB01', 'Barre du haut', 'Ordinateur : projet, jeu et sortie tiennent sur une seule ligne ; la barre d’arrangement est juste au-dessus des pistes', async () => {
+  for (const w of [1500, 1440]) {
+    await page.setViewportSize({ width: w, height: 900 }); await sleep(150);
+    const rows = await topRows(page); expect(rows.length === 1, `barre sur ${rows.length} lignes à ${w} px`);
+  }
+  await page.setViewportSize({ width: 1500, height: 900 });
+  const order = await page.$$eval('#top > *', els => els.map(e => e.className.split(' ').pop()));
+  expect(JSON.stringify(order) === JSON.stringify(['brand', 'proj', 'transport', 'display', 'play', 'more']), 'ordre des groupes : ' + order.join(','));
+  const ab = await page.$eval('#abar', e => e.getBoundingClientRect().bottom), ar = await page.$eval('#arr', e => e.getBoundingClientRect().top);
+  expect(Math.abs(ab - ar) < 2, `barre d’arrangement non collée aux pistes (${ab} / ${ar})`);
+  for (const id of ['snap', 'bZoomIn', 'bZoomOut', 'bTempoAdd', 'bMark', 'bNotes']) expect(await page.$(`#abar #${id}`), id + ' absent de la barre d’arrangement');
+  for (const id of ['bStop', 'bPlay', 'bRec', 'pos', 'time', 'bpm', 'bTap', 'sig', 'bMetro', 'bLoop', 'bExport', 'bHelp', 'pname', 'bUndo']) expect(await page.isVisible('#' + id), id + ' devrait être visible sans ouvrir de menu');
+});
+test('TB02', 'Barre du haut', 'Menus à la souris : un clic ouvre, un clic ailleurs ou un choix referme ; un seul menu ouvert à la fois', async () => {
+  await page.click('#mTake > summary'); expect(await page.isVisible('#bCount') && await page.isVisible('#loopS'), 'Prise : décompte et boucle non visibles');
+  await page.click('#mSettings > summary'); await sleep(50);
+  expect(!(await page.$eval('#mTake', d => d.open)) && await page.isVisible('#bAudio') && await page.isVisible('#lang'), 'ouvrir Réglages doit fermer Prise');
+  await page.mouse.click(700, 600); await sleep(50); expect(!(await page.$eval('#mSettings', d => d.open)), 'un clic ailleurs doit refermer le menu');
+  const before = (await proj()).punch; await page.click('#mTake > summary'); await page.click('#bPunch');
+  expect((await proj()).punch !== before && await page.$eval('#mTake', d => d.open), 'Punch doit basculer sans refermer Prise (on peut régler plusieurs options)');
+  await page.click('#bPunch'); await page.mouse.click(700, 600);
+  await page.click('#mExport > summary'); expect(await page.isVisible('#bMp3') && await page.isVisible('#bStems') && await page.isVisible('#bMidiOut'), 'formats d’export absents');
+  await page.click('#mExport > summary'); expect(!(await page.$eval('#mExport', d => d.open)), 'second clic doit refermer');
+  await menu('bVersions'); await page.waitForSelector('#lib[open]'); expect(!(await page.$eval('#menu', d => d.open)), 'un choix dans le menu doit le refermer'); await page.keyboard.press('Escape');
+});
+test('TB03', 'Barre du haut', 'Menus au clavier seul : Tab jusqu’à « Prise », Entrée ouvre, Espace règle le décompte, Échap referme et rend le focus', async () => {
+  await page.focus('#bLoop'); await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement?.parentElement?.id) === 'mTake', 'Tab après la boucle doit mener au menu Prise');
+  await page.keyboard.press('Enter'); expect(await page.$eval('#mTake', d => d.open), 'Entrée n’ouvre pas');
+  await page.keyboard.press('Tab'); expect(await page.evaluate(() => document.activeElement?.id) === 'bCount', 'Tab doit entrer dans le menu');
+  const c = (await proj()).countIn; await page.keyboard.press('Space'); expect((await proj()).countIn !== c, 'Espace ne règle pas le décompte');
+  await page.keyboard.press('Escape');
+  expect(!(await page.$eval('#mTake', d => d.open)) && await page.evaluate(() => document.activeElement?.parentElement?.id) === 'mTake', 'Échap doit refermer et rendre le focus au bouton Prise');
+  await clickIn('#bCount');
+  expect(await page.$eval('#mSettings > summary', e => e.getAttribute('aria-label')).then(l => /MIDI/.test(l)), 'le bouton ⚙ doit avoir un nom parlant');
+  expect(await page.$eval('#mTake > summary', e => !e.hasAttribute('aria-label') && e.textContent.includes('Prise')), 'le mot visible « Prise » doit rester son nom');
+});
+test('TB04', 'Barre du haut', 'Le bouton Boucle affiche sa plage et la suit quand on la change dans « Prise » ; les raccourcis ne changent pas', async () => {
+  await S(() => { const p = window.kh.S.project; p.loopStart = 0; p.loopLen = 4; p.loop = false; window.kh.commit(); });
+  expect((await page.textContent('#bLoop')).replace(/\s/g, '') === '⟲1→4', 'plage affichée : ' + await page.textContent('#bLoop'));
+  await reveal('#loopS'); await page.fill('#loopS', '3'); await page.keyboard.press('Tab'); await page.fill('#loopE', '6'); await page.keyboard.press('Tab');
+  expect((await page.textContent('#bLoop')).replace(/\s/g, '') === '⟲3→6' && /3.*6/.test(await page.getAttribute('#bLoop', 'aria-label')), 'plage non suivie');
+  await page.keyboard.press('Escape'); await page.mouse.click(700, 600);
+  await page.keyboard.press('l'); expect((await proj()).loop && await page.getAttribute('#bLoop', 'aria-pressed') === 'true', 'L ne bascule plus la boucle');
+  await page.keyboard.press('m'); const m = (await proj()).metronome; await page.click('#bMetro'); expect((await proj()).metronome !== m, 'bouton du métronome');
+  await page.keyboard.press('l'); await page.keyboard.press('m');
+  await S(() => { const p = window.kh.S.project; p.loopStart = 0; p.loopLen = 4; p.metronome = false; window.kh.commit(); });
+});
+test('TB05', 'Barre du haut', 'Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); pg.on('dialog', d => d.accept('Titre au doigt')); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    expect(await pg.$eval('#top', e => e.scrollWidth <= e.clientWidth + 1), 'la barre déborde sur téléphone');
+    for (const id of ['bPlay', 'bStop', 'bRec', 'pos', 'bpm', 'bMetro', 'bLoop', 'bUndo']) {
+      const b = await pg.locator('#' + id).boundingBox(); expect(b && b.x >= 0 && b.x + b.width <= 375, `${id} hors écran : ${JSON.stringify(b)}`);
+    }
+    expect((await topRows(pg)).length <= 2, 'la barre doit tenir sur deux lignes');
+    expect(!(await pg.isVisible('#bExport')), 'Exporter doit être rangé dans ☰');
+    await pg.tap('#more > summary'); expect(await pg.isVisible('#bExport') && await pg.isVisible('#bHelp'), '☰ n’affiche pas export et aide');
+    const panel = await pg.locator('#more > .grp.out').boundingBox(); expect(panel.x >= 0 && panel.x + panel.width <= 375, 'panneau ☰ hors écran');
+    await pg.tap('#mSettings > summary'); expect(await pg.isVisible('#bAudio'), 'réglages inaccessibles depuis ☰');
+    const ls = await pg.locator('#mSettings .menu-list').boundingBox(); expect(ls.x >= 0 && ls.x + ls.width <= 375, 'liste des réglages hors écran');
+    await pg.tap('#tabs [data-tab=editor]'); expect(!(await pg.$eval('#more', d => d.open)) && !(await pg.$eval('#mSettings', d => d.open)), 'toucher ailleurs doit refermer ☰ et les réglages');
+    await pg.tap('#menu > summary'); expect(await pg.isVisible('#bRename'), 'Renommer absent du menu Projet sur téléphone');
+    await pg.tap('#bRename'); await sleep(100);
+    expect(await pg.evaluate(() => window.kh.S.project.name) === 'Titre au doigt', 'renommer au doigt ne marche pas');
+    await pg.tap('#mTake > summary'); expect(await pg.isVisible('#bPunch'), 'Prise inaccessible au doigt');
+    await pg.screenshot({ path: path.join(__dirname, 'shots/v18-phone.png') });
+  } finally { await ctx2.close(); }
+});
+test('TB06', 'Barre du haut', 'Écran moyen (1100 px) : la barre passe proprement sur deux lignes, rien n’est coupé ni caché', async () => {
+  await page.setViewportSize({ width: 1100, height: 800 }); await sleep(150);
+  try {
+    expect(await page.$eval('#top', e => e.scrollWidth <= e.clientWidth + 1), 'débordement à 1100 px');
+    for (const id of ['bPlay', 'bpm', 'bLoop', 'bExport', 'bHelp', 'pname']) {
+      const b = await page.locator('#' + id).boundingBox(); expect(b && b.x >= 0 && b.x + b.width <= 1100, `${id} coupé : ${JSON.stringify(b)}`);
+    }
+    expect((await topRows(page)).length <= 2, 'plus de deux lignes à 1100 px');
+  } finally { await page.setViewportSize({ width: 1500, height: 900 }); }
+});
+test('TB07', 'Barre du haut', 'Nouveaux menus et bulles traduits en anglais et en espagnol', async () => {
+  for (const [l, take, more] of [['en', 'Take', 'More controls'], ['es', 'Toma', 'Más controles']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.textContent('#mTake > summary')).includes(take) && (await page.getAttribute('#more > summary', 'aria-label')) === more, `menus non traduits en ${l}`);
+    expect(!/Prise|Réglages|Outils/.test((await page.getAttribute('#mSettings > summary', 'aria-label')) + (await page.getAttribute('#abar', 'aria-label'))), `du français subsiste en ${l}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
 });
 
 (async () => {

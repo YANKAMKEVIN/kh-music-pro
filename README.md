@@ -14,6 +14,20 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
+## Barre du haut repensée (v0.18)
+
+La barre du haut tient sur une ligne et se lit en trois groupes :
+
+- **Projet**, à gauche : nom du morceau, menu **Projet ▾** (nouveau, bibliothèque, versions, ouvrir, enregistrer, importer), annuler et rétablir.
+- **Jouer**, au centre : stop, lecture, enregistrement, compteur (mesure, temps, tempo), Tap, mesure (4/4), métronome ♪, boucle (le bouton affiche sa plage, par exemple « ⟲ 1 → 4 »), menu **Prise ▾** (décompte, punch, plage de la boucle).
+- **Sortie**, à droite : **Exporter** (WAV) avec son menu ▾ (MP3, pistes séparées, MIDI), réglages ⚙ (clavier MIDI, carte son, langue) et aide.
+
+Une **barre d'arrangement**, juste au-dessus des pistes, réunit la grille, le zoom, les changements de tempo, les repères et les notes du projet.
+
+Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ».
+
+Les menus s'ouvrent d'un clic ou d'un toucher et se referment d'un clic ailleurs ou avec Échap (le focus revient au bouton). Les raccourcis clavier ne changent pas.
+
 ## Piano électrique, basse et percussions (v0.17.1)
 
 Trois ajouts viennent compléter le piano acoustique et la batterie Studio :
@@ -142,7 +156,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 332 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 339 cas).
 Le plus simple, serveur compris :
 
 ```bash
