@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-338 cas réussis sur 339.
+345 cas réussis sur 345.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -120,7 +120,7 @@
 | AR02 | Arpégiateur | Modes descendant et aller-retour, avec un accord à un doigt | OK |
 | AR03 | Arpégiateur | En enregistrement, l'arpège est calé sur la grille et écrit dans le clip | OK |
 | MK01 | Repères | Poser des repères, y sauter, les renommer et les supprimer | OK |
-| MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | ÉCHEC : barre supérieure non compacte (109 px) |
+| MB01 | Téléphone | Écran de téléphone tactile : mise en page compacte, lecture, séquenceur, pads, menu et onglets au doigt | OK |
 | MB02 | Téléphone | Au doigt : déplacer un clip et dessiner une courbe d'automation | OK |
 | OK01 | Clavier à l'écran | Afficher le clavier, jouer une touche à la souris, glisser vers une autre, changer d'octave | OK |
 | OK02 | Clavier à l'écran | Sur écran tactile : clavier affiché d'office, accord à deux doigts | OK |
@@ -343,3 +343,9 @@
 | TB05 | Barre du haut | Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise | OK |
 | TB06 | Barre du haut | Écran moyen (1100 px) : la barre passe proprement sur deux lignes, rien n’est coupé ni caché | OK |
 | TB07 | Barre du haut | Nouveaux menus et bulles traduits en anglais et en espagnol | OK |
+| TH01 | Têtes de piste | Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles | OK |
+| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | OK |
+| TH03 | Têtes de piste | Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus | OK |
+| TH04 | Têtes de piste | Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom | OK |
+| TH05 | Têtes de piste | Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran | OK |
+| TH06 | Têtes de piste | Menu ⋯ et repère ❄ traduits en anglais et en espagnol | OK |

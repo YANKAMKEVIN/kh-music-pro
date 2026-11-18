@@ -28,9 +28,29 @@ function wireMenus() {
     const inner = openMenus().filter(d => d.contains(document.activeElement)).pop() ?? openMenus().pop();
     if (inner) { inner.open = false; inner.querySelector('summary')?.focus(); e.stopPropagation(); }
   }, true);
+  // Les pistes défilent : un menu ⋯ ouvert se refermerait loin de son bouton, on le ferme.
+  // Position du bouton ⋯ relevée au clic même (l'évènement d'ouverture arrive plus tard, parfois après un défilement).
+  document.addEventListener('click', e => {
+    const d = (e.target as Element)?.closest?.('details.tmenu') as HTMLDetailsElement | null;
+    if (d && (e.target as Element).closest('summary')) d.dataset.y = String(Math.round(d.querySelector('summary')!.getBoundingClientRect().top));
+  }, true);
+  // Seulement si son bouton a vraiment bougé : le défilement qui amène la piste à l'écran juste avant l'ouverture ne compte pas.
+  document.addEventListener('scroll', () => {
+    for (const d of document.querySelectorAll<HTMLDetailsElement>('details.tmenu[open]')) {
+      const y = Math.round(d.querySelector('summary')!.getBoundingClientRect().top);
+      if (Math.abs(y - +(d.dataset.y ?? y)) > 4) d.open = false;
+    }
+  }, true);
   // Téléphone : la liste s'affiche sur toute la largeur, juste sous le bouton qui l'a ouverte.
   document.addEventListener('toggle', e => {
     const d = e.target as HTMLDetailsElement;
+    // Menu ⋯ d'une piste : liste posée à côté du bouton, au-dessus de la zone des pistes (qui défile et la couperait).
+    if (d.open && d.classList?.contains('tmenu')) {
+      const list = d.querySelector<HTMLElement>(':scope > .menu-list')!, r = d.querySelector('summary')!.getBoundingClientRect();
+      list.style.left = Math.round(Math.min(r.left, innerWidth - list.offsetWidth - 8)) + 'px';
+      list.style.top = Math.round(r.bottom + 4 + list.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - 4 - list.offsetHeight) : r.bottom + 4) + 'px';
+      return;
+    }
     if (!d.open || !d.matches?.('details.menu, details.more') || matchMedia('(min-width: 761px)').matches) return;
     const list = d.querySelector<HTMLElement>(':scope > .menu-list, :scope > .grp.out'), r = d.querySelector('summary')!.getBoundingClientRect();
     if (list) list.style.top = Math.round(r.bottom + 6) + 'px';

@@ -26,6 +26,8 @@ Une **barre d'arrangement**, juste au-dessus des pistes, réunit la grille, le z
 
 Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ».
 
+**Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom.
+
 Les menus s'ouvrent d'un clic ou d'un toucher et se referment d'un clic ailleurs ou avec Échap (le focus revient au bouton). Les raccourcis clavier ne changent pas.
 
 ## Piano électrique, basse et percussions (v0.17.1)
@@ -156,7 +158,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 339 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 345 cas).
 Le plus simple, serveur compris :
 
 ```bash
