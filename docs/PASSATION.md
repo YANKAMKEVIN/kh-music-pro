@@ -730,6 +730,8 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 
 - Campagne complète finale : **395/395** sur le MacBook Pro M3 (copie figée, 18/11/2026), puis `npm run build` OK. Une campagne précédente avait donné 393/395 : LT01 (doublons de boutons de prise, corrigé) et AD06, accordeur sensible à la charge du Mac (1 échec sur 8 passages, code non touché par la V19).
 
+- Après le chantier 6 (19/11/2026) : campagne complète **400/400**, `npm run build`, essai réel des effets du Mac `qa/au-bridge.cjs 20` OK, démarrage de la version bureau `qa/desktop-smoke.cjs` OK, essai réel des instruments `qa/au-instrument.cjs` 15/15.
+
 ### Méthode de QA apprise
 
 - Une campagne lancée sur le serveur de développement du dossier de travail est faussée par toute modification de fichier pendant qu'elle tourne (rechargement de la page). La campagne complète tourne donc sur une copie figée du dossier (`rsync` sans `node_modules`, lien vers celui du dossier), comme le fait `qa/all.sh` sur le port 5199.
