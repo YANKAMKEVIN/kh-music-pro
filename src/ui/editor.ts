@@ -5,9 +5,9 @@ import { audioFiles, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, do
 import { engine } from '../audio/engine';
 import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
-import { kb, noteOff, noteOn, padHit, padRelease } from '../input';
+import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
-import { BAR, CATS, Clip, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
+import { BAR, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
 import { ICON, drawFades, drawWave } from './arr';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
@@ -252,6 +252,7 @@ function synthPanel(tr: Track, collapsible = false) {
   return h('div', { class: 'synth' },
     ...head, ...specific,
     sl('octave', -2, 2, 1, 'octave', v => (v > 0 ? '+' : '') + v),
+    slider(t('syn.bend'), 1, 12, 1, sp.bend ?? 2, v => { sp.bend = v; }, v => '± ' + v + ' st'),
     sl('cutoff', 80, 12000, 10, 'cutoff', v => Math.round(v) + ' Hz'), sl('reso', 0, 18, 0.1, 'reso', v => v.toFixed(1)),
     sl('envAmt', 0, 1, 0.01, 'envAmt', pct),
     sl('a', 0.002, 1.5, 0.001, 'a', ms), sl('d', 0.01, 3, 0.01, 'd', ms), sl('s', 0, 1, 0.01, 's', pct), sl('r', 0.01, 3, 0.01, 'r', ms));
@@ -302,7 +303,77 @@ function screenKeys() {
     addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
   };
   const oct = (d: number, label: string) => h('button', { class: 'pill', data: { act: d < 0 ? 'octdown' : 'octup' }, 'aria-label': t('help.k.octave') + ' ' + label, title: t('help.k.octave'), onclick: () => { kb.octave = clamp(kb.octave + d, -3, 3); emit(); } }, label);
-  return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, oct(-1, '−'), el, oct(1, '+'));
+  return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, wheel('pb'), wheel('mod'), oct(-1, '−'), el, oct(1, '+'));
+}
+
+// ---------- Molettes à l'écran (V19) : pitch bend (revient au centre au relâchement) et modulation (reste où on la laisse) ----------
+let bendHeld = 0;
+const ctlFmt = (k: CtlKind, v: number) => k === 'pb' ? (v > 0 ? '+' : '') + Math.round(v * 100) + ' %' : Math.round(v * 100) + ' %';
+function wheel(k: 'pb' | 'mod') {
+  const lo = k === 'pb' ? -1 : 0, v0 = k === 'pb' ? bendHeld : engine.ctlNow.get(S.selTrack)?.mod ?? 0;
+  const el = h('div', { class: 'wheel ' + k, role: 'slider', tabIndex: 0, 'aria-label': t('ctl.' + k), title: t('ctl.' + k + 'Tip'), 'aria-orientation': 'vertical',
+    'aria-valuemin': String(lo), 'aria-valuemax': '1', 'aria-valuenow': v0.toFixed(2), 'aria-valuetext': ctlFmt(k, v0), data: { ctl: k }, style: `--v:${(v0 - lo) / (1 - lo)}` },
+    h('i', {}), h('span', { class: 'wl', 'aria-hidden': 'true' }, k === 'pb' ? '↕' : '〰'));
+  // Le glissé est suivi sur la fenêtre et l'affichage retrouvé par sélecteur : un redessin pendant le geste ne l'interrompt pas.
+  const set = (v: number) => {
+    v = Math.round(clamp(v, lo, 1) * 100) / 100;
+    if (k === 'pb') bendHeld = v;
+    ctlIn(k, v);
+    for (const w of document.querySelectorAll<HTMLElement>(`.wheel[data-ctl=${k}]`)) { w.style.setProperty('--v', String((v - lo) / (1 - lo))); w.setAttribute('aria-valuenow', v.toFixed(2)); w.setAttribute('aria-valuetext', ctlFmt(k, v)); }
+  };
+  const back = () => { if (k === 'pb') set(0); };
+  el.onpointerdown = e => {
+    e.preventDefault(); el.focus();
+    const r = el.getBoundingClientRect(), at = (ev: PointerEvent) => lo + (1 - lo) * (r.bottom - ev.clientY) / r.height;
+    set(at(e)); followDrag(e, ev => set(at(ev)), back, back);
+  };
+  const cur = () => +(document.querySelector(`.wheel[data-ctl=${k}]`)?.getAttribute('aria-valuenow') ?? 0);
+  el.onkeydown = e => {
+    const d = { ArrowUp: 0.1, ArrowRight: 0.1, ArrowDown: -0.1, ArrowLeft: -0.1 }[e.key];
+    if (d !== undefined) set(cur() + d); else if (e.key === 'Home') set(lo); else if (e.key === 'End') set(1); else return;
+    e.preventDefault(); e.stopPropagation();
+  };
+  // Pitch bend au clavier : comme une vraie molette, il revient au centre quand on lâche la touche.
+  el.onkeyup = e => { if (/^Arrow|Home|End/.test(e.key)) back(); };
+  el.onblur = back;
+  return el;
+}
+
+// ---------- Ligne des contrôles joués sous le piano roll (V19) ----------
+/** Hauteur (0 en haut, 1 en bas) d'une valeur de contrôle dans la ligne. */
+const ctlY = (k: CtlKind, v: number) => k === 'pb' ? (1 - v) / 2 : 1 - v;
+function ctlLane(c: Clip, W: number) {
+  const k = S.ctlKind, H = 48, pts = () => c.ctl?.[k] ?? [];
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(W)); svg.setAttribute('height', String(H)); svg.setAttribute('class', 'ctl-svg');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); svg.append(line);
+  const draw = () => {
+    const list = pts(), rest = CTL_REST[k], xy: string[] = [`0,${ctlY(k, rest) * H}`];
+    for (const p of list) { if (!xy.length || xy.length === 1) xy.push(`${p.s * SW},${ctlY(k, rest) * H}`); xy.push(`${p.s * SW},${ctlY(k, p.v) * H}`); }
+    xy.push(`${W},${ctlY(k, list.length ? list[list.length - 1].v : rest) * H}`);
+    line.setAttribute('points', xy.join(' '));
+  };
+  draw();
+  const lane = h('div', { class: 'vel ctl-lane', style: `width:${W}px;--sw:${SW}px`, role: 'img', 'aria-label': `${t('ctl.' + k)} : ${t('ctl.points', pts().length)}`, data: { kind: k } });
+  lane.append(svg);
+  // Dessin à main levée : la courbe tracée remplace l'ancienne sur la zone parcourue.
+  lane.onpointerdown = e => {
+    e.preventDefault();
+    const r = lane.getBoundingClientRect(); let last = -1, changed = false;
+    const apply = (ev: PointerEvent) => {
+      const s = clamp(Math.round((ev.clientX - r.left) / SW * 8) / 8, 0, c.patLen! - 1 / 8), y = clamp((ev.clientY - r.top) / r.height, 0, 1);
+      const v = Math.round((k === 'pb' ? 1 - 2 * y : 1 - y) * 100) / 100;
+      const a = last < 0 ? s : Math.min(last, s), b = last < 0 ? s : Math.max(last, s);
+      const ctl = c.ctl ??= {}, list = (ctl[k] ?? []).filter(p => p.s < a - 1e-6 || p.s > b + 1e-6 || (p.s === last && last !== s));
+      list.push({ s, v }); list.sort((x, y2) => x.s - y2.s); ctl[k] = list; last = s; changed = true; draw();
+    };
+    apply(e);
+    followDrag(e, apply, () => { if (changed) commit(); }, revert);
+  };
+  const sel = h('select', { 'aria-label': t('ctl.kind'), title: t('ctl.kind'), data: { role: 'ctlkind' } }, ...(['pb', 'mod', 'at'] as const).map(x => h('option', { value: x, selected: x === k }, t('ctl.short.' + x))));
+  sel.onchange = () => { S.ctlKind = sel.value as CtlKind; emit(); };
+  const clear = h('button', { class: 'mini', data: { act: 'ctlclear' }, title: t('ctl.clear'), 'aria-label': t('ctl.clear'), disabled: !pts().length, onclick: () => { if (c.ctl) { delete c.ctl[k]; if (!Object.keys(c.ctl).length) delete c.ctl; } commit(); } }, '✕');
+  return h('div', { class: 'vel-row ctl-row' }, h('div', { class: 'vel-lbl ctl-lbl' }, sel, clear), lane);
 }
 
 // ---------- Sélection de notes ----------
@@ -339,7 +410,9 @@ function gridTools(c: Clip) {
   const sel = h('select', { 'aria-label': t('ed.grid'), title: t('ed.gridTip'), data: { role: 'notegrid' } },
     ...[['16', '1/16'], ['32', '1/32'], ['8t', t('grid.8t')], ['16t', t('grid.16t')], ['free', t('grid.free')]].map(([v, l]) => h('option', { value: v, selected: S.grid === v }, l)));
   sel.onchange = () => { S.grid = sel.value; emit(); };
+  const has = !!c.ctl && Object.values(c.ctl).some(p => p?.length), on = S.ctlShow || has;
   return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.grid'), sel),
+    h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'ctlshow' }, 'aria-pressed': String(on), disabled: has, title: t('ctl.showTip'), onclick: () => { S.ctlShow = !S.ctlShow; emit(); } }, '〰 ' + t('ctl.lane')),
     h('button', { title: t('tip.quantize'), data: { act: 'quantize' }, onclick: () => { const sel2 = c.notes!.filter(n => selNotes.has(n)); quantizeNotes(sel2.length ? sel2 : c.notes!, GRIDS[S.grid] ?? 1, c.patLen!); } }, '🧲 ' + t('act.quantize')));
 }
 
@@ -469,8 +542,9 @@ function pianoRoll(tr: Track, c: Clip) {
     apply(e);
     followDrag(e, apply, () => { if (changed) commit(); }, revert);
   };
+  const showCtl = S.ctlShow || (!!c.ctl && Object.values(c.ctl).some(p => p?.length));
   const scroll = h('div', { class: 'pr' }, h('div', { class: 'pr-inner' }, keys, grid),
-    h('div', { class: 'vel-row' }, h('div', { class: 'vel-lbl', title: t('tip.velocity') }, t('ed.velocity')), vel));
+    h('div', { class: 'pr-foot' }, h('div', { class: 'vel-row' }, h('div', { class: 'vel-lbl', title: t('tip.velocity') }, t('ed.velocity')), vel), showCtl && ctlLane(c, W)));
   const key = c.id;
   scroll.onscroll = () => { scrollKey = key; scrollPos = { x: scroll.scrollLeft, y: scroll.scrollTop }; };
   const restore = scrollKey === key ? { ...scrollPos } : null;

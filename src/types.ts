@@ -29,7 +29,19 @@ export interface Clip {
   fadeIn?: number; fadeOut?: number;
   /** Prises multiples (enregistrement en boucle) : décalage de chaque prise dans le son, et prise choisie. */
   takes?: number[]; take?: number;
+  /** Contrôles joués (V19), par clip d'instrument : pitch bend, molette de modulation, aftertouch. Positions en pas, dans le motif, comme les notes. */
+  ctl?: Partial<Record<CtlKind, Pt[]>>;
 }
+
+/** pb = pitch bend (-1..1, 0 au repos), mod = molette de modulation CC1 (0..1), at = aftertouch (0..1). */
+export type CtlKind = 'pb' | 'mod' | 'at';
+export const CTL_KINDS: CtlKind[] = ['pb', 'mod', 'at'];
+/** Valeur de repos de chaque contrôle. */
+export const CTL_REST: Record<CtlKind, number> = { pb: 0, mod: 0, at: 0 };
+/** Vibrato de la molette à fond (cents), de l'aftertouch à fond (cents), et gonflement de volume de l'aftertouch à fond (gain). */
+export const MOD_CENTS = 40, AT_CENTS = 20, AT_GAIN = 0.4;
+/** Valeur d'un contrôle à la position `s` : la valeur de repos avant le premier point, puis la courbe. */
+export const ctlAt = (pts: Pt[] | undefined, s: number, k: CtlKind) => (!pts?.length || s < pts[0].s - 1e-9 ? CTL_REST[k] : autoAt(pts, s));
 
 /** Point d'automation : s = position (pas), v = valeur (volume 0..1, pan et filtre -1..1). */
 export interface Pt { s: number; v: number }
@@ -57,6 +69,7 @@ export interface SynthParams {
   hold: boolean;                         // boucle de maintien des instruments échantillonnés
   touch: number;                          // nuances : jouer doucement assombrit le timbre (0 = volume seul)
   bank?: string;                          // instrument échantillonné (moteur « multi »)
+  bend?: number;                          // plage du pitch bend en demi-tons (V19, 2 par défaut)
 }
 
 /** Effet ajouté dans la chaîne d'une tranche. `p` = réglages ; pour un plugin web : `url`, `name` et `state`. */

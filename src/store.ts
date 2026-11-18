@@ -17,6 +17,7 @@ export const S = {
   tuneAmt: 1,                                         // force de la correction de justesse
   stretch: { clip: '', pct: 100, semis: 0 },          // étirement en attente pour le clip audio ouvert
   synthOpen: false, // réglages détaillés de l'instrument dépliés dans le piano roll
+  ctlShow: false, ctlKind: 'pb' as 'pb' | 'mod' | 'at', // V19 : ligne des contrôles joués sous le piano roll, et contrôle affiché
   px: 11,     // pixels par pas dans l'arrangement
   snap: 4,    // grille magnétique, en pas
   file: { path: '', name: '' }, // version bureau : fichier .khm lié au projet ouvert ('' = aucun)

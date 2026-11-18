@@ -4,7 +4,7 @@ import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, swingT, warmWarp } from './graph';
 import { S, buffers } from '../store';
 import { IoOptions, NativeIO, nativeName } from './native-io';
-import { BAR, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
+import { BAR, CtlKind, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
@@ -251,6 +251,15 @@ class Engine {
     this.voices.get(key)?.release(this.ctx.currentTime);
     const v = playNote(this.mix, n.input, track.synth, midi, this.ctx.currentTime + 0.003, null, vel, buffers);
     if (v) this.voices.set(key, v);
+  }
+  /** Contrôles joués en direct (V19) : dernière valeur reçue par piste (pitch bend, modulation, aftertouch). */
+  ctlNow = new Map<string, Partial<Record<CtlKind, number>>>();
+  ctl(track: Track, k: CtlKind, v: number) {
+    if (track.type !== 'synth') return;
+    this.ctx.resume();
+    if (!this.mix.tracks.get(track.id)?.ctl) this.sync();
+    this.mix.ctlLive(track.id, k, v);
+    this.ctlNow.set(track.id, { ...this.ctlNow.get(track.id), [k]: v });
   }
   /** Touches tenues pendant le chargement de leur instrument. */
   private pendingOn = new Map<string, object>();

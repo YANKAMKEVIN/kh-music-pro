@@ -14,6 +14,13 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
+## Jeu expressif et production (v0.19)
+
+- **Pitch bend, molette de modulation et aftertouch** du clavier MIDI (le DGX-670 envoie les deux premiers) : joués en direct sur la piste choisie, enregistrés dans le clip, gardés dans le projet, rendus à l'export audio et écrits dans l'export MIDI (relus à l'import). Plage du bend réglable (± 2 demi-tons par défaut, jusqu'à ± 12) dans les réglages de l'instrument. La molette ajoute du vibrato ; l'aftertouch gonfle le son et ajoute un léger vibrato.
+  - **Molettes à l'écran**, à gauche du clavier à l'écran : pitch bend (revient au centre au relâchement) et modulation (reste où on la laisse), à la souris, au doigt ou au clavier (flèches).
+  - **Ligne des contrôles** sous le piano roll (bouton « 〰 Contrôles ») : voir, dessiner à la souris ou au doigt, effacer le bend, la modulation ou la pression d'un clip.
+  - Une molette déjà assignée à un réglage du mixeur garde son assignation.
+
 ## Barre du haut repensée (v0.18)
 
 La barre du haut tient sur une ligne et se lit en trois groupes :

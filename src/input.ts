@@ -1,7 +1,7 @@
 import { engine } from './audio/engine';
 import { t } from './i18n';
 import { S, emit, findTrack } from './store';
-import { BAR, Clip, GRIDS, NPADS, Note, Track, chordOf, newPatternClip, snapTo, stepDur } from './types';
+import { BAR, CTL_REST, Clip, CtlKind, GRIDS, NPADS, Note, Track, chordOf, newPatternClip, snapTo, stepDur } from './types';
 
 /** Décalage d'octave du clavier d'ordinateur. */
 export const kb = { octave: 0, chord: 1, arp: 'off' as 'off' | 'up' | 'down' | 'updown' | 'random', arpRate: 2, repeat: 0 };
@@ -151,7 +151,33 @@ export function noteOff(midi: number) {
   }
 }
 
-export function allNotesOff() { pedals.clear(); pedalNotes.clear(); for (const m of [...held.keys()]) noteOff(m); rolls.clear(); }
+// ---------- Contrôles joués (V19) : pitch bend, molette de modulation, aftertouch ----------
+/** Dernier point enregistré par contrôle (clip, position dans le motif, valeur) : sert à alléger la courbe et à remplacer l'ancienne. */
+const ctlRec = new Map<CtlKind, { clip: string; s: number; v: number }>();
+/** Contrôle reçu (MIDI ou molettes à l'écran) : joué sur la piste choisie et, si l'enregistrement est armé, écrit dans le clip. */
+export function ctlIn(k: CtlKind, value: number) {
+  const tr = findTrack(S.selTrack);
+  if (!tr || tr.type !== 'synth' || !Number.isFinite(value)) return;
+  const v = Math.round(Math.max(k === 'pb' ? -1 : 0, Math.min(1, value)) * 1000) / 1000;
+  engine.ctl(tr, k, v);
+  if (!isRec(tr)) return;
+  const { clip, local } = recSpot(tr, engine.currentStep()), s = Math.round(local * 1000) / 1000, last = ctlRec.get(k);
+  const same = last && last.clip === clip.id;
+  // Courbe allégée : au plus un point par 1/32 de pas, sauf pour le retour au repos (une molette relâchée doit revenir à zéro exactement).
+  if (same && last.v === v) return;
+  if (same && s >= last.s && s - last.s < 1 / 32 && v !== CTL_REST[k]) return;
+  const from = same && s > last.s && s - last.s < 4 ? last.s : s - 1e-6;
+  ctlRec.set(k, { clip: clip.id, s, v });
+  later(() => {
+    const ctl = clip.ctl ??= {};
+    // En repassant sur une zone déjà jouée (boucle), le nouveau geste remplace l'ancien.
+    const pts = (ctl[k] ?? []).filter(p => !(p.s > from && p.s <= s));
+    pts.push({ s, v }); pts.sort((a, b) => a.s - b.s); ctl[k] = pts;
+  });
+}
+const bendOf = (lsb: number, msb: number) => { const x = ((msb << 7) | lsb) - 8192; return x / (x < 0 ? 8192 : 8191); };
+
+export function allNotesOff() { ctlRec.clear(); pedals.clear(); pedalNotes.clear(); for (const m of [...held.keys()]) noteOff(m); rolls.clear(); }
 engine.onStop = allNotesOff;
 
 // ---------- Clavier maître MIDI ----------
@@ -188,10 +214,18 @@ function applyCC(target: string, v: number) {
 }
 
 export function onMidi(d: Uint8Array | number[]) {
-  if (d.length < 3 || !d.every(x => Number.isInteger(x) && x >= 0 && x <= 255)) return;
+  if (d.length < 2 || !d.every(x => Number.isInteger(x) && x >= 0 && x <= 255)) return;
   const cmd = d[0] & 0xf0;
   const channel = d[0] & 0x0f;
+  // Aftertouch de canal : un seul octet de données.
+  if (cmd === 0xd0) { ctlIn('at', d[1] / 127); return; }
+  if (d.length < 3) return;
+  if (cmd === 0xe0) { ctlIn('pb', bendOf(d[1], d[2])); return; }
+  // Aftertouch polyphonique (par touche) : ramené à une pression commune à la piste.
+  if (cmd === 0xa0) { ctlIn('at', d[2] / 127); return; }
   if (cmd === 0xb0) {
+    // Molette de modulation, sauf si elle a été assignée à un réglage du mixeur (ou pendant l'assignation).
+    if (d[1] === 1 && !learn.on && !learn.map['1']) { ctlIn('mod', d[2] / 127); return; }
     if (d[1] === 64) {
       if (d[2] >= 64) pedals.add(channel);
       else { pedals.delete(channel); for (const n of pedalNotes.get(channel) ?? []) noteOff(n); pedalNotes.delete(channel); }

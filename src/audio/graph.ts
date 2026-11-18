@@ -6,7 +6,7 @@ import { AuInstance, auBridge, auFromNorm, createAu } from './au';
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
 const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
   i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
-import { Clip, FX, Insert, KITS, Project, Pt, SynthParams, Track, autoAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, stepDur as sd, timeOf } from '../types';
+import { AT_CENTS, AT_GAIN, CTL_KINDS, CTL_REST, Clip, CtlKind, FX, Insert, KITS, MOD_CENTS, Project, Pt, SynthParams, Track, autoAt, ctlAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, stepDur as sd, timeOf } from '../types';
 import { stretchBuffer } from './stretch';
 
 export interface TrackNodes {
@@ -21,7 +21,11 @@ export interface TrackNodes {
   /** Compensation de latence : retard ajouté après la chaîne d'effets, pour rester calé sur la tranche la plus en retard. */
   pdc: DelayNode;
   crush: WaveShaperNode; crushIn: GainNode; crushOut: GainNode; crushVal?: number; chWet: GainNode; trem: GainNode; tremDepth: GainNode; tremLfo: OscillatorNode;
+  /** Contrôles joués (V19), pistes d'instrument : hauteur commune à toutes les voix (pitch bend + vibrato), plage du bend en demi-tons. */
+  ctl?: CtlNodes;
 }
+/** `pitch` est branché sur le désaccord (detune) de chaque voix de la piste : le pitch bend et le vibrato bougent toutes les notes tenues. */
+export interface CtlNodes { pitch: GainNode; bend: ConstantSourceNode; lfo: OscillatorNode; gMod: GainNode; gAt: GainNode; range: number }
 /** Un effet de la chaîne : on y entre par `in`, on en sort par `out` ; `set` applique ses réglages. */
 export interface InsNode { in: GainNode; out: GainNode; set(i: Insert, p: Project, set: (prm: AudioParam, v: number) => void): void; wam?: WamInstance; loading?: boolean }
 export interface Voice { release(at: number): void }
@@ -64,6 +68,8 @@ export class Mix {
   sampleTurns = new Map<string, number>();
   instrumentTurns = new WeakMap<AudioNode, Map<number, number>>();
   openHats = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
+  /** Entrée d'une piste d'instrument → son réglage de hauteur commun (pitch bend, vibrato), pour les voix qui y jouent. */
+  pitchFor = new WeakMap<AudioNode, AudioNode>();
 
   constructor(public ctx: BaseAudioContext, public live: boolean) {
     this.master = ctx.createGain();
@@ -350,6 +356,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
         n.eqSig = sig; n.compOn = t.comp;
       }
       this.syncInserts(t, n, p);
+      if (t.type === 'synth' && !t.frozen) this.ctlNodes(n).range = t.synth?.bend ?? 2;
       const audible = !t.mute && (isBus || !anySolo || t.solo);
       this.set(n.fader.gain, audible ? t.vol : 0);
       if (!au?.pan?.length) this.set(n.pan.pan, t.pan);
@@ -414,6 +421,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     for (const n of this.tracks.values()) {
       for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain]) prm.cancelScheduledValues(now);
       n.auto.gain.setTargetAtTime(1, now, 0.015); n.duck.gain.setTargetAtTime(1, now, 0.015);
+      this.ctlRest(n, now, true);
     }
     // Réglages d'effets automatisés : rampes annulées, minuteries des plugins du Mac arrêtées ; sync remet les valeurs fixes.
     for (const id of this.auTimers) clearTimeout(id);
@@ -437,6 +445,54 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     const out = new Float32Array(freqs.length), mag = new Float32Array(freqs.length), ph = new Float32Array(freqs.length);
     for (const f of [n.lp, n.hp, n.low, n.mid, n.high]) { f.getFrequencyResponse(freqs as Float32Array<ArrayBuffer>, mag, ph); for (let i = 0; i < out.length; i++) out[i] += 20 * Math.log10(Math.max(1e-6, mag[i])); }
     return out;
+  }
+
+  // ---------- Contrôles joués (V19) : pitch bend, modulation, aftertouch ----------
+  /** Crée (une fois) les nœuds de contrôle d'une piste d'instrument. */
+  private ctlNodes(n: TrackNodes): CtlNodes {
+    if (n.ctl) return n.ctl;
+    const c = this.ctx, pitch = c.createGain(), bend = c.createConstantSource(), lfo = c.createOscillator(), gMod = c.createGain(), gAt = c.createGain();
+    bend.offset.value = 0; bend.connect(pitch); bend.start();
+    lfo.frequency.value = 5.5; gMod.gain.value = 0; gAt.gain.value = 0;
+    lfo.connect(gMod).connect(pitch); lfo.connect(gAt).connect(pitch); lfo.start();
+    this.pitchFor.set(n.input, pitch);
+    return (n.ctl = { pitch, bend, lfo, gMod, gAt, range: 2 });
+  }
+  /** Paramètres audio pilotés par un contrôle, avec la conversion de sa valeur (cents de hauteur, gain). */
+  private ctlParams(n: TrackNodes, k: CtlKind): [AudioParam, (v: number) => number][] {
+    const c = n.ctl!;
+    if (k === 'pb') return [[c.bend.offset, v => v * c.range * 100]];
+    if (k === 'mod') return [[c.gMod.gain, v => v * MOD_CENTS]];
+    return [[c.gAt.gain, v => v * AT_CENTS], [n.input.gain, v => 1 + v * AT_GAIN]];
+  }
+  /** Jeu en direct : le contrôle prend sa nouvelle valeur tout de suite (lissée sur quelques millisecondes). */
+  ctlLive(trackId: string, k: CtlKind, v: number) {
+    const n = this.tracks.get(trackId);
+    if (!n?.ctl) return;
+    const now = this.ctx.currentTime;
+    for (const [prm, map] of this.ctlParams(n, k)) { prm.cancelScheduledValues(now); prm.setTargetAtTime(map(v), now, 0.004); }
+  }
+  /** Remet tous les contrôles d'une piste au repos (arrêt, fin de clip). */
+  ctlRest(n: TrackNodes, at: number, cancel: boolean) {
+    if (!n.ctl) return;
+    for (const k of CTL_KINDS) for (const [prm, map] of this.ctlParams(n, k)) {
+      if (cancel) prm.cancelScheduledValues(at);
+      if (this.live && cancel) prm.setTargetAtTime(map(CTL_REST[k]), at, 0.01); else prm.setValueAtTime(map(CTL_REST[k]), at);
+    }
+  }
+  /** Lecture d'un clip : programme les contrôles enregistrés qui tombent dans ce pas (même chemin à l'écoute et à l'export). */
+  schedCtl(n: TrackNodes, c: Clip, local: number, t: number, dur: number, remain: number, first: boolean) {
+    if (!n.ctl || !c.ctl) return;
+    for (const k of CTL_KINDS) {
+      const pts = c.ctl[k];
+      if (!pts?.length) continue;
+      const prms = this.ctlParams(n, k), put = (v: number, at: number, ramp: boolean) => { for (const [prm, map] of prms) ramp ? prm.linearRampToValueAtTime(map(v), at) : prm.setValueAtTime(map(v), at); };
+      // Début du clip (ou reprise de la boucle du motif) : la valeur de ce point du motif, posée d'un coup.
+      if (first || local < 1e-6) put(ctlAt(pts, local, k), t, false);
+      pts.forEach((pt, i) => { const f = pt.s - local; if (f >= 0 && f < 1 && f < remain) put(pt.v, t + f * dur, i > 0 && !(first && f === 0)); });
+      // Dernier pas du clip : retour au repos, pour qu'un bend ne reste pas accroché sur la suite.
+      if (remain <= 1) put(CTL_REST[k], t + remain * dur, false);
+    }
   }
 
   /** Sidechain : chaque coup de kick fait « pomper » les pistes qui le demandent. */
@@ -639,6 +695,14 @@ export function playNote(mix: Mix, dest: AudioNode, p: SynthParams, midi: number
   const g = vca.gain;
   g.setValueAtTime(0, t);
   filt.connect(vca).connect(dest);
+  // Pitch bend et vibrato (V19) : toutes les voix de la piste suivent la même hauteur commune.
+  const pitch = mix.pitchFor.get(dest);
+  if (pitch) for (const s of srcs) {
+    const d = (s as OscillatorNode | AudioBufferSourceNode).detune;
+    if (!d) continue;
+    pitch.connect(d);
+    if (mix.live) s.addEventListener('ended', () => { try { pitch.disconnect(d); } catch { /* déjà débranché */ } });
+  }
   for (const s of srcs) { if (startOff && s instanceof AudioBufferSourceNode) s.start(t, startOff); else s.start(t); }
   const tail = p.r * 2 + 0.1;
 
@@ -770,6 +834,7 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       const f = nt.s - local;
       if (f >= 0 && f < 1) playNote(mix, n.input, tr.synth, nt.p, t + f * dur, Math.max(0.02, Math.min(nt.l, remain - f) * dur * 0.98), nt.v, buffers);
     }
+    if (c.ctl) mix.schedCtl(n, c, local, t, dur, remain, startAudio);
   }
 }
 

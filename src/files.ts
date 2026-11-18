@@ -1,4 +1,4 @@
-import { BAR, Clip, GM_DRUMS, Note, Project, Track, emptyDrums, newTrack, uid } from './types';
+import { BAR, CTL_KINDS, CTL_REST, Clip, CtlKind, GM_DRUMS, Note, Project, Pt, Track, emptyDrums, newTrack, uid } from './types';
 
 // ---------- Archive ZIP (sans compression) ----------
 const CRC = (() => {
@@ -53,6 +53,24 @@ export function flatten(tr: Track): Note[] {
   return out;
 }
 
+/** Déroule les contrôles joués (pitch bend, modulation, aftertouch) d'une piste en positions absolues ; retour au repos à la fin de chaque clip. */
+export function flattenCtl(tr: Track): { k: CtlKind; s: number; v: number }[] {
+  const out: { k: CtlKind; s: number; v: number }[] = [];
+  for (const c of tr.clips) {
+    if (!c.ctl) continue;
+    for (const k of CTL_KINDS) {
+      const pts = c.ctl[k];
+      if (!pts?.length) continue;
+      for (let s = 0; s < c.len; s++) {
+        const local = (s + c.offset) % (c.patLen ?? BAR);
+        for (const p of pts) { const f = p.s - local; if (f >= 0 && f < 1 && s + f < c.len) out.push({ k, s: c.start + s + f, v: p.v }); }
+      }
+      out.push({ k, s: c.start + c.len, v: CTL_REST[k] });
+    }
+  }
+  return out;
+}
+
 function vlq(n: number): number[] {
   const b = [n & 0x7f];
   while ((n >>= 7)) b.unshift((n & 0x7f) | 0x80);
@@ -84,6 +102,13 @@ export function exportMidi(p: Project): Uint8Array {
       ev.push({ t: t0, d: [0x90 | channel, pitch, Math.max(1, Math.round(n.v * 127))] });
       ev.push({ t: Math.max(t0 + 1, Math.round((n.s + n.l) * TICK) - 1), d: [0x80 | channel, pitch, 0] });
     }
+    // Contrôles joués (V19) : pitch bend sur 14 bits, molette (CC1), aftertouch de canal.
+    if (tr.type === 'synth') for (const e of flattenCtl(tr)) {
+      const t0 = Math.round(e.s * TICK);
+      if (e.k === 'pb') { const x = Math.max(0, Math.min(16383, Math.round(8192 + e.v * (e.v < 0 ? 8192 : 8191)))); ev.push({ t: t0, d: [0xe0 | channel, x & 0x7f, x >> 7] }); }
+      else if (e.k === 'mod') ev.push({ t: t0, d: [0xb0 | channel, 1, Math.round(e.v * 127)] });
+      else ev.push({ t: t0, d: [0xd0 | channel, Math.round(e.v * 127)] });
+    }
     ev.sort((a, b) => a.t - b.t || a.d[0] - b.d[0]);
     const data = meta(0x03, text(tr.name)); let last = 0;
     for (const e of ev) { data.push(...vlq(e.t - last), ...e.d); last = e.t; }
@@ -109,7 +134,8 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
     const id = tag(o), len = d.getUint32(o + 4), end = o + 8 + len; o += 8;
     if (id !== 'MTrk') { o = end; continue; }
     let tick = 0, status = 0, name = '';
-    const open = new Map<number, { t: number; v: number }>(), notes = new Map<number, Note[]>();
+    const open = new Map<number, { t: number; v: number }>(), notes = new Map<number, Note[]>(), ctls = new Map<number, Partial<Record<CtlKind, Pt[]>>>();
+    const addCtl = (chn: number, k: CtlKind, v: number) => { const m = ctls.get(chn) ?? {}; (m[k] ??= []).push({ s: toStep(tick), v: Math.round(v * 1000) / 1000 }); ctls.set(chn, m); };
     const rv = () => { let v = 0, b; do { b = u[o++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80 && o < end); return v; };
     while (o < end) {
       tick += rv();
@@ -129,6 +155,9 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
       status = st;
       const cmd = st & 0xf0, chn = st & 0x0f, a = u[o++], b = cmd === 0xc0 || cmd === 0xd0 ? 0 : u[o++];
       const key = chn * 128 + a;
+      if (cmd === 0xe0) { const x = ((b << 7) | a) - 8192; addCtl(chn, 'pb', x / (x < 0 ? 8192 : 8191)); continue; }
+      if (cmd === 0xb0 && a === 1) { addCtl(chn, 'mod', b / 127); continue; }
+      if (cmd === 0xd0) { addCtl(chn, 'at', a / 127); continue; }
       if (cmd === 0x90 && b > 0) open.set(key, { t: tick, v: b / 127 });
       else if (cmd === 0x80 || cmd === 0x90) {
         const on = open.get(key);
@@ -148,7 +177,12 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
       if (drums) {
         clip.drums = emptyDrums(len);
         for (const n of list) { const r = GM_DRUMS.indexOf(n.p); clip.drums[r >= 0 ? r : n.p % 16][Math.min(len - 1, Math.round(n.s))] = n.v; }
-      } else clip.notes = list;
+      } else {
+        clip.notes = list;
+        // Contrôles joués : gardés dans le clip, sans les retours au repos superflus au-delà de sa fin.
+        const ctl = ctls.get(chn);
+        if (ctl) for (const k of CTL_KINDS) { const pts = ctl[k]?.filter(p => p.s < len); if (pts?.some(p => p.v !== CTL_REST[k])) (clip.ctl ??= {})[k] = pts; }
+      }
       tr.clips.push(clip); out.push(tr);
     }
   }

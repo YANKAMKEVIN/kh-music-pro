@@ -30,6 +30,7 @@ const MIC = (() => { const sr = 44100, n = sr * 2, b = Buffer.alloc(44 + n * 2);
 
 // Outils injectés dans la page (analyse audio par rendu hors-ligne).
 const PAGE_HELPERS = () => {
+  window.__PURE = "tr.synth = { ...tr.synth, engine: 'sub', wave: 'sine', mix2: 0, cutoff: 12000, envAmt: 0, reso: 0, a: 0.005, d: 0.1, s: 1, r: 0.05, pitchEnv: 0, octave: 0, touch: 0 };";
   window.qa = {
     async stats(proj) {
       const b = await window.kh.renderOffline(proj), d = b.getChannelData(0), n = d.length, sr = b.sampleRate;
@@ -4031,6 +4032,184 @@ test('TH06', 'Têtes de piste', 'Menu ⋯ et repère ❄ traduits en anglais et 
     await page.evaluate(l => window.kh.setLang(l), l);
     expect((await page.getAttribute('.head >> nth=1 >> .tmore', 'aria-label')).startsWith(w), `⋯ non traduit en ${l}`);
     expect(!/Monter|Supprimer/.test(await page.$eval('.head >> nth=1 >> .menu-list', e => e.textContent)), `actions non traduites en ${l}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
+
+// ============ V19 — chantier 1 : pitch bend, molette de modulation, aftertouch ============
+/** Piste « Basse » de la démo réduite à un son pur (sinus), pour mesurer la hauteur jouée. */
+const PURE = `tr.synth = { ...tr.synth, engine: 'sub', wave: 'sine', mix2: 0, cutoff: 12000, envAmt: 0, reso: 0, a: 0.005, d: 0.1, s: 1, r: 0.05, pitchEnv: 0, octave: 0, touch: 0 };`;
+/** Rend un projet d'une seule note longue (la 440 Hz, 4 mesures) avec des contrôles, et mesure la hauteur et le niveau par fenêtre (secondes). */
+async function ctlRender(ctl, wins, extra = '') {
+  return page.evaluate(async ([ctl, wins, PURE, extra]) => {
+    const k = window.kh, p = k.demoProject(); p.tracks = [p.tracks[1]]; const tr = p.tracks[0]; eval(PURE); eval(extra);
+    p.bpm = 120; p.target = 0; tr.clips = [{ id: 'cx', name: 'x', start: 0, len: 32, offset: 0, patLen: 32, notes: [{ p: 69, s: 0, l: 32, v: 0.8 }], ctl }];
+    const b = await k.renderOffline(p, false), d = b.getChannelData(0), sr = b.sampleRate;
+    return wins.map(([t0, t1]) => { const i0 = Math.floor(t0 * sr), i1 = Math.floor(t1 * sr), x = d.slice(i0, i1); let q = 0; for (const v of x) q += v * v; return { hz: k.detectPitch(x.slice(0, 4096), sr), rms: Math.sqrt(q / x.length) }; });
+  }, [ctl, wins, PURE, extra]);
+}
+const cents = (a, b) => 1200 * Math.log2(a / b);
+test('CT01', 'Contrôles joués', 'Pitch bend MIDI joué en direct : la note tenue monte, descend et revient au centre', async () => {
+  await page.click(await headSel(1)); await S(() => { const tr = window.kh.S.project.tracks[1]; window.kh.S.selClip = ''; window.kh.commit(); });
+  const r = await S(async () => {
+    const k = window.kh, tr = k.S.project.tracks[1], w = ms => new Promise(r => setTimeout(r, ms)), off = () => k.engine.mix.tracks.get(tr.id).ctl.bend.offset.value;
+    k.onMidi([0x90, 69, 100]); await w(80); k.onMidi([0xe0, 0x7f, 0x7f]); await w(120); const up = off();
+    k.onMidi([0xe0, 0, 0]); await w(120); const down = off(); k.onMidi([0xe0, 0, 0x40]); await w(120); const mid = off(); k.onMidi([0x80, 69, 0]);
+    tr.synth.bend = 12; k.commit(); k.onMidi([0xe0, 0x7f, 0x7f]); await w(120); const wide = off(); k.onMidi([0xe0, 0, 0x40]);
+    return { up, down, mid, wide };
+  });
+  near(r.up, 200, 2, 'bend en haut (cents, plage ± 2)'); near(r.down, -200, 2, 'bend en bas'); near(r.mid, 0, 1, 'retour au centre'); near(r.wide, 1200, 10, 'plage portée à ± 12 demi-tons');
+});
+test('CT02', 'Contrôles joués', 'Export audio : le pitch bend du clip change la hauteur rendue (la 440 → si 494, puis ± 12)', async () => {
+  // À 120 BPM, un pas = 0,125 s : bend à fond à partir du pas 8 (1 s), retour au centre au pas 20 (2,5 s).
+  const ctl = { pb: [{ s: 8, v: 1 }, { s: 19.9, v: 1 }, { s: 20, v: 0 }] }, wins = [[0.3, 0.5], [1.5, 1.7], [3, 3.2]];
+  const a = await ctlRender(ctl, wins);
+  near(cents(a[0].hz, 440), 0, 15, 'avant le bend'); near(cents(a[1].hz, 440), 200, 15, 'bend à fond (+2 demi-tons)'); near(cents(a[2].hz, 440), 0, 15, 'après le retour');
+  const b = await ctlRender({ pb: [{ s: 8, v: -0.5 }] }, [[1.5, 1.7]], 'tr.synth.bend = 12;');
+  near(cents(b[0].hz, 440), -600, 20, 'demi-bend vers le bas, plage ± 12');
+});
+test('CT03', 'Contrôles joués', 'Export audio : la molette ajoute du vibrato, l’aftertouch gonfle le son ; sans contrôle, rien ne bouge', async () => {
+  const wins = Array.from({ length: 16 }, (_, i) => [1 + i * 0.05, 1 + i * 0.05 + 0.1]);
+  const spread = r => { const c = r.map(x => cents(x.hz, 440)); return Math.max(...c) - Math.min(...c); };
+  const none = await ctlRender(undefined, wins), mod = await ctlRender({ mod: [{ s: 0, v: 1 }] }, wins), at = await ctlRender({ at: [{ s: 0, v: 1 }] }, wins);
+  expect(spread(none) < 4, 'hauteur instable sans contrôle : ' + spread(none).toFixed(1));
+  expect(spread(mod) > 45 && spread(mod) < 100, 'vibrato de la molette à fond (± 40 cents attendu) : ' + spread(mod).toFixed(1));
+  const lv = r => r.reduce((a, x) => a + x.rms, 0) / r.length;
+  near(lv(at) / lv(none), 1.4, 0.06, 'gonflement de l’aftertouch à fond (× 1,4)');
+  expect(spread(at) > 20, 'l’aftertouch ajoute un peu de vibrato : ' + spread(at).toFixed(1));
+});
+test('CT04', 'Contrôles joués', 'Enregistrement : note, montée du bend, molette et pression du DGX simulé sont gardés dans le clip, puis à l’export', async () => {
+  await page.click(await headSel(1));
+  await S(async () => { const k = window.kh, tr = k.S.project.tracks[1]; eval(window.__PURE); k.S.project.tracks.forEach(t => { t.clips = []; }); k.S.project.loop = false; k.S.project.bpm = 120; k.commit(); await k.engine.recordMidi(tr.id, 0); });
+  await sleep(200);
+  await S(async () => {
+    const k = window.kh, w = ms => new Promise(r => setTimeout(r, ms));
+    k.onMidi([0x90, 69, 100]); await w(500);
+    for (let i = 1; i <= 16; i++) { const x = Math.round(8192 + 8191 * i / 16); k.onMidi([0xe0, x & 0x7f, x >> 7]); await w(15); }
+    k.onMidi([0xb0, 1, 90]); k.onMidi([0xd0, 64]); await w(600);
+    for (let i = 15; i >= 0; i--) { const x = Math.round(8192 + 8191 * i / 16); k.onMidi([0xe0, x & 0x7f, x >> 7]); await w(15); }
+    k.onMidi([0xb0, 1, 0]); k.onMidi([0xd0, 0]); await w(300); k.onMidi([0x80, 69, 0]); await w(200); k.engine.stop();
+  });
+  await sleep(500);
+  const c = (await proj()).tracks[1].clips[0];
+  expect(c && c.ctl && c.ctl.pb && c.ctl.mod && c.ctl.at, 'contrôles absents du clip : ' + JSON.stringify(c && c.ctl));
+  const pb = c.ctl.pb.map(p => p.v);
+  near(Math.max(...pb), 1, 0.001, 'bend à fond enregistré'); near(pb[pb.length - 1], 0, 0, 'retour au centre enregistré');
+  expect(c.ctl.pb.every((p, i, a) => !i || a[i - 1].s <= p.s), 'points non triés');
+  near(Math.max(...c.ctl.mod.map(p => p.v)), 90 / 127, 0.002, 'molette'); near(Math.max(...c.ctl.at.map(p => p.v)), 64 / 127, 0.002, 'pression');
+  const hz = await S(async () => {
+    const k = window.kh, b = await k.renderOffline(k.S.project, false), d = b.getChannelData(0), sr = b.sampleRate, out = [];
+    for (let t = 0.1; t < b.duration - 0.2; t += 0.05) { const f = k.detectPitch(d.slice(Math.floor(t * sr), Math.floor(t * sr) + 4096), sr); if (f) out.push(f); }
+    return out;
+  });
+  expect(hz.some(f => Math.abs(cents(f, 440)) < 20) && hz.some(f => Math.abs(cents(f, 440) - 200) < 25), 'le bend enregistré ne s’entend pas à l’export : ' + hz.map(f => Math.round(f)).join(','));
+});
+test('CT05', 'Contrôles joués', 'Molettes à l’écran à la souris : le bend revient au centre au relâchement, la modulation reste ; au clavier aussi', async () => {
+  // Une note tenue (le navigateur ne calcule la hauteur d'une piste que si une voix l'utilise).
+  await page.click(await headSel(1)); await page.click('[data-act=okb]'); await S(() => window.kh.onMidi([0x90, 69, 90]));
+  const off = () => S(() => { const k = window.kh, n = k.engine.mix.tracks.get(k.S.project.tracks[1].id); return { pb: n.ctl.bend.offset.value, mod: n.ctl.gMod.gain.value }; });
+  const b = await box('.wheel[data-ctl=pb]');
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + 2, { steps: 6 }); await sleep(120);
+  near((await off()).pb, 200, 15, 'bend tenu en haut');
+  expect(+(await page.getAttribute('.wheel[data-ctl=pb]', 'aria-valuenow')) > 0.9, 'affichage du bend');
+  await page.mouse.up(); await sleep(120);
+  near((await off()).pb, 0, 1, 'retour au centre au relâchement');
+  const m = await box('.wheel[data-ctl=mod]');
+  await drag(m.x + m.width / 2, m.y + m.height - 2, 0, -(m.height - 4)); await sleep(120);
+  near((await off()).mod, 40, 3, 'la modulation reste en haut après le relâchement');
+  await page.focus('.wheel[data-ctl=mod]'); for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown'); await sleep(100);
+  near((await off()).mod, 28, 3, 'molette au clavier (3 crans vers le bas)');
+  await page.focus('.wheel[data-ctl=pb]'); await page.keyboard.down('ArrowDown'); await sleep(100);
+  expect((await off()).pb < -15, 'bend au clavier'); await page.keyboard.up('ArrowDown'); await sleep(100);
+  near((await off()).pb, 0, 1, 'bend au clavier revenu au centre');
+  await S(() => window.kh.onMidi([0x80, 69, 0]));
+});
+test('CT06', 'Contrôles joués', 'Molette à l’écran au doigt pendant un enregistrement : le geste survit aux redessins et s’écrit dans le clip', async () => {
+  await page.click(await headSel(1)); await page.click('[data-act=okb]');
+  await S(async () => { const k = window.kh, tr = k.S.project.tracks[1]; tr.clips = []; k.S.project.loop = false; k.commit(); await k.engine.recordMidi(tr.id, 0); k.onMidi([0x90, 69, 90]); });
+  const b = await box('.wheel[data-ctl=pb]'), cdp = await page.context().newCDPSession(page), x = b.x + b.width / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: b.y + b.height / 2 }] });
+  for (let i = 1; i <= 12; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: b.y + b.height / 2 - (b.height / 2 - 3) * i / 12 }] }); await sleep(60); }
+  await sleep(500);   // plusieurs redessins (écriture différée des points) pendant que le doigt reste posé
+  const held = await S(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl.bend.offset.value; });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
+  await S(() => { window.kh.onMidi([0x80, 69, 0]); window.kh.engine.stop(); }); await sleep(400);
+  near(held, 200, 20, 'bend tenu au doigt malgré les redessins');
+  const pb = ((await proj()).tracks[1].clips[0]?.ctl?.pb ?? []).map(p => p.v);
+  expect(pb.length >= 3 && Math.max(...pb) > 0.9 && pb[pb.length - 1] === 0, 'geste au doigt non enregistré : ' + JSON.stringify(pb));
+});
+test('CT07', 'Contrôles joués', 'Ligne des contrôles : dessiner un bend à la souris, changer de contrôle, effacer, annuler', async () => {
+  await page.click(await headSel(1)); await page.click(await clipSel(1, 0));
+  expect(!(await page.$('.ctl-lane')), 'ligne affichée sans contrôle'); await page.click('[data-act=ctlshow]');
+  const l = await box('.ctl-lane');
+  await drag(l.x + 28 * 2, l.y + 4, 28 * 4, 0);
+  const pb = (await proj()).tracks[1].clips[0].ctl?.pb ?? [];
+  expect(pb.length >= 3 && pb.every(p => p.v > 0.6) && pb[0].s >= 1.5 && pb[pb.length - 1].s <= 6.5, 'courbe dessinée : ' + JSON.stringify(pb));
+  expect(await page.isDisabled('[data-act=ctlshow]'), 'la ligne doit rester affichée tant que le clip a des contrôles');
+  await page.selectOption('[data-role=ctlkind]', 'mod'); expect(await page.isDisabled('[data-act=ctlclear]'), 'aucune modulation à effacer');
+  await page.selectOption('[data-role=ctlkind]', 'pb'); await page.click('[data-act=ctlclear]');
+  expect(!(await proj()).tracks[1].clips[0].ctl, 'bend non effacé');
+  await page.keyboard.press('Control+z'); expect(((await proj()).tracks[1].clips[0].ctl?.pb ?? []).length >= 3, 'annulation de l’effacement');
+});
+test('CT08', 'Contrôles joués', 'Fichier MIDI : bend, molette et pression exportés puis relus ; projet sauvegardé et rouvert', async () => {
+  const r = await S(() => {
+    const k = window.kh, tr = k.S.project.tracks[1]; tr.clips[0].ctl = { pb: [{ s: 4, v: 0.5 }, { s: 8, v: -1 }, { s: 12, v: 0 }], mod: [{ s: 2, v: 0.75 }], at: [{ s: 6, v: 0.3 }] }; k.commit();
+    const bytes = k.exportMidi(k.S.project), m = k.importMidi(bytes.buffer), c = m.tracks.find(t => t.type === 'synth' && t.clips[0].ctl)?.clips[0];
+    const raw = [...bytes]; let pb = 0, cc1 = 0, chp = 0; for (let i = 0; i < raw.length - 2; i++) { if ((raw[i] & 0xf0) === 0xe0 && raw[i + 2] < 128) pb++; if ((raw[i] & 0xf0) === 0xb0 && raw[i + 1] === 1) cc1++; if ((raw[i] & 0xf0) === 0xd0 && raw[i + 1] < 128) chp++; }
+    return { ctl: c && c.ctl, pb, cc1, chp };
+  });
+  expect(r.pb >= 3 && r.cc1 >= 1 && r.chp >= 1, `messages absents du fichier : ${r.pb}/${r.cc1}/${r.chp}`);
+  expect(r.ctl && r.ctl.pb && r.ctl.mod && r.ctl.at, 'contrôles perdus à la relecture : ' + JSON.stringify(r.ctl));
+  near(r.ctl.pb.find(p => p.s === 4).v, 0.5, 0.001, 'bend +0,5 relu'); near(r.ctl.pb.find(p => p.s === 8).v, -1, 0.001, 'bend -1 relu');
+  near(r.ctl.mod[0].v, 0.75, 0.01, 'molette relue'); near(r.ctl.at[0].v, 0.3, 0.01, 'pression relue');
+  await S(() => window.kh.store.saveNow()); await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  const back = await S(() => window.kh.S.project.tracks[1].clips[0].ctl);
+  expect(back && back.pb.length === 3 && back.mod[0].v === 0.75 && back.at[0].v === 0.3, 'contrôles perdus après rechargement : ' + JSON.stringify(back));
+});
+test('CT09', 'Contrôles joués', 'Copier, dupliquer et scinder un clip : les contrôles suivent sans être partagés', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.clips[0].ctl = { pb: [{ s: 2, v: 1 }, { s: 40, v: -1 }] }; k.S.selClip = tr.clips[0].id; k.commit(); });
+  await page.click(await clipSel(1, 0)); await page.keyboard.press('Control+d');
+  const r = await S(() => { const c = window.kh.S.project.tracks[1].clips; c[1].ctl.pb[0].v = 0.25; return [c[0].ctl.pb[0].v, c[1].ctl.pb[0].v]; });
+  expect(r[0] === 1 && r[1] === 0.25, 'copie partagée avec l’original : ' + r);
+  await page.click(await clipSel(1, 0)); await S(() => window.kh.engine.seek(32)); await page.keyboard.press('Control+e');
+  const c = (await proj()).tracks[1].clips.find(x => x.start === 32);
+  expect(c && c.offset === 32 && c.ctl.pb.length === 2, 'moitié droite sans ses contrôles');
+});
+test('CT10', 'Contrôles joués', 'Gros projet exporté en parallèle : le bend est rendu pareil qu’en un seul tenant ; l’arrêt remet tout au repos', async () => {
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(), base = p.tracks[1]; p.target = 0; p.bpm = 120;
+    const mk = i => { const t = JSON.parse(JSON.stringify(base)); t.id = 'tq' + i; t.clips[0].id = 'cq' + i; t.vol = 0.05; return t; };
+    p.tracks = Array.from({ length: 13 }, (_, i) => mk(i)); const tr = p.tracks[0], PURE = window.__PURE; eval(PURE); tr.vol = 1;
+    tr.clips = [{ id: 'cb', name: 'b', start: 0, len: 32, offset: 0, patLen: 32, notes: [{ p: 69, s: 0, l: 32, v: 0.8 }], ctl: { pb: [{ s: 8, v: 1 }] } }];
+    const pitch = b => k.detectPitch(b.getChannelData(0).slice(Math.floor(1.6 * b.sampleRate), Math.floor(1.6 * b.sampleRate) + 4096), b.sampleRate);
+    k.renderOpts.parallel = true; const a = await k.renderOffline(p, false), parts = k.lastRender.parts;
+    k.renderOpts.parallel = false; const b = await k.renderOffline(p, false); k.renderOpts.parallel = true;
+    let diff = 0; const x = a.getChannelData(0), y = b.getChannelData(0); for (let i = 0; i < Math.min(x.length, y.length); i++) diff = Math.max(diff, Math.abs(x[i] - y[i]));
+    return { parts, pa: pitch(a), pb: pitch(b), diff, cores: navigator.hardwareConcurrency };
+  });
+  if (r.cores >= 3) expect(r.parts > 1, 'export non découpé');
+  near(cents(r.pa, 440), 200, 15, 'bend dans l’export parallèle'); near(cents(r.pb, 440), 200, 15, 'bend dans l’export d’un seul tenant');
+  expect(r.diff < 1e-4, 'les deux exports diffèrent : ' + r.diff);
+  // Lecture avec un bend en cours, puis arrêt : la piste revient au repos (aucune note faussée à la reprise).
+  await page.click(await headSel(1));
+  await S(async () => { const k = window.kh; k.S.project.tracks[1].clips[0].ctl = { pb: [{ s: 0, v: 1 }], mod: [{ s: 0, v: 1 }] }; k.commit(); await k.engine.play(); });
+  await sleep(500); const playing = await S(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl.bend.offset.value; });
+  await S(() => window.kh.engine.stop()); await sleep(200); await S(() => window.kh.onMidi([0x90, 69, 90])); await sleep(150);
+  const rest = await S(() => { window.kh.onMidi([0x80, 69, 0]); const k = window.kh, c = k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl; return [c.bend.offset.value, c.gMod.gain.value]; });
+  near(playing, 200, 5, 'bend lu pendant la lecture'); near(rest[0], 0, 1, 'bend au repos après l’arrêt'); near(rest[1], 0, 1, 'modulation au repos après l’arrêt');
+});
+test('CT11', 'Contrôles joués', 'Molette assignée à un réglage du mixeur : elle garde son assignation ; textes traduits', async () => {
+  await page.click(await headSel(1));
+  await S(() => { const k = window.kh; k.learn.map = { 1: '1:vol' }; k.onMidi([0xb0, 1, 0]); });
+  const r = await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; return { vol: tr.vol, mod: k.engine.ctlNow.get(tr.id)?.mod }; });
+  near(r.vol, 0, 0.01, 'la molette assignée règle le volume'); expect(r.mod === undefined, 'la molette assignée ne doit pas moduler');
+  await S(() => { window.kh.learn.map = {}; }); await page.click('[data-act=okb]'); await page.click(await clipSel(1, 0)); await page.click('[data-act=ctlshow]');
+  for (const [l, w] of [['en', 'Modulation wheel'], ['es', 'Rueda de modulación']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    expect((await page.getAttribute('.wheel[data-ctl=mod]', 'title')).startsWith(w), 'molette non traduite en ' + l);
+    expect(!/Contrôles|Effacer/.test(await page.$eval('.ctl-row', e => e.textContent + e.querySelector('[data-act=ctlclear]').title)), 'ligne non traduite en ' + l);
   }
   await page.evaluate(() => window.kh.setLang('fr'));
 });

@@ -319,6 +319,21 @@ const D: Record<string, [string, string, string]> = {
 
   // ===== V5 =====
   'okb.title': ['Clavier', 'Keyboard', 'Teclado'],
+  // V19 : contrôles joués
+  'syn.bend': ['Plage du pitch bend', 'Pitch bend range', 'Rango del pitch bend'],
+  'ctl.pb': ['Pitch bend', 'Pitch bend', 'Pitch bend'],
+  'ctl.mod': ['Modulation', 'Modulation', 'Modulación'],
+  'ctl.at': ['Aftertouch', 'Aftertouch', 'Aftertouch'],
+  'ctl.pbTip': ['Pitch bend : glisser vers le haut ou le bas ; revient au centre quand on lâche', 'Pitch bend: drag up or down; springs back to centre when released', 'Pitch bend: arrastrar hacia arriba o abajo; vuelve al centro al soltar'],
+  'ctl.modTip': ['Molette de modulation : ajoute du vibrato ; reste où on la laisse', 'Modulation wheel: adds vibrato; stays where you leave it', 'Rueda de modulación: añade vibrato; se queda donde la dejas'],
+  'ctl.short.pb': ['Bend', 'Bend', 'Bend'],
+  'ctl.short.mod': ['Modul.', 'Mod.', 'Modul.'],
+  'ctl.short.at': ['Pression', 'Pressure', 'Presión'],
+  'ctl.kind': ['Contrôle affiché', 'Shown control', 'Control mostrado'],
+  'ctl.points': ['{0} points', '{0} points', '{0} puntos'],
+  'ctl.clear': ['Effacer ce contrôle dans le clip', 'Clear this control in the clip', 'Borrar este control en el clip'],
+  'ctl.lane': ['Contrôles', 'Controls', 'Controles'],
+  'ctl.showTip': ['Pitch bend, modulation et aftertouch joués : les voir et les dessiner sous les notes', 'Played pitch bend, modulation and aftertouch: view and draw them below the notes', 'Pitch bend, modulación y aftertouch tocados: verlos y dibujarlos bajo las notas'],
   'okb.tip': ['Afficher un clavier à l\'écran pour jouer au doigt ou à la souris', 'Show an on-screen keyboard to play by touch or with the mouse', 'Mostrar un teclado en pantalla para tocar con el dedo o el ratón'],
   'toast.copied': ['{0} note(s) copiée(s)', '{0} note(s) copied', '{0} nota(s) copiada(s)'],
   'toast.pasted': ['{0} note(s) collée(s)', '{0} note(s) pasted', '{0} nota(s) pegada(s)'],
