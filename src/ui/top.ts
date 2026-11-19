@@ -220,7 +220,9 @@ export function renderTop() {
   $<HTMLInputElement>('loopS').value = String(p.loopStart + 1);
   $<HTMLInputElement>('loopE').value = String(p.loopStart + p.loopLen);
   const lr = t('top.loopRange', p.loopStart + 1, p.loopStart + p.loopLen);
-  $('bLoop').textContent = `⟲ ${p.loopStart + 1} → ${p.loopStart + p.loopLen}`; $('bLoop').title = t('top.loopTip') + ' — ' + lr; $('bLoop').setAttribute('aria-label', t('top.loop') + ' — ' + lr);
+  // Sur téléphone, la plage est masquée sur le bouton ; la bulle et le nom accessible la gardent.
+  $('bLoop').replaceChildren('⟲ ', h('span', { class: 'lrange' }, `${p.loopStart + 1} → ${p.loopStart + p.loopLen}`));
+  $('bLoop').title = t('top.loopTip') + ' — ' + lr; $('bLoop').setAttribute('aria-label', t('top.loop') + ' — ' + lr);
   $('bExport').title = t('top.exportTip') + ' — ' + exportSummary();
   $<HTMLSelectElement>('snap').value = String(S.snap);
   $<HTMLSelectElement>('sig').value = String(p.sig);

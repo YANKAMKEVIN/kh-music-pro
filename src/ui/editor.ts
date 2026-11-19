@@ -165,7 +165,7 @@ function drumEditor(tr: Track, c: Clip | null) {
     const line = h('div', { class: 'drow' },
       h('button', { class: 'dlabel', title: t('drum.listen', padName(tr, r)), onclick: () => engine.pad(tr, r) }, h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', {}, padName(tr, r))));
     row.forEach((v, s) => line.append(h('button', {
-      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}`,
+      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}${s % 8 === 0 ? ' page' : ''}`,   // page : arrêt du glissé par 8 pas sur téléphone
       data: { r: String(r), s: String(s) }, 'aria-label': `${padName(tr, r)} ${s + 1}`, 'aria-pressed': String(!!v),
       tabindex: r === gridPos.r && s === gridPos.s ? '0' : '-1',
     })));
@@ -749,9 +749,12 @@ let tunerHz = 0, tunerMiss = 0;
 /** Dernières mesures brutes : une note ne s'affiche qu'une fois confirmée par 3 mesures concordantes (à 3 % près),
  *  pour qu'une trame abîmée (ordinateur chargé, attaque, bruit) ne donne pas un écart faux. */
 const tunerRaw: number[] = [];
+let tunerShown = false;
 export function updateTuner() {
   const el = document.querySelector<HTMLElement>('.tuner');
-  if (!el) return;
+  if (!el) { tunerShown = false; return; }
+  // Accordeur qui vient d'apparaître : il repart de zéro, sans glisser depuis la note de sa dernière utilisation.
+  if (!tunerShown) { tunerShown = true; tunerHz = 0; tunerRaw.length = 0; tunerMiss = 0; }
   const hz = engine.inputPitch();
   if (hz) {
     tunerRaw.push(hz); if (tunerRaw.length > 5) tunerRaw.shift();

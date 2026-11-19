@@ -181,6 +181,8 @@ function crashNotice() {
   S.selTrack = S.project.tracks[0]?.id ?? '';
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
   initArrDrop(); initFileInputs(); listenSystemOpen();
+  // Téléphone (audit D3) : le morceau s'ouvre avec quatre mesures visibles au lieu d'une et demie.
+  if (matchMedia('(max-width: 760px)').matches) S.px = clamp((innerWidth - 156 - 12) / (4 * (S.project.sig || 4) * 4), 3, 44);
   rebuild();
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   // Version bureau macOS : moteur audio natif, s'il a été activé dans les Réglages audio.

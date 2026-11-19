@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-395 cas réussis sur 395.
+404 cas réussis sur 404.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -399,3 +399,12 @@
 | QZ03 | Quantification | Humaniser : petits décalages (± 0,12 pas) et forces (± 12 %) au hasard, annulables ; sur la sélection seulement | OK |
 | QZ04 | Quantification | Légato : chaque note va jusqu’à la suivante, un accord garde une seule fin, la dernière va jusqu’au bout du clip | OK |
 | QZ05 | Quantification | Menu au clavier (Tab, Entrée, flèches), réglages gardés pendant la séance, textes traduits | OK |
+| AI01 | Instruments du Mac | Choisir un instrument du Mac dans la liste : la piste le joue, ses réglages sont dans sa fenêtre | OK |
+| AI02 | Instruments du Mac | Jeu au clavier MIDI : note, relâchement, pitch bend, molette et pédale partent vers le plugin | OK |
+| AI03 | Instruments du Mac | Lecture d’un clip : chaque note part à son instant et se relâche à sa fin ; l’arrêt coupe tout | OK |
+| AI04 | Instruments du Mac | L’état réglé dans la fenêtre est gardé dans le projet, rechargé dans le plugin, et l’export reste d’un seul tenant | OK |
+| AI05 | Instruments du Mac | Version web : pas de liste, piste muette annoncée, export possible ; textes traduits | OK |
+| PH01 | Téléphone | Rétablir est visible au doigt sur téléphone : annuler puis rétablir une case du séquenceur | OK |
+| PH02 | Téléphone | Le morceau s’ouvre sur téléphone avec au moins quatre mesures visibles | OK |
+| PH03 | Téléphone | Séquenceur sur téléphone : 8 pas entiers à la fois, cases hautes de 44 px, glisser passe aux 8 suivants, toucher allume | OK |
+| PH04 | Téléphone | Au doigt, tout ce qu’on touche fait au moins 44 px (barre, arrangement, pistes, éditeur, onglets, menus) et rien ne déborde | OK |
