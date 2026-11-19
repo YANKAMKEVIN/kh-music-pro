@@ -86,6 +86,12 @@ func measureOnce(spk: AudioDeviceID, mic: AudioDeviceID, buffer: UInt32, plugin:
         try outE.outputNode.auAudioUnit.setDeviceID(spk)
         try inE.inputNode.auAudioUnit.setDeviceID(mic)
     } catch { fail("Choix du périphérique : \(error)") }
+    // Voie choisie (KH_CH) : AVAudioEngine ne donne qu'une voie d'entrée ; la carte des voies y amène celle qu'on veut.
+    if inCh > 0, let au = inE.inputNode.audioUnit {
+        var map: [Int32] = [Int32(inCh)]
+        let st = AudioUnitSetProperty(au, kAudioOutputUnitProperty_ChannelMap, kAudioUnitScope_Output, 1, &map, UInt32(MemoryLayout<Int32>.size))
+        if st != noErr { print("Carte des voies refusée : \(st)") }
+    }
     let sr = outE.outputNode.outputFormat(forBus: 0).sampleRate
     let fmt = AVAudioFormat(standardFormatWithSampleRate: sr, channels: 1)!
 
@@ -121,10 +127,11 @@ func measureOnce(spk: AudioDeviceID, mic: AudioDeviceID, buffer: UInt32, plugin:
     let total = Double(clicks) * 0.6 + 1.5
     let cap = Capture(seconds: total + 1, sr: sr)
     let inFmt = inE.inputNode.outputFormat(forBus: 0)
+    if ProcessInfo.processInfo.environment["KH_DEBUG"] != nil { print("Entrée : \(inFmt.channelCount) voies, \(inFmt.isInterleaved ? "entrelacées" : "séparées"), \(inFmt.sampleRate) Hz ; sortie : \(outE.outputNode.outputFormat(forBus: 0).channelCount) voies") }
     let sink = AVAudioSinkNode { ts, frames, abl -> OSStatus in
         // Voie d'entrée choisie (KH_CH, à partir de 0) : par exemple 4 = entrée « Loopback » 5 d'une Scarlett 4i4 de 3e génération.
         let bl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: abl))
-        let nch = bl.count == 1 ? Int(bl[0].mNumberChannels) : bl.count, want = min(inCh, max(0, nch - 1))
+        let nch = bl.count == 1 ? Int(bl[0].mNumberChannels) : bl.count, want = nch > inCh ? inCh : 0
         let d: UnsafeMutablePointer<Float>
         if bl.count == 1 && nch > 1 {   // entrelacé : on recopie la voie voulue
             let src = bl[0].mData!.assumingMemoryBound(to: Float.self)
@@ -155,6 +162,7 @@ func measureOnce(spk: AudioDeviceID, mic: AudioDeviceID, buffer: UInt32, plugin:
             lat.append((cap.time(hit, isr) - tc) * 1000)
         } else { misses += 1 }
     }
+    if ProcessInfo.processInfo.environment["KH_DEBUG"] != nil { var m: Float = 0; for i in 0..<cap.n { m = max(m, abs(cap.data[i])) }; print("Crête reçue sur la voie choisie : \(m)") }
     cap.data.deallocate()
     return (lat, misses, sr)
 }

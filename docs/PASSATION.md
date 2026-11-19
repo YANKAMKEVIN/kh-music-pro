@@ -734,6 +734,21 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 
 - QA sur la machine Linux de GitHub (19/11/2026) : AD07, XP06 et SD03 comparaient l'export parallèle et l'export d'un seul tenant au seuil de 10⁻⁴ ; Linux y montre jusqu'à 3,5 × 10⁻⁴ (−69 dB, cause non établie, Mac : 2 × 10⁻⁷). Seuil porté à 10⁻³ (−60 dB, inaudible). TH05 : le nom « Batterie » était coupé sur téléphone avec les polices de Linux ; noms un peu plus petits sur téléphone (12,5 px). QZ03 : clic sur la note rendu plus sûr. AD06 (accordeur) reste sensible à la charge de la machine.
 
+### Focusrite de Kevin (19/11/2026)
+
+- Modèle : **Scarlett 4i4 de 3ᵉ génération** (USB 1235:8212), 6 entrées (dont Loopback 5-6) et 4 sorties ; Focusrite Control 2 (1.1210) installé par Kevin, Loopback = Playback 1-2, réglée à 48 kHz. Il a fallu un autre câble USB-C (le premier ne l'alimentait pas).
+- Mesure (`au-host rt` avec `KH_OUT=Scarlett KH_IN=Scarlett KH_CH=4 KH_AMP=0.05`, clics à −26 dB renvoyés par le Loopback numérique) :
+
+| Tampon | Aller-retour déclaré par Core Audio | Retard caché mesuré en plus des horodatages |
+|---|---|---|
+| 256 | 14,3 ms | 0,6 ms |
+| 128 | 9,0 ms | 0,4 ms |
+| 64 | 6,3 ms | 0,4 ms |
+| 32 | 5,0 ms | 0,6 ms |
+
+- Lecture : contrairement au micro et aux haut-parleurs du MacBook (environ 46 ms cachés), la Scarlett ne cache presque rien ; l'aller-retour réel d'un logiciel natif est d'environ ce qui est déclaré, **5 à 9 ms à 32-128**, plus les convertisseurs (≈ 1 ms, non mesurés : le Loopback est numérique). L'objectif de 12 ms est donc atteignable avec le moteur natif. Non mesuré : l'aller-retour de KH Music Pro lui-même (navigateur ou moteur natif, qui ajoute ses tampons de 384/256 échantillons), ni avec un câble analogique de bouclage.
+- `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
+
 ### Méthode de QA apprise
 
 - Une campagne lancée sur le serveur de développement du dossier de travail est faussée par toute modification de fichier pendant qu'elle tourne (rechargement de la page). La campagne complète tourne donc sur une copie figée du dossier (`rsync` sans `node_modules`, lien vers celui du dossier), comme le fait `qa/all.sh` sur le port 5199.
