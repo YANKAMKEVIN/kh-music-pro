@@ -4778,6 +4778,51 @@ test('AI05', 'Instruments du Mac', 'Version web : pas de liste, piste muette ann
   await S(() => window.kh.setLang('fr'));
 });
 
+// ============ UX15 : quinze améliorations d'interface ============
+/** Projet assez lourd pour qu'un export dure (la démo recopiée `n` fois). */
+const heavy = (n = 3) => page.evaluate(n => { const k = window.kh, p = k.S.project, base = JSON.parse(JSON.stringify(p.tracks)); for (let r = 0; r < n; r++) for (const t of base) { const c = JSON.parse(JSON.stringify(t)); c.id = 'h' + r + t.id; c.clips.forEach((x, i) => { x.id = 'h' + r + i + x.id; }); p.tracks.push(c); } k.commit(); }, n);
+test('UX01a', 'Export', 'Pendant un export, le bouton Exporter devient une barre qui avance, puis revient ; le fichier arrive', async () => {
+  await heavy();
+  const dlp = page.waitForEvent('download', { timeout: 120000 }); await page.click('#bExport');
+  await until(() => page.isVisible('#xProg'), 'barre d’avancement absente');
+  expect(!(await page.isVisible('#bExport')) && await page.isVisible('#bExportCancel'), 'Exporter doit laisser la place à Annuler');
+  expect(await page.getAttribute('#xProg', 'role') === 'progressbar', 'rôle de la barre');
+  await until(async () => +(await page.getAttribute('#xProg', 'aria-valuenow')) > 0 || !(await page.isVisible('#xProg')), 'la barre ne quitte pas 0 %', 60000);
+  const mid = await S(() => ({ busy: window.kh.exportJob.busy, toast: document.getElementById('toast').textContent }));
+  if (mid.busy) expect(/Rendu|moitié/.test(mid.toast) && mid.toast.includes('Annuler'), 'message d’export sans bouton Annuler : ' + mid.toast);
+  const dl = await dlp; expect(dl.suggestedFilename().endsWith('.wav'), 'fichier : ' + dl.suggestedFilename());
+  await until(() => page.isVisible('#bExport'), 'le bouton Exporter ne revient pas');
+  expect(!(await page.isVisible('#xProg')) && !(await page.isVisible('#bExportCancel')), 'barre encore affichée après l’export');
+  expect((await page.textContent('#toast')).includes('terminé'), 'message de fin : ' + await page.textContent('#toast'));
+});
+test('UX01b', 'Export', 'Annuler un export : aucun fichier, message clair, et l’export suivant marche', async () => {
+  await heavy(5);
+  let got = 0; const onDl = () => { got++; }; page.on('download', onDl);
+  try {
+    await page.click('#bExport'); await until(() => page.isVisible('#bExportCancel'), 'bouton Annuler absent');
+    // Un second export pendant le premier est refusé.
+    await S(() => window.kh.exportJob.busy && document.getElementById('bMp3').click()); expect(await S(() => window.kh.exportJob.busy), 'export interrompu par une seconde demande');
+    await page.click('#bExportCancel');
+    await until(() => page.isVisible('#bExport'), 'le bouton Exporter ne revient pas après l’annulation', 5000);
+    expect((await page.textContent('#toast')).includes('annulé'), 'message d’annulation : ' + await page.textContent('#toast'));
+    await sleep(1500); expect(got === 0, 'un fichier a été téléchargé malgré l’annulation');
+    await S(() => { const p = window.kh.S.project; p.tracks.length = 2; window.kh.commit(); });
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('#bExport')]);
+    expect(dl.suggestedFilename().endsWith('.wav'), 'export suivant : ' + dl.suggestedFilename());
+  } finally { page.off('download', onDl); }
+});
+test('UX01c', 'Export', 'Pistes séparées : « piste i sur n » dans la barre ; part faite calculée juste ; annulation au clavier ; trois langues', async () => {
+  const r = await S(() => { const j = window.kh.jobPct; return [j(0, 1, 0.5), j(2, 4, 0.5), j(3, 3, 1), j(0, 0, 2), j(1, 4, -1)]; });
+  expect(JSON.stringify(r) === '[0.5,0.625,1,1,0.25]', 'part faite : ' + JSON.stringify(r));
+  await heavy(2);
+  await menu('bStems'); await until(() => page.isVisible('#xProg'), 'barre absente pour les pistes séparées');
+  await until(async () => /piste \d+ sur \d+/i.test(await page.textContent('#xProg')), 'la barre ne dit pas quelle piste est rendue : ' + await page.textContent('#xProg'));
+  expect(/piste \d+ sur \d+/i.test(await page.getAttribute('#xProg', 'aria-valuetext')), 'texte lu par les lecteurs d’écran');
+  await page.focus('#bExportCancel'); await page.keyboard.press('Enter');
+  await until(() => page.isVisible('#bExport'), 'annulation au clavier sans effet', 5000);
+  for (const [l, w] of [['en', 'Cancel'], ['es', 'Cancelar'], ['fr', 'Annuler']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('#bExportCancel')).includes(w), 'bouton Annuler non traduit en ' + l); }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

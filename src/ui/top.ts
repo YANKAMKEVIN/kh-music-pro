@@ -1,4 +1,4 @@
-import { addMarker, addTempo, deskFiles, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
+import { addMarker, addTempo, cancelExport, deskFiles, exportJob, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -125,7 +125,10 @@ export function buildTop(onLang: () => void) {
   const more = h('details', { class: 'more', id: 'more' });
   more.append(h('summary', { class: 'pill', title: t('top.more'), 'aria-label': t('top.more') }, '☰'),
     h('div', { class: 'grp out' },
-      h('div', { class: 'split-btn' }, b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav), exportMore),
+      h('div', { class: 'split-btn' }, b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav), exportMore,
+        // Pendant un export : le bouton laisse la place à une barre d'avancement et à un bouton Annuler.
+        h('div', { id: 'xProg', class: 'xprog', role: 'progressbar', 'aria-label': t('exp.progress'), 'aria-valuemin': '0', 'aria-valuemax': '100', hidden: true }, h('span', {})),
+        h('button', { id: 'bExportCancel', class: 'pill xcancel', title: t('exp.cancelTip'), 'aria-label': t('exp.cancelTip'), hidden: true, onclick: cancelExport }, '✕ ' + t('exp.cancel'))),
       settings, b('bHelp', 'icon', '?', t('top.help'), () => $<HTMLDialogElement>('help').showModal())));
   const wide = matchMedia('(min-width: 761px)');
   const syncMore = () => { more.open = wide.matches; };
@@ -158,9 +161,24 @@ export function buildTop(onLang: () => void) {
     b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo),
     b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', '📝', t('notes.title'), showNotes));
 
+  exportJob.onChange = syncExport; syncExport();
   document.querySelectorAll<HTMLElement>('#tabs button').forEach(x => { x.textContent = t('tab.' + x.dataset.tab); });
   $('split').title = t('split.tip');
   buildHelp();
+}
+
+/** Bouton Exporter ↔ barre d'avancement : suit l'export en cours (pourcentage, ou « piste 3 sur 12 » pour les pistes séparées). */
+function syncExport() {
+  const prog = $('xProg'), j = exportJob, n = Math.round(j.pct * 100);
+  if (!prog) return;
+  const was = !prog.hidden;
+  $('bExport').hidden = $('mExport').hidden = j.busy; prog.hidden = $('bExportCancel').hidden = !j.busy;
+  prog.style.setProperty('--p', String(j.pct)); prog.setAttribute('aria-valuenow', String(n));
+  prog.setAttribute('aria-valuetext', j.label ? `${j.label} ${n} %` : `${n} %`);
+  prog.firstElementChild!.textContent = j.label ? `${j.label.replace(/…$/, '')} · ${n} %` : `${n} %`;
+  // Le focus ne se perd pas quand le bouton change : Exporter → Annuler au départ, Annuler → Exporter à la fin.
+  if (j.busy && !was && document.activeElement === document.body) $('bExportCancel').focus({ preventScroll: true });
+  if (!j.busy && was && document.activeElement === document.body) $('bExport').focus({ preventScroll: true });
 }
 
 /** Résumé des réglages d'export (bulle du bouton Exporter, fenêtre des options). */

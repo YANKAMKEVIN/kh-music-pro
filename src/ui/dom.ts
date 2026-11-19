@@ -33,11 +33,17 @@ export function slider(label: string, min: number, max: number, step: number, va
 }
 
 let toastTimer = 0;
-export function toast(msg: string, kind: 'info' | 'error' = 'info') {
+/**
+ * Message bref en bas de l'écran (zone de statut annoncée par les lecteurs d'écran).
+ * `sticky` : reste affiché jusqu'au message suivant (travail long) ; `action` : bouton dans le message (« Annuler »).
+ */
+export function toast(msg: string, kind: 'info' | 'error' = 'info', opt: { sticky?: boolean; action?: { label: string; fn: () => void } } = {}) {
   const el = document.getElementById('toast')!;
-  el.textContent = msg; el.className = 'show ' + kind;
+  el.replaceChildren(msg);
+  if (opt.action) { const a = opt.action; el.append(h('button', { class: 'pill tact', data: { act: 'toastact' }, onclick: () => { el.className = ''; a.fn(); } }, a.label)); }
+  el.className = 'show ' + kind + (opt.action ? ' act' : '');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => { el.className = ''; }, kind === 'error' ? 5000 : 2600);
+  if (!opt.sticky) toastTimer = window.setTimeout(() => { el.className = ''; }, kind === 'error' ? 5000 : opt.action ? 7000 : 2600);
 }
 
 export const pct = (v: number) => Math.round(v * 100) + ' %';

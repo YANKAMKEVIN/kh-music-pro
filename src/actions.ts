@@ -1,4 +1,4 @@
-import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from './audio/engine';
+import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline, renderProgress } from './audio/engine';
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
@@ -229,12 +229,45 @@ function rangeName(): string {
   const e = S.project.exp, p = S.project;
   return e.range === 'loop' ? `_m${p.loopStart + 1}-${p.loopStart + p.loopLen}` : e.range === 'bars' ? `_m${Math.round(e.from)}-${Math.max(Math.round(e.from), Math.round(e.to))}` : '';
 }
-export async function exportMp3() {
+// ---------- Export : avancement et annulation ----------
+/** Export en cours : part faite (0..1), texte court (« Piste 3 sur 12 », « Encodage… ») ; la barre du haut s'abonne par `onChange`. */
+export const exportJob = { busy: false, pct: 0, label: '', onChange: () => { /* branché par ui/top.ts */ } };
+let cancelJob: (() => void) | null = null;
+/** Abandonne l'export en cours : rien n'est téléchargé. Le calcul déjà lancé se termine en arrière-plan et son résultat est jeté. */
+export function cancelExport() { cancelJob?.(); }
+/** Part faite d'un export en plusieurs rendus : `i` rendus finis sur `n`, plus la part `cur` (0..1) du rendu en cours. */
+export const jobPct = (i: number, n: number, cur: number) => Math.max(0, Math.min(1, (i + Math.max(0, Math.min(1, cur))) / Math.max(1, n)));
+/**
+ * Mène un export : un seul à la fois, avancement suivi pendant le calcul, annulation possible à tout moment.
+ * `work` reçoit `step(i, n, label)` pour annoncer le rendu qu'il commence, et `guard(promesse)` qui rend la main dès l'annulation.
+ */
+async function runExport(work: (step: (i: number, n: number, label?: string) => void, guard: <T>(p: Promise<T>) => Promise<T>) => Promise<void>, fail: (e: Error) => string) {
+  if (exportJob.busy) return toast(t('exp.busy'));
+  let i = 0, n = 1, half = false, stop!: (e: Error) => void;
+  const cancelled = new Promise<never>((_, rej) => { stop = rej; }); cancelled.catch(() => { });
+  cancelJob = () => stop(new Error('cancel'));
+  const say = (m: string) => toast(m, 'info', { sticky: true, action: { label: t('exp.cancel'), fn: cancelExport } });
+  Object.assign(exportJob, { busy: true, pct: 0, label: '' }); exportJob.onChange(); say(t('toast.rendering'));
+  const timer = window.setInterval(() => {
+    exportJob.pct = jobPct(i, n, renderProgress() ?? (exportJob.pct * n - i)); exportJob.onChange();
+    // Une seule annonce en cours de route (mi-parcours) : la zone de statut ne doit pas parler sans arrêt.
+    if (!half && n === 1 && exportJob.pct >= 0.5 && exportJob.pct < 0.95) { half = true; say(t('exp.half')); }
+  }, 150);
   try {
-    toast(t('toast.rendering'));
-    download(await encodeMp3(await renderOffline(S.project, true, exportRange())), safeName() + rangeName() + '.mp3');
+    await work((a, b, label = '') => { i = a; n = b; exportJob.label = label; exportJob.pct = jobPct(a, b, 0); exportJob.onChange(); if (label) say(label); }, p => Promise.race([p, cancelled]));
+  } catch (e) {
+    if ((e as Error).message === 'cancel') toast(t('exp.cancelled')); else toast(fail(e as Error), 'error');
+  } finally { clearInterval(timer); cancelJob = null; Object.assign(exportJob, { busy: false, pct: 0, label: '' }); exportJob.onChange(); }
+}
+const exportError = (e: Error) => e.message === 'empty' ? t('toast.emptyProject') : e.message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail');
+
+export function exportMp3() {
+  return runExport(async (step, guard) => {
+    const buf = await guard(renderOffline(S.project, true, exportRange()));
+    step(1, 1, t('exp.encoding'));
+    download(await guard(encodeMp3(buf)), safeName() + rangeName() + '.mp3');
     toast(t('toast.mp3Exported'));
-  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
+  }, exportError);
 }
 
 /**
@@ -605,30 +638,29 @@ export async function toggleRecord() {
 }
 engine.onRecEnd = kind => { allNotesOff(); if (kind === 'midi') setTimeout(commit, 350); };
 
-export async function exportWav() {
-  try {
-    toast(t('toast.rendering'));
-    download(encodeWav(await renderOffline(S.project, true, exportRange()), S.project.exp.bits), safeName() + rangeName() + '.wav');
+export function exportWav() {
+  return runExport(async (_step, guard) => {
+    download(encodeWav(await guard(renderOffline(S.project, true, exportRange())), S.project.exp.bits), safeName() + rangeName() + '.wav');
     toast(lastRender.wamFailed ? t('toast.exportedNoWam', lastRender.wamFailed) : t('toast.exported'), lastRender.wamFailed ? 'error' : 'info');
-  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
+  }, exportError);
 }
 
 /** Une piste = un fichier WAV, tous de la même durée, réunis dans une archive ZIP. */
 export async function exportStems() {
   const p = S.project;
   if (!contentEnd(p)) return toast(t('toast.emptyProject'), 'error');
-  try {
+  return runExport(async (step, guard) => {
     const files: { name: string; data: Uint8Array }[] = [];
     const list = p.tracks.filter(tr => tr.clips.length && !tr.mute);
     for (const [i, tr] of list.entries()) {
-      toast(t('toast.stem', i + 1, list.length));
+      step(i, list.length, t('toast.stem', i + 1, list.length));
       const solo: typeof p = { ...p, tracks: p.tracks.map(x => ({ ...x, solo: false, mute: x.id !== tr.id })) };
-      const wav = encodeWav(await renderOffline(solo, false, exportRange()), p.exp.bits);
+      const wav = encodeWav(await guard(renderOffline(solo, false, exportRange())), p.exp.bits);
       files.push({ name: `${String(i + 1).padStart(2, '0')}_${ascii(tr.name)}.wav`, data: new Uint8Array(await wav.arrayBuffer()) });
     }
     download(zip(files), safeName() + rangeName() + '_stems.zip');
     toast(t('toast.stemsDone', files.length));
-  } catch { toast(t('toast.exportFail'), 'error'); }
+  }, () => t('toast.exportFail'));
 }
 
 export function exportMidiFile() {

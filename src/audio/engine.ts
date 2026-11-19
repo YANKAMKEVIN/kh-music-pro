@@ -525,6 +525,20 @@ setLiveInstOf(id => engine.mix.instOf(id));
 /** `parts` : nombre de rendus menés en parallèle pour le dernier export (1 = d'un seul tenant). */
 export const lastRender = { wamFailed: 0, pdc: 0, parts: 1 };
 
+/** Rendus hors-ligne en cours : ne sert qu'à afficher l'avancement d'un export, le calcul n'en dépend pas. */
+const rendering = new Set<OfflineAudioContext>();
+async function tracked(off: OfflineAudioContext): Promise<AudioBuffer> {
+  rendering.add(off);
+  try { return await off.startRendering(); } finally { rendering.delete(off); }
+}
+/** Avancement du rendu en cours, de 0 à 1 (null si rien ne se calcule). Avec des rendus parallèles, le plus en retard donne le ton. */
+export function renderProgress(): number | null {
+  if (!rendering.size) return null;
+  let m = 1;
+  for (const c of rendering) m = Math.min(m, c.currentTime * c.sampleRate / c.length);
+  return Math.max(0, Math.min(1, m));
+}
+
 /** Rend une partie du projet (toutes ses pistes, ou un groupe d'entre elles) jusqu'au pas `end`.
  *  `stem` : la sortie s'arrête au volume général, avant sa chaîne (filtre, égaliseur, largeur, limiteur), appliquée ensuite une seule fois. */
 async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, limit: number | null = null) {
@@ -542,7 +556,7 @@ async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, li
     off.suspend(q * 128 / sr).then(() => { fns.forEach(f => f()); off.resume(); });
   }
   await mix.flushInsts();   // instruments du Mac : toutes leurs notes sont arrivées avant le calcul
-  const out = await off.startRendering();
+  const out = await tracked(off);
   mix.active.clear(); mix.disposePlugins();
   return { out, wamFailed, pdc: mix.pdcMax };
 }
@@ -605,7 +619,7 @@ export async function renderOffline(p: Project, normalize = true, range: RenderR
     const off = new OfflineAudioContext(2, len, sr), mix = new Mix(off, false);
     mix.sync({ ...p, tracks: [], buses: [] });
     const src = off.createBufferSource(); src.buffer = sum; mix.masterChainIn(src); src.start(0);
-    out = await off.startRendering();
+    out = await tracked(off);
   }
   lastRender.parts = groups?.length ?? 1;
   // Compensation de latence des plugins : tout le mixage sort en retard de `pdcMax` ; on le ramène au début du fichier,

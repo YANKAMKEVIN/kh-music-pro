@@ -385,6 +385,13 @@ const D: Record<string, [string, string, string]> = {
   'exp.sumAll': ['tout le morceau', 'whole song', 'toda la canción'],
   'exp.sumLoop': ['boucle, mesures {0} à {1}', 'loop, bars {0} to {1}', 'bucle, compases {0} a {1}'],
   'exp.sumBars': ['mesures {0} à {1}', 'bars {0} to {1}', 'compases {0} a {1}'],
+  'exp.progress': ['Export en cours', 'Export in progress', 'Exportación en curso'],
+  'exp.cancel': ['Annuler', 'Cancel', 'Cancelar'],
+  'exp.cancelTip': ['Annuler l’export en cours', 'Cancel the export in progress', 'Cancelar la exportación en curso'],
+  'exp.cancelled': ['Export annulé : aucun fichier n’a été créé', 'Export cancelled: no file was created', 'Exportación cancelada: no se ha creado ningún archivo'],
+  'exp.busy': ['Un export est déjà en cours', 'An export is already in progress', 'Ya hay una exportación en curso'],
+  'exp.half': ['Rendu du morceau : la moitié est faite…', 'Rendering the song: halfway there…', 'Renderizando la canción: va por la mitad…'],
+  'exp.encoding': ['Encodage du fichier…', 'Encoding the file…', 'Codificando el archivo…'],
   // V19 : contrôles joués
   'syn.bend': ['Plage du pitch bend', 'Pitch bend range', 'Rango del pitch bend'],
   'ctl.pb': ['Pitch bend', 'Pitch bend', 'Pitch bend'],
