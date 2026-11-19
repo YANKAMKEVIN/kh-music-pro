@@ -67,3 +67,48 @@ export function followDrag(e: PointerEvent, move: (ev: PointerEvent) => void, en
   addEventListener('pointermove', mv); addEventListener('pointerup', fin); addEventListener('pointercancel', fin);
   return stop;
 }
+
+/** Ligne d'un menu contextuel : libellé, raccourci affiché à droite, action. `null` dans la liste = trait de séparation. */
+export interface MenuItem { id: string; label: string; key?: string; fn: () => void; danger?: boolean; disabled?: boolean }
+/**
+ * Menu contextuel posé près du point (x, y), dans le style des menus ⋯ des pistes. Flèches, Début et Fin passent d'une ligne à
+ * l'autre, Entrée choisit, Échap ou un clic ailleurs referme. Tant qu'il est ouvert, les raccourcis de l'application sont
+ * suspendus (Suppr ne supprime pas le clip derrière le menu). `back` retrouve l'élément qui reprend le focus à la fermeture.
+ */
+export function popMenu(x: number, y: number, items: (MenuItem | null)[], label: string, back?: () => HTMLElement | null) {
+  document.querySelector<HTMLElement & { khClose?: () => void }>('.menu-list.ctx')?.khClose?.();
+  const el: HTMLDivElement & { khClose?: () => void } = h('div', { class: 'menu-list ctx', role: 'menu', 'aria-label': label });
+  const close = (refocus = true) => {
+    if (!el.isConnected) return;
+    el.remove(); removeEventListener('keydown', key, true); document.removeEventListener('pointerdown', away, true);
+    removeEventListener('scroll', gone, true); removeEventListener('resize', gone); removeEventListener('blur', gone);
+    if (refocus) back?.()?.focus({ preventScroll: true });
+  };
+  const gone = () => close(false);
+  const away = (e: Event) => { if (!el.contains(e.target as Node)) close(false); };
+  const btns = () => [...el.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+  const key = (e: KeyboardEvent) => {
+    e.stopPropagation();
+    const l = btns(), i = l.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); l[(i + 1) % l.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); l[(i - 1 + l.length) % l.length]?.focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); l[0]?.focus(); }
+    else if (e.key === 'End') { e.preventDefault(); l[l.length - 1]?.focus(); }
+  };
+  for (const it of items) el.append(it
+    ? h('button', { role: 'menuitem', class: it.danger ? 'danger' : '', disabled: !!it.disabled, data: { ctx: it.id }, onclick: () => { close(); it.fn(); } }, h('span', {}, it.label), it.key ? h('kbd', {}, it.key) : null)
+    : h('hr', {}));
+  el.khClose = gone;
+  el.oncontextmenu = e => e.preventDefault();
+  document.body.append(el);
+  el.style.left = Math.round(Math.max(8, Math.min(x, innerWidth - el.offsetWidth - 8))) + 'px';
+  el.style.top = Math.round(y + el.offsetHeight > innerHeight - 8 ? Math.max(8, y - el.offsetHeight) : y) + 'px';
+  addEventListener('keydown', key, true); document.addEventListener('pointerdown', away, true);
+  addEventListener('resize', gone); addEventListener('blur', gone);
+  // Un défilement emporte ce que le menu désigne : on le referme. Écouté un instant plus tard seulement, car l'ouverture
+  // peut elle-même redessiner l'éditeur (clip nouvellement sélectionné), qui retrouve alors sa position de défilement.
+  setTimeout(() => { if (el.isConnected) addEventListener('scroll', gone, true); }, 300);
+  btns()[0]?.focus({ preventScroll: true });
+  return el;
+}

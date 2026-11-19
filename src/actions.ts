@@ -536,10 +536,12 @@ export function tuneClip(amount: number) {
   commit(); toast(t('toast.tuned', Math.round(r.meanCents)));
 }
 
-export function splitClip() {
+export function splitClip() { splitClipAt(Math.round(engine.currentStep())); }
+/** Scinde le clip sélectionné au pas `at` (la tête de lecture pour Ctrl+E, l'endroit visé pour « Scinder ici »). */
+export function splitClipAt(at: number) {
   const f = findClip(S.selClip);
   if (!f) return toast(t('toast.selectClip'));
-  const { clip, track } = f, at = Math.round(engine.currentStep());
+  const { clip, track } = f;
   if (at <= clip.start || at >= clip.start + clip.len) return toast(t('toast.playheadInside'));
   const right: Clip = JSON.parse(JSON.stringify(clip));
   right.id = uid(); right.start = at; right.len = clip.start + clip.len - at;

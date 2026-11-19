@@ -4879,6 +4879,71 @@ test('UX02d', 'Téléphone', 'Pincer à deux doigts zoome l’arrangement ; un c
   } finally { await ctx2.close(); }
 });
 
+const ctxItems = () => page.$$eval('.menu-list.ctx [role=menuitem]', l => l.map(b => ({ id: b.dataset.ctx, txt: b.querySelector('span').textContent, key: b.querySelector('kbd')?.textContent ?? '', off: b.disabled })));
+test('UX03a', 'Arrangement', 'Clic droit sur un clip : menu avec Renommer, Dupliquer, Scinder ici, Boucler, Copier, Supprimer et leurs raccourcis', async () => {
+  const sel = await clipSel(1, 0); await page.click(sel, { button: 'right', position: { x: 200, y: 40 } });
+  expect(await page.isVisible('.menu-list.ctx'), 'menu du clip absent');
+  const it = await ctxItems(); expect(it.map(x => x.id).join() === 'rename,dup,split,loop,copy,del', 'lignes : ' + JSON.stringify(it));
+  expect(it[1].key === 'Ctrl+D' && it[4].key === 'Ctrl+C' && it[5].key === 'Suppr' && it[2].txt === 'Scinder ici', 'raccourcis ou libellés : ' + JSON.stringify(it));
+  expect(await page.getAttribute('.menu-list.ctx', 'role') === 'menu' && (await page.getAttribute('.menu-list.ctx', 'aria-label')).includes('Ligne de basse'), 'nom accessible du menu');
+  expect(await S(() => window.kh.S.selClip === window.kh.S.project.tracks[1].clips[0].id), 'le clip visé doit être sélectionné');
+  const m = await box('.menu-list.ctx'); expect(m.x >= 0 && m.y >= 0 && m.x + m.width <= 1500 && m.y + m.height <= 900, 'menu hors de l’écran');
+  await page.click('[data-ctx=dup]'); expect(!(await page.$('.menu-list.ctx')), 'le menu reste ouvert après un choix');
+  near((await proj()).tracks[1].clips.length, 2, 0, 'clip non dupliqué');
+  // Échap referme sans rien faire et rend le focus au clip ; un clic ailleurs referme aussi.
+  await page.click(sel, { button: 'right', position: { x: 100, y: 40 } }); await page.keyboard.press('Escape');
+  expect(!(await page.$('.menu-list.ctx')), 'Échap ne referme pas'); expect(await page.evaluate(s => document.activeElement === document.querySelector(s), sel), 'le focus ne revient pas au clip');
+  await page.click(sel, { button: 'right', position: { x: 100, y: 40 } }); await page.mouse.click(700, 500); expect(!(await page.$('.menu-list.ctx')), 'un clic ailleurs ne referme pas');
+  near((await proj()).tracks[1].clips.length, 2, 0, 'rien ne doit changer en refermant');
+});
+test('UX03b', 'Arrangement', 'Menu du clip : scinder à l’endroit visé, boucler, copier puis coller, renommer, supprimer', async () => {
+  const sel = await clipSel(1, 0), open = x => page.click(sel, { button: 'right', position: { x, y: 40 } });
+  await open(11 * 20 + 3); await page.click('[data-ctx=split]');   // pas 20 : aimanté sur le temps (grille de 4 pas)
+  let c = (await proj()).tracks[1].clips; expect(c.length === 2 && c[0].len === 20 && c[1].start === 20 && c[1].len === 44, 'scission : ' + JSON.stringify(c.map(x => [x.start, x.len])));
+  await open(30); await page.click('[data-ctx=loop]'); let p = await proj(); expect(p.loop && p.loopStart === 0 && p.loopLen === 2, `boucle ${p.loopStart}+${p.loopLen}`);
+  await open(30); await page.click('[data-ctx=copy]'); await S(() => window.kh.engine.seek(96)); await page.keyboard.press('Control+v');
+  c = (await proj()).tracks[1].clips; expect(c.length === 3 && c[2].start === 96 && c[2].len === 20, 'copier puis coller : ' + JSON.stringify(c.map(x => [x.start, x.len])));
+  await tab('mixer'); await open(30); await page.click('[data-ctx=rename]');
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('cname-in')), 'le champ du nom ne prend pas le focus');
+  await page.keyboard.type('Couplet'); await page.keyboard.press('Tab'); expect((await proj()).tracks[1].clips[0].name === 'Couplet', 'nom non enregistré');
+  await open(30); await page.click('[data-ctx=del]'); c = (await proj()).tracks[1].clips; expect(c.length === 2 && !c.some(x => x.name === 'Couplet'), 'clip non supprimé');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].clips.length === 3, 'la suppression doit être annulable');
+  // Au bord du clip, « Scinder ici » est grisé.
+  await open(2); expect((await ctxItems())[2].off, 'scinder au bord du clip devrait être grisé'); await page.keyboard.press('Escape');
+});
+test('UX03c', 'Accessibilité', 'Menu du clip au clavier : Maj+F10 l’ouvre, les flèches le parcourent, Entrée choisit ; Suppr n’agit pas derrière le menu', async () => {
+  const sel = await clipSel(2, 0); await page.focus(sel); await page.keyboard.press('Shift+F10');
+  expect(await page.isVisible('.menu-list.ctx'), 'Maj+F10 n’ouvre pas le menu');
+  const it = await ctxItems(); expect(it[2].txt === 'Scinder à la tête de lecture' && it[2].key === 'Ctrl+E' && it[2].off, 'scission au clavier : ' + JSON.stringify(it[2]));
+  expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'rename', 'la première ligne doit avoir le focus');
+  await page.keyboard.press('Delete'); await page.keyboard.press('Space');   // Espace actionne la ligne (Renommer), pas la lecture ; refermons
+  expect(!(await S(() => window.kh.engine.playing)), 'Espace a lancé la lecture derrière le menu'); near((await proj()).tracks[2].clips.length, 1, 0, 'Suppr a supprimé le clip derrière le menu');
+  await page.focus(sel); await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('ArrowDown'); expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'dup', 'flèche bas');
+  await page.keyboard.press('End'); expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'del', 'touche Fin');
+  await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'loop', 'flèche haut (la ligne grisée est sautée)');
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  near((await proj()).tracks[2].clips.length, 0, 0, 'Entrée sur Supprimer');
+  for (const [l, w] of [['en', 'Split here'], ['es', 'Dividir aquí'], ['fr', 'Scinder ici']]) { await page.evaluate(l => window.kh.setLang(l), l); await page.click(await clipSel(1, 0), { button: 'right', position: { x: 100, y: 40 } }); expect((await ctxItems())[2].txt === w, 'non traduit en ' + l); await page.keyboard.press('Escape'); }
+});
+test('UX03d', 'Téléphone', 'Appui long au doigt sur un clip : le menu s’ouvre, le clip ne bouge pas, Supprimer et Dupliquer marchent au doigt', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
+    await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const cdp = await ctx2.newCDPSession(pg), b = await (await pg.$('.lane >> nth=0 >> .clip >> nth=0')).boundingBox(), x = b.x + 40, y = b.y + 40;
+    const hold = async ms => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await pg.waitForTimeout(ms); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(120); };
+    await hold(150); expect(!(await pg.$('.menu-list.ctx')), 'un appui bref ne doit pas ouvrir le menu');
+    await hold(800); expect(await pg.isVisible('.menu-list.ctx'), 'l’appui long n’ouvre pas le menu');
+    const m = await (await pg.$('.menu-list.ctx')).boundingBox(), hgt = await pg.$eval('[data-ctx=del]', e => e.offsetHeight);
+    expect(m.x >= 0 && m.x + m.width <= 390 && m.y + m.height <= 844, 'menu hors de l’écran du téléphone'); expect(hgt >= 44, `ligne trop petite pour le doigt (${hgt} px)`);
+    const n0 = await pg.evaluate(() => window.kh.S.project.tracks[0].clips.length);
+    await pg.tap('[data-ctx=dup]'); expect(await pg.evaluate(() => window.kh.S.project.tracks[0].clips.length) === n0 + 1, 'Dupliquer au doigt');
+    await hold(800); await pg.tap('[data-ctx=del]'); const r = await pg.evaluate(() => ({ n: window.kh.S.project.tracks[0].clips.length, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
+    expect(r.n === n0, 'Supprimer au doigt'); expect(r.starts.every(s => s % 16 === 0), 'un clip a bougé pendant l’appui long : ' + r.starts);
+  } finally { await ctx2.close(); }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

@@ -623,3 +623,13 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 .xcancel:hover { border-color: var(--rec); color: var(--rec); }
 #toast.act { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
 #toast .tact { height: 32px; flex: none; }
+
+/* ================= UX : menu contextuel des clips ================= */
+.menu-list.ctx { position: fixed; top: auto; right: auto; z-index: 70; min-width: 230px; max-width: calc(100vw - 16px); }
+.menu-list.ctx button { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; }
+.menu-list.ctx button:disabled { opacity: .4; cursor: not-allowed; }
+.menu-list.ctx kbd { color: var(--dim); font-size: 10.5px; }
+.menu-list.ctx .danger { color: #ff8fa3; }
+.clip:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+@media (pointer: coarse) { .menu-list.ctx button { height: 44px; } }
+@media (max-width: 760px) { .menu-list.ctx { left: auto; right: auto; min-width: 230px !important; } }

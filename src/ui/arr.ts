@@ -1,11 +1,11 @@
-import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, selectedClips, unfreezeTrack } from '../actions';
+import { addTrack, audioFiles, copyClip, deleteClip, deleteTrack, duplicateClip, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, selectedClips, setLoopToClip, splitClipAt, unfreezeTrack } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
 import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
-import { clamp, followDrag, h } from './dom';
+import { clamp, followDrag, h, popMenu } from './dom';
 
 export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
@@ -229,11 +229,50 @@ function clipEl(tr: Track, c: Clip) {
   return el;
 }
 
+/**
+ * Menu d'un clip (clic droit, appui long au doigt, touche Menu ou Maj+F10) : les actions de la barre de l'éditeur et du clavier,
+ * là où l'on regarde. `at` : pas visé par le pointeur (« Scinder ici ») ; sans pointeur, la scission se fait à la tête de lecture.
+ */
+function clipMenu(tr: Track, c: Clip, x: number, y: number, at: number | null) {
+  // Le clip visé devient le clip sélectionné, sauf s'il fait partie d'une sélection multiple (les actions portent alors sur elle).
+  if (S.selClip !== c.id && !S.selMore.has(c.id)) select(tr.id, c.id);
+  const here = at ?? Math.round(engine.currentStep()), inside = here > c.start && here < c.start + c.len;
+  popMenu(x, y, [
+    { id: 'rename', label: t('ctx.rename'), fn: () => {
+      select(tr.id, c.id); S.tab = 'editor'; emit();
+      const f = document.querySelector<HTMLInputElement>('#panel .cname-in'); f?.focus(); f?.select();
+    } },
+    { id: 'dup', label: t('act.dup'), key: 'Ctrl+D', fn: duplicateClip },
+    { id: 'split', label: t(at === null ? 'ctx.splitPlay' : 'ctx.splitHere'), key: at === null ? 'Ctrl+E' : undefined, disabled: !inside, fn: () => { select(tr.id, c.id); splitClipAt(here); } },
+    { id: 'loop', label: t('act.loop'), fn: () => { select(tr.id, c.id); setLoopToClip(); } },
+    { id: 'copy', label: t('ctx.copy'), key: 'Ctrl+C', fn: () => { select(tr.id, c.id); copyClip(); } },
+    null,
+    { id: 'del', label: t('act.del'), key: t('help.key.del'), danger: true, fn: deleteClip },
+  ], t('ctx.clip', c.name), () => document.querySelector<HTMLElement>(`.clip[data-id="${c.id}"]`));
+}
+const ctxOpen = () => !!document.querySelector('.menu-list.ctx');
+
 function lane(tr: Track) {
   const el = h('div', { class: 'lane' + (S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id } });
   for (const c of tr.clips) el.append(clipEl(tr, c));
   if (!tr.clips.length) el.append(h('div', { class: 'hint' }, t(tr.type === 'audio' ? 'hint.audioLane' : 'hint.patternLane')));
   el.onpointerdown = e => laneDown(e, tr);
+  const clipOf = (e: Event) => { const ce = (e.target as HTMLElement).closest<HTMLElement>('.clip'), c = ce && tr.clips.find(x => x.id === ce.dataset.id); return ce && c ? { ce, c } : null; };
+  el.oncontextmenu = e => {
+    const hit = clipOf(e);
+    if (!hit) return;
+    e.preventDefault();
+    if (ctxOpen()) return;   // déjà ouvert par l'appui long ou par le clavier
+    const r = hit.ce.getBoundingClientRect(), on = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    if (on) clipMenu(tr, hit.c, e.clientX, e.clientY, Math.round((e.clientX - el.getBoundingClientRect().left) / S.px / S.snap) * S.snap);
+    else clipMenu(tr, hit.c, r.left + 12, r.top + 24, null);   // demandé au clavier : posé sur le clip
+  };
+  el.onkeydown = e => {
+    const hit = (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) && clipOf(e);
+    if (!hit) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = hit.ce.getBoundingClientRect(); clipMenu(tr, hit.c, Math.max(r.left, el.parentElement!.getBoundingClientRect().left) + 12, r.top + 24, null);
+  };
   el.ondblclick = e => {
     if ((e.target as HTMLElement).closest('.clip')) { S.tab = 'editor'; emit(); return; }
     const start = Math.floor((e.clientX - el.getBoundingClientRect().left) / S.px / BAR) * BAR;
@@ -266,8 +305,14 @@ function laneDown(e: PointerEvent, tr: Track) {
   // Déplacement de groupe : les autres clips sélectionnés suivent, chacun sur sa piste.
   const others = grouped && !resize && !trim ? selectedClips().filter(x => x.clip !== clip).map(x => ({ c: x.clip, s: x.clip.start, el: document.querySelector<HTMLElement>(`.clip[data-id="${x.clip.id}"]`) })) : [];
   const minStart = Math.min(o.start, ...others.map(x => x.s));
-  let changed = false, target = tr;
+  let changed = false, target = tr, stop = () => { };
+  // Appui long au doigt ou au stylet (sans bouger) : le menu du clip s'ouvre, le glissé est abandonné.
+  const hold = e.pointerType === 'mouse' ? 0 : window.setTimeout(() => {
+    if (changed || ctxOpen()) return;
+    stop(); clipMenu(tr, clip, e.clientX + 4, e.clientY + 4, Math.round((e.clientX - el.parentElement!.getBoundingClientRect().left) / px / S.snap) * S.snap);
+  }, 550);
   const mv = (ev: PointerEvent) => {
+    if (Math.hypot(ev.clientX - sx, ev.clientY - e.clientY) > 8) clearTimeout(hold);
     let d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
     if (resize) { clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen); if (o.comp) { clip.comp = o.comp.map(x => ({ ...x })); compSlice(clip, 0, clip.len); } }
     else if (trim) {
@@ -290,11 +335,12 @@ function laneDown(e: PointerEvent, tr: Track) {
     if (over && tt && tt.type === tr.type && tt !== target) { target = tt; over.append(el); changed = true; }
   };
   const up = () => {
+    clearTimeout(hold);
     if (target !== tr) { tr.clips.splice(tr.clips.indexOf(clip), 1); target.clips.push(clip); S.selTrack = target.id; }
     if (changed) commit();
   };
   // Geste annulé : le clip (et ceux qui le suivaient) reviennent à leur place, sur leur piste.
-  followDrag(e, mv, up, () => { revert(); if (target !== tr) emit(); });
+  stop = followDrag(e, mv, up, () => { clearTimeout(hold); revert(); if (target !== tr) emit(); });
 }
 
 export function renderArr() {
