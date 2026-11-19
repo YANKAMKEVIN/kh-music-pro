@@ -2053,6 +2053,40 @@ test('NAT05', 'Moteur natif', 'Réglage et plugins du Mac en anglais et en espag
     expect((await page.getAttribute('[data-role=aulist]', 'label')).includes(grp), `${l} : groupe des plugins du Mac`); await page.keyboard.press('Escape');
   }
 });
+test('NAT06', 'Moteur natif', 'Horloge de Web Audio : sur une carte son externe, le navigateur se cale sur les haut-parleurs du Mac (pas sur la carte du natif) ; sinon sur la sortie du natif ; carte débranchée suivie', async () => {
+  await S(() => { window.qa.fakeNative(); });
+  const r = await S(async () => {
+    const e = window.kh.engine, md = navigator.mediaDevices, enumOrig = md.enumerateDevices, sinkOrig = e.ctx.setSinkId, sinks = [];
+    let list = [];
+    const dev = (id, label) => ({ kind: 'audiooutput', deviceId: id, label, groupId: id });
+    md.enumerateDevices = async () => list;
+    e.ctx.setSinkId = async id => { sinks.push(typeof id === 'string' ? id : 'none'); };
+    const out = [];
+    const step = async (name, opts) => { sinks.length = 0; await e.native.configure(opts); out.push([name, sinks.at(-1) ?? '(inchangée)', e.native.clock]); };
+    try {
+      list = [dev('default', 'Default - Haut-parleurs MacBook Pro (Built-in)'), dev('sc', 'Scarlett 4i4 USB (1235:8212)'), dev('mb', 'Haut-parleurs MacBook Pro (Built-in)')];
+      await e.useNative({ output: 'Scarlett' }); out.push(['démarrage sur la Scarlett', e.native.clock]);
+      await step('sortie du Mac choisie', { output: 'MacBook' });
+      list[0] = dev('default', 'Default - Scarlett 4i4 USB (1235:8212)');
+      await step('sortie du système = la Scarlett', { output: '' });
+      await step('réglage « output »', { output: 'Scarlett', clock: 'output' });
+      await step('réglage « none »', { clock: 'none' });
+      list = [dev('default', 'Default - Scarlett 4i4 USB (1235:8212)'), dev('sc', 'Scarlett 4i4 USB (1235:8212)')];
+      await step('Mac sans haut-parleurs intégrés', { output: 'Scarlett', clock: undefined });
+      list = [dev('default', 'Default - Haut-parleurs MacBook Pro (Built-in)'), dev('mb', 'Haut-parleurs MacBook Pro (Built-in)')];
+      await step('Scarlett débranchée : le natif revient au système', { output: '' });
+    } finally { await e.stopNative(); md.enumerateDevices = enumOrig; e.ctx.setSinkId = sinkOrig; }
+    return out;
+  });
+  const want = [['démarrage sur la Scarlett', 'Haut-parleurs MacBook Pro (Built-in)'],
+    ['sortie du Mac choisie', 'mb', 'MacBook'],
+    ['sortie du système = la Scarlett', 'mb', 'Haut-parleurs MacBook Pro (Built-in)'],
+    ['réglage « output »', 'sc', 'Scarlett'],
+    ['réglage « none »', 'none', null],
+    ['Mac sans haut-parleurs intégrés', 'sc', 'Scarlett'],
+    ['Scarlett débranchée : le natif revient au système', '', '']];
+  expect(JSON.stringify(r) === JSON.stringify(want), `horloges choisies :\n${JSON.stringify(r)}\nattendu :\n${JSON.stringify(want)}`);
+});
 test('MAC01', 'Plugins du Mac', 'Les plugins d\'effet du Mac sont proposés dans la chaîne d\'effets, triés ; en ajouter un affiche ses réglages', async () => {
   await S(() => { window.qa.fakeNative(); });
   await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');

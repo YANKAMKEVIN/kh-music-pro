@@ -24,11 +24,16 @@ export interface IoOptions {
   /** Gain appliqué en sortie par le natif (1e-5 = -100 dB, pour les longues tenues sans rien faire entendre). */
   gain?: number;
   /**
-   * Ce qui cadence le calcul de Web Audio. 'output' (par défaut) : la sortie choisie elle-même, ouverte aussi par Chromium
-   * mais sans rien y faire entendre ; les deux côtés suivent alors la même horloge. 'none' : contexte sans sortie
-   * (setSinkId « none »), cadencé par une horloge logicielle de Chromium, irrégulière (essais de l'étape 5).
+   * Ce qui cadence le calcul de Web Audio. Par défaut ('apart', V19) : une sortie intégrée du Mac, ouverte par Chromium
+   * sans rien y faire entendre, quand le natif joue sur une autre carte ; sinon la sortie du natif elle-même. Chromium
+   * attend son calcul pendant le tour de la carte son : sur la même carte que le natif, ses retards déclenchent des
+   * surcharges de toute la carte (tenues du 19/11/2026 sur une Scarlett : 9 surcharges et 19 manques par heure ;
+   * horloge sur les haut-parleurs du Mac : aucun en 20 min ; la carte seule, sans KH : aucun). Le natif rattrape déjà
+   * l'écart entre deux horloges (régulateur), comme avec 'none'.
+   * 'output' : toujours la sortie du natif. 'none' : contexte sans sortie (setSinkId « none »), cadencé par une horloge
+   * logicielle de Chromium, irrégulière (essais de l'étape 5).
    */
-  clock?: 'output' | 'none';
+  clock?: 'apart' | 'output' | 'none';
 }
 export interface IoInfo { output: string; input: string | null; inChannels: number; outDeclared: number; inDeclared: number; outRate: number; inRate?: number; buffer: number }
 export interface IoStats {
@@ -143,12 +148,29 @@ export class NativeIO {
         catch { if (this.opts.input) this.opts.input = ''; try { this.restart(); } catch { this.opts.input = null; this.restart(); } }
       }
       // La sortie de Chromium qui cadence Web Audio a pu disparaître aussi (contexte en erreur) : on la rouvre.
-      await this.setClock(this.opts.clock === 'none' ? null : this.opts.output ?? '', true);
+      await this.setClock(await this.clockTarget(), true);
       this.seen = this.br.ioStats()?.devEvents ?? this.seen;
       if (before.output !== this.info.output || before.input !== this.info.input) this.onDevices(this.info);
       return this.info;
     } catch { return undefined; }
     finally { this.recovering = false; }
+  }
+
+  /** Sortie de Chromium qui doit cadencer Web Audio pour les réglages actuels (voir IoOptions.clock). */
+  private async clockTarget(): Promise<string | null> {
+    if (this.opts.clock === 'none') return null;
+    const out = this.opts.output ?? '';
+    if (this.opts.clock === 'output') return out;
+    try {
+      const all = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput');
+      const builtIn = (l: string) => /\(built-in\)/i.test(l);
+      // Sortie du natif : celle dont le libellé contient le nom demandé, ou celle du système (« Default - … »).
+      const mine = out ? all.find(d => d.deviceId !== 'default' && d.deviceId !== 'communications' && d.label.toLowerCase().includes(out.toLowerCase()))?.label
+        : all.find(d => d.deviceId === 'default')?.label.replace(/^[^-]*-\s*/, '');
+      if (!mine || builtIn(mine)) return out;
+      const other = all.find(d => d.deviceId !== 'default' && d.deviceId !== 'communications' && builtIn(d.label) && d.label !== mine);
+      return other ? other.label : out;
+    } catch { return out; }
   }
 
   /** Sortie du navigateur qui cadence Web Audio (partie de son libellé), ou null sans sortie. */
@@ -171,7 +193,7 @@ export class NativeIO {
   /** Change les réglages (appareils, niveaux cibles...) et redémarre le natif ; les tampons partagés continuent, le natif s'y recale. */
   async configure(opts: IoOptions = {}): Promise<IoInfo> {
     this.opts = { ...this.opts, ...opts };
-    await this.setClock(this.opts.clock === 'none' ? null : this.opts.output ?? '');
+    await this.setClock(await this.clockTarget());
     return this.restart();
   }
   /** Réserve d'entrée effective, en échantillons. */
