@@ -143,6 +143,7 @@ export function buildTop(onLang: () => void) {
       b('bPlay', 'tbtn play', '▶', t('top.play'), () => engine.toggle()),
       b('bRec', 'tbtn rec', '●', t('top.rec'), () => toggleRecord())),
     h('div', { class: 'grp display' },
+      h('i', { id: 'beat', 'aria-hidden': 'true' }),
       h('div', {}, h('span', { id: 'pos' }, '1.1.1'), h('small', {}, t('top.bar'))),
       h('div', { class: 'dtime' }, h('span', { id: 'time' }, '0:00.0'), h('small', {}, t('top.time'))),
       h('label', {}, bpm, h('small', {}, 'BPM'))),

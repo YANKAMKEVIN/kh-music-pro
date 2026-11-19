@@ -35,6 +35,13 @@ class Engine {
   private nextStep = 0;
   private nextTime = 0;
   private t0 = 0;
+  /** Durée du décompte de la lecture en cours (0 = aucun) : ne sert qu'à l'afficher. */
+  private pre = 0;
+  /** Décompte en cours : temps restants avant le départ (4 au premier clic, puis 3, 2, 1 ; valeur continue), 0 hors décompte. */
+  countLeft(): number {
+    if (!this.playing || this.pre <= 0) return 0;
+    return Math.max(0, Math.min(4, (this.t0 - this.ctx.currentTime) / (this.pre / 4)));
+  }
   /** Instant de départ de la lecture en cours : distingue une prise de la suivante. */
   get runStart() { return this.t0; }
   private seg = true;
@@ -113,6 +120,7 @@ class Engine {
     this.sync();
     this.playing = true;
     this.t0 = this.nextTime = this.ctx.currentTime + 0.06 + preroll;
+    this.pre = preroll;
     this.seg = true; this.marks = [];
     if (preroll > 0) { const beat = preroll / 4; for (let i = 0; i < 4; i++) this.click(this.t0 - preroll + i * beat, i === 0); }
     this.timer = window.setInterval(() => this.tick(), 25);

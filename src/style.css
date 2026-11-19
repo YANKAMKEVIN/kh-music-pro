@@ -633,3 +633,13 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 .clip:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 @media (pointer: coarse) { .menu-list.ctx button { height: 44px; } }
 @media (max-width: 760px) { .menu-list.ctx { left: auto; right: auto; min-width: 230px !important; } }
+
+/* ================= UX : décompte et temps visibles ================= */
+.display { position: relative; }
+#beat { position: absolute; left: 7px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); opacity: .3; pointer-events: none; }
+#beat.on { background: var(--a1); opacity: 1; box-shadow: 0 0 10px var(--a1); }
+#beat.on.acc { background: #fff; box-shadow: 0 0 14px 3px var(--a1); transform: scale(1.4); }
+.display.count #pos { font-size: 34px; line-height: 39px; color: var(--rec); text-shadow: 0 0 16px rgba(255, 77, 109, .8); }
+.display.count #pos + small { display: none; }
+.display.count #beat.on { background: var(--rec); box-shadow: 0 0 14px 3px var(--rec); }
+@media (max-width: 760px) { .display.count #pos { font-size: 26px; line-height: 33px; } #beat { left: 4px; top: 4px; width: 6px; height: 6px; } }

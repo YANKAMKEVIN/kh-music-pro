@@ -130,6 +130,17 @@ addEventListener('keyup', e => { const pi = PADS.indexOf(e.code); if (pi >= 0) p
 addEventListener('blur', () => { down.clear(); allNotesOff(); });
 
 // ---------- Boucle d'affichage ----------
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+/**
+ * État du témoin du temps : allumé pendant le premier tiers de chaque temps, accentué sur le premier temps de la mesure
+ * (et à chaque clic du décompte). `still` (moins d'animations) : allumé sans clignoter tant que ça joue.
+ */
+export function beatLight(playing: boolean, countLeft: number, step: number, bar: number, still: boolean): { on: boolean; acc: boolean } {
+  if (!playing) return { on: false, acc: false };
+  if (still) return { on: true, acc: false };
+  if (countLeft > 0) return { on: Math.ceil(countLeft) - countLeft < 0.34, acc: true };
+  return { on: (step % 4) / 4 < 0.34, acc: Math.floor(step / 4) % Math.max(1, bar / 4) === 0 };
+}
 function frame() {
   const step = engine.currentStep(), p = S.project, live = engine.mode === 'live';
   const ph = document.getElementById('ph');
@@ -137,7 +148,13 @@ function frame() {
   const s = Math.floor(step + 1e-6), sec = live ? step * 15 / p.bpm : timeOf(p, step);
   // Avec des changements de tempo, l'afficheur suit le tempo en vigueur sous la tête de lecture.
   const bpmEl = $<HTMLInputElement>('bpm'); if (p.tempos.length && !live && document.activeElement !== bpmEl) bpmEl.value = String(bpmAt(p, step));
-  $('pos').textContent = `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / 4) + 1}.${(s % 4) + 1}`;
+  // Décompte : un grand 4 · 3 · 2 · 1 remplace le compteur, pour savoir quand jouer même sans entendre les clics.
+  const left = engine.countLeft(), count = Math.ceil(left - 1e-6), posEl = $('pos');
+  posEl.textContent = count ? String(count) : `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / 4) + 1}.${(s % 4) + 1}`;
+  posEl.closest('.display')!.classList.toggle('count', count > 0);
+  // Témoin du temps : un point bat à chaque temps, plus vif sur le premier de la mesure ; fixe si le système demande moins d'animations.
+  const b = beatLight(engine.playing, left, step, BAR, still.matches), dot = $('beat');
+  dot.classList.toggle('on', b.on); dot.classList.toggle('acc', b.acc);
   $('time').textContent = `${Math.floor(sec / 60)}:${(sec % 60).toFixed(1).padStart(4, '0')}`;
   document.body.classList.toggle('playing', engine.playing);
   document.body.classList.toggle('recording', !!engine.recording);
@@ -194,7 +211,7 @@ function crashNotice() {
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
+Object.assign(window, { kh: { beatLight, zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

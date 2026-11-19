@@ -4944,6 +4944,36 @@ test('UX03d', 'Téléphone', 'Appui long au doigt sur un clip : le menu s’ouvr
   } finally { await ctx2.close(); }
 });
 
+test('UX04a', 'Enregistrement', 'Décompte visible : 4 · 3 · 2 · 1 en grand à la place du compteur, puis la position revient ; la barre ne change pas de hauteur', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 100; p.countIn = true; k.S.selTrack = p.tracks[1].id; k.S.selClip = ''; k.commit(); });
+  const h0 = await page.$eval('#top', e => e.offsetHeight);
+  await page.keyboard.press('r');
+  const seen = [], hs = new Set(); let after = '';
+  for (let i = 0; i < 80; i++) {
+    const r = await page.evaluate(() => ({ t: document.getElementById('pos').textContent, c: document.querySelector('.display').classList.contains('count'), h: document.getElementById('top').offsetHeight, rec: !!window.kh.engine.recording }));
+    if (r.c) { if (seen[seen.length - 1] !== r.t) seen.push(r.t); hs.add(r.h); expect(r.rec, 'décompte affiché sans enregistrement'); }
+    else if (seen.length) { after = r.t; break; }
+    await sleep(50);
+  }
+  await page.keyboard.press('Space');
+  expect(seen.length >= 3 && seen[0] === '4' && seen[seen.length - 1] === '1' && seen.every((v, i) => !i || +v < +seen[i - 1]), 'décompte affiché : ' + JSON.stringify(seen));
+  expect(/^\d+\.\d\.\d$/.test(after), 'après le décompte, la position doit revenir : ' + after);
+  expect([...hs].every(h => h === h0), `la barre du haut change de hauteur pendant le décompte (${h0} → ${[...hs]})`);
+  expect(!(await page.$eval('.display', e => e.classList.contains('count'))), 'décompte encore affiché à l’arrêt');
+});
+test('UX04b', 'Transport', 'Témoin du temps : il bat à chaque temps, plus fort sur le premier ; éteint à l’arrêt ; fixe si le système demande moins d’animations', async () => {
+  const r = await S(() => { const f = window.kh.beatLight; return [f(false, 0, 3, 16, false), f(true, 0, 0.5, 16, false), f(true, 0, 2, 16, false), f(true, 0, 4.2, 16, false), f(true, 0, 16.1, 16, false), f(true, 3.9, 0, 16, false), f(true, 3.3, 0, 16, false), f(true, 0, 2, 16, true), f(true, 0, 12.3, 12, false)].map(x => +x.on + '' + +x.acc).join(); });
+  expect(r === '00,11,01,10,11,11,01,10,11', 'calcul du témoin : ' + r);
+  expect(!(await page.$eval('#beat', e => e.classList.contains('on'))), 'témoin allumé à l’arrêt');
+  await S(() => { window.kh.S.project.bpm = 120; window.kh.commit(); }); await page.keyboard.press('Space');
+  const st = new Set(); for (let i = 0; i < 50; i++) { st.add(await page.$eval('#beat', e => (e.classList.contains('on') ? 'on' : 'off') + (e.classList.contains('acc') ? '+' : ''))); await sleep(40); }
+  expect(st.has('on') && st.has('on+') && (st.has('off') || st.has('off+')), 'le témoin ne bat pas : ' + [...st]);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  try { await sleep(150); const s2 = new Set(); for (let i = 0; i < 20; i++) { s2.add(await page.$eval('#beat', e => e.className)); await sleep(40); } expect(s2.size === 1 && s2.has('on'), 'avec « moins d’animations », le témoin doit rester fixe : ' + [...s2]); }
+  finally { await page.emulateMedia({ reducedMotion: 'no-preference' }); }
+  await S(() => window.kh.engine.stop()); await until(() => page.$eval('#beat', e => !e.classList.contains('on')), 'témoin encore allumé après l’arrêt', 4000);
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
