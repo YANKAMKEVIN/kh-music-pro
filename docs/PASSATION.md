@@ -779,6 +779,20 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 
   - Les manques arrivent par paquets, en même temps que les surcharges signalées par Core Audio (« trous ») : ce sont des à-coups du Mac, pas une réserve trop petite. 512 n'est pas pire que 768 (mieux sur cette heure, sans valeur statistique). La batterie en charge est écartée.
   - **Toujours rien de changé dans l'application.** La bonne suite n'est pas la taille des réserves mais l'origine des surcharges : charge du fil audio d'Electron, du fil Web Audio qui remplit la réserve, ou du pilote USB de la carte. Passer à 512 pour une interface reste possible si cette origine est trouvée.
+- **Origine trouvée et corrigée** (19/11/2026, commit `d7a7d93`, cas NAT06) :
+  - La Scarlett seule, sans KH (`qa/halseul.swift`, sortie Core Audio minimale à 128 échantillons, silence) : **aucune surcharge en 20 min**. Le pilote et le Mac ne sont pas en cause.
+  - Cause : Chromium ouvrait aussi la carte du natif pour cadencer Web Audio (horloge « output »). Son fil audio attend le calcul de la page pendant le tour de la carte ; ses retards déclenchent des surcharges de toute la carte, que le natif subit.
+  - Correctif (`native-io.ts`, `clockTarget`, réglage par défaut « apart ») : quand le natif joue sur une carte externe, Chromium se cale sur une sortie intégrée du Mac (libellé « (Built-in) »), sans rien y faire entendre ; le régulateur du natif rattrape l'écart entre les deux horloges. Si la sortie du natif est intégrée, ou s'il n'y a pas de sortie intégrée, rien ne change.
+  - Tenues de 20 min après correctif (Scarlett, tampon 128) :
+
+    | Réserve de sortie | Manques de sortie | Manques d'entrée | Surcharges |
+    |---|---|---|---|
+    | 768 (avant le correctif, essai à la main) | 0 | 0 | 0 |
+    | 768 | 1 | 0 | 0 |
+    | 512 | 0 | 0 | 0 |
+    | 384 | 9 | 9 | 3 |
+
+  - Bilan : 3 surcharges en 80 min au lieu d'environ 9 par heure, et la plupart des tenues sans aucun manque. Les surcharges ne disparaissent pas tout à fait (384 : origine non trouvée). **Réserve gardée à 768** ; 512 a tenu 20 min sans manque, à confirmer par une tenue d'une heure avant d'en faire le réglage des cartes externes. Pas vérifié à l'oreille.
 - Moteur natif : nouvelle option `inFirst` (première voie d'entrée captée, `io.mm` par la carte des voies de Core Audio) ; elle permettra aussi d'enregistrer les entrées 3-4 de la Scarlett (Yamaha). Pas encore de réglage dans l'interface.
 - `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
 
