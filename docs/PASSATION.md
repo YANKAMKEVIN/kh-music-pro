@@ -758,6 +758,18 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
   - Ce que KH annonce correspond à la mesure (à 1 ou 2 ms) : la compensation des prises est juste avec cette carte.
   - L'écart avec les 5 à 9 ms de la carte vient des réserves du moteur natif (768 échantillons en sortie, soit 16 ms, portés de 384 à 768 le 14/11/2026 à cause des hoquets du Mac sur ses haut-parleurs ; 256 en entrée) et de la cadence de Web Audio. Pour jouer un instrument virtuel, seul compte le trajet de sortie : environ 18 à 22 ms. Piste possible : réserves plus petites quand la carte est une vraie interface (à valider par une tenue de 5 minutes sans craquement).
   - Chemin navigateur (moteur natif désactivé) : non mesurable par le Loopback, car Chromium ne capte que 2 voies d'une carte (entrées 1-2). Annoncé par Chromium : sortie 5,3 + 39 ms, entrée 2,7 ms, environ 47 ms. Le mesurer demande un câble de la sortie ligne vers l'entrée 1.
+- **Réserves du moteur natif avec la Scarlett** (`node qa/tenue-carte.cjs Scarlett <s> <sortie> <entrée> 4`, démo en boucle à −100 dB, nuit du 18 au 19/11/2026) :
+
+| Réserves sortie / entrée | Délai de sortie annoncé | Durée | Manques sortie | Manques entrée | Surcharges Core Audio |
+|---|---|---|---|---|---|
+| 768 / 256 (actuel) | 19,3 ms | 1 min | 0 | 0 | 0 |
+| 384 / 128 | 11,3 ms | 5 min | 1 | 18 | 0 |
+| 256 / 128 | 8,6 ms | 5 min | 40 (d'un coup, vers 5 min) | 0 | 0 |
+| 768 / 256 (actuel) | 19,3 ms | 20 min | 1 | 4 | 4 |
+| 512 / 256 | 13,9 ms | 20 min | 0 | 1 | 1 |
+
+  - Même au réglage actuel, la Scarlett subit des surcharges signalées par Core Audio (le Mac lui-même, pas la taille des réserves) : 4 en 20 minutes, chacune pouvant faire un petit craquement. Une réserve de 128 en entrée est trop juste (manques répétés). Avec 512 / 256, pas pire que 768 sur 20 minutes, mais l'échantillon est trop petit pour conclure.
+  - **Rien n'est changé dans l'application.** Suite possible : des tenues plus longues (une heure par réglage) et chercher l'origine des surcharges (Mac sur batterie, mise en veille d'appareils USB, autres applications).
 - Moteur natif : nouvelle option `inFirst` (première voie d'entrée captée, `io.mm` par la carte des voies de Core Audio) ; elle permettra aussi d'enregistrer les entrées 3-4 de la Scarlett (Yamaha). Pas encore de réglage dans l'interface.
 - `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
 
