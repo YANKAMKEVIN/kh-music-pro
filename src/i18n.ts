@@ -179,6 +179,9 @@ const D: Record<string, [string, string, string]> = {
   'mix.reverb': ['Réverb', 'Reverb', 'Reverb'], 'mix.echo': ['Écho', 'Echo', 'Eco'], 'mix.pan': ['Pan', 'Pan', 'Pan'],
   'mix.center': ['Centre', 'Center', 'Centro'], 'mix.left': ['G', 'L', 'I'], 'mix.right': ['D', 'R', 'D'],
   'mix.comp': ['Compresseur', 'Compressor', 'Compresor'],
+  'mix.sect.eq': ['Égaliseur', 'Equalizer', 'Ecualizador'], 'mix.sect.fx': ['Effets', 'Effects', 'Efectos'], 'mix.sect.send': ['Envois', 'Sends', 'Envíos'], 'mix.sect.dyn': ['Dynamique', 'Dynamics', 'Dinámica'],
+  'mix.sectTip': ['Replier ou déplier cette section sur toutes les tranches', 'Fold or unfold this section on every strip', 'Plegar o desplegar esta sección en todas las pistas'],
+  'mix.sectOn': ['Un réglage de cette section est actif', 'A setting in this section is active', 'Hay un ajuste activo en esta sección'],
   'mix.master': ['Général', 'Master', 'Máster'], 'mix.limiter': ['Limiteur actif', 'Limiter on', 'Limitador activo'],
 
   // Live

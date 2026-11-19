@@ -155,6 +155,7 @@ async function reset() {
     Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, epx: 28, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1; k.S.recOffsetMs = 0; try { localStorage.removeItem('kh-rec-offset'); localStorage.removeItem('kh-wam-trust'); } catch { }
+    Object.assign(k.mixSect, { eq: true, fx: true, send: true, dyn: true }); try { localStorage.removeItem('kh-mix-sect'); } catch { }
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
     k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
@@ -4972,6 +4973,44 @@ test('UX04b', 'Transport', 'Témoin du temps : il bat à chaque temps, plus fort
   try { await sleep(150); const s2 = new Set(); for (let i = 0; i < 20; i++) { s2.add(await page.$eval('#beat', e => e.className)); await sleep(40); } expect(s2.size === 1 && s2.has('on'), 'avec « moins d’animations », le témoin doit rester fixe : ' + [...s2]); }
   finally { await page.emulateMedia({ reducedMotion: 'no-preference' }); }
   await S(() => window.kh.engine.stop()); await until(() => page.$eval('#beat', e => !e.classList.contains('on')), 'témoin encore allumé après l’arrêt', 4000);
+});
+
+const sects = (n, dots = false) => page.$$eval(`.mixer > .strip >> nth=${n} >> details.msec`, (l, dots) => l.map(d => `${d.dataset.sect}:${d.open ? 'o' : 'f'}${dots && d.classList.contains('act') ? '*' : ''}`).join(), dots);
+test('UX05a', 'Mixeur', 'Tranche en quatre sections (Égaliseur, Effets, Envois, Dynamique) ; le panoramique est au-dessus du fader et règle la piste', async () => {
+  await S(() => { window.kh.S.project.buses = [window.kh.newBus(1)]; window.kh.commit(); }); await tab('mixer');
+  expect(await sects(0) === 'eq:o,fx:o,send:o,dyn:o', 'sections d’une piste : ' + await sects(0));
+  expect(await sects(5) === 'eq:o,fx:o,dyn:o', 'sections d’un bus (pas d’envois) : ' + await sects(5));
+  const names = await page.$$eval('.mixer > .strip >> nth=0 >> details.msec > summary .sect', l => l.map(e => e.textContent).join()); expect(names === 'Égaliseur,Effets,Envois,Dynamique', 'titres : ' + names);
+  const where = await page.$eval('.mixer > .strip >> nth=1 >> .sl.panc', e => ({ inF: !!e.closest('.fcol'), inS: !!e.closest('.scol'), above: e.getBoundingClientRect().bottom <= e.closest('.fcol').querySelector('.vert').getBoundingClientRect().top + 1, n: e.closest('.strip').querySelectorAll('.sl').length - e.closest('.strip').querySelectorAll('.scol .sl').length }));
+  expect(where.inF && !where.inS && where.above && where.n === 1, 'place du panoramique : ' + JSON.stringify(where));
+  await setSlider('.mixer > .strip >> nth=1', 'Pan', -0.5); near((await proj()).tracks[1].pan, -0.5, 0, 'panoramique');
+  expect(await page.$eval('.mixer > .strip >> nth=1 >> .sl.panc input', e => e.getAttribute('aria-valuetext')) === 'G 50', 'valeur annoncée du panoramique');
+  const w = await S(() => window.qa.wins(window.qa.only(1, (p, t) => { t.pan = -1; t.rev = 0; }), [[0.1, 1.5]])); expect(w[0].l > w[0].r * 5, 'le panoramique n’agit pas sur le son');
+  // Tout tient dans la tranche : rien ne déborde sur le fader.
+  const fit = await page.$eval('.mixer > .strip >> nth=1', e => e.scrollWidth <= e.clientWidth + 1); expect(fit, 'la tranche déborde en largeur');
+});
+test('UX05b', 'Mixeur', 'Replier une section la replie sur toutes les tranches ; l’état est gardé après un redessin et dans l’appareil ; les réglages repliés marchent toujours', async () => {
+  await tab('mixer'); const h0 = await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight);
+  await page.click('.mixer > .strip >> nth=0 >> details[data-sect=fx] > summary');
+  expect(await sects(0) === 'eq:o,fx:f,send:o,dyn:o' && await sects(3) === 'eq:o,fx:f,send:o,dyn:o', `repli : ${await sects(0)} / ${await sects(3)}`);
+  expect(!(await page.isVisible('.mixer > .strip >> nth=0 >> [data-act=rack]')), 'les effets repliés restent visibles');
+  expect(await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight) < h0 - 100, 'la tranche ne raccourcit pas');
+  await S(() => { window.kh.S.project.tracks[0].vol = 0.7; window.kh.commit(); }); expect(await sects(2) === 'eq:o,fx:f,send:o,dyn:o', 'état perdu après un redessin');
+  expect(await S(() => JSON.parse(localStorage.getItem('kh-mix-sect')).fx === false), 'état non gardé dans l’appareil');
+  await setSlider('.mixer > .strip >> nth=0', 'Saturation', 0.4); near((await proj()).tracks[0].drive, 0.4, 0, 'réglage dans une section repliée');
+  // Au clavier : Entrée sur le titre déplie.
+  await page.focus('.mixer > .strip >> nth=1 >> details[data-sect=fx] > summary'); await page.keyboard.press('Enter'); await sleep(80);
+  expect(await sects(0, true) === 'eq:o,fx:o*,send:o,dyn:o', 'dépli au clavier : ' + await sects(0, true));
+});
+test('UX05c', 'Mixeur', 'Un point signale les sections qui contiennent un réglage actif, même repliées ; titres traduits', async () => {
+  const a = await S(() => { const k = window.kh, f = k.stripActive, t = k.newBus(1); const r = [f(t)]; t.eqMid = -3; r.push(f(t)); t.eqMid = 0; t.rev = 0.2; r.push(f(t)); t.rev = 0; t.inserts = [k.newInsert('delay')]; r.push(f(t)); t.inserts = []; t.sends = [{ id: 'x', bus: 'b', amt: 1, pre: false }]; r.push(f(t)); t.sends = []; t.comp = true; r.push(f(t)); t.comp = false; t.duck = 0.3; r.push(f(t)); return r.map(x => Object.keys(x).filter(k => x[k]).join('+')).join(); });
+  expect(a === ',eq,fx,fx,send,dyn,dyn', 'sections actives : ' + a);
+  await S(() => { const k = window.kh, [d, b] = k.S.project.tracks; d.eqLow = 4; d.rev = 0; d.dly = 0; d.drive = 0; d.filter = 0; d.chorus = 0; d.trem = 0; d.crush = 0; d.inserts = []; d.sends = undefined; d.comp = true; d.duck = 0; b.eqLow = b.eqMid = b.eqHigh = 0; k.commit(); }); await tab('mixer');
+  expect(await sects(0, true) === 'eq:o*,fx:o,send:o,dyn:o*', 'points de la tranche : ' + await sects(0, true));
+  await page.click('.mixer > .strip >> nth=0 >> details[data-sect=eq] > summary');
+  expect(await page.isVisible('.mixer > .strip >> nth=0 >> details[data-sect=eq] .sdot') && !(await page.$('.mixer > .strip >> nth=1 >> details[data-sect=eq] .sdot')), 'point de la section repliée');
+  expect((await page.getAttribute('.mixer > .strip >> nth=0 >> details[data-sect=eq] .sdot', 'aria-label')).includes('actif'), 'nom du point pour les lecteurs d’écran');
+  for (const [l, w] of [['en', 'Equalizer,Effects,Sends,Dynamics'], ['es', 'Ecualizador,Efectos,Envíos,Dinámica']]) { await page.evaluate(l => window.kh.setLang(l), l); const n = await page.$$eval('.mixer > .strip >> nth=0 >> details.msec > summary .sect', x => x.map(e => e.textContent).join()); expect(n === w, `titres en ${l} : ${n}`); }
 });
 
 (async () => {

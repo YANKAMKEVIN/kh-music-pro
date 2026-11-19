@@ -643,3 +643,19 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 .display.count #pos + small { display: none; }
 .display.count #beat.on { background: var(--rec); box-shadow: 0 0 14px 3px var(--rec); }
 @media (max-width: 760px) { .display.count #pos { font-size: 26px; line-height: 33px; } #beat { left: 4px; top: 4px; width: 6px; height: 6px; } }
+
+/* ================= UX : sections repliables du mixeur, panoramique près du fader ================= */
+.msec { border-top: 1px solid var(--line); }
+.msec:first-child { border-top: 0; }
+.msec > summary { list-style: none; display: flex; align-items: center; gap: 6px; height: 26px; cursor: pointer; border-radius: 6px; }
+.msec > summary::-webkit-details-marker { display: none; }
+.msec > summary::before { content: '▸'; width: 10px; color: var(--dim); font-size: 10px; transition: transform .12s; }
+.msec[open] > summary::before { transform: rotate(90deg); }
+.msec > summary:hover .sect { color: var(--txt); }
+.msec > summary .sect { margin: 0; }
+.sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--a1)); box-shadow: 0 0 8px var(--c, var(--a1)); }
+.mbody { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; }
+.fcol .sl.panc { width: 66px; grid-template-columns: 1fr auto; gap: 0 4px; font-size: 10.5px; }
+.fcol .sl.panc input { grid-column: 1 / -1; }
+.fcol .sl.panc .val { font-size: 10.5px; }
+@media (pointer: coarse) { .msec > summary { height: 36px; } }
