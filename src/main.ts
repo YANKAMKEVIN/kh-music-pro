@@ -199,6 +199,8 @@ function crashNotice() {
   S.selTrack = S.project.tracks[0]?.id ?? '';
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
   initArrDrop(); initArrZoom(); initFileInputs(); listenSystemOpen();
+  // Téléphone (audit D3) : le morceau s'ouvre avec quatre mesures visibles au lieu d'une et demie.
+  if (matchMedia('(max-width: 760px)').matches) S.px = clamp((innerWidth - 156 - 12) / (4 * (S.project.sig || 4) * 4), 3, 44);
   rebuild();
   document.getElementById('boot')?.remove();   // l'écran d'attente d'index.html laisse la place à l'application
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert

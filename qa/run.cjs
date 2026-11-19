@@ -1135,7 +1135,8 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
     await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
     expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top <= 120 && lay.topScroll <= lay.iw + 1, `barre supérieure non compacte ou qui déborde (${lay.top} px, ${lay.topScroll} px de large)`);   // V18 : deux lignes sans défilement
-    expect(lay.panel > 250 && lay.arr > 180 && lay.lane < 140, `zones mal réparties (${JSON.stringify(lay)})`);
+    expect(lay.panel > 250 && lay.arr > 180 && lay.lane <= 160,   // V18 : colonne des pistes à 156 px pour des boutons M, S, A de 44 px
+    `zones mal réparties (${JSON.stringify(lay)})`);
     await pg.tap('#bPlay'); await pg.waitForTimeout(500); expect(await pg.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1), 'la lecture ne démarre pas au doigt');
     await pg.tap('#bPlay'); expect(await pg.evaluate(() => !window.kh.engine.playing), 'la lecture ne s\'arrête pas');
     await pg.tap('.cell[data-r="1"][data-s="1"]'); await pg.waitForTimeout(100); expect(await pg.evaluate(() => window.kh.S.project.tracks[0].clips[0].drums[1][1] === 1), 'case non activée au doigt');
@@ -1156,9 +1157,13 @@ test('MB02', 'Téléphone', 'Au doigt : déplacer un clip et dessiner une courbe
     const cdp = await ctx2.newCDPSession(pg);
     const swipe = async (x, y, dx, dy) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 5, y: y + dy * i / 5 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150); };
     await pg.evaluate(() => { const k = window.kh; k.S.project.tracks[1].clips[0].len = 16; k.S.project.tracks[1].autoShow = 'vol'; k.commit(); });
-    const c = await (await pg.$('.lane >> nth=1 >> .clip')).boundingBox(); await swipe(c.x + 40, c.y + 40, 88, 0);
+    const c = await (await pg.$('.lane >> nth=1 >> .clip')).boundingBox(), px = await pg.evaluate(() => window.kh.S.px);   // V18 : zoom de départ adapté au téléphone
+    await swipe(c.x + Math.min(40, c.width / 2), c.y + 40, 8 * px, 0);
     expect(await pg.evaluate(() => window.kh.S.project.tracks[1].clips[0].start) === 8, 'clip non déplacé au doigt');
-    const a = await (await pg.$('.alane')).boundingBox(); await pg.touchscreen.tap(a.x + 44, a.y + 20); await pg.waitForTimeout(100);
+    // V18 : pistes plus hautes au doigt, le couloir peut être sous la zone visible ; on fait défiler les pistes verticalement seulement
+    await pg.evaluate(() => { const a = document.querySelector('.alane'), arr = document.getElementById('arr'); arr.scrollTop += a.getBoundingClientRect().top - arr.getBoundingClientRect().top - 60; arr.scrollLeft = 0; }); await pg.waitForTimeout(100);
+    const a = await (await pg.$('.alane')).boundingBox(), lx = await pg.evaluate(() => document.querySelector('.heads').getBoundingClientRect().right);
+    await pg.touchscreen.tap(lx + 30, a.y + 20); await pg.waitForTimeout(100);
     expect(await pg.evaluate(() => (window.kh.S.project.tracks[1].auto.vol || []).length) === 1, 'point d\'automation non posé au doigt');
   } finally { await ctx2.close(); }
 });
@@ -5369,6 +5374,61 @@ test('UX15a', 'Interface', 'Fenêtres et menus s’ouvrent en 140 ms (fondu, lé
     await page.click('#bHelp'); a = await look(); expect(a.dlg === 'none' && a.veil === 'none', 'fenêtre animée malgré « moins d’animations » : ' + JSON.stringify(a)); await page.keyboard.press('Escape');
     await page.click('#menu > summary'); a = await look(); expect(a.menu === 'none', 'menu animé malgré « moins d’animations » : ' + JSON.stringify(a)); await page.keyboard.press('Escape');
   } finally { await page.emulateMedia({ reducedMotion: 'no-preference' }); }
+});
+
+// ============ V18 : téléphone (audit D2 à D4) ============
+/** Page de téléphone tactile prête (aide fermée). */
+async function phonePage(ctx2) { const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg); return pg; }
+const phoneCtx = () => browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+test('PH01', 'Téléphone', 'Rétablir est visible au doigt sur téléphone : annuler puis rétablir une case du séquenceur', async () => {
+  const ctx2 = await phoneCtx();
+  try {
+    const pg = await phonePage(ctx2);
+    const b = await pg.locator('#bRedo').boundingBox(); expect(b && b.x >= 0 && b.x + b.width <= 375 && b.width >= 44 && b.height >= 44, 'Rétablir absent ou trop petit : ' + JSON.stringify(b));
+    const v = () => pg.evaluate(() => window.kh.S.project.tracks[0].clips[0].drums[1][2]);
+    const v0 = await v(); await pg.tap('.cell[data-r="1"][data-s="2"]'); await pg.waitForTimeout(100); expect((await v()) !== v0, 'case non modifiée');
+    await pg.tap('#bUndo'); expect((await v()) === v0, 'Annuler au doigt'); await pg.tap('#bRedo'); expect((await v()) !== v0, 'Rétablir au doigt');
+    expect((await pg.$$eval('#top > *', l => l.filter(e => getComputedStyle(e).display !== 'none').map(e => { const r = e.getBoundingClientRect(); return r.right; }))).every(x => x <= 376), 'la barre déborde avec Rétablir');
+  } finally { await ctx2.close(); }
+});
+test('PH02', 'Téléphone', 'Le morceau s’ouvre sur téléphone avec au moins quatre mesures visibles', async () => {
+  const ctx2 = await phoneCtx();
+  try {
+    const pg = await phonePage(ctx2);
+    const r = await pg.evaluate(() => { const arr = document.getElementById('arr'), heads = document.querySelector('.heads').getBoundingClientRect().width; return { view: arr.clientWidth - heads, bar: window.kh.S.px * window.kh.bar() }; });
+    expect(r.view / r.bar >= 3.9, `mesures visibles : ${(r.view / r.bar).toFixed(1)}`);
+    const big = await pg.evaluate(() => window.kh.S.px); await pg.tap('#bZoomIn'); expect(await pg.evaluate(() => window.kh.S.px) > big, 'le zoom reste réglable au doigt');
+  } finally { await ctx2.close(); }
+});
+test('PH03', 'Téléphone', 'Séquenceur sur téléphone : 8 pas entiers à la fois, cases hautes de 44 px, glisser passe aux 8 suivants, toucher allume', async () => {
+  const ctx2 = await phoneCtx();
+  try {
+    const pg = await phonePage(ctx2);
+    const seen = () => pg.evaluate(() => { const lab = document.querySelector('.dlabel').getBoundingClientRect().right; return [...document.querySelectorAll('.cell[data-r="0"]')].filter(c => { const r = c.getBoundingClientRect(); return r.left >= lab - 1 && r.right <= innerWidth + 0.5; }).map(c => +c.dataset.s); });
+    const a = await seen(); expect(a.length === 8 && a[0] === 0, 'pas visibles au départ : ' + a.join(','));
+    const box = await pg.locator('.cell[data-r="0"][data-s="3"]').boundingBox(); expect(box.height >= 44 && box.width >= 34, 'case trop petite : ' + JSON.stringify(box));
+    await pg.evaluate(() => document.querySelector('.dgrid').closest('.escroll').scrollBy({ left: 150 })); await pg.waitForTimeout(700);
+    const b = await seen(); expect(b.length === 8 && b[0] === 8, 'après un glissé, pas visibles : ' + b.join(','));
+    const v = () => pg.evaluate(() => window.kh.S.project.tracks[0].clips[0].drums[2][10]);
+    const v0 = await v(); await pg.tap('.cell[data-r="2"][data-s="10"]'); await pg.waitForTimeout(100); expect((await v()) !== v0, 'toucher la case 11 ne l’allume pas');
+    expect(await pg.$eval('.dlabel', e => e.textContent.includes('Kick') || e.title.includes('Kick')), 'nom du pad perdu');
+  } finally { await ctx2.close(); }
+});
+test('PH04', 'Téléphone', 'Au doigt, tout ce qu’on touche fait au moins 44 px (barre, arrangement, pistes, éditeur, onglets, menus) et rien ne déborde', async () => {
+  const ctx2 = await phoneCtx();
+  try {
+    const pg = await phonePage(ctx2);
+    const small = () => pg.evaluate(() => [...document.querySelectorAll('#top button, #top summary, #top select, #abar button, #abar select, .heads button, .heads summary, .corner button, #tabs button, .ebar button, .ebar select, .menu-list button')]
+      .filter(e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && r.top < innerHeight && r.bottom > 0 && (r.width < 43.5 || r.height < 43.5); })
+      .map(e => `${e.id || e.className} ${Math.round(e.getBoundingClientRect().width)}×${Math.round(e.getBoundingClientRect().height)}`));
+    let s = await small(); expect(!s.length, 'cibles trop petites : ' + s.join(', '));
+    for (const m of ['#menu', '#mTake', '.head >> nth=0 >> details.tmenu']) {
+      await pg.tap(`${m} > summary`); await pg.waitForTimeout(250);   // UX15 : le menu s’ouvre en douceur (agrandissement de 0,12 s)
+      s = await small(); expect(!s.length, `dans ${m}, cibles trop petites : ` + s.join(', ')); await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
+    }
+    expect(await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'la page déborde en largeur');
+    const heads = await pg.$$eval('.head .tname', l => l.slice(0, 4).map(i => i.scrollWidth <= i.clientWidth + 1)); expect(heads.every(Boolean), 'noms de pistes coupés');
+  } finally { await ctx2.close(); }
 });
 
 (async () => {

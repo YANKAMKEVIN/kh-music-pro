@@ -168,7 +168,7 @@ function drumEditor(tr: Track, c: Clip | null) {
     const line = h('div', { class: 'drow' },
       h('button', { class: 'dlabel', title: t('drum.listen', padName(tr, r)), onclick: () => engine.pad(tr, r) }, h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', {}, padName(tr, r))));
     row.forEach((v, s) => line.append(h('button', {
-      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}`,
+      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}${s % 8 === 0 ? ' page' : ''}`,   // page : arrêt du glissé par 8 pas sur téléphone
       data: { r: String(r), s: String(s) }, 'aria-label': `${padName(tr, r)} ${s + 1}`, 'aria-pressed': String(!!v),
       tabindex: r === gridPos.r && s === gridPos.s ? '0' : '-1',
     })));

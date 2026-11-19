@@ -44,6 +44,8 @@ Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transp
 
 **Correctifs de l'audit de novembre 2026** (détail : `docs/correctifs-audit-2026-11.md`) : séquenceur au clavier avec les flèches, une prise sur plusieurs mesures donne un seul clip, tempo au centième (93,5), bandeau quand la sauvegarde devient impossible (appareil plein) avec « Enregistrer en fichier », lettres du clavier prises de la vraie disposition, accordeur plus stable sur une machine chargée, export des gros projets environ deux fois plus rapide (pistes rendues par groupes sur plusieurs cœurs).
 
+**Téléphone** : Rétablir est sur la deuxième ligne ; le morceau s'ouvre avec quatre mesures visibles ; le séquenceur montre 8 pas à la fois en grandes cases, un glissé du doigt passe aux 8 suivants ; tout ce qu'on touche fait au moins 44 px.
+
 Les menus s'ouvrent d'un clic ou d'un toucher et se referment d'un clic ailleurs ou avec Échap (le focus revient au bouton). Les raccourcis clavier ne changent pas.
 
 ## Piano électrique, basse et percussions (v0.17.1)
