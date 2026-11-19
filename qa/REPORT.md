@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-400 cas réussis sur 400.
+401 cas réussis sur 401.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -200,6 +200,7 @@
 | NAT03 | Moteur natif | Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée | OK |
 | NAT04 | Moteur natif | Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul | OK |
 | NAT05 | Moteur natif | Réglage et plugins du Mac en anglais et en espagnol | OK |
+| NAT06 | Moteur natif | Horloge de Web Audio : sur une carte son externe, le navigateur se cale sur les haut-parleurs du Mac (pas sur la carte du natif) ; sinon sur la sortie du natif ; carte débranchée suivie | OK |
 | MAC01 | Plugins du Mac | Les plugins d'effet du Mac sont proposés dans la chaîne d'effets, triés ; en ajouter un affiche ses réglages | OK |
 | MAC02 | Plugins du Mac | Les curseurs d'un plugin du Mac pilotent le plugin, s'enregistrent dans le projet, s'annulent et reviennent aux réglages d'origine | OK |
 | MAC03 | Plugins du Mac | Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d'erreur | OK |
