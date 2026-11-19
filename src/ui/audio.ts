@@ -73,7 +73,7 @@ function render() {
     h('h3', {}, t('aud.latency')),
     h('p', { class: 'latrow', data: { role: 'latinfo' } }, t('aud.latInfo', ms(lat.output), lat.input ? ms(lat.input) : '—', Math.round(lat.rate)) + (nativeAvailable() ? ` · ${engine.native ? t('aud.pathNative') : t('aud.pathBrowser')}` : '')),
     h('p', { class: 'tip' }, t('aud.latHelp')),
-    slider(t('aud.recOffset'), -200, 200, 1, S.recOffsetMs, v => { S.recOffsetMs = v; try { localStorage.setItem('kh-rec-offset', String(v)); } catch { /* stockage désactivé */ } }, v => (v > 0 ? '+' : '') + v + ' ms', 'wide', true),
+    slider(t('aud.recOffset'), -200, 200, 1, S.recOffsetMs, v => { S.recOffsetMs = v; try { localStorage.setItem('kh-rec-offset', String(v)); } catch { /* stockage désactivé */ } }, v => (v > 0 ? '+' : '') + v + ' ms', 'wide', true, 0),
     h('div', { class: 'fxfoot' }, measure, result),
     h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close')))];
   d.replaceChildren(...kids.filter((k): k is HTMLElement => !!k));

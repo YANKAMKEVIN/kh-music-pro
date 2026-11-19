@@ -82,7 +82,7 @@ function drumBar(tr: Track, c: Clip | null) {
     h('div', { class: 'segs', role: 'group' }, view('seq', t('drum.seq')), view('pads', t('drum.pads'))),
     c && clipTools(c), c && lengthSelect(c, [1, 2, 4]), c && resSelect(c),
     h('label', { class: 'fld' }, t('drum.kit'), kit),
-    slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct),
+    slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct, '', false, 0),
     c && h('button', { title: t('tip.clear'), data: { act: 'clear' }, onclick: () => { c.drums = c.drums!.map(r => r.map(() => 0)); commit(); } }, t('act.clear')),
     c && h('div', { class: 'segs', role: 'group', 'aria-label': t('pat.tools') },
       h('button', { class: 'seg', data: { act: 'patleft' }, title: t('pat.left'), 'aria-label': t('pat.left'), onclick: () => shiftPattern(-1) }, '◀'),
@@ -133,9 +133,9 @@ function padsView(tr: Track) {
     const r = S.padEdit, cur = tr.padFx?.[r] ?? { vol: 1, tune: 0, pan: 0 };
     const set = (k: 'vol' | 'tune' | 'pan', v: number) => { tr.padFx ??= {}; const f = tr.padFx[r] ??= { vol: 1, tune: 0, pan: 0 }; f[k] = v; if (f.vol === 1 && !f.tune && !f.pan) delete tr.padFx[r]; };
     fxBox = h('div', { class: 'padfx' }, h('strong', {}, `⚙ ${padName(tr, r)}`),
-      slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct),
-      slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st'),
-      slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100))),
+      slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct, '', false, 1),
+      slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st', '', false, 0),
+      slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100)), '', false, 0),
       h('div', { class: 'tools' },
         h('button', { class: 'pill', data: { act: 'padtest' }, onclick: () => { padHit(r, 1, tr); flashPad(r); } }, '▶ ' + t('pad.test')),
         h('button', { class: 'pill', data: { act: 'padfxload' }, onclick: () => pickFiles(async fs => { const smp = await loadSample(fs[0]); if (smp) { tr.pads![r] = { bufferId: smp.id, name: smp.name }; commit(); } }) }, '📂 ' + t('smp.load')),
@@ -642,7 +642,7 @@ function inputPanel() {
     h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, '🎤 ' + t(on ? 'in.on' : 'in.open')),
     h('div', { class: 'meter', title: t('in.level') }, h('div', { class: 'mfill', data: { id: 'input' } })),
     on && h('div', { class: 'tuner', role: 'status', title: t('tuner.tip'), 'aria-label': t('tuner.title') }, h('span', { class: 'tnote' }, '—'), h('span', { class: 'tbar' }, h('i', {})), h('span', { class: 'tcents' }, '')),
-    slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true),
+    slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true, 1),
     h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, '🎧 ' + t('in.monitor')));
 }
 
@@ -664,9 +664,9 @@ function audioEditor(tr: Track, c: Clip) {
   bpm.onchange = () => { const v = +bpm.value; if (v >= 20 && v <= 400) { st.pct = clamp(Math.round(v / S.project.bpm * 100), 50, 200); emit(); } };
   return h('div', { class: 'editor' },
     h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`), clipTools(c),
-      slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct),
-      slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec),
-      slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec),
+      slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct, '', false, 1),
+      slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec, '', false, 0),
+      slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec, '', false, 0),
       act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip),
       // V17 : le clip suit le tempo du morceau (étirement sans changer la hauteur), à partir de son tempo d'origine.
       h('button', { class: 'pill switch' + (c.warp ? ' on' : ''), role: 'switch', 'aria-checked': String(!!c.warp), title: t('warp.tip'), data: { act: 'warp' }, onclick: toggleWarp }, '🎚 ' + t('warp.label')),
@@ -680,9 +680,9 @@ function audioEditor(tr: Track, c: Clip) {
       leftNeighbour(tr, c) && slider(t('xf.label'), 0, Math.max(1, Math.min(8, c.len)), 0.25, Math.min(c.xfade ?? 0, 8), v => setXfade(v), v => v ? sec(v) : t('xf.none'), 'xf')),
     (c.takes?.length ?? 0) > 1 && compPanel(c),
     h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),
-      slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true),
+      slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true, 100),
       h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
-      slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true),
+      slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true, 0),
       act('stretch', '⏱', () => stretchClip(st.pct, st.semis)),
       h('span', { class: 'sect' }, t('tune.title')),
       slider(t('tune.amount'), 0.1, 1, 0.05, S.tuneAmt, v => { S.tuneAmt = v; }, pct, '', true),

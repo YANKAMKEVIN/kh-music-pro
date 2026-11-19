@@ -5013,6 +5013,43 @@ test('UX05c', 'Mixeur', 'Un point signale les sections qui contiennent un régla
   for (const [l, w] of [['en', 'Equalizer,Effects,Sends,Dynamics'], ['es', 'Ecualizador,Efectos,Envíos,Dinámica']]) { await page.evaluate(l => window.kh.setLang(l), l); const n = await page.$$eval('.mixer > .strip >> nth=0 >> details.msec > summary .sect', x => x.map(e => e.textContent).join()); expect(n === w, `titres en ${l} : ${n}`); }
 });
 
+const slIn = (n, label) => `.mixer > .strip >> nth=${n} >> .sl:has(.lb:text-is("${label}")) >> input`;
+test('UX06a', 'Mixeur', 'Double-clic sur un curseur : retour à sa valeur d’origine, annulable ; un repère la marque ; le fader revient à 80 %', async () => {
+  await tab('mixer'); await setSlider('.mixer > .strip >> nth=1', 'Saturation', 0.7);
+  const drive = slIn(1, 'Saturation'); expect(await page.$eval(drive, e => e.classList.contains('hasdef') && e.dataset.def === '0' && e.style.getPropertyValue('--def') === '0.0000'), 'repère de la valeur d’origine (saturation)');
+  expect(await page.$eval(slIn(1, 'Aigus'), e => e.style.getPropertyValue('--def')) === '0.5000' && await page.$eval(slIn(1, 'Fréq. méd.'), e => e.dataset.def) === '1000', 'repère de l’égaliseur');
+  await page.dblclick(drive); near((await proj()).tracks[1].drive, 0, 0, 'saturation après double-clic');
+  expect(await page.$eval('.mixer > .strip >> nth=1 >> .sl:has(.lb:text-is("Saturation")) >> .val', e => e.textContent) === '0 %', 'valeur affichée');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].drive > 0, 'le retour à l’origine doit être annulable');
+  await S(() => { window.kh.S.project.tracks[1].vol = 0.3; window.kh.S.project.master = 0.4; window.kh.commit(); });
+  await page.dblclick('.mixer > .strip >> nth=1 >> input.vert'); near((await proj()).tracks[1].vol, 0.8, 0, 'fader après double-clic');
+  await page.dblclick('.strip.master input.vert'); near((await proj()).master, 0.9, 0, 'fader général après double-clic');
+  expect((await page.getAttribute(drive, 'title')).includes('Double-clic'), 'bulle d’aide du curseur');
+  await page.evaluate(() => window.kh.setLang('en')); expect((await page.getAttribute(slIn(1, 'Drive'), 'title')).includes('Double-click'), 'bulle non traduite');
+});
+test('UX06b', 'Mixeur', 'Suppr sur un curseur le remet à l’origine sans supprimer le clip sélectionné ; Maj + glissé règle finement', async () => {
+  await tab('mixer'); await setSlider('.mixer > .strip >> nth=0', 'Graves', 9); const low = slIn(0, 'Graves');
+  await page.focus(low); await page.keyboard.press('Delete');
+  let p = await proj(); near(p.tracks[0].eqLow, 0, 0, 'Suppr sur le curseur'); near(p.tracks[0].clips.length, 2, 0, 'Suppr a supprimé le clip sélectionné');
+  // Maj + glissé : un cinquième de la course normale.
+  const b = await box(low), y = b.y + b.height / 2;
+  await page.keyboard.down('Shift'); await drag(b.x + b.width / 2, y, 40, 0); await page.keyboard.up('Shift');
+  const fine = (await proj()).tracks[0].eqLow, want = Math.round(40 / b.width * 30 * 0.2 / 0.5) * 0.5;
+  near(fine, want, 0.5, 'réglage fin'); expect(fine > 0 && fine < 40 / b.width * 30 * 0.6, `Maj + glissé pas plus fin que le glissé (${fine} dB pour 40 px sur ${Math.round(b.width)})`);
+  await page.keyboard.press('Control+z'); near((await proj()).tracks[0].eqLow, 0, 0, 'le réglage fin doit être annulable d’un coup');
+  // Sans Maj, le curseur se comporte comme avant.
+  await drag(b.x + b.width / 2, y, 40, 0); expect((await proj()).tracks[0].eqLow > fine * 2, 'glissé normal');
+});
+test('UX06c', 'Interface', 'Retour à l’origine dans l’arrangement, le Live et les effets ; les curseurs sans valeur neutre ne changent pas', async () => {
+  await S(() => { window.kh.S.project.tracks[2].vol = 0.2; window.kh.commit(); });
+  await page.dblclick('.head >> nth=2 >> .tvol'); near((await proj()).tracks[2].vol, 0.8, 0, 'volume de la tête de piste');
+  await page.click(await clipSel(1, 0)); await S(() => { window.kh.S.synthOpen = true; window.kh.emit(); });
+  expect(await page.$$eval('.synth .sl input', l => l.length > 3 && l.every(e => !e.classList.contains('hasdef'))), 'les réglages du son n’ont pas de valeur neutre : pas de repère');
+  await tab('live'); await S(() => { window.kh.S.project.filter = 0.6; window.kh.commit(); }); await page.dblclick('.perf .sl.wide input'); near((await proj()).filter, 0, 0, 'filtre du Live');
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.inserts = [k.newInsert('delay')]; tr.inserts[0].p.fb = 0.8; k.commit(); k.showRack(tr.id); });
+  await page.dblclick('#fx .fxbody .sl >> nth=1 >> input'); near((await proj()).tracks[1].inserts[0].p.fb, 0.35, 0, 'réinjection de l’écho (valeur d’origine de l’effet)');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

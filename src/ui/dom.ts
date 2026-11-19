@@ -1,4 +1,5 @@
 import { engine } from '../audio/engine';
+import { t } from '../i18n';
 import { commit } from '../store';
 
 type Kid = Node | string | null | undefined | false;
@@ -19,16 +20,48 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<s
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-/** Curseur étiqueté : mise à jour audio en direct, validation (annulable) au relâchement. */
+/**
+ * Rend un curseur « rappelable » : double-clic, double toucher ou touche Suppr le ramènent à sa valeur d'origine `def`
+ * (un petit repère la marque sur la piste du curseur) ; Maj + glissé donne un réglage cinq fois plus fin.
+ * `apply` applique une valeur en direct, `done` la valide (annulable).
+ */
+export function resettable(inp: HTMLInputElement, def: number, apply: (v: number) => void, done: () => void, tip = '') {
+  const min = +inp.min, max = +inp.max, step = +inp.step || 1;
+  if (!(max > min) || !(def >= min && def <= max)) return;
+  inp.dataset.def = String(def); inp.classList.add('hasdef'); inp.style.setProperty('--def', ((def - min) / (max - min)).toFixed(4));
+  if (tip) inp.title = inp.title ? `${inp.title} — ${tip}` : tip;
+  const reset = () => { if (+inp.value === def) return; inp.value = String(def); apply(def); done(); };
+  inp.addEventListener('dblclick', e => { e.preventDefault(); reset(); });
+  // Suppr sur le curseur le remet à zéro, sans supprimer le clip sélectionné derrière lui.
+  inp.addEventListener('keydown', e => { if (e.key === 'Delete') { e.preventDefault(); e.stopPropagation(); reset(); } });
+  inp.addEventListener('pointerdown', e => {
+    if (!e.shiftKey || e.button !== 0) return;
+    e.preventDefault(); inp.focus({ preventScroll: true });
+    const v0 = +inp.value, vert = inp.classList.contains('vert'), r = inp.getBoundingClientRect(), len = Math.max(1, vert ? r.height : r.width);
+    let changed = false;
+    followDrag(e, ev => {
+      const d = vert ? e.clientY - ev.clientY : ev.clientX - e.clientX;
+      const v = +clamp(Math.round((v0 + d / len * (max - min) * 0.2) / step) * step, min, max).toFixed(6);
+      if (v !== +inp.value) { inp.value = String(v); apply(+inp.value); changed = true; }
+    }, () => { if (changed) done(); });
+  });
+}
+
+/**
+ * Curseur étiqueté : mise à jour audio en direct, validation (annulable) au relâchement.
+ * `def` : valeur d'origine, à laquelle un double-clic ou Suppr le ramène (voir `resettable`).
+ */
 export function slider(label: string, min: number, max: number, step: number, value: number,
-  set: (v: number) => void, fmt: (v: number) => string = v => String(v), cls = '', transient = false) {
+  set: (v: number) => void, fmt: (v: number) => string = v => String(v), cls = '', transient = false, def?: number) {
   const out = h('span', { class: 'val' }, fmt(value));
   const inp = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': label });
   inp.value = String(value);
   // Valeur lue par les lecteurs d'écran : celle affichée (unité comprise), pas la position brute du curseur.
   inp.setAttribute('aria-valuetext', fmt(value));
-  inp.oninput = () => { const v = +inp.value; set(v); out.textContent = fmt(v); inp.setAttribute('aria-valuetext', out.textContent); engine.sync(); };
+  const apply = (v: number) => { set(v); out.textContent = fmt(v); inp.setAttribute('aria-valuetext', out.textContent); engine.sync(); };
+  inp.oninput = () => apply(+inp.value);
   if (!transient) inp.onchange = () => commit(); // `transient` : réglage d'interface, hors projet et hors annulation
+  if (def !== undefined) resettable(inp, def, apply, () => { if (!transient) commit(); }, t('sl.resetTip'));
   return h('label', { class: 'sl ' + cls }, h('span', { class: 'lb' }, label), inp, out);
 }
 

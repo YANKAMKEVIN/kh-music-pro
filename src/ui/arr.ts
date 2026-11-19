@@ -5,7 +5,7 @@ import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
 import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
-import { clamp, followDrag, h, popMenu } from './dom';
+import { clamp, followDrag, h, popMenu, resettable } from './dom';
 
 export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
@@ -120,6 +120,7 @@ function head(tr: Track) {
   vol.value = String(tr.vol);
   vol.oninput = () => { tr.vol = +vol.value; engine.sync(); };
   vol.onchange = () => commit();
+  resettable(vol, 0.8, v => { tr.vol = v; engine.sync(); }, commit, t('sl.resetTip'));
   return h('div', {
     class: 'head' + (S.selTrack === tr.id ? ' sel' : '') + (tr.frozen ? ' frozen' : ''), data: { id: tr.id }, style: `--c:${tr.color}`,
     onpointerdown: () => { if (S.selTrack !== tr.id) select(tr.id, ''); },

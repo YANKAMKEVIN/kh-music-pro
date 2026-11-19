@@ -28,7 +28,7 @@ export function renderLive(): HTMLElement {
   grid.append(h('button', { class: 'lscene stopall', data: { act: 'stopall' }, title: t('live.stopAll'), onclick: () => engine.stop() }, '■'));
   for (const { tr } of cols) grid.append(h('button', { class: 'lstop', data: { stop: tr.id }, title: t('live.stop', tr.name), 'aria-label': t('live.stop', tr.name), onclick: () => engine.launch(tr.id, null) }, '■'));
 
-  const filt = slider(t('live.filter'), -1, 1, 0.01, p.filter, v => p.filter = Math.abs(v) < 0.04 ? 0 : v, filterFmt, 'wide');
+  const filt = slider(t('live.filter'), -1, 1, 0.01, p.filter, v => p.filter = Math.abs(v) < 0.04 ? 0 : v, filterFmt, 'wide', false, 0);
   // Effets momentanés : actifs tant que le bouton est maintenu.
   const fxBtn = (name: string) => {
     const b = h('button', { class: 'pill fx', data: { fx: name }, title: t('fx.tip') }, t('fx.' + name));

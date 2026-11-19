@@ -659,3 +659,7 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 .fcol .sl.panc input { grid-column: 1 / -1; }
 .fcol .sl.panc .val { font-size: 10.5px; }
 @media (pointer: coarse) { .msec > summary { height: 36px; } }
+
+/* ================= UX : valeur d'origine des curseurs (double-clic pour y revenir) ================= */
+input[type=range].hasdef { background: linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .55)) no-repeat calc(8px + (100% - 16px) * var(--def, 0)) 100% / 2px 4px; }
+input[type=range].vert.hasdef { background-position: 100% calc(8px + (100% - 16px) * (1 - var(--def, 0))); background-size: 5px 2px; }
