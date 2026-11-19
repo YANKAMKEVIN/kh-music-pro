@@ -770,6 +770,15 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 
   - Même au réglage actuel, la Scarlett subit des surcharges signalées par Core Audio (le Mac lui-même, pas la taille des réserves) : 4 en 20 minutes, chacune pouvant faire un petit craquement. Une réserve de 128 en entrée est trop juste (manques répétés). Avec 512 / 256, pas pire que 768 sur 20 minutes, mais l'échantillon est trop petit pour conclure.
   - **Rien n'est changé dans l'application.** Suite possible : des tenues plus longues (une heure par réglage) et chercher l'origine des surcharges (Mac sur batterie, mise en veille d'appareils USB, autres applications).
+- **Tenues d'une heure** (19/11/2026, Mac sur secteur, batterie pleine, Focusrite seule branchée) :
+
+  | Réserve de sortie | Manques de sortie | Manques d'entrée | Surcharges Core Audio |
+  |---|---|---|---|
+  | 768 (actuel) | 19 | 40 | 9 |
+  | 512 | 9 | 10 | 3 |
+
+  - Les manques arrivent par paquets, en même temps que les surcharges signalées par Core Audio (« trous ») : ce sont des à-coups du Mac, pas une réserve trop petite. 512 n'est pas pire que 768 (mieux sur cette heure, sans valeur statistique). La batterie en charge est écartée.
+  - **Toujours rien de changé dans l'application.** La bonne suite n'est pas la taille des réserves mais l'origine des surcharges : charge du fil audio d'Electron, du fil Web Audio qui remplit la réserve, ou du pilote USB de la carte. Passer à 512 pour une interface reste possible si cette origine est trouvée.
 - Moteur natif : nouvelle option `inFirst` (première voie d'entrée captée, `io.mm` par la carte des voies de Core Audio) ; elle permettra aussi d'enregistrer les entrées 3-4 de la Scarlett (Yamaha). Pas encore de réglage dans l'interface.
 - `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
 
