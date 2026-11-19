@@ -61,7 +61,7 @@ let hostHz = Double(AudioGetHostClockFrequency())
 
 // ---------- Mémoire préallouée, écrite par le fil audio ----------
 final class Capture {
-    let cap: Int, data: UnsafeMutablePointer<Float>
+    let cap: Int, data: UnsafeMutablePointer<Float>, tmp = UnsafeMutablePointer<Float>.allocate(capacity: 8192)
     var n = 0
     var blockStart = [Int](repeating: 0, count: 1 << 16), blockHost = [UInt64](repeating: 0, count: 1 << 16), blocks = 0
     init(seconds: Double, sr: Double) { cap = Int(seconds * sr); data = .allocate(capacity: cap) }
@@ -78,6 +78,7 @@ final class Clicker {
     var lastHost: UInt64 = 0, lastFrames: UInt32 = 0, gaps = 0, maxGap = 0.0
 }
 
+let inCh = Int(ProcessInfo.processInfo.environment["KH_CH"] ?? "") ?? 0
 func measureOnce(spk: AudioDeviceID, mic: AudioDeviceID, buffer: UInt32, plugin: AVAudioUnit?, clicks: Int, amp: Float) async -> (lat: [Double], misses: Int, sr: Double) {
     setBufferSize(spk, buffer); setBufferSize(mic, buffer)
     let outE = AVAudioEngine(), inE = AVAudioEngine()
@@ -121,7 +122,15 @@ func measureOnce(spk: AudioDeviceID, mic: AudioDeviceID, buffer: UInt32, plugin:
     let cap = Capture(seconds: total + 1, sr: sr)
     let inFmt = inE.inputNode.outputFormat(forBus: 0)
     let sink = AVAudioSinkNode { ts, frames, abl -> OSStatus in
-        let d = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: abl))[0].mData!.assumingMemoryBound(to: Float.self)
+        // Voie d'entrée choisie (KH_CH, à partir de 0) : par exemple 4 = entrée « Loopback » 5 d'une Scarlett 4i4 de 3e génération.
+        let bl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: abl))
+        let nch = bl.count == 1 ? Int(bl[0].mNumberChannels) : bl.count, want = min(inCh, max(0, nch - 1))
+        let d: UnsafeMutablePointer<Float>
+        if bl.count == 1 && nch > 1 {   // entrelacé : on recopie la voie voulue
+            let src = bl[0].mData!.assumingMemoryBound(to: Float.self)
+            for k in 0..<Int(frames) { cap.tmp[k] = src[k * nch + want] }
+            d = cap.tmp
+        } else { d = bl[want].mData!.assumingMemoryBound(to: Float.self) }
         if cap.blocks < cap.blockStart.count { cap.blockStart[cap.blocks] = cap.n; cap.blockHost[cap.blocks] = ts.pointee.mHostTime; cap.blocks += 1 }
         let m = min(Int(frames), cap.cap - cap.n)
         if m > 0 { cap.data.advanced(by: cap.n).update(from: d, count: m); cap.n += m }
@@ -152,15 +161,19 @@ func measureOnce(spk: AudioDeviceID, mic: AudioDeviceID, buffer: UInt32, plugin:
 
 func runRealtime(_ a: [String]) async {
     // rt [tampons ...] : mesure, pour chaque taille de tampon, sans plugin puis avec AULowpass.
-    let spk = findDevice("Haut-parleurs", kAudioObjectPropertyScopeOutput)
-    let mic = findDevice("Micro", kAudioObjectPropertyScopeInput)
+    // KH_OUT / KH_IN : partie du nom des périphériques (par défaut ceux du MacBook) ; KH_AMP : force des clics.
+    let env = ProcessInfo.processInfo.environment
+    let spk = findDevice(env["KH_OUT"] ?? "Haut-parleurs", kAudioObjectPropertyScopeOutput)
+    let mic = findDevice(env["KH_IN"] ?? "Micro", kAudioObjectPropertyScopeInput)
+    let amp = Float(env["KH_AMP"] ?? "") ?? 0.3
+    print("Voie d'entrée : \(inCh + 1) ; force des clics : \(amp)")
     print("Sortie : \(devName(spk)) | Entrée : \(devName(mic))")
     let sizes = a.compactMap { UInt32($0) }.isEmpty ? [512, 256, 128, 64] : a.compactMap { UInt32($0) }
     let lp = await load(AudioComponentDescription(componentType: kAudioUnitType_Effect, componentSubType: fourCC("lpas"), componentManufacturer: fourCC("appl"), componentFlags: 0, componentFlagsMask: 0))
     lp.auAudioUnit.parameterTree?.parameter(withAddress: 0)?.value = 18000   // presque transparent : on mesure le trajet, pas l'effet
     for b in sizes {
         for plug in [nil, lp] as [AVAudioUnit?] {
-            let r = await measureOnce(spk: spk, mic: mic, buffer: b, plugin: plug, clicks: 8, amp: 0.3)
+            let r = await measureOnce(spk: spk, mic: mic, buffer: b, plugin: plug, clicks: 8, amp: amp)
             let o = declared(spk, kAudioObjectPropertyScopeOutput), i = declared(mic, kAudioObjectPropertyScopeInput)
             let decl = Double(o.dev + o.safety + o.stream + o.buffer + i.dev + i.safety + i.stream + i.buffer) / r.sr * 1000
             let s = r.lat.sorted()

@@ -731,6 +731,10 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 
 - Campagne complète finale : **395/395** sur le MacBook Pro M3 (copie figée, 18/11/2026), puis `npm run build` OK. Une campagne précédente avait donné 393/395 : LT01 (doublons de boutons de prise, corrigé) et AD06, accordeur sensible à la charge du Mac (1 échec sur 8 passages, code non touché par la V19).
 
+- Après le chantier 6 (19/11/2026) : campagne complète **400/400**, `npm run build`, essai réel des effets du Mac `qa/au-bridge.cjs 20` OK, démarrage de la version bureau `qa/desktop-smoke.cjs` OK, essai réel des instruments `qa/au-instrument.cjs` 15/15.
+
+- QA sur la machine Linux de GitHub (19/11/2026) : AD07, XP06 et SD03 comparaient l'export parallèle et l'export d'un seul tenant au seuil de 10⁻⁴ ; Linux y montre jusqu'à 3,5 × 10⁻⁴ (−69 dB, cause non établie, Mac : 2 × 10⁻⁷). Seuil porté à 10⁻³ (−60 dB, inaudible). TH05 : le nom « Batterie » était coupé sur téléphone avec les polices de Linux ; noms un peu plus petits sur téléphone (12,5 px). QZ03 : clic sur la note rendu plus sûr. AD06 (accordeur) reste sensible à la charge de la machine.
+
 ### Méthode de QA apprise
 
 - Une campagne lancée sur le serveur de développement du dossier de travail est faussée par toute modification de fichier pendant qu'elle tourne (rechargement de la page). La campagne complète tourne donc sur une copie figée du dossier (`rsync` sans `node_modules`, lien vers celui du dossier), comme le fait `qa/all.sh` sur le port 5199.
