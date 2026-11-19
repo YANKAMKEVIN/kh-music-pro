@@ -9,13 +9,15 @@ import { hasKey, lang, t } from '../i18n';
 import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
 import { BAR, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
-import { ICON, drawAudio, drawFades, drawWave } from './arr';
+import { ICON, drawAudio, drawFades, drawWave, wheelFactor, zoomAt } from './arr';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
 const okbDown = new Map<number, number>();
 
-const RH = 16, SW = 28, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150;
+const RH = 16, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150, KEYS_W = 62;
+/** Largeur d'un pas dans le piano roll : suit le zoom (`S.epx`), relue à chaque dessin. */
+let SW = 28;
 const SOLF = { fr: ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], es: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], en: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] };
 const isBlack = (p: number) => [1, 3, 6, 8, 10].includes(p % 12);
 export const noteName = (p: number) => SOLF[lang()][p % 12] + (Math.floor(p / 12) - 1);
@@ -493,6 +495,7 @@ function scaleTools() {
 
 // ---------- Piano roll ----------
 function pianoRoll(tr: Track, c: Clip) {
+  SW = S.epx;
   const rows = PMAX - PMIN + 1, W = c.patLen! * SW, P = S.project, scaled = P.scale !== 'off', G = GRIDS[S.grid] ?? 1;
   const fit = (p: number) => clamp(scaled ? snapToScale(P, p) : p, PMIN, PMAX);
   if (selOwner !== c.id) { selNotes.clear(); selOwner = c.id; }
@@ -606,6 +609,14 @@ function pianoRoll(tr: Track, c: Clip) {
     h('div', { class: 'pr-foot' }, h('div', { class: 'vel-row' }, h('div', { class: 'vel-lbl', title: t('tip.velocity') }, t('ed.velocity')), vel), showCtl && ctlLane(c, W)));
   const key = c.id;
   scroll.onscroll = () => { scrollKey = key; scrollPos = { x: scroll.scrollLeft, y: scroll.scrollTop }; };
+  // Ctrl ou Cmd + molette (ou pincement au trackpad) : zoom dans le temps, le pas visé reste sous le pointeur.
+  scroll.onwheel = e => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const z = zoomAt(S.epx, wheelFactor(e), Math.max(0, e.clientX - scroll.getBoundingClientRect().left - KEYS_W), scroll.scrollLeft, 10, 72);
+    if (z.px === S.epx) return;
+    S.epx = z.px; scrollKey = key; scrollPos = { x: z.scroll, y: scroll.scrollTop }; emit();
+  };
   const restore = scrollKey === key ? { ...scrollPos } : null;
   queueMicrotask(() => {
     if (restore) { scroll.scrollLeft = restore.x; scroll.scrollTop = restore.y; return; }

@@ -67,8 +67,8 @@ const D: Record<string, [string, string, string]> = {
   'top.gridTip': ['Aimantation des clips à la grille', 'Snap clips to the grid', 'Ajustar los clips a la rejilla'],
   'grid.bar': ['Mesure', 'Bar', 'Compás'],
   'grid.beat': ['Temps', 'Beat', 'Pulso'],
-  'top.zoomIn': ['Zoomer', 'Zoom in', 'Acercar'],
-  'top.zoomOut': ['Dézoomer', 'Zoom out', 'Alejar'],
+  'top.zoomIn': ['Zoomer (Ctrl + molette)', 'Zoom in (Ctrl + wheel)', 'Acercar (Ctrl + rueda)'],
+  'top.zoomOut': ['Dézoomer (Ctrl + molette)', 'Zoom out (Ctrl + wheel)', 'Alejar (Ctrl + rueda)'],
   'top.undo': ['Annuler (Ctrl+Z)', 'Undo (Ctrl+Z)', 'Deshacer (Ctrl+Z)'],
   'top.redo': ['Rétablir (Ctrl+Y)', 'Redo (Ctrl+Y)', 'Rehacer (Ctrl+Y)'],
   'top.midi': ['MIDI', 'MIDI', 'MIDI'],
@@ -555,6 +555,9 @@ const D: Record<string, [string, string, string]> = {
   'notes.placeholder': ['Paroles, idées, choses à faire…', 'Lyrics, ideas, to-dos…', 'Letras, ideas, cosas por hacer…'],
   'help.k.multi': ['Ajouter un clip à la sélection', 'Add a clip to the selection', 'Añadir un clip a la selección'],
   'help.k.looprule': ['Tracer la boucle dans la règle', 'Draw the loop in the ruler', 'Trazar el bucle en la regla'],
+  'help.k.zoom': ['Zoomer autour du pointeur (ou pincer à deux doigts)', 'Zoom around the pointer (or pinch with two fingers)', 'Acercar alrededor del puntero (o pellizcar con dos dedos)'],
+  'help.k.hscroll': ['Faire défiler le morceau dans le temps', 'Scroll the song through time', 'Desplazar la canción en el tiempo'],
+  'help.key.ctrlWheel': ['Ctrl+molette', 'Ctrl+wheel', 'Ctrl+rueda'], 'help.key.shiftWheel': ['Maj+molette', 'Shift+wheel', 'Mayús+rueda'],
   'help.key.shiftClick': ['Maj+clic', 'Shift+click', 'Mayús+clic'], 'help.key.shiftDrag': ['Maj+glisser', 'Shift+drag', 'Mayús+arrastrar'],
 
   // ===== V9 =====

@@ -152,7 +152,7 @@ async function reset() {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
-    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
+    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, epx: 28, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1; k.S.recOffsetMs = 0; try { localStorage.removeItem('kh-rec-offset'); localStorage.removeItem('kh-wam-trust'); } catch { }
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
@@ -4821,6 +4821,62 @@ test('UX01c', 'Export', 'Pistes séparées : « piste i sur n » dans la barre ;
   await page.focus('#bExportCancel'); await page.keyboard.press('Enter');
   await until(() => page.isVisible('#bExport'), 'annulation au clavier sans effet', 5000);
   for (const [l, w] of [['en', 'Cancel'], ['es', 'Cancelar'], ['fr', 'Annuler']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('#bExportCancel')).includes(w), 'bouton Annuler non traduit en ' + l); }
+});
+
+test('UX02a', 'Arrangement', 'Ctrl + molette zoome autour du pointeur : la mesure visée ne bouge pas ; les boutons − et + restent', async () => {
+  const z = await S(() => { const f = window.kh.zoomAt; return [f(10, 2, 100, 50), f(10, 0.5, 100, 50), f(40, 2, 0, 0), f(4, 0.1, 30, 0)]; });
+  expect(JSON.stringify(z) === JSON.stringify([{ px: 20, scroll: 200 }, { px: 5, scroll: 0 }, { px: 44, scroll: 0 }, { px: 3, scroll: 0 }]), 'calcul du zoom : ' + JSON.stringify(z));
+  const sel = await clipSel(0, 1), b0 = await box(sel);   // deuxième clip de la batterie : il commence à la mesure 5
+  await page.mouse.move(b0.x, b0.y + 30); await page.keyboard.down('Control');
+  for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -100); await sleep(60); }
+  await page.keyboard.up('Control'); await sleep(150);
+  const px1 = await S(() => window.kh.S.px), b1 = await box(sel);
+  expect(px1 > 11 * 1.5, `le zoom n'a pas agrandi (${px1} px par pas)`); near(b1.x, b0.x, 3, 'le début de la mesure visée a glissé sous le pointeur');
+  expect(b1.width > b0.width * 1.5, 'le clip ne s’est pas élargi');
+  await page.keyboard.down('Control'); for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 100); await sleep(40); } await page.keyboard.up('Control'); await sleep(150);
+  const px2 = await S(() => window.kh.S.px); expect(px2 < px1 && px2 >= 3, `dézoom : ${px2}`);
+  await page.click('#bZoomIn'); expect(await S(() => window.kh.S.px) > px2, 'le bouton + ne zoome plus');
+});
+test('UX02b', 'Arrangement', 'Maj + molette fait défiler dans le temps ; la molette seule ne zoome pas', async () => {
+  const l = await box('.lane >> nth=1'); await page.mouse.move(l.x + 300, l.y + 30);
+  await page.keyboard.down('Shift'); await page.mouse.wheel(0, 300); await page.keyboard.up('Shift'); await sleep(120);
+  const r = await S(() => ({ x: document.getElementById('arr').scrollLeft, px: window.kh.S.px }));
+  expect(r.x >= 250, `pas de défilement horizontal (${r.x})`); near(r.px, 11, 0, 'Maj + molette ne doit pas zoomer');
+  await page.mouse.wheel(0, 200); await sleep(100); near(await S(() => window.kh.S.px), 11, 0, 'la molette seule ne doit pas zoomer');
+  await S(() => { document.getElementById('arr').scrollLeft = 0; });
+});
+test('UX02c', 'Piano roll', 'Ctrl + molette zoome le piano roll autour du pointeur ; les notes restent éditables', async () => {
+  await page.click(await clipSel(1, 0)); await page.waitForSelector('.pr-grid');
+  const n0 = await box('.note >> nth=2'); await page.mouse.move(n0.x, n0.y + 5);
+  await page.keyboard.down('Control'); for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, -100); await sleep(80); } await page.keyboard.up('Control'); await sleep(200);
+  const epx = await S(() => window.kh.S.epx), n1 = await box('.note >> nth=2');
+  expect(epx > 28 * 1.3, `piano roll non zoomé (${epx})`); near(n1.x, n0.x, 3, 'la note visée a glissé sous le pointeur'); expect(n1.width > n0.width * 1.3, 'la note ne s’est pas élargie');
+  // Une note posée après le zoom tombe sur le bon pas.
+  await page.$eval('.pr', e => { e.scrollLeft = 0; }); await sleep(80);
+  const g = await box('.pr-grid'), pr = await box('.pr'), used = new Set((await proj()).tracks[1].clips[0].notes.map(n => n.p)), before = used.size && (await proj()).tracks[1].clips[0].notes.length;
+  let y = pr.y + 40; while (used.has(96 - Math.floor((y - g.y) / 16))) y += 16;   // une rangée sans note
+  await page.mouse.click(g.x + 8.5 * epx, y); await sleep(150);
+  const notes = (await proj()).tracks[1].clips[0].notes; expect(notes.length === before + 1, 'note non ajoutée après le zoom');
+  near(notes[notes.length - 1].s, 8, 0.001, 'pas de la note posée après le zoom');
+  await page.keyboard.down('Control'); for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 100); await sleep(30); } await page.keyboard.up('Control'); await sleep(150);
+  expect(await S(() => window.kh.S.epx) >= 10, 'zoom minimal du piano roll');
+});
+test('UX02d', 'Téléphone', 'Pincer à deux doigts zoome l’arrangement ; un clip touché en premier ne se déplace pas', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 820, height: 700 }, hasTouch: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
+    await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const cdp = await ctx2.newCDPSession(pg), l = await (await pg.$('.lane >> nth=0')).boundingBox(), y = l.y + 40;
+    const before = await pg.evaluate(() => ({ px: window.kh.S.px, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
+    const pts = (a, b) => [{ x: a, y, id: 1 }, { x: b, y: y + 4, id: 2 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 420, y, id: 1 }] }); await pg.waitForTimeout(60);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(420, 480) }); await pg.waitForTimeout(60);
+    for (let i = 1; i <= 6; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(420 - i * 15, 480 + i * 15) }); await pg.waitForTimeout(40); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(200);
+    const after = await pg.evaluate(() => ({ px: window.kh.S.px, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
+    expect(after.px > before.px * 2, `pincement sans zoom (${before.px} → ${after.px})`);
+    expect(JSON.stringify(after.starts) === JSON.stringify(before.starts), 'un clip a bougé pendant le pincement : ' + JSON.stringify(after.starts));
+  } finally { await ctx2.close(); }
 });
 
 (async () => {

@@ -20,6 +20,7 @@ export const S = {
   quant: { str: 1, swing: 0, hum: 0.5 }, // V19 : force et swing de la quantification, force de l'humanisation (réglages de séance)
   ctlShow: false, ctlKind: 'pb' as 'pb' | 'mod' | 'at', // V19 : ligne des contrôles joués sous le piano roll, et contrôle affiché
   px: 11,     // pixels par pas dans l'arrangement
+  epx: 28,    // pixels par pas dans le piano roll (zoom à la molette)
   snap: 4,    // grille magnétique, en pas
   file: { path: '', name: '' }, // version bureau : fichier .khm lié au projet ouvert ('' = aucun)
 };
