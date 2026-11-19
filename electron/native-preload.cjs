@@ -28,7 +28,7 @@ if (m) {
   const ioOpts = o => {
     const r = {};
     for (const k of ['output', 'input']) if (k in (o || {})) r[k] = str(o[k]);
-    for (const k of ['sampleRate', 'buffer', 'outTarget', 'inTarget', 'gain']) if (o && o[k] !== undefined) r[k] = num(o[k]);
+    for (const k of ['sampleRate', 'buffer', 'outTarget', 'inTarget', 'gain', 'inFirst']) if (o && o[k] !== undefined) r[k] = num(o[k]);
     return r;
   };
   contextBridge.exposeInMainWorld('khNative', {
@@ -53,7 +53,7 @@ if (m) {
     uiPump: () => { if (m.uiPump) m.uiPump(); },
     ioStart: (key, o) => m.ioStart(sab(key), ioOpts(o)),
     ioStop: () => m.ioStop(),
-    ioInput: (name, inTarget) => (inTarget === undefined ? m.ioInput(str(name)) : m.ioInput(str(name), num(inTarget))),
+    ioInput: (name, inTarget, inFirst) => (inTarget === undefined ? m.ioInput(str(name)) : inFirst === undefined ? m.ioInput(str(name), num(inTarget)) : m.ioInput(str(name), num(inTarget), num(inFirst))),
     ioStats: () => m.ioStats(),
     ioArm: t => m.ioArm(num(t)),
     ioResetStats: () => m.ioResetStats(),

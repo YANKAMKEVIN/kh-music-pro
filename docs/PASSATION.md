@@ -747,6 +747,18 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 | 32 | 5,0 ms | 0,6 ms |
 
 - Lecture : contrairement au micro et aux haut-parleurs du MacBook (environ 46 ms cachés), la Scarlett ne cache presque rien ; l'aller-retour réel d'un logiciel natif est d'environ ce qui est déclaré, **5 à 9 ms à 32-128**, plus les convertisseurs (≈ 1 ms, non mesurés : le Loopback est numérique). L'objectif de 12 ms est donc atteignable avec le moteur natif. Non mesuré : l'aller-retour de KH Music Pro lui-même (navigateur ou moteur natif, qui ajoute ses tampons de 384/256 échantillons), ni avec un câble analogique de bouclage.
+- **KH Music Pro lui-même** (`node qa/latence-carte.cjs Scarlett 4 256 128 64` : la mesure de l'application, clic joué puis retrouvé à l'entrée Loopback, moteur audio natif) :
+
+| Tampon natif | Annoncé par KH (sortie + entrée) | Mesuré par KH (médiane de 6) |
+|---|---|---|
+| 256 | 35,7 ms (21,9 + 13,7) | 35,0 ms |
+| 128 | 30,3 ms (19,3 + 11,1) | 29,3 ms |
+| 64 | 27,7 ms (17,9 + 9,8) | 29,6 ms (26 à 33) |
+
+  - Ce que KH annonce correspond à la mesure (à 1 ou 2 ms) : la compensation des prises est juste avec cette carte.
+  - L'écart avec les 5 à 9 ms de la carte vient des réserves du moteur natif (384 échantillons en sortie, 256 en entrée, réglées en V14b pour les haut-parleurs du MacBook) et de la cadence de Web Audio. Pour jouer un instrument virtuel, seul compte le trajet de sortie : environ 18 à 22 ms. Piste possible : réserves plus petites quand la carte est une vraie interface (à valider par une tenue de 5 minutes sans craquement).
+  - Chemin navigateur (moteur natif désactivé) : non mesurable par le Loopback, car Chromium ne capte que 2 voies d'une carte (entrées 1-2). Annoncé par Chromium : sortie 5,3 + 39 ms, entrée 2,7 ms, environ 47 ms. Le mesurer demande un câble de la sortie ligne vers l'entrée 1.
+- Moteur natif : nouvelle option `inFirst` (première voie d'entrée captée, `io.mm` par la carte des voies de Core Audio) ; elle permettra aussi d'enregistrer les entrées 3-4 de la Scarlett (Yamaha). Pas encore de réglage dans l'interface.
 - `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
 
 ### Méthode de QA apprise

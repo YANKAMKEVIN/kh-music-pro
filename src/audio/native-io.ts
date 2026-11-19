@@ -19,6 +19,8 @@ export interface IoOptions {
   /** Niveaux cibles des deux tampons partagés, en échantillons. */
   outTarget?: number;
   inTarget?: number;
+  /** Première voie d'entrée captée (V19 ; 0 = entrées 1-2, 2 = entrées 3-4…). */
+  inFirst?: number;
   /** Gain appliqué en sortie par le natif (1e-5 = -100 dB, pour les longues tenues sans rien faire entendre). */
   gain?: number;
   /**
@@ -43,7 +45,7 @@ interface IoBridge {
   forget(key: string): void;
   ioStart(key: string, o: IoOptions & { sampleRate: number }): IoInfo;
   ioStop(): void;
-  ioInput(name: string | null, inTarget?: number): Pick<IoInfo, 'input' | 'inChannels' | 'inDeclared' | 'inRate'>;
+  ioInput(name: string | null, inTarget?: number, inFirst?: number): Pick<IoInfo, 'input' | 'inChannels' | 'inDeclared' | 'inRate'>;
   ioStats(): Omit<IoStats, 'outBlocks' | 'outDropped' | 'inBlocks' | 'inMissed'> | null;
   ioArm(threshold: number): void;
   ioResetStats(): void;
@@ -186,7 +188,7 @@ export class NativeIO {
     // La fréquence de la nouvelle sortie n'est connue qu'après coup : si la réserve doit changer, on ne rouvre que l'entrée
     // (et seulement si elle est ouverte), sans redémarrer la sortie une seconde fois.
     const want = this.wantedIn();
-    if (want !== this.inTarget) { this.inTarget = want; if (this.info.inChannels) this.info = { ...this.info, ...this.br.ioInput(this.opts.input ?? '', want) }; }
+    if (want !== this.inTarget) { this.inTarget = want; if (this.info.inChannels) this.info = { ...this.info, ...this.br.ioInput(this.opts.input ?? '', want, this.opts.inFirst ?? 0) }; }
     return this.info;
   }
 
@@ -194,7 +196,7 @@ export class NativeIO {
   input(name: string | null): IoInfo {
     this.opts.input = name;
     this.inTarget = this.wantedIn();
-    this.info = { ...this.info, inRate: undefined, ...this.br.ioInput(name, this.inTarget) };
+    this.info = { ...this.info, inRate: undefined, ...this.br.ioInput(name, this.inTarget, this.opts.inFirst ?? 0) };
     return this.info;
   }
 

@@ -67,6 +67,7 @@ struct IO {
   AudioDeviceID outDev = 0, inDev = 0;
   std::string outName, inName;
   int inCh = 1;
+  int inFirst = 0;   // première voie d'entrée captée (0 = entrée 1) : par exemple 2 = entrées 3-4, 4 = Loopback d'une Scarlett 4i4
   float gain = 1;
   UInt32 buffer = 128;
   // Fréquence propre de chaque appareil : l'entrée de Core Audio ne convertit pas, le natif rééchantillonne (EarPods : 44,1 kHz).
@@ -300,7 +301,8 @@ const char* startIn(IO* s, const std::string& name) {
   s->inDev = findDev(name, true);
   if (!s->inDev) return "entrée introuvable";
   s->inName = devName(s->inDev);
-  s->inCh = std::max(1, std::min(2, channels(s->inDev, kAudioObjectPropertyScopeInput)));
+  int total = channels(s->inDev, kAudioObjectPropertyScopeInput), first = std::max(0, std::min(s->inFirst, total - 1));
+  s->inCh = std::max(1, std::min(2, total - first));
   s->inRate = nominal(s->inDev);
   { auto ba = addr(kAudioDevicePropertyBufferFrameSize); AudioObjectSetPropertyData(s->inDev, &ba, 0, nullptr, 4, &s->buffer); }
   for (int c = 0; c < 2; c++) { s->fifo[c].assign(16384, 0.f); s->inBuf[c].assign(MAXF, 0.f); }
@@ -316,6 +318,9 @@ const char* startIn(IO* s, const std::string& name) {
       AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &off, 4) ||
       AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &s->inDev, sizeof s->inDev) ||
       AudioUnitSetProperty(s->inU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &fi, sizeof fi) ||
+      // Voies choisies (V19) : la carte des voies amène les entrées voulues de l'appareil sur les deux voies captées.
+      (first > 0 && [&] { SInt32 map[2] = { SInt32(first), SInt32(first + 1) };
+        return AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_ChannelMap, kAudioUnitScope_Output, 1, map, UInt32(sizeof(SInt32) * s->inCh)); }()) ||
       AudioUnitSetProperty(s->inU, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxf, 4) ||
       AudioUnitSetProperty(s->inU, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &icb, sizeof icb) ||
       AudioUnitInitialize(s->inU)) { stopIn(s); return "entrée impossible à ouvrir"; }
@@ -350,7 +355,7 @@ void setInputInfo(Isolate* iso, Local<Object> r) {
 }
 
 /**
- * ioStart(sab, { sampleRate, output, input, buffer, outTarget, inTarget, gain }) → { output, input, inChannels, ... }
+ * ioStart(sab, { sampleRate, output, input, buffer, outTarget, inTarget, gain, inFirst }) → { output, input, inChannels, ... }
  * output / input : partie du nom de l'appareil ('' = celui du système ; input: null ou absent = pas d'entrée).
  */
 void IoStart(const FunctionCallbackInfo<Value>& a) {
@@ -372,6 +377,7 @@ void IoStart(const FunctionCallbackInfo<Value>& a) {
   s->so.reset(num(iso, o, "outTarget", 384));
   s->si.reset(num(iso, o, "inTarget", 384));
   s->buffer = UInt32(num(iso, o, "buffer", 128));
+  s->inFirst = int(num(iso, o, "inFirst", 0));
 
   // Sortie (le natif convertit lui-même vers la fréquence de l'appareil).
   s->outDev = findDev(text(iso, o, "output"), false);
@@ -416,13 +422,14 @@ void IoStart(const FunctionCallbackInfo<Value>& a) {
 }
 
 /**
- * ioInput(nom | null, réserve?) : ouvre (ou ferme) seulement l'entrée, sans toucher à la sortie → { input, inChannels, inDeclared, inRate }.
+ * ioInput(nom | null, réserve?, première voie?) : ouvre (ou ferme) seulement l'entrée, sans toucher à la sortie → { input, inChannels, inDeclared, inRate }.
  * réserve : niveau cible du tampon d'entrée, en échantillons (sinon celui donné à ioStart).
  */
 void IoInput(const FunctionCallbackInfo<Value>& a) {
   Isolate* iso = a.GetIsolate();
   if (!io) return err(iso, "entrée/sortie natives arrêtées");
   if (a.Length() > 1 && a[1]->IsNumber()) io->si.target = a[1]->NumberValue(iso->GetCurrentContext()).FromMaybe(io->si.target);
+  if (a.Length() > 2 && a[2]->IsNumber()) io->inFirst = int(a[2]->NumberValue(iso->GetCurrentContext()).FromMaybe(0));
   if (a.Length() < 1 || a[0]->IsNull() || a[0]->IsUndefined()) stopIn(io.get());
   else if (const char* e = startIn(io.get(), a[0]->IsString() ? str(iso, a[0]) : "")) return err(iso, e);
   Local<Object> r = Object::New(iso);
