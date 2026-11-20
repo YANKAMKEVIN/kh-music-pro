@@ -4399,6 +4399,8 @@ test('XP08', 'Export', 'Options d’export traduites, lisibles au clavier ; Éch
   await page.evaluate(() => window.kh.setLang('fr'));
   await menu('bExpOpts'); await page.focus('[data-range=all]'); await page.keyboard.press('ArrowDown');
   expect((await proj()).exp.range === 'loop', 'flèche : le choix suivant n’est pas pris');
+  // Tailles mesurées sur la fenêtre posée : pendant son ouverture animée (UX15a, léger agrandissement), tout est un peu plus petit.
+  await page.$eval('#expopts', d => Promise.all(d.getAnimations({ subtree: true }).map(a => a.finished)));
   const sizes = await page.$$eval('#expopts input[type=radio], #expopts input[type=checkbox]', l => l.map(e => e.getBoundingClientRect().width));
   expect(sizes.every(w => w >= 20), 'cases trop petites : ' + sizes);
   await page.keyboard.press('Escape');
