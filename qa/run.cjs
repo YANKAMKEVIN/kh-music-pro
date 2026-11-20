@@ -5312,6 +5312,29 @@ test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant
   expect(safe === 0, `icône maskable : ${safe} points du dessin hors de la zone sûre`);
 });
 
+test('UX15a', 'Interface', 'Fenêtres et menus s’ouvrent en 140 ms (fondu, léger agrandissement, voile qui s’installe) ; rien ne bouge si le système demande moins d’animations', async () => {
+  const look = () => page.evaluate(() => {
+    const d = document.querySelector('dialog[open]'), m = document.querySelector('details.menu[open] > .menu-list'), cs = e => (e ? getComputedStyle(e) : null);
+    return { dlg: cs(d)?.animationName, dur: cs(d)?.animationDuration, veil: d ? getComputedStyle(d, '::backdrop').animationName : undefined, menu: cs(m)?.animationName, mdur: cs(m)?.animationDuration, origin: cs(m)?.transformOrigin };
+  });
+  await page.click('#bHelp'); let a = await look();
+  expect(a.dlg === 'dlg-in' && a.dur === '0.14s' && a.veil === 'veil-in', 'ouverture d’une fenêtre : ' + JSON.stringify(a));
+  // L'animation se termine : la fenêtre est nette, à sa taille, et se referme comme avant.
+  await page.evaluate(() => Promise.all(document.querySelector('dialog[open]').getAnimations().map(x => x.finished)));
+  const end = await page.$eval('#help', d => ({ o: getComputedStyle(d).opacity, t: getComputedStyle(d).transform })); expect(end.o === '1' && (end.t === 'none' || end.t === 'matrix(1, 0, 0, 1, 0, 0)'), 'fenêtre après l’animation : ' + JSON.stringify(end));
+  await page.keyboard.press('Escape'); expect(!(await page.$eval('#help', d => d.open)), 'la fenêtre ne se referme plus');
+  await page.click('#menu > summary'); a = await look();
+  expect(a.menu === 'menu-in' && parseFloat(a.mdur) <= 0.14 && /^[\d.]+px 0px/.test(a.origin), 'déroulé du menu depuis son bouton : ' + JSON.stringify(a));
+  expect(await page.isVisible('#bSave'), 'le menu doit rester utilisable pendant son ouverture'); await page.keyboard.press('Escape');
+  await headAct(0, '.tdup'); near((await proj()).tracks.length, 6, 0, 'un choix dans un menu animé doit agir');
+  await page.click(await clipSel(1, 0), { button: 'right', position: { x: 60, y: 40 } }); expect(await page.$eval('.menu-list.ctx', e => getComputedStyle(e).animationName) === 'menu-in', 'menu du clip sans déroulé'); await page.keyboard.press('Escape');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  try {
+    await page.click('#bHelp'); a = await look(); expect(a.dlg === 'none' && a.veil === 'none', 'fenêtre animée malgré « moins d’animations » : ' + JSON.stringify(a)); await page.keyboard.press('Escape');
+    await page.click('#menu > summary'); a = await look(); expect(a.menu === 'none', 'menu animé malgré « moins d’animations » : ' + JSON.stringify(a)); await page.keyboard.press('Escape');
+  } finally { await page.emulateMedia({ reducedMotion: 'no-preference' }); }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
