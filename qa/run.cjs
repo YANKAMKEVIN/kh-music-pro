@@ -5269,6 +5269,23 @@ test('UX12b', 'Enregistrement', 'Prise micro : la piste audio sélectionnée est
   await S(() => window.kh.engine.stop()); await sleep(600); expect(!(await recLook()).zone, 'voile encore là après la prise');
 });
 
+test('UX13a', 'Interface', 'Icônes dessinées : les types de piste ont le même dessin partout (têtes, mixeur, Live, éditeur), à la couleur de la piste, sans emoji', async () => {
+  const emoji = /[\u{1F300}-\u{1FAFF}]/u;
+  const head = await page.$$eval('.head .ticon', l => l.map(e => ({ ico: e.querySelector('svg.ico')?.dataset.ico, txt: e.textContent, hidden: e.querySelector('svg')?.getAttribute('aria-hidden'), stroke: e.querySelector('svg')?.getAttribute('stroke'), color: getComputedStyle(e.querySelector('svg')).color, title: e.title })));
+  expect(head.map(x => x.ico).join() === 'drums,synth,synth,synth,audio', 'icônes des têtes de piste : ' + JSON.stringify(head.map(x => x.ico)));
+  expect(head.every(x => x.txt === '' && x.hidden === 'true' && x.stroke === 'currentColor' && x.title), 'icône mal faite : ' + JSON.stringify(head[0]));
+  expect(new Set(head.map(x => x.color)).size >= 3, 'les icônes doivent prendre la couleur de leur piste : ' + head.map(x => x.color));
+  expect((await page.$$eval('.corner .add svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,audio', 'boutons d’ajout de piste');
+  expect(await page.$eval('.ebar strong svg.ico', e => e.dataset.ico) === 'drums' && !emoji.test(await page.textContent('.ebar strong')), 'titre de l’éditeur');
+  await tab('mixer');
+  expect((await page.$$eval('.mixer > .strip[data-id] .sname svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,synth,synth,audio', 'noms des tranches');
+  const mix = await page.textContent('.mixer'); expect(!emoji.test(mix.replace('⚡', '')), 'emoji restant dans le mixeur : ' + (mix.match(emoji) || [])[0]);
+  expect(await page.$('[data-act=rack] svg.ico') && await page.$('[data-act=learn] svg.ico') && await page.$('[data-act=analyze] svg.ico') && await page.$('.strip.master .sname svg.ico'), 'icônes des boutons du mixeur');
+  expect((await page.textContent('.mixer > .strip >> nth=1 >> .sname')).trim() === 'Basse', 'le nom de la tranche doit rester lisible seul');
+  await tab('live'); expect((await page.$$eval('.lhead svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,synth,synth,audio', 'têtes du Live');
+  expect(await page.$('#bNotes svg.ico') && (await page.getAttribute('#bNotes', 'aria-label')), 'bouton des notes : icône et nom accessible');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

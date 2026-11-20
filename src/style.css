@@ -717,3 +717,12 @@ dialog.welcome .pill { min-height: 44px; padding: 0 18px; }
 .head.rec { box-shadow: inset 0 0 0 1px rgba(255, 77, 109, .75); background: linear-gradient(90deg, rgba(255, 77, 109, .2), transparent); }
 .head.rec::before { background: var(--rec); box-shadow: 0 0 14px var(--rec); }
 #recz { display: none; position: absolute; z-index: 3; pointer-events: none; background: rgba(255, 77, 109, .16); border-left: 1px solid rgba(255, 77, 109, .7); }
+
+/* ================= UX : icônes dessinées au trait (src/ui/icons.ts) ================= */
+.ico { flex: none; vertical-align: -3px; }
+.ticon { display: inline-flex; color: var(--c); }
+.sname .ico, .lhead .ico, .ebar strong .ico { color: var(--c, currentColor); }
+.add .ico { vertical-align: -3px; }
+.pill .ico, .mini .ico { vertical-align: -3px; }
+#bNotes { display: inline-grid; place-items: center; }
+dialog h2 .ico { color: var(--a1); }

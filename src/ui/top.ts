@@ -8,6 +8,7 @@ import { keyLabel } from './editor';
 import { showAudio } from './audio';
 import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
+import { icon } from './icons';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -59,7 +60,7 @@ function wireMenus() {
 
 /** Construit la barre supérieure dans la langue courante. */
 export function buildTop(onLang: () => void) {
-  const b = (id: string, cls: string, label: string, tip: string, fn: () => void) => h('button', { id, class: cls, title: tip, 'aria-label': tip, onclick: fn }, label);
+  const b = (id: string, cls: string, label: string | Node, tip: string, fn: () => void) => h('button', { id, class: cls, title: tip, 'aria-label': tip, onclick: fn }, label);
   const tgl = (id: string, label: string, tip: string, fn: () => void) => h('button', { id, class: 'pill', title: tip, 'aria-label': tip, 'aria-pressed': 'false', onclick: fn }, label);
   const num = (id: string, label: string, min: number, max: number, fn: () => void) => { const i = h('input', { id, type: 'number', min: String(min), max: String(max), step: '1', 'aria-label': label, title: label }); i.onchange = fn; return i; };
 
@@ -160,7 +161,7 @@ export function buildTop(onLang: () => void) {
     h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
     b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
     b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo),
-    b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', '📝', t('notes.title'), showNotes));
+    b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', icon('note', 17), t('notes.title'), showNotes));
 
   exportJob.onChange = syncExport; syncExport();
   document.querySelectorAll<HTMLElement>('#tabs button').forEach(x => { x.textContent = t('tab.' + x.dataset.tab); });
@@ -226,7 +227,7 @@ export function showExportOptions() {
 function showNotes() {
   const d = $<HTMLDialogElement>('notes'), area = h('textarea', { id: 'notesText', 'aria-label': t('notes.title'), placeholder: t('notes.placeholder'), spellcheck: true });
   area.value = S.project.notes;
-  d.replaceChildren(h('h2', {}, '📝 ' + t('notes.title')), area, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close'))));
+  d.replaceChildren(h('h2', {}, icon('note', 22), t('notes.title')), area, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close'))));
   d.onclose = () => { if (area.value !== S.project.notes) { S.project.notes = area.value; commit(); } };
   d.showModal(); area.focus();
 }

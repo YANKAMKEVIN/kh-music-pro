@@ -5,6 +5,7 @@ import { ProjInfo, S, emit, deleteProject, duplicateProject, library, libraryInf
 import { TEMPLATES, Template, templateProject } from '../types';
 import { ask, confirmBox, h, toast } from './dom';
 import { startTour } from './tour';
+import { icon } from './icons';
 
 const ICONS: Record<Template, string> = { empty: '📄', trap: '🔥', house: '🪩', lofi: '☕', demo: '✨' };
 const dlg = () => document.getElementById('lib') as HTMLDialogElement;
@@ -53,10 +54,10 @@ function render() {
     return h('li', { class: cur ? 'cur' : '', data: { pid: e.id, name: e.name.toLowerCase() } },
       h('button', { class: 'lopen', data: { act: 'libopen' }, title: t('lib.open'), onclick: async () => { halt(); await openProject(e.id); engine.prepare(); d.close(); toast(t('toast.opened')); } },
         thumb, h('span', { class: 'pinfo' }, h('strong', {}, e.name), meta)),
-      cur ? h('button', { class: 'mini', data: { act: 'libvers' }, title: t('ver.title'), 'aria-label': `${t('ver.title')} – ${e.name}`, onclick: () => renderVersions() }, '🕘') : '',
+      cur ? h('button', { class: 'mini', data: { act: 'libvers' }, title: t('ver.title'), 'aria-label': `${t('ver.title')} – ${e.name}`, onclick: () => renderVersions() }, icon('clock', 15)) : '',
       h('button', { class: 'mini', data: { act: 'librename' }, title: t('lib.rename'), 'aria-label': `${t('lib.rename')} – ${e.name}`, onclick: async () => { const n = await ask(t('lib.rename'), e.name); if (n?.trim()) { await renameLibProject(e.id, n); render(); } } }, '✎'),
       h('button', { class: 'mini', data: { act: 'libdup' }, title: t('lib.dup'), 'aria-label': `${t('lib.dup')} – ${e.name}`, onclick: async () => { await duplicateProject(e.id); render(); } }, '⧉'),
-      h('button', { class: 'mini danger', data: { act: 'libdel' }, title: t('lib.del'), 'aria-label': `${t('lib.del')} – ${e.name}`, disabled: cur, onclick: async () => { if (await confirmBox(t('lib.confirmDel', e.name), t('act.del'), { danger: true })) { await deleteProject(e.id); render(); } } }, '🗑'));
+      h('button', { class: 'mini danger', data: { act: 'libdel' }, title: t('lib.del'), 'aria-label': `${t('lib.del')} – ${e.name}`, disabled: cur, onclick: async () => { if (await confirmBox(t('lib.confirmDel', e.name), t('act.del'), { danger: true })) { await deleteProject(e.id); render(); } } }, icon('trash', 15)));
   });
   // Au-delà de huit projets, un champ pour retrouver un morceau par son nom.
   const none = h('p', { class: 'tip', hidden: true, role: 'status' }, t('lib.noMatch'));

@@ -3,7 +3,7 @@ import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, commit } from '../store';
 import { BAR } from '../types';
-import { ICON } from './arr';
+import { typeIcon } from './icons';
 import { h, slider } from './dom';
 import { filterFmt } from './mixer';
 
@@ -15,7 +15,7 @@ export function renderLive(): HTMLElement {
   const grid = h('div', { class: 'lgrid', style: `grid-template-columns:76px repeat(${cols.length}, minmax(120px, 170px))` });
   grid.append(h('div', { class: 'lcorner' }, t('live.scene')));
   for (const { tr } of cols) grid.append(h('div', { class: 'lhead', style: `--c:${tr.color}`, title: tr.name },
-    h('span', {}, `${ICON[tr.type]} ${tr.name}`),
+    h('span', {}, typeIcon(tr.type, 15), ' ' + tr.name),
     h('button', { class: 'mini mute' + (tr.mute ? ' on' : ''), data: { lmute: tr.id }, title: t('mix.mute'), 'aria-label': `${t('mix.mute')} – ${tr.name}`, 'aria-pressed': String(tr.mute), onclick: () => { tr.mute = !tr.mute; commit(); } }, 'M')));
   for (let i = 0; i < rows; i++) {
     grid.append(h('button', { class: 'lscene', data: { scene: String(i) }, title: t('live.launchScene', i + 1), onclick: () => engine.launchScene(i) }, `▶ ${i + 1}`));

@@ -4,7 +4,7 @@ import { t } from '../i18n';
 import { clearMidiMap, ccOf, learn } from '../input';
 import { S, commit, emit, select } from '../store';
 import { MIX_PRESETS, Project, Track, blankProject, newTrack } from '../types';
-import { ICON } from './arr';
+import { icon, typeIcon } from './icons';
 import { showRack } from './rack';
 import { meter, updateLevels } from './meters';
 import { db, h, pct, resettable, slider } from './dom';
@@ -87,9 +87,9 @@ function strip(tr: Track, i: number, bus = false) {
   const T = (el: HTMLElement, key: string) => (bus ? el : tag(el, `${i}:${key}`)); // l'assignation MIDI vise les pistes, pas les bus
   const act = stripActive(tr), D = defTrack();
   return h('div', { class: 'strip' + (bus ? ' bus' : S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id }, style: `--c:${tr.color}`, onpointerdown: () => { if (!bus) select(tr.id, S.selTrack === tr.id ? S.selClip : ''); } },
-    bus ? h('div', { class: 'shead' }, h('span', { class: 'sname' }, '🔀'), bname, preset,
+    bus ? h('div', { class: 'shead' }, h('span', { class: 'sname' }, icon('bus')), bname, preset,
       h('button', { class: 'mini del', data: { act: 'busdel' }, title: t('bus.del'), 'aria-label': `${t('bus.del')} – ${tr.name}`, onclick: () => deleteBus(tr.id) }, '✕'))
-      : h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, `${ICON[tr.type]} ${tr.name}`), out, preset),
+      : h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, typeIcon(tr.type), ' ' + tr.name), out, preset),
     h('canvas', { class: 'eqc', width: 280, height: 46, data: { eq: tr.id }, role: 'img', 'aria-label': `${t('mix.eqCurve')} – ${tr.name}`, title: t('mix.eqCurve') }),
     h('div', { class: 'sbody' },
       h('div', { class: 'scol' },
@@ -106,7 +106,7 @@ function strip(tr: Track, i: number, bus = false) {
           T(slider(t('mix.chorus'), 0, 1, 0.01, tr.chorus, v => tr.chorus = v, pct, '', false, D.chorus), 'chorus'),
           T(slider(t('mix.trem'), 0, 1, 0.01, tr.trem, v => tr.trem = v, pct, '', false, D.trem), 'trem'),
           T(slider(t('mix.crush'), 0, 1, 0.01, tr.crush, v => tr.crush = v, pct, '', false, D.crush), 'crush'),
-          h('button', { class: 'mini rackb' + (tr.inserts.length ? ' has' : ''), data: { act: 'rack' }, title: t('fx.open'), onclick: () => showRack(tr.id) }, `🧩 ${t('fx.title')}${tr.inserts.length ? ` (${tr.inserts.length})` : ''}`)),
+          h('button', { class: 'mini rackb' + (tr.inserts.length ? ' has' : ''), data: { act: 'rack' }, title: t('fx.open'), onclick: () => showRack(tr.id) }, icon('fx', 15), ` ${t('fx.title')}${tr.inserts.length ? ` (${tr.inserts.length})` : ''}`)),
         !bus && sect('send', act.send, sends(tr)),
         sect('dyn', act.dyn,
           tog('comp', t('mix.comp')),
@@ -155,7 +155,7 @@ export function renderMixer(): HTMLElement {
   const m = fader(t('mix.master'), p.master, v => p.master = v, defProj().master), DP = defProj();
   const root = h('div', { class: 'mixer' + (learn.on ? ' learning' : '') },
     h('div', { class: 'mtools' },
-      h('button', { class: 'pill' + (learn.on ? ' on' : ''), data: { act: 'learn' }, 'aria-pressed': String(learn.on), title: t('learn.tip'), onclick: () => { learn.on = !learn.on; learn.target = ''; emit(); } }, '🎛 ' + t('learn.title')),
+      h('button', { class: 'pill' + (learn.on ? ' on' : ''), data: { act: 'learn' }, 'aria-pressed': String(learn.on), title: t('learn.tip'), onclick: () => { learn.on = !learn.on; learn.target = ''; emit(); } }, icon('knob', 16), ' ' + t('learn.title')),
       learn.on && h('p', { class: 'tip' }, t(learn.target ? 'learn.move' : 'learn.pick')),
       Object.keys(learn.map).length > 0 && h('button', { class: 'pill', data: { act: 'learnclear' }, onclick: clearMidiMap }, t('learn.clear')),
       h('button', { class: 'pill', data: { act: 'busadd' }, title: t('bus.addTip'), onclick: addBus }, '＋ ' + t('bus.add')),
@@ -163,7 +163,7 @@ export function renderMixer(): HTMLElement {
       h('canvas', { class: 'spec', width: 150, height: 70, role: 'img', 'aria-label': t('mix.spectrum'), title: t('mix.spectrum') })),
     ...p.tracks.map((tr, i) => strip(tr, i)), ...p.buses.map((b, i) => strip(b, i, true)),
     h('div', { class: 'strip master', style: '--c:#fff' },
-      h('div', { class: 'sname' }, '🔊 ' + t('mix.master')),
+      h('div', { class: 'sname' }, icon('speaker'), ' ' + t('mix.master')),
       h('div', { class: 'sbody' },
         h('div', { class: 'scol' },
           h('span', { class: 'sect' }, t('mix.reverb')),
@@ -177,7 +177,7 @@ export function renderMixer(): HTMLElement {
           slider(t('mix.low'), -12, 12, 0.5, p.mLow, v => p.mLow = v, db, '', false, DP.mLow),
           slider(t('mix.width'), 0, 2, 0.01, p.width, v => p.width = Math.abs(v - 1) < 0.04 ? 1 : v, pct, '', false, DP.width),
           h('span', { class: 'sect' }, t('mix.export')), target,
-          h('button', { class: 'mini', data: { act: 'analyze' }, title: t('mix.analyzeTip'), onclick: async () => { lastResult = await analyzeMix(); result.textContent = lastResult; } }, '📊 ' + t('mix.analyze')), result),
+          h('button', { class: 'mini', data: { act: 'analyze' }, title: t('mix.analyzeTip'), onclick: async () => { lastResult = await analyzeMix(); result.textContent = lastResult; } }, icon('bars', 15), ' ' + t('mix.analyze')), result),
         h('div', { class: 'fcol' },
         h('div', { class: 'fwrap' }, meter('master', t('mix.master')), tag(m.inp, 'm:master')),
         m.out, h('p', { class: 'tip' }, t('mix.limiter'))))));

@@ -7,8 +7,8 @@ import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { clamp, followDrag, h, popMenu, resettable } from './dom';
 import { meter } from './meters';
+import { typeIcon } from './icons';
 
-export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
 // ---------- Formes d'onde ----------
 const BLK = 256, peakCache = new Map<string, Float32Array>();
@@ -94,7 +94,7 @@ export function drawFades(g: CanvasRenderingContext2D, c: Clip, w: number, hgt: 
 const TRACK_H = 84;
 
 function addBtn(type: TrackType) {
-  return h('button', { class: 'add', data: { add: type }, title: t('track.add', t('type.' + type)), onclick: () => addTrack(type) }, `＋ ${ICON[type]}`, h('span', {}, t('type.' + type)));
+  return h('button', { class: 'add', data: { add: type }, title: t('track.add', t('type.' + type)), onclick: () => addTrack(type) }, '＋ ', typeIcon(type, 16), h('span', {}, t('type.' + type)));
 }
 
 function head(tr: Track) {
@@ -126,7 +126,7 @@ function head(tr: Track) {
     class: 'head' + (S.selTrack === tr.id ? ' sel' : '') + (tr.frozen ? ' frozen' : ''), data: { id: tr.id }, style: `--c:${tr.color}`,
     onpointerdown: () => { if (S.selTrack !== tr.id) select(tr.id, ''); },
   },
-    h('div', { class: 'hrow' }, h('span', { class: 'ticon', title: t('type.' + tr.type) }, ICON[tr.type]), name,
+    h('div', { class: 'hrow' }, h('span', { class: 'ticon', title: t('type.' + tr.type) }, typeIcon(tr.type)), name,
       tr.frozen ? h('span', { class: 'tfrzbadge', title: t('frz.frozen'), role: 'img', 'aria-label': t('frz.frozen') }, '❄') : '', tmenu),
     h('div', { class: 'hrow' }, tog('mute', 'M'), tog('solo', 'S'),
       h('button', {

@@ -1,3 +1,4 @@
+import { icon } from './icons';
 import { addAu, addInsert, addWam, moveInsert, removeInsert, saveWamStates } from '../actions';
 import { AuInstance, AuParam, auBridge, auFromPos, auList, auLog, auName, auToPos } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
@@ -150,7 +151,7 @@ function render() {
     else if (v.startsWith('wam:')) addWam(tr.id, v === 'wam:?' ? null : v.slice(4), v === 'wam:?' ? undefined : 'KH Tape Echo'); else if (v) addInsert(tr.id, v);
   };
   d.replaceChildren(
-    h('h2', {}, `🧩 ${t('fx.title')} — ${tr.name}`),
+    h('h2', {}, icon('fx', 22), `${t('fx.title')} — ${tr.name}`),
     h('p', { class: 'tip' }, t('fx.help')),
     tr.inserts.length ? h('div', { class: 'fxlist' }, ...tr.inserts.map((ins, i) => card(tr, ins, i))) : h('p', { class: 'tip', data: { empty: '1' } }, t('fx.none')),
     h('div', { class: 'fxfoot' }, add, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close')))));

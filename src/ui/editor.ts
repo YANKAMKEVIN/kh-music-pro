@@ -9,7 +9,8 @@ import { hasKey, lang, t } from '../i18n';
 import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
 import { BAR, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
-import { ICON, drawAudio, drawFades, drawWave, wheelFactor, zoomAt } from './arr';
+import { drawAudio, drawFades, drawWave, wheelFactor, zoomAt } from './arr';
+import { icon, typeIcon } from './icons';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
@@ -60,8 +61,8 @@ function lengthSelect(c: Clip, opts: number[]) {
 function clipTools(c: Clip) {
   const name = h('input', { class: 'cname-in', value: c.name, 'aria-label': t('clip.name'), spellcheck: false });
   name.onchange = () => { c.name = name.value.trim() || c.name; commit(); };
-  const b = (key: string, icon: string, fn: () => void, cls = '') => h('button', { class: cls, title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
-  return h('div', { class: 'tools' }, name, b('dup', '⧉', duplicateClip), b('split', '✂', splitClip), b('loop', '⟲', setLoopToClip), b('del', '🗑', deleteClip, 'danger'));
+  const b = (key: string, ico: string | Node, fn: () => void, cls = '') => h('button', { class: cls, title: t('tip.' + key), data: { act: key }, onclick: fn }, ico, ' ' + t('act.' + key));
+  return h('div', { class: 'tools' }, name, b('dup', '⧉', duplicateClip), b('split', '✂', splitClip), b('loop', '⟲', setLoopToClip), b('del', icon('trash', 15), deleteClip, 'danger'));
 }
 
 // ---------- Batterie : séquenceur et pads ----------
@@ -78,7 +79,7 @@ function drumBar(tr: Track, c: Clip | null) {
     class: 'seg' + (S.drumView === v || (!c && v === 'pads') ? ' on' : ''), disabled: !c && v === 'seq', data: { view: v },
     onclick: () => { S.drumView = v; emit(); },
   }, label);
-  return h('div', { class: 'ebar' }, h('strong', {}, `${ICON.drums} ${tr.name}`),
+  return h('div', { class: 'ebar' }, h('strong', {}, typeIcon('drums'), ' ' + tr.name),
     h('div', { class: 'segs', role: 'group' }, view('seq', t('drum.seq')), view('pads', t('drum.pads'))),
     c && clipTools(c), c && lengthSelect(c, [1, 2, 4]), c && resSelect(c),
     h('label', { class: 'fld' }, t('drum.kit'), kit),
@@ -625,7 +626,7 @@ function pianoRoll(tr: Track, c: Clip) {
   });
   edStepW = SW;
   return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), clipTools(c), lengthSelect(c, [1, 2, 4, 8]),
+    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('synth'), ' ' + tr.name), clipTools(c), lengthSelect(c, [1, 2, 4, 8]),
       h('div', { class: 'segs', role: 'group', 'aria-label': t('ed.transpose'), title: t('ed.transpose') },
         ...[-12, -1, 1, 12].map(n => h('button', { class: 'seg', data: { act: 'tr' + n }, 'aria-label': `${t('ed.transpose')} ${n > 0 ? '+' : ''}${n}`, onclick: () => transposeClip(n) }, (n > 0 ? '+' : '−') + Math.abs(n)))),
       gridTools(c), scaleTools()),
@@ -663,7 +664,7 @@ function audioEditor(tr: Track, c: Clip) {
   const bpm = h('input', { type: 'number', min: '40', max: '240', placeholder: '—', 'aria-label': t('st.bpm'), title: t('st.bpmTip'), data: { role: 'srcbpm' } });
   bpm.onchange = () => { const v = +bpm.value; if (v >= 20 && v <= 400) { st.pct = clamp(Math.round(v / S.project.bpm * 100), 50, 200); emit(); } };
   return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`), clipTools(c),
+    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('audio'), ' ' + tr.name), clipTools(c),
       slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct, '', false, 1),
       slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec, '', false, 0),
       slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec, '', false, 0),
@@ -740,9 +741,9 @@ function compPanel(c: Clip) {
 function emptyState(tr?: Track) {
   if (tr?.type === 'drums') return drumEditor(tr, null);
   if (tr?.type === 'synth') return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), scaleTools(), h('span', { class: 'tip' }, t('hint.synthEmpty', ['A', 'S', 'D', 'F', 'G', 'H', 'J'].map(keyLabel).join(' '), keyLabel('Z'), 'X'))),
+    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('synth'), ' ' + tr.name), scaleTools(), h('span', { class: 'tip' }, t('hint.synthEmpty', ['A', 'S', 'D', 'F', 'G', 'H', 'J'].map(keyLabel).join(' '), keyLabel('Z'), 'X'))),
     synthPanel(tr), S.kbShow && screenKeys());
-  if (tr) return h('div', { class: 'editor' }, h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`)), inputPanel(),
+  if (tr) return h('div', { class: 'editor' }, h('div', { class: 'ebar' }, h('strong', {}, typeIcon('audio'), ' ' + tr.name)), inputPanel(),
     h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.audioEmpty'))));
   return h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.nothing')));
 }
