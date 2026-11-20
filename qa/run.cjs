@@ -5119,6 +5119,40 @@ test('UX08b', 'Mixeur', 'Crête retenue une seconde ; le témoin de saturation r
   await S(() => window.kh.emit()); expect(!(await page.$('.meter.clip')), 'le témoin revient après un redessin');
 });
 
+const liveCell = (ti, ci) => page.evaluate(([a, b]) => { const t = window.kh.S.project.tracks[a], c = [...t.clips].sort((x, y) => x.start - y.start)[b]; return `.lcell[data-clip="${c.id}"]`; }, [ti, ci]);
+test('UX09a', 'Live', 'La case qui joue se remplit au fil de sa boucle, puis repart de zéro', async () => {
+  const r = await S(() => { const f = window.kh.loopPart, g = window.kh.beatsToLaunch; return [f(0, 0, 16), f(4, 0, 16), f(20, 0, 16), f(40, 32, 16), f(3, 0, 0), g(0, 16), g(1, 16), g(12, 16), g(15.5, 16), g(2, 4), g(7, 1)].join(); });
+  expect(r === '0,0.25,0.25,0.5,0,4,4,1,1,1,0', 'calculs du Live : ' + r);
+  await S(() => { const p = window.kh.S.project; p.bpm = 240; p.tracks[0].clips[0].len = 16; window.kh.commit(); }); await tab('live');
+  const sel = await liveCell(0, 0); await page.click(sel); await until(() => page.$(sel + '.playing'), 'la case ne passe pas en lecture');
+  const seen = []; for (let i = 0; i < 40; i++) { seen.push(+(await page.$eval(sel, e => e.style.getPropertyValue('--p'))) || 0); await sleep(40); }
+  const max = Math.max(...seen), drops = seen.filter((v, i) => i && v < seen[i - 1] - 0.3).length;
+  expect(max > 0.6 && seen.every(v => v >= 0 && v <= 1), 'avancement de la boucle : ' + seen.map(v => v.toFixed(2)).join(' ')); expect(drops >= 1, 'la boucle d’une mesure doit repartir de zéro : ' + seen.map(v => v.toFixed(2)).join(' '));
+  await S(() => window.kh.engine.stop()); await sleep(150); expect(await page.$eval(sel, e => e.style.getPropertyValue('--p')) === '', 'avancement encore affiché à l’arrêt');
+});
+test('UX09b', 'Live', 'La case en attente compte les temps avant son départ (3 · 2 · 1), puis joue', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 80; p.liveQ = 0; window.kh.commit(); }); await tab('live');
+  const a = await liveCell(0, 0), b = await liveCell(0, 1); await page.click(a); await until(() => page.$(a + '.playing'), 'premier clip non lancé');
+  await until(() => S(() => window.kh.engine.currentStep() % 16 > 0.5 && window.kh.engine.currentStep() % 16 < 4), 'attente du début d’une mesure', 8000);
+  await page.click(b); const seen = [];
+  for (let i = 0; i < 120; i++) { const st = await page.$eval(b, e => ({ q: e.classList.contains('queued'), p: e.classList.contains('playing'), n: e.querySelector('.lcount').textContent })); if (st.q && st.n && seen[seen.length - 1] !== st.n) seen.push(st.n); if (st.p) break; await sleep(40); }
+  expect(seen.length >= 2 && seen[seen.length - 1] === '1' && seen.every((v, i) => !i || +v < +seen[i - 1]) && +seen[0] <= 4, 'décompte de la case en attente : ' + JSON.stringify(seen));
+  await until(() => page.$(b + '.playing'), 'le clip en attente ne part pas'); expect(await page.$eval(b, e => e.querySelector('.lcount').textContent) === '', 'décompte encore affiché après le départ');
+  // Lancement immédiat : pas de décompte.
+  await S(() => { window.kh.S.project.liveQ = 1; window.kh.commit(); }); await page.click(a); await sleep(60);
+  expect(await page.$eval(a, e => e.querySelector('.lcount').textContent) === '', 'un lancement immédiat ne doit pas compter');
+});
+test('UX09c', 'Live', 'La scène en cours est marquée, la scène attendue clignote ; rien n’est marqué à l’arrêt', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 200; p.liveQ = 0; window.kh.commit(); }); await tab('live');
+  expect(!(await page.$('.lscene.on')), 'scène marquée à l’arrêt');
+  await page.keyboard.press('1'); await until(() => page.$('.lscene[data-scene="0"].on'), 'la scène 1 n’est pas marquée');
+  expect(await page.getAttribute('.lscene[data-scene="0"]', 'aria-current') === 'true' && (await page.getAttribute('.lscene[data-scene="0"]', 'title')).includes('en cours'), 'état de la scène pour les lecteurs d’écran');
+  await page.click('.lscene[data-scene="1"]'); const st = await page.$eval('.lscene[data-scene="1"]', e => e.className);
+  expect(/next|on/.test(st), 'la scène 2 attendue n’est pas signalée : ' + st);
+  await until(() => page.$('.lscene[data-scene="1"].on'), 'la scène 2 ne devient pas la scène en cours'); expect(!(await page.$('.lscene[data-scene="0"].on')), 'deux scènes marquées');
+  await page.click('[data-act=stopall]'); await sleep(150); expect(!(await page.$('.lscene.on, .lscene.next')), 'scène encore marquée après l’arrêt');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

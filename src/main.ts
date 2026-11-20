@@ -25,7 +25,7 @@ import { flashPad, notesKey, readKeyboardLayout, renderEditor, setKeyboardLayout
 import { refreshRack, showRack } from './ui/rack';
 import { startTour } from './ui/tour';
 import { createFromTemplate, showLibrary, showVersions } from './ui/library';
-import { refreshLive, renderLive } from './ui/live';
+import { beatsToLaunch, loopPart, refreshLive, renderLive, updateLive } from './ui/live';
 import { renderMixer, sectOpen, stripActive, updateMeters } from './ui/mixer';
 import { CLIP_AT, clipped, peakHold } from './ui/meters';
 import { buildTop, initFileInputs, renderTop } from './ui/top';
@@ -166,7 +166,7 @@ function frame() {
     if (x > arr.scrollLeft + view - 40 || x < arr.scrollLeft) arr.scrollLeft = Math.max(0, x - 80);
   }
   updateEditorPlayhead(step); updateTuner();
-  updateMeters();
+  updateMeters(); updateLive();
   requestAnimationFrame(frame);
 }
 
@@ -212,7 +212,7 @@ function crashNotice() {
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { meters: { CLIP_AT, clipped, peakHold }, mixSect: sectOpen, stripActive, beatLight, zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
+Object.assign(window, { kh: { loopPart, beatsToLaunch, meters: { CLIP_AT, clipped, peakHold }, mixSect: sectOpen, stripActive, beatLight, zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

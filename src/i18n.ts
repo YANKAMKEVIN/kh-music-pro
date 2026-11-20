@@ -181,6 +181,7 @@ const D: Record<string, [string, string, string]> = {
   'mix.comp': ['Compresseur', 'Compressor', 'Compresor'],
   'mix.sect.eq': ['Égaliseur', 'Equalizer', 'Ecualizador'], 'mix.sect.fx': ['Effets', 'Effects', 'Efectos'], 'mix.sect.send': ['Envois', 'Sends', 'Envíos'], 'mix.sect.dyn': ['Dynamique', 'Dynamics', 'Dinámica'],
   'sl.resetTip': ['Double-clic ou Suppr : valeur d’origine · Maj + glisser : réglage fin', 'Double-click or Del: original value · Shift + drag: fine adjustment', 'Doble clic o Supr: valor original · Mayús + arrastrar: ajuste fino'],
+  'live.sceneOn': ['Scène {0} en cours (cliquer pour la relancer)', 'Scene {0} is playing (click to relaunch)', 'Escena {0} en curso (clic para relanzarla)'],
   'mix.clip': ['Saturation sur « {0} » : cliquer pour éteindre le témoin', 'Clipping on “{0}”: click to clear the indicator', 'Saturación en «{0}»: clic para apagar el testigo'],
   'mix.sectTip': ['Replier ou déplier cette section sur toutes les tranches', 'Fold or unfold this section on every strip', 'Plegar o desplegar esta sección en todas las pistas'],
   'mix.sectOn': ['Un réglage de cette section est actif', 'A setting in this section is active', 'Hay un ajuste activo en esta sección'],
