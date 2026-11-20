@@ -748,8 +748,11 @@ test('X07', 'Robustesse', 'Projet vide : lecture, export et scission ne plantent
   for (const v of ['mixer', 'live', 'editor']) await tab(v);
 });
 test('X08', 'Robustesse', 'Supprimer la piste en cours de lecture ou d\'enregistrement ne plante pas', async () => {
-  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400); await S(() => window.kh.noteOn(60));
-  await headAct(1, '.del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
+  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400);
+  // Menu ⋯ ouvert et posé (déroulé animé, UX15a) avant de jouer : la note jouée s'écrit 300 ms plus tard en redessinant
+  // l'écran, ce qui referme le menu ; la suppression doit tomber dans cet intervalle, pendant que l'écriture est en attente.
+  await reveal('.head >> nth=1 >> .del'); await page.$eval('.head >> nth=1 >> .tmenu .menu-list', l => Promise.all(l.getAnimations().map(a => a.finished)));
+  await S(() => window.kh.noteOn(60)); await page.click('.head >> nth=1 >> .del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
   near((await proj()).tracks.length, 4, 0, 'pistes');
 });
 test('X09', 'Robustesse', 'Changer le tempo et le zoom pendant la lecture', async () => {
