@@ -215,6 +215,10 @@ async function setSlider(scope, label, v) {
   }, [label, v]);
 }
 
+/** Fenêtres maison (question ou accord, à la place de celles du navigateur) : répondre `text` et valider, ou refuser. */
+async function answer(text, pg = page) { await pg.waitForSelector('dialog.ask[open]'); if (text !== undefined) await pg.fill('dialog.ask input', text); await pg.click('dialog.ask [data-act=ok]'); await sleep(80); }
+async function refuse(pg = page) { await pg.waitForSelector('dialog.ask[open]'); await pg.click('dialog.ask [data-act=cancel]'); await sleep(80); }
+
 const cases = [];
 const test = (id, cat, title, fn) => cases.push({ id, cat, title, fn });
 
@@ -275,7 +279,7 @@ test('A02', 'Arrangement', 'Renommer une piste', async () => {
   const sel = '.head >> nth=1 >> .tname'; await page.fill(sel, 'Ma basse'); await page.keyboard.press('Enter');
   expect((await proj()).tracks[1].name === 'Ma basse', 'nom non enregistré');
 });
-test('A03', 'Arrangement', 'Supprimer une piste (avec confirmation)', async () => {
+test('A03', 'Arrangement', 'Supprimer une piste (sans question, annulable)', async () => {
   await headAct(1, '.del'); const p = await proj();
   near(p.tracks.length, 4, 0, 'nombre de pistes'); expect(!p.tracks.some(t => t.name === 'Basse'), 'piste encore présente');
 });
@@ -1111,7 +1115,7 @@ test('MK01', 'Repères', 'Poser des repères, y sauter, les renommer et les supp
   await page.click('#bMark'); expect((await proj()).markers.length === 2 && (await page.textContent('#toast')).includes('déjà'), 'doublon accepté');
   await page.click('.mark >> nth=0'); near(await S(() => window.kh.engine.pos), 0, 0, 'saut au premier repère');
   await page.click('.mark >> nth=1'); near(await S(() => window.kh.engine.pos), 64, 0, 'saut au second repère');
-  dialogText = 'Refrain'; await page.dblclick('.mark >> nth=1'); dialogText = undefined; await sleep(100);
+  await page.dblclick('.mark >> nth=1'); await answer('Refrain');
   expect((await proj()).markers[1].name === 'Refrain' && (await page.textContent('.mark >> nth=1')).includes('Refrain'), 'renommage');
   await page.click('.mark >> nth=0', { button: 'right' }); m = (await proj()).markers; expect(m.length === 1 && m[0].name === 'Refrain', 'suppression');
   await page.keyboard.press('Control+z'); near((await proj()).markers.length, 2, 0, 'annulation');
@@ -1289,7 +1293,8 @@ test('LB03', 'Projets', 'Dupliquer et supprimer un projet ; la bibliothèque sur
   expect(await page.$('#lib .plist li:has-text("Original QA 2")'), 'copie absente'); await page.keyboard.press('Escape');
   await page.reload(); await page.waitForSelector('.clip'); expect((await proj()).name === 'Original QA', 'projet courant non retrouvé après rechargement');
   await libOpen(); near(await libCount(), n0 + 1, 0, 'bibliothèque après rechargement');
-  await page.click('#lib .plist li:has-text("Original QA 2") [data-act=libdel]'); await sleep(300); near(await libCount(), n0, 0, 'après suppression'); await page.keyboard.press('Escape');
+  await page.click('#lib .plist li:has-text("Original QA 2") [data-act=libdel]'); await refuse(); near(await libCount(), n0 + 1, 0, 'un refus ne doit rien supprimer');
+  await page.click('#lib .plist li:has-text("Original QA 2") [data-act=libdel]'); await answer(); await sleep(300); near(await libCount(), n0, 0, 'après suppression'); await page.keyboard.press('Escape');
   await page.keyboard.press('Space'); await sleep(250); expect(await S(() => window.kh.engine.playing), 'après fermeture de la fenêtre, les raccourcis doivent reprendre');
 });
 test('LB04', 'Projets', 'Ouvrir un fichier .khm crée un nouveau projet sans écraser celui en cours', async () => {
@@ -1848,12 +1853,12 @@ test('TP01', 'Tempo', 'Un changement de tempo en cours de morceau s\'entend au b
 });
 test('TP02', 'Tempo', 'Poser, modifier et supprimer un changement de tempo depuis la règle', async () => {
   await page.click('#bTempoAdd'); expect((await page.textContent('#toast')).includes('départ') && (await proj()).tempos.length === 0, 'au tout début, le tempo se règle dans le champ BPM');
-  await S(() => window.kh.engine.seek(34)); dialogText = '90'; await page.click('#bTempoAdd'); await sleep(80);
+  await S(() => window.kh.engine.seek(34)); await page.click('#bTempoAdd'); await answer('90');
   let tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].s === 32 && tp[0].bpm === 90, `changement posé : ${JSON.stringify(tp)}`);
   expect((await page.textContent('.tmark')).includes('90'), 'repère de tempo non affiché');
-  dialogText = '150'; await page.click('.tmark'); await sleep(80); expect((await proj()).tempos[0].bpm === 150, 'modification');
-  dialogText = '999'; await page.click('.tmark'); await sleep(80); expect((await proj()).tempos[0].bpm === 150 && (await page.textContent('#toast')).includes('40'), 'une valeur hors limites doit être refusée');
-  dialogText = undefined; await S(() => window.kh.engine.seek(64)); dialogText = '100'; await page.click('#bTempoAdd'); dialogText = undefined; await sleep(80);
+  await page.click('.tmark'); await answer('150'); expect((await proj()).tempos[0].bpm === 150, 'modification');
+  await page.click('.tmark'); await answer('999'); expect((await proj()).tempos[0].bpm === 150 && (await page.textContent('#toast')).includes('40'), 'une valeur hors limites doit être refusée');
+  await S(() => window.kh.engine.seek(64)); await page.click('#bTempoAdd'); await answer('100');
   near((await proj()).tempos.length, 2, 0, 'deux changements');
   await page.click('.tmark >> nth=0', { button: 'right' }); tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].s === 64, 'suppression');
   await page.keyboard.press('Control+z'); near((await proj()).tempos.length, 2, 0, 'annulation');
@@ -1965,18 +1970,24 @@ test('WAM02', 'Plugins web', 'Plugin introuvable : message clair, le son passe q
 test('WAM03', 'Plugins web', 'Un plugin venu d\'un autre site demande un accord explicite ; une adresse dangereuse est refusée', async () => {
   ignoreErr = /Failed to load|ERR_|import|CORS|net::/i;
   await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
-  const asked = []; const onDlg = d => asked.push(d.type() + ':' + d.message().slice(0, 60)); page.on('dialog', onDlg);
+  // Les deux questions passent par les fenêtres maison (plus aucune fenêtre du navigateur).
+  const native = []; const onDlg = d => native.push(d.type()); page.on('dialog', onDlg);
+  const url = 'https://plugins.example.org/echo/index.js', add = () => page.selectOption('[data-role=fxadd]', 'wam:?');
   try {
-    dialogText = 'https://plugins.example.org/echo/index.js'; refuseConfirm = true; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300);
-    expect(asked.length === 2 && asked[0].startsWith('prompt') && asked[1].startsWith('confirm') && asked[1].includes('plugins.example.org'), `demandes : ${asked}`);
+    await add(); await page.waitForSelector('dialog.ask[open] input'); expect(await page.inputValue('dialog.ask input') === 'https://', 'adresse proposée au départ');
+    await answer(url); await page.waitForSelector('dialog.ask[open] .askmsg'); expect((await page.textContent('dialog.ask .askmsg')).includes('plugins.example.org'), 'la demande d’accord ne nomme pas le site');
+    expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'cancel', 'le focus doit être sur Annuler : Entrée ne doit pas accepter un plugin');
+    await refuse(); await sleep(200);
     expect((await insertsOf(1)).length === 0 && await S(() => !localStorage.getItem('kh-wam-trust')), 'un refus ne doit rien ajouter ni mémoriser');
-    refuseConfirm = false; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300);
-    const l = await insertsOf(1); expect(l.length === 1 && l[0].url === dialogText && l[0].name === 'echo', `après accord : ${JSON.stringify(l)}`);
+    await add(); await answer(url); await answer(); await sleep(250);
+    const l = await insertsOf(1); expect(l.length === 1 && l[0].url === url && l[0].name === 'echo', `après accord : ${JSON.stringify(l)}`);
     expect(await S(() => localStorage.getItem('kh-wam-trust')) === '["https://plugins.example.org"]', 'site de confiance non mémorisé');
-    asked.length = 0; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300); expect(asked.length === 1, 'un site déjà accepté ne doit pas redemander l\'accord');
-    dialogText = 'javascript:alert(1)'; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(200);
+    await add(); await answer(url); await sleep(250); expect(!(await page.$('dialog.ask[open]')) && (await insertsOf(1)).length === 2, 'un site déjà accepté ne doit pas redemander l\'accord');
+    await add(); await answer('javascript:alert(1)'); await sleep(200);
     expect((await insertsOf(1)).length === 2 && (await page.textContent('#toast')).includes('invalide'), 'adresse dangereuse acceptée');
-  } finally { page.off('dialog', onDlg); dialogText = undefined; refuseConfirm = false; }
+    await add(); await page.waitForSelector('dialog.ask[open]'); await page.keyboard.press('Escape'); await sleep(150); expect((await insertsOf(1)).length === 2, 'Échap doit annuler la question');
+    expect(native.length === 0, 'fenêtre du navigateur encore utilisée : ' + native);
+  } finally { page.off('dialog', onDlg); }
 });
 test('LAT01', 'Latence', 'Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur', async () => {
   await clickIn('#bAudio'); expect(await page.$eval('#audio', d => d.open), 'fenêtre non ouverte');
@@ -3142,7 +3153,7 @@ test('SV07', 'Sauvegarde', 'Supprimer un projet de la bibliothèque supprime aus
   });
   expect(r.before >= 1, 'aucune version avant suppression');
   await S(() => window.kh.showLibrary()); await page.waitForSelector(`#lib li[data-pid="${r.pid}"]`);
-  await page.click(`#lib li[data-pid="${r.pid}"] [data-act=libdel]`); await sleep(400);
+  await page.click(`#lib li[data-pid="${r.pid}"] [data-act=libdel]`); await answer(); await sleep(400);
   const after = await page.evaluate(pid => window.kh.store.listVersions(pid), r.pid);
   expect(!after.length, `il reste ${after.length} version(s)`);
   await page.keyboard.press('Escape');
@@ -3831,7 +3842,7 @@ test('TB05', 'Barre du haut', 'Téléphone : barre sans débordement, transport 
     const ls = await pg.locator('#mSettings .menu-list').boundingBox(); expect(ls.x >= 0 && ls.x + ls.width <= 375, 'liste des réglages hors écran');
     await pg.tap('#tabs [data-tab=editor]'); expect(!(await pg.$eval('#more', d => d.open)) && !(await pg.$eval('#mSettings', d => d.open)), 'toucher ailleurs doit refermer ☰ et les réglages');
     await pg.tap('#menu > summary'); expect(await pg.isVisible('#bRename'), 'Renommer absent du menu Projet sur téléphone');
-    await pg.tap('#bRename'); await sleep(100);
+    await pg.tap('#bRename'); await answer('Titre au doigt', pg);
     expect(await pg.evaluate(() => window.kh.S.project.name) === 'Titre au doigt', 'renommer au doigt ne marche pas');
     await pg.tap('#mTake > summary'); expect(await pg.isVisible('#bPunch'), 'Prise inaccessible au doigt');
     await pg.screenshot({ path: path.join(__dirname, 'shots/v18-phone.png') });
@@ -3915,7 +3926,7 @@ test('AD04', 'Correctifs audit', 'Tempo au centième : 93,5 BPM gardé (champ, c
   for (const v of ['', '0']) { await page.fill('#bpm', v); await page.keyboard.press('Tab'); await sleep(80); expect((await proj()).bpm === 93.5 && await page.inputValue('#bpm') === '93.5', `« ${v} » a changé le tempo`); }
   await page.fill('#bpm', '300'); await page.keyboard.press('Tab'); await sleep(80); expect((await proj()).bpm === 240, 'tempo non borné à 240');
   await page.keyboard.press('Control+z'); expect((await proj()).bpm === 93.5, 'annulation');
-  await S(() => window.kh.engine.seek(32)); dialogText = '87,25'; try { await clickIn('#bTempoAdd'); await sleep(150); } finally { dialogText = undefined; }
+  await S(() => window.kh.engine.seek(32)); await clickIn('#bTempoAdd'); await answer('87,25'); await sleep(80);
   const tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].bpm === 87.25, `changement de tempo : ${JSON.stringify(tp)}`);
   const back = await S(() => { const k = window.kh, m = k.exportMidi(k.S.project), r = k.importMidi(m.buffer.slice(m.byteOffset, m.byteOffset + m.byteLength)); return { bpm: r.bpm, t: r.tempos.map(x => x.bpm) }; });
   expect(back.bpm === 93.5 && back.t[0] === 87.25, `MIDI aller-retour : ${JSON.stringify(back)}`);
@@ -5048,6 +5059,34 @@ test('UX06c', 'Interface', 'Retour à l’origine dans l’arrangement, le Live 
   await tab('live'); await S(() => { window.kh.S.project.filter = 0.6; window.kh.commit(); }); await page.dblclick('.perf .sl.wide input'); near((await proj()).filter, 0, 0, 'filtre du Live');
   await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.inserts = [k.newInsert('delay')]; tr.inserts[0].p.fb = 0.8; k.commit(); k.showRack(tr.id); });
   await page.dblclick('#fx .fxbody .sl >> nth=1 >> input'); near((await proj()).tracks[1].inserts[0].p.fb, 0.35, 0, 'réinjection de l’écho (valeur d’origine de l’effet)');
+});
+
+test('UX07a', 'Interface', 'Supprimer une piste : plus de question, la piste part et le message propose Annuler', async () => {
+  const native = []; const onDlg = d => native.push(d.type()); page.on('dialog', onDlg);
+  try {
+    await headAct(1, '.del'); let p = await proj(); expect(p.tracks.length === 4 && !p.tracks.some(t => t.name === 'Basse'), 'piste encore présente');
+    expect(native.length === 0 && !(await page.$('dialog.ask[open]')), 'une question a été posée');
+    expect(/Piste « Basse » supprimée/.test(await page.textContent('#toast')) && await page.isVisible('#toast [data-act=toastact]'), 'message sans bouton Annuler : ' + await page.textContent('#toast'));
+    await page.click('#toast [data-act=toastact]'); p = await proj(); expect(p.tracks.length === 5 && p.tracks[1].name === 'Basse' && p.tracks[1].clips.length === 1, 'la piste ne revient pas avec ses clips');
+    // Si le morceau a changé depuis, le bouton ne défait pas autre chose à la place.
+    await headAct(1, '.del'); await S(() => { window.kh.S.project.bpm = 99; window.kh.commit(); }); await page.click('#toast [data-act=toastact]');
+    p = await proj(); expect(p.bpm === 99 && p.tracks.length === 4, 'le bouton Annuler a défait un autre changement'); expect((await page.textContent('#toast')).includes('Ctrl+Z'), 'message d’explication absent');
+  } finally { page.off('dialog', onDlg); }
+});
+test('UX07b', 'Interface', 'Fenêtres maison : la valeur est sélectionnée, Entrée valide, Échap annule ; renommer le projet et un repère ; trois langues', async () => {
+  await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]');
+  const st = await page.evaluate(() => { const i = document.querySelector('dialog.ask input'); return { v: i.value, sel: i.selectionEnd - i.selectionStart, focus: document.activeElement === i, modal: document.querySelector('dialog.ask').matches(':modal'), lbl: i.getAttribute('aria-label') }; });
+  expect(st.v === 'Démo' && st.sel === 4 && st.focus && st.modal && st.lbl === 'Nom du projet', 'fenêtre de question : ' + JSON.stringify(st));
+  await page.keyboard.type('Mon titre'); await page.keyboard.press('Enter'); await sleep(100);
+  expect((await proj()).name === 'Mon titre' && !(await page.$('dialog.ask')), 'Entrée ne valide pas');
+  await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]'); await page.keyboard.type('Autre'); await page.keyboard.press('Escape'); await sleep(100);
+  expect((await proj()).name === 'Mon titre' && !(await page.$('dialog.ask')), 'Échap ne doit rien changer');
+  // Tant que la fenêtre est ouverte, les raccourcis ne jouent pas derrière elle.
+  await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]'); await page.keyboard.type('a s d'); expect(!(await S(() => window.kh.engine.playing)), 'Espace a lancé la lecture derrière la fenêtre'); await refuse();
+  for (const [l, ok, no] of [['en', 'OK', 'Cancel'], ['es', 'Aceptar', 'Cancelar'], ['fr', 'Valider', 'Annuler']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]');
+    expect(await page.textContent('dialog.ask [data-act=ok]') === ok && await page.textContent('dialog.ask [data-act=cancel]') === no, 'boutons non traduits en ' + l); await refuse();
+  }
 });
 
 (async () => {

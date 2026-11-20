@@ -197,7 +197,10 @@ const D: Record<string, [string, string, string]> = {
   'live.help': ['Cliquez sur un clip pour le lancer : il démarre sur la mesure suivante et tourne en boucle. Une scène lance toute une ligne. Jouez par-dessus avec les pads, le clavier ou un contrôleur MIDI.', 'Click a clip to launch it: it starts on the next bar and loops. A scene launches a whole row. Play on top with the pads, the keyboard or a MIDI controller.', 'Haz clic en un clip para lanzarlo: empieza en el siguiente compás y se repite. Una escena lanza toda una fila. Toca encima con los pads, el teclado o un controlador MIDI.'],
 
   // Messages
-  'confirm.delTrack': ['Supprimer la piste « {0} » et ses {1} clip(s) ?', 'Delete track “{0}” and its {1} clip(s)?', '¿Eliminar la pista «{0}» y sus {1} clip(s)?'],
+  'toast.trackDeleted': ['Piste « {0} » supprimée', 'Track “{0}” deleted', 'Pista «{0}» eliminada'],
+  'toast.undoLate': ['Le morceau a changé depuis : utilisez Annuler (Ctrl+Z)', 'The song has changed since: use Undo (Ctrl+Z)', 'La canción ha cambiado desde entonces: usa Deshacer (Ctrl+Z)'],
+  'dlg.ok': ['Valider', 'OK', 'Aceptar'], 'dlg.cancel': ['Annuler', 'Cancel', 'Cancelar'], 'dlg.undo': ['Annuler', 'Undo', 'Deshacer'],
+  'wam.accept': ['Faire confiance et charger', 'Trust and load', 'Confiar y cargar'],
   'confirm.new': ['Créer un nouveau projet ? Les modifications non enregistrées seront perdues.', 'Create a new project? Unsaved changes will be lost.', '¿Crear un proyecto nuevo? Los cambios sin guardar se perderán.'],
   'toast.selectClip': ['Sélectionnez d\'abord un clip à scinder', 'Select a clip to split first', 'Selecciona primero un clip para dividir'],
   'toast.playheadInside': ['Placez la tête de lecture à l\'intérieur du clip', 'Move the playhead inside the clip', 'Coloca el cursor dentro del clip'],

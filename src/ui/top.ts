@@ -1,4 +1,4 @@
-import { addMarker, addTempo, cancelExport, deskFiles, exportJob, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
+import { addMarker, addTempo, cancelExport, deskFiles, exportJob, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, renameProject, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -104,7 +104,7 @@ export function buildTop(onLang: () => void) {
       ...(list.length ? [h('button', { id: 'bRecentClear', class: 'rclear', onclick: async () => { await desk.clearRecent(); fillRecent(); } }, t('file.clear'))] : []));
   };
   const menu = drop('menu', [t('top.project') + ' ▾'], t('top.project'),
-    item('bRename', t('top.rename'), () => { const n = prompt(t('top.pname'), S.project.name)?.trim(); if (n) { S.project.name = n; commit(); } }),
+    item('bRename', t('top.rename'), renameProject),
     item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bVersions', t('ver.menu'), showVersions), item('bOpen', t('top.open'), openProjectFile),
     item('bSave', t('top.save'), saveFile), ...(desk ? [item('bSaveAs', t('file.saveAs'), saveFileAs)] : []), item('bImport', t('top.import'), () => pickAudio()),
     ...(desk ? [recent] : []), item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()));

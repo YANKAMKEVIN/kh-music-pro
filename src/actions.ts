@@ -2,12 +2,12 @@ import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderO
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty } from './store';
+import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty, undo } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
 import { BAR, Clip, MIX_PRESETS, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
-import { toast } from './ui/dom';
+import { ask, confirmBox, toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
   const a = document.createElement('a');
@@ -29,10 +29,12 @@ export function addTrack(type: TrackType) {
 export function deleteTrack(id: string) {
   const tr = findTrack(id);
   if (!tr) return;
-  if (tr.clips.length && !confirm(t('confirm.delTrack', tr.name, tr.clips.length))) return;
   S.project.tracks = S.project.tracks.filter(x => x.id !== id);
   if (S.selTrack === id) { S.selTrack = ''; S.selClip = ''; }
   commit();
+  // Pas de question avant : la piste part tout de suite, et le message propose de la ramener (comme Ctrl+Z).
+  const after = JSON.stringify(S.project);
+  toast(t('toast.trackDeleted', tr.name), 'info', { action: { label: t('dlg.undo'), fn: () => { if (JSON.stringify(S.project) === after) undo(); else toast(t('toast.undoLate')); } } });
 }
 
 /**
@@ -339,11 +341,10 @@ const trusted = (): string[] => { try { return JSON.parse(localStorage.getItem('
  * Ajoute un plugin web. Un plugin est du code exécuté dans l'application : s'il vient d'un autre site,
  * l'utilisateur doit l'accepter explicitement (une fois par site).
  */
-export function addWam(trackId: string, url: string | null, name?: string) {
-  const tr = strip(trackId);
-  if (!tr) return;
-  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
-  const raw = url ?? prompt(t('wam.ask'), 'https://')?.trim();
+export async function addWam(trackId: string, url: string | null, name?: string) {
+  if (!strip(trackId)) return;
+  if (strip(trackId)!.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  const raw = url ?? (await ask(t('wam.ask'), 'https://', { mode: 'url' }))?.trim();
   if (!raw) return;
   let full: URL;
   try { full = new URL(wamUrl(raw)); } catch { return toast(t('wam.badUrl'), 'error'); }
@@ -351,10 +352,14 @@ export function addWam(trackId: string, url: string | null, name?: string) {
   if (full.origin !== location.origin) {
     const list = trusted();
     if (!list.includes(full.origin)) {
-      if (!confirm(t('wam.trust', full.host))) return;
+      if (!await confirmBox(t('wam.trust', full.host), t('wam.accept'), { danger: true })) return;
       try { localStorage.setItem('kh-wam-trust', JSON.stringify([...list, full.origin])); } catch { /* stockage désactivé */ }
     }
   }
+  // La question a pu rester ouverte un moment : la piste est relue (elle a pu être supprimée, ou remplie entre-temps).
+  const tr = strip(trackId);
+  if (!tr) return;
+  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
   const ins = newInsert('wam'); ins.url = raw; ins.name = name ?? (full.pathname.split('/').filter(Boolean).slice(-2, -1)[0] || full.host);
   tr.inserts.push(ins); commit();
 }
@@ -397,23 +402,36 @@ export function applyMixPreset(tr: Track, key: string) {
 }
 
 /** Demande un tempo (40 à 240) ; renvoie null si la saisie est annulée ou invalide. */
-function askTempo(current: number): number | null {
-  const v = Math.round(parseFloat((prompt(t('tempo.ask'), String(current)) ?? '').replace(',', '.')) * 100) / 100;
+async function askTempo(current: number): Promise<number | null> {
+  const v = Math.round(parseFloat(((await ask(t('tempo.ask'), String(current), { mode: 'decimal' })) ?? '').replace(',', '.')) * 100) / 100;
   if (!v) return null;
   if (v < 40 || v > 240) { toast(t('tempo.range'), 'error'); return null; }
   return v;
 }
 /** Place un changement de tempo au début de la mesure où se trouve la tête de lecture. */
-export function addTempo() {
-  const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
+export async function addTempo() {
+  const s = Math.round(engine.currentStep() / BAR) * BAR;
   if (s <= 0) return toast(t('tempo.start'));
-  const v = askTempo(bpmAt(p, s));
+  const v = await askTempo(bpmAt(S.project, s));
   if (!v) return;
+  const p = S.project;   // relu après la question (annulation ou autre projet entre-temps)
   p.tempos = [...p.tempos.filter(m => m.s !== s), { s, bpm: v }].sort((a, b) => a.s - b.s); commit();
 }
-export function editTempo(s: number) {
-  const m = S.project.tempos.find(x => x.s === s), v = m && askTempo(m.bpm);
+export async function editTempo(s: number) {
+  const cur = S.project.tempos.find(x => x.s === s), v = cur && await askTempo(cur.bpm);
+  const m = S.project.tempos.find(x => x.s === s);
   if (m && v) { m.bpm = v; commit(); }
+}
+/** Renomme le repère posé au pas `s`. */
+export async function renameMarker(s: number) {
+  const cur = S.project.markers.find(x => x.s === s), n = cur && (await ask(t('mark.rename'), cur.name))?.trim();
+  const m = S.project.markers.find(x => x.s === s);
+  if (m && n) { m.name = n.slice(0, 24); commit(); }
+}
+/** Renomme le projet (menu Projet, utile sur téléphone où le champ du nom est masqué). */
+export async function renameProject() {
+  const n = (await ask(t('top.pname'), S.project.name))?.trim();
+  if (n) { S.project.name = n; commit(); }
 }
 export function removeTempo(s: number) { S.project.tempos = S.project.tempos.filter(m => m.s !== s); commit(); }
 

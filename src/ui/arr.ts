@@ -1,4 +1,4 @@
-import { addTrack, audioFiles, copyClip, deleteClip, deleteTrack, duplicateClip, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, selectedClips, setLoopToClip, splitClipAt, unfreezeTrack } from '../actions';
+import { addTrack, audioFiles, copyClip, deleteClip, deleteTrack, duplicateClip, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, renameMarker, selectedClips, setLoopToClip, splitClipAt, unfreezeTrack } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
@@ -364,7 +364,7 @@ export function renderArr() {
   for (const m of p.markers) ruler.append(h('button', {
     class: 'mark', style: `left:${m.s * px}px`, title: t('mark.tip'), data: { mark: String(m.s) },
     onpointerdown: (e: Event) => e.stopPropagation(), onclick: () => engine.seek(m.s),
-    ondblclick: () => { const n = prompt(t('mark.rename'), m.name); if (n?.trim()) { m.name = n.trim().slice(0, 24); commit(); } },
+    ondblclick: () => renameMarker(m.s),
     oncontextmenu: (e: Event) => { e.preventDefault(); p.markers.splice(p.markers.indexOf(m), 1); commit(); },
   }, '⚑ ' + m.name));
   ruler.onpointerdown = e => {

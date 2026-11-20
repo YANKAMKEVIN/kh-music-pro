@@ -145,3 +145,44 @@ export function popMenu(x: number, y: number, items: (MenuItem | null)[], label:
   btns()[0]?.focus({ preventScroll: true });
   return el;
 }
+
+// ---------- Petites fenêtres maison, à la place de confirm() et prompt() du navigateur ----------
+function miniDialog<T>(cancelled: T, build: (d: HTMLDialogElement, done: (v: T) => void) => HTMLElement | null): Promise<T> {
+  return new Promise(res => {
+    const d = h('dialog', { class: 'ask' });
+    // La réponse part tout de suite, sans attendre l'évènement de fermeture (le navigateur le livre parfois bien plus tard).
+    let over = false;
+    const finish = (v: T) => { if (over) return; over = true; if (d.open) d.close(); d.remove(); res(v); };
+    d.addEventListener('cancel', () => finish(cancelled));   // Échap
+    d.addEventListener('close', () => finish(cancelled));
+    const first = build(d, finish);
+    document.body.append(d); d.showModal(); first?.focus();
+  });
+}
+/**
+ * Demande un texte (nom, tempo, adresse) dans une fenêtre au style de l'application : la valeur actuelle est sélectionnée,
+ * Entrée valide, Échap annule. Renvoie le texte saisi, ou null si la question est annulée.
+ */
+export function ask(title: string, value = '', opt: { ok?: string; mode?: string } = {}): Promise<string | null> {
+  return miniDialog<string | null>(null, (d, done) => {
+    const inp = h('input', { class: 'askin', type: 'text', 'aria-label': title, spellcheck: false, autocomplete: 'off', inputMode: opt.mode ?? 'text' });
+    inp.value = value;
+    const form = h('form', { method: 'dialog', onsubmit: (e: Event) => { e.preventDefault(); done(inp.value); } },
+      h('button', { type: 'button', class: 'pill', data: { act: 'cancel' }, onclick: () => done(null) }, t('dlg.cancel')),
+      h('button', { class: 'pill accent', data: { act: 'ok' } }, opt.ok ?? t('dlg.ok')));
+    form.prepend(h('label', { class: 'asklb' }, h('span', {}, title), inp));
+    d.append(form);
+    queueMicrotask(() => inp.select());
+    return inp;
+  });
+}
+/** Demande un accord (suppression définitive, plugin d'un autre site). `ok` : le mot du bouton qui accepte. Échap refuse. */
+export function confirmBox(msg: string, ok: string, opt: { danger?: boolean } = {}): Promise<boolean> {
+  return miniDialog(false, (d, done) => {
+    const yes = h('button', { type: 'button', class: 'pill ' + (opt.danger ? 'dangerb' : 'accent'), data: { act: 'ok' }, onclick: () => done(true) }, ok);
+    const no = h('button', { type: 'button', class: 'pill', data: { act: 'cancel' }, onclick: () => done(false) }, t('dlg.cancel'));
+    d.setAttribute('role', 'alertdialog'); d.setAttribute('aria-label', msg);
+    d.append(h('p', { class: 'askmsg' }, msg), h('form', { method: 'dialog' }, no, yes));
+    return opt.danger ? no : yes;   // une action sans retour ne part pas d'un simple Entrée
+  });
+}

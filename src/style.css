@@ -663,3 +663,13 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 /* ================= UX : valeur d'origine des curseurs (double-clic pour y revenir) ================= */
 input[type=range].hasdef { background: linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .55)) no-repeat calc(8px + (100% - 16px) * var(--def, 0)) 100% / 2px 4px; }
 input[type=range].vert.hasdef { background-position: 100% calc(8px + (100% - 16px) * (1 - var(--def, 0))); background-size: 5px 2px; }
+
+/* ================= UX : petites fenêtres maison (question, accord) ================= */
+dialog.ask { width: min(440px, 92vw); padding: 22px 24px; }
+.asklb { display: grid; gap: 10px; flex: 1 0 100%; font-weight: 600; }
+.askin { height: 44px; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, .35); padding: 0 12px; font-size: 15px; user-select: text; }
+.askin:focus { border-color: var(--a1); outline: none; box-shadow: 0 0 0 2px rgba(34, 211, 238, .25); }
+.askmsg { margin: 0; line-height: 1.5; }
+dialog.ask form { flex-wrap: wrap; }
+dialog.ask .pill { min-height: 40px; min-width: 96px; }
+.pill.dangerb { background: var(--rec); border-color: var(--rec); color: #fff; font-weight: 700; }

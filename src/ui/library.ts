@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import { allNotesOff } from '../input';
 import { S, emit, deleteProject, duplicateProject, library, listVersions, openProject, restoreVersion, snapshot, startProject } from '../store';
 import { TEMPLATES, Template, templateProject } from '../types';
-import { h, toast } from './dom';
+import { confirmBox, h, toast } from './dom';
 
 const ICONS: Record<Template, string> = { empty: '📄', trap: '🔥', house: '🪩', lofi: '☕', demo: '✨' };
 const dlg = () => document.getElementById('lib') as HTMLDialogElement;
@@ -26,7 +26,7 @@ function render() {
         h('strong', {}, e.name), h('small', {}, (cur ? t('lib.current') + ' · ' : '') + fmt.format(e.updated))),
       cur ? h('button', { class: 'mini', data: { act: 'libvers' }, title: t('ver.title'), 'aria-label': `${t('ver.title')} – ${e.name}`, onclick: () => renderVersions() }, '🕘') : '',
       h('button', { class: 'mini', data: { act: 'libdup' }, title: t('lib.dup'), 'aria-label': `${t('lib.dup')} – ${e.name}`, onclick: async () => { await duplicateProject(e.id); render(); } }, '⧉'),
-      h('button', { class: 'mini danger', data: { act: 'libdel' }, title: t('lib.del'), 'aria-label': `${t('lib.del')} – ${e.name}`, disabled: cur, onclick: async () => { if (confirm(t('lib.confirmDel', e.name))) { await deleteProject(e.id); render(); } } }, '🗑'));
+      h('button', { class: 'mini danger', data: { act: 'libdel' }, title: t('lib.del'), 'aria-label': `${t('lib.del')} – ${e.name}`, disabled: cur, onclick: async () => { if (await confirmBox(t('lib.confirmDel', e.name), t('act.del'), { danger: true })) { await deleteProject(e.id); render(); } } }, '🗑'));
   });
   d.replaceChildren(
     h('h2', {}, t('lib.title')),
