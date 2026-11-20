@@ -16,7 +16,7 @@ import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
-import { S, addBuffer, buffers, commit, crash, saveHealth, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
+import { projectInfo, S, addBuffer, buffers, commit, crash, saveHealth, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
 import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
 import { initArrDrop, initArrZoom, refreshSelection, renderArr, zoomAt } from './ui/arr';
 import { clamp, followDrag, h, toast } from './ui/dom';
@@ -24,7 +24,7 @@ import { detectPitch } from './audio/pitch';
 import { flashPad, notesKey, readKeyboardLayout, renderEditor, setKeyboardLayout, updateEditorPlayhead, updateTuner } from './ui/editor';
 import { refreshRack, showRack } from './ui/rack';
 import { startTour } from './ui/tour';
-import { createFromTemplate, showLibrary, showVersions, showWelcome } from './ui/library';
+import { clock, createFromTemplate, showLibrary, showVersions, showWelcome } from './ui/library';
 import { beatsToLaunch, loopPart, refreshLive, renderLive, updateLive } from './ui/live';
 import { renderMixer, sectOpen, stripActive, updateMeters } from './ui/mixer';
 import { CLIP_AT, clipped, peakHold } from './ui/meters';
@@ -212,7 +212,7 @@ function crashNotice() {
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { showWelcome, loopPart, beatsToLaunch, meters: { CLIP_AT, clipped, peakHold }, mixSect: sectOpen, stripActive, beatLight, zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
+Object.assign(window, { kh: { clock, projectInfo, showWelcome, loopPart, beatsToLaunch, meters: { CLIP_AT, clipped, peakHold }, mixSect: sectOpen, stripActive, beatLight, zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

@@ -5198,6 +5198,51 @@ test('UX10c', 'Accueil', 'Accueil : la visite guidée démarre ; Échap referme 
   }, { viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
 });
 
+/** Bibliothèque réduite au seul projet ouvert (les cas précédents y ont laissé des projets), fenêtre des projets ouverte. */
+async function libOnlyCurrent() {
+  await S(async () => { await window.kh.store.saveNow(); window.kh.showLibrary(); });
+  for (let i = 0; i < 80; i++) {
+    const b = await page.$('#lib .plist li:not(.cur) [data-act=libdel]');
+    if (!b) break;
+    const n = (await page.$$('#lib .plist li')).length;
+    await b.click(); await answer(); await until(async () => (await page.$$('#lib .plist li')).length === n - 1, 'projet non retiré de la bibliothèque', 5000);
+  }
+}
+test('UX11a', 'Projets', 'Chaque projet de la bibliothèque montre son tempo, ses pistes, sa durée et une miniature de l’arrangement', async () => {
+  const r = await S(() => { const k = window.kh, i = k.projectInfo(k.S.project); return { bpm: i.bpm, tracks: i.tracks, sec: i.sec, end: i.end, rows: i.rows.length, first: i.rows[0].clips[0], c: [k.clock(0), k.clock(64), k.clock(125.4), k.clock(59.6)].join() }; });
+  expect(r.bpm === 120 && r.tracks === 5 && r.end === 128 && Math.abs(r.sec - 16) < 0.01 && r.rows === 5 && r.first.join() === '0,64' && r.c === '0:00,1:04,2:05,1:00', 'aperçu calculé : ' + JSON.stringify(r));
+  await S(() => { window.kh.S.project.name = 'Aperçu QA'; window.kh.commit(); }); await libOnlyCurrent();
+  await until(async () => /120 BPM · 5 piste\(s\) · 0:16/.test(await page.textContent('#lib .plist li.cur small')), 'tempo, pistes et durée absents');
+  expect((await page.textContent('#lib .plist li.cur small')).includes('ouvert'), 'le projet ouvert n’est plus signalé');
+  const px = await page.$eval('#lib .plist li.cur canvas.pthumb', cv => { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; const cols = new Set(); for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { n++; cols.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, cols: cols.size, w: cv.getBoundingClientRect().width }; });
+  expect(px.n > 800 && px.cols >= 3 && px.w >= 60, 'miniature vide ou d’une seule couleur : ' + JSON.stringify(px));
+  await page.keyboard.press('Escape');
+});
+test('UX11b', 'Projets', 'Renommer un projet depuis la liste, ouvert ou non ; le nom est gardé', async () => {
+  await S(() => { window.kh.S.project.name = 'Renom QA'; window.kh.commit(); }); await libOnlyCurrent();
+  await page.click('#lib .plist li.cur [data-act=libdup]'); await page.waitForSelector('#lib .plist li:has-text("Renom QA 2")');
+  await page.click('#lib .plist li:has-text("Renom QA 2") [data-act=librename]'); await page.waitForSelector('dialog.ask[open] input');
+  expect(await page.inputValue('dialog.ask input') === 'Renom QA 2', 'nom actuel proposé'); await answer('Maquette du soir');
+  await page.waitForSelector('#lib .plist li:has-text("Maquette du soir")'); expect(!(await page.$('#lib .plist li:has-text("Renom QA 2")')), 'ancien nom encore affiché');
+  await page.click('#lib .plist li.cur [data-act=librename]'); await answer('Morceau ouvert'); await page.waitForSelector('#lib .plist li.cur:has-text("Morceau ouvert")');
+  expect((await proj()).name === 'Morceau ouvert' && await page.inputValue('#pname') === 'Morceau ouvert', 'le projet ouvert n’est pas renommé partout');
+  await page.click('#lib .plist li:has-text("Maquette du soir") [data-act=librename]'); await refuse(); expect(await page.$('#lib .plist li:has-text("Maquette du soir")'), 'un refus ne doit rien changer');
+  await page.click('#lib .plist li:has-text("Maquette du soir") [data-act=libopen]'); await until(async () => (await proj()).name === 'Maquette du soir', 'le nouveau nom n’est pas gardé dans le projet', 5000);
+});
+test('UX11c', 'Projets', 'Au-delà de huit projets, un champ de recherche filtre la liste par nom (sans tenir compte des accents)', async () => {
+  await S(() => { window.kh.S.project.name = 'Été indien'; window.kh.commit(); }); await libOnlyCurrent();
+  expect(!(await page.$('[data-role=libsearch]')), 'recherche affichée pour un seul projet');
+  for (let i = 0; i < 8; i++) { await page.click('#lib .plist li.cur [data-act=libdup]'); await until(async () => (await page.$$('#lib .plist li')).length === i + 2, 'duplication ' + i, 5000); }
+  expect(await page.isVisible('[data-role=libsearch]'), 'pas de recherche avec neuf projets');
+  await page.click('#lib .plist li:not(.cur) >> nth=0 >> [data-act=librename]'); await answer('Valse lente'); await page.waitForSelector('#lib .plist li:has-text("Valse lente")');
+  const shown = () => page.$$eval('#lib .plist li', l => l.filter(e => !e.hidden).length);
+  await page.fill('[data-role=libsearch]', 'ete IND'); near(await shown(), 8, 0, 'recherche sans accents ni majuscules');
+  await page.fill('[data-role=libsearch]', 'valse'); near(await shown(), 1, 0, 'recherche d’un nom'); expect(!(await page.isVisible('#lib .tip[role=status]')), 'message « aucun projet » affiché à tort');
+  await page.fill('[data-role=libsearch]', 'zzz'); near(await shown(), 0, 0, 'aucun résultat'); expect(await page.isVisible('#lib .tip[role=status]'), 'pas de message quand rien ne correspond');
+  await page.fill('[data-role=libsearch]', ''); near(await shown(), 9, 0, 'recherche vidée');
+  await libOnlyCurrent(); await page.keyboard.press('Escape');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

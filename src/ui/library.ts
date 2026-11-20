@@ -1,9 +1,9 @@
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { allNotesOff } from '../input';
-import { S, emit, deleteProject, duplicateProject, library, listVersions, openProject, replaceProject, restoreVersion, snapshot, startProject } from '../store';
+import { ProjInfo, S, emit, deleteProject, duplicateProject, library, libraryInfo, listVersions, openProject, renameLibProject, replaceProject, restoreVersion, snapshot, startProject } from '../store';
 import { TEMPLATES, Template, templateProject } from '../types';
-import { confirmBox, h, toast } from './dom';
+import { ask, confirmBox, h, toast } from './dom';
 import { startTour } from './tour';
 
 const ICONS: Record<Template, string> = { empty: '📄', trap: '🔥', house: '🪩', lofi: '☕', demo: '✨' };
@@ -46,20 +46,49 @@ function render() {
   const d = dlg(), fmt = new Intl.DateTimeFormat(document.documentElement.lang, { dateStyle: 'medium', timeStyle: 'short' });
   const tpl = tplCards(k => { createFromTemplate(k); d.close(); toast(t('lib.created')); });
   const rows = [...library].sort((a, b) => b.updated - a.updated).map(e => {
-    const cur = e.id === S.pid;
-    return h('li', { class: cur ? 'cur' : '', data: { pid: e.id } },
+    const cur = e.id === S.pid, date = (cur ? t('lib.current') + ' · ' : '') + fmt.format(e.updated);
+    const thumb = h('canvas', { class: 'pthumb', width: 192, height: 80, 'aria-hidden': 'true' }), meta = h('small', {}, date);
+    // Tempo, pistes, durée et miniature arrivent dès que le projet a été relu dans l'appareil.
+    libraryInfo(e.id).then(info => { if (!info) return; drawThumb(thumb, info); meta.textContent = `${t('lib.meta', info.bpm, info.tracks, clock(info.sec))} · ${date}`; });
+    return h('li', { class: cur ? 'cur' : '', data: { pid: e.id, name: e.name.toLowerCase() } },
       h('button', { class: 'lopen', data: { act: 'libopen' }, title: t('lib.open'), onclick: async () => { halt(); await openProject(e.id); engine.prepare(); d.close(); toast(t('toast.opened')); } },
-        h('strong', {}, e.name), h('small', {}, (cur ? t('lib.current') + ' · ' : '') + fmt.format(e.updated))),
+        thumb, h('span', { class: 'pinfo' }, h('strong', {}, e.name), meta)),
       cur ? h('button', { class: 'mini', data: { act: 'libvers' }, title: t('ver.title'), 'aria-label': `${t('ver.title')} – ${e.name}`, onclick: () => renderVersions() }, '🕘') : '',
+      h('button', { class: 'mini', data: { act: 'librename' }, title: t('lib.rename'), 'aria-label': `${t('lib.rename')} – ${e.name}`, onclick: async () => { const n = await ask(t('lib.rename'), e.name); if (n?.trim()) { await renameLibProject(e.id, n); render(); } } }, '✎'),
       h('button', { class: 'mini', data: { act: 'libdup' }, title: t('lib.dup'), 'aria-label': `${t('lib.dup')} – ${e.name}`, onclick: async () => { await duplicateProject(e.id); render(); } }, '⧉'),
       h('button', { class: 'mini danger', data: { act: 'libdel' }, title: t('lib.del'), 'aria-label': `${t('lib.del')} – ${e.name}`, disabled: cur, onclick: async () => { if (await confirmBox(t('lib.confirmDel', e.name), t('act.del'), { danger: true })) { await deleteProject(e.id); render(); } } }, '🗑'));
   });
+  // Au-delà de huit projets, un champ pour retrouver un morceau par son nom.
+  const none = h('p', { class: 'tip', hidden: true, role: 'status' }, t('lib.noMatch'));
+  const search = rows.length > SEARCH_FROM && h('input', { type: 'search', class: 'psearch', placeholder: t('lib.search'), 'aria-label': t('lib.search'), data: { role: 'libsearch' }, spellcheck: false });
+  if (search) search.oninput = () => { none.hidden = filterRows(rows, search.value) > 0; };
   d.replaceChildren(
     h('h2', {}, t('lib.title')),
     h('h3', {}, t('lib.new')), tpl,
-    h('h3', {}, t('lib.mine')), rows.length ? h('ul', { class: 'plist' }, ...rows) : h('p', { class: 'tip' }, t('lib.none')),
+    h('h3', {}, t('lib.mine')), search || '', rows.length ? h('ul', { class: 'plist' }, ...rows) : h('p', { class: 'tip' }, t('lib.none')), none,
     h('p', { class: 'tip' }, t('lib.note')),
     h('form', { method: 'dialog' }, h('button', { class: 'pill' }, t('lib.close'))));
+}
+
+/** Nombre de projets à partir duquel le champ de recherche apparaît (plus de huit). */
+const SEARCH_FROM = 8;
+/** Ne garde affichés que les projets dont le nom contient le texte cherché (sans tenir compte des majuscules ni des accents). Renvoie leur nombre. */
+export function filterRows(rows: HTMLElement[], q: string): number {
+  const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(), want = norm(q);
+  let n = 0;
+  for (const li of rows) { const ok = !want || norm(li.dataset.name ?? '').includes(want); li.hidden = !ok; if (ok) n++; }
+  return n;
+}
+/** Durée lisible : 1:04. */
+export const clock = (sec: number) => { const s = Math.round(sec); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+/** Miniature de l'arrangement : une ligne par piste, un bloc par clip, à la couleur de la piste. */
+function drawThumb(cv: HTMLCanvasElement, info: ProjInfo) {
+  const g = cv.getContext('2d')!, W = cv.width, H = cv.height, n = Math.max(4, info.rows.length), rh = H / n, end = Math.max(1, info.end);
+  g.clearRect(0, 0, W, H);
+  info.rows.forEach((r, i) => {
+    g.fillStyle = r.color;
+    for (const [s, l] of r.clips) g.fillRect(Math.round(s / end * W), Math.round(i * rh) + 1, Math.max(2, Math.round(l / end * W) - 1), Math.max(2, Math.floor(rh) - 2));
+  });
 }
 
 export function showLibrary() { render(); if (!dlg().open) dlg().showModal(); }
