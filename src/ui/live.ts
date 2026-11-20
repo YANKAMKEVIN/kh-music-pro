@@ -2,7 +2,8 @@ import { tapTempo } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, commit } from '../store';
-import { ICON } from './arr';
+import { BAR } from '../types';
+import { typeIcon } from './icons';
 import { h, slider } from './dom';
 import { filterFmt } from './mixer';
 
@@ -14,21 +15,22 @@ export function renderLive(): HTMLElement {
   const grid = h('div', { class: 'lgrid', style: `grid-template-columns:76px repeat(${cols.length}, minmax(120px, 170px))` });
   grid.append(h('div', { class: 'lcorner' }, t('live.scene')));
   for (const { tr } of cols) grid.append(h('div', { class: 'lhead', style: `--c:${tr.color}`, title: tr.name },
-    h('span', {}, `${ICON[tr.type]} ${tr.name}`),
+    h('span', {}, typeIcon(tr.type, 15), ' ' + tr.name),
     h('button', { class: 'mini mute' + (tr.mute ? ' on' : ''), data: { lmute: tr.id }, title: t('mix.mute'), 'aria-label': `${t('mix.mute')} – ${tr.name}`, 'aria-pressed': String(tr.mute), onclick: () => { tr.mute = !tr.mute; commit(); } }, 'M')));
   for (let i = 0; i < rows; i++) {
     grid.append(h('button', { class: 'lscene', data: { scene: String(i) }, title: t('live.launchScene', i + 1), onclick: () => engine.launchScene(i) }, `▶ ${i + 1}`));
     for (const { tr, clips } of cols) {
       const c = clips[i];
       grid.append(c
-        ? h('button', { class: 'lcell', style: `--c:${tr.color}`, data: { track: tr.id, clip: c.id }, title: t('live.launch', c.name), onclick: () => engine.launch(tr.id, c.id) }, h('span', { class: 'lplay' }, '▶'), c.name)
+        ? h('button', { class: 'lcell', style: `--c:${tr.color}`, data: { track: tr.id, clip: c.id, row: String(i), len: String(c.len) }, title: t('live.launch', c.name), onclick: () => engine.launch(tr.id, c.id) },
+          h('span', { class: 'lplay' }, '▶'), c.name, h('i', { class: 'lcount', 'aria-hidden': 'true' }))
         : h('div', { class: 'lcell none' }));
     }
   }
   grid.append(h('button', { class: 'lscene stopall', data: { act: 'stopall' }, title: t('live.stopAll'), onclick: () => engine.stop() }, '■'));
   for (const { tr } of cols) grid.append(h('button', { class: 'lstop', data: { stop: tr.id }, title: t('live.stop', tr.name), 'aria-label': t('live.stop', tr.name), onclick: () => engine.launch(tr.id, null) }, '■'));
 
-  const filt = slider(t('live.filter'), -1, 1, 0.01, p.filter, v => p.filter = Math.abs(v) < 0.04 ? 0 : v, filterFmt, 'wide');
+  const filt = slider(t('live.filter'), -1, 1, 0.01, p.filter, v => p.filter = Math.abs(v) < 0.04 ? 0 : v, filterFmt, 'wide', false, 0);
   // Effets momentanés : actifs tant que le bouton est maintenu.
   const fxBtn = (name: string) => {
     const b = h('button', { class: 'pill fx', data: { fx: name }, title: t('fx.tip') }, t('fx.' + name));
@@ -62,12 +64,40 @@ export function renderLive(): HTMLElement {
   return h('div', { class: 'live' }, h('div', { class: 'lscroll' }, cols.length ? grid : h('p', { class: 'bigtip' }, t('hint.noTracks'))), perf);
 }
 
-/** Met à jour l'état des cases (en lecture / en attente) sans reconstruire la grille. */
+/** Met à jour l'état des cases (en lecture / en attente) et des scènes sans reconstruire la grille. */
 export function refreshLive() {
+  const rows = { on: new Set<string>(), next: new Set<string>() };
   document.querySelectorAll<HTMLElement>('.lcell[data-clip]').forEach(el => {
-    const tid = el.dataset.track!, cid = el.dataset.clip!;
-    el.classList.toggle('playing', engine.liveActive.get(tid)?.clipId === cid && engine.liveQueued.get(tid) === undefined);
-    el.classList.toggle('queued', engine.liveQueued.get(tid) === cid);
-    el.classList.toggle('ending', engine.liveActive.get(tid)?.clipId === cid && engine.liveQueued.has(tid) && engine.liveQueued.get(tid) !== cid);
+    const tid = el.dataset.track!, cid = el.dataset.clip!, active = engine.liveActive.get(tid)?.clipId === cid, queued = engine.liveQueued.get(tid) === cid;
+    el.classList.toggle('playing', active && engine.liveQueued.get(tid) === undefined);
+    el.classList.toggle('queued', queued);
+    el.classList.toggle('ending', active && engine.liveQueued.has(tid) && !queued);
+    if (active) rows.on.add(el.dataset.row!);
+    if (queued) rows.next.add(el.dataset.row!);
+    if (!active) el.style.removeProperty('--p');
+    if (!queued) el.querySelector('.lcount')!.textContent = '';
   });
+  // Scène en cours : tous les clips qui jouent sont sur sa ligne. Scène attendue : tous les clips en attente y sont.
+  document.querySelectorAll<HTMLElement>('.lscene[data-scene]').forEach(b => {
+    const i = b.dataset.scene!, on = rows.on.size === 1 && rows.on.has(i), next = rows.next.size === 1 && rows.next.has(i) && !on;
+    b.classList.toggle('on', on); b.classList.toggle('next', next);
+    if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    b.title = t(on ? 'live.sceneOn' : 'live.launchScene', +i + 1);
+  });
+}
+
+/** Part déjà jouée de la boucle d'un clip (0..1), `step` étant la position du Live et `since` le pas où le clip est parti. */
+export const loopPart = (step: number, since: number, len: number) => (len > 0 ? ((((step - since) % len) + len) % len) / len : 0);
+/** Temps restants avant le prochain départ possible, sur une grille de `q` pas (mesure ou temps) ; 0 si le départ est immédiat. */
+export const beatsToLaunch = (step: number, q: number) => (q <= 1 ? 0 : Math.ceil((q - (((step % q) + q) % q)) / 4 - 1e-6));
+
+/** À chaque image, en Live : la case qui joue se remplit au fil de sa boucle, la case en attente compte les temps avant son départ. */
+export function updateLive() {
+  if (engine.mode !== 'live' || !engine.playing) return;
+  const step = engine.currentStep(), left = beatsToLaunch(step, S.project.liveQ || BAR);
+  document.querySelectorAll<HTMLElement>('.lcell.playing, .lcell.ending').forEach(el => {
+    const a = engine.liveActive.get(el.dataset.track!);
+    if (a) el.style.setProperty('--p', loopPart(step, a.since, +el.dataset.len!).toFixed(3));
+  });
+  document.querySelectorAll<HTMLElement>('.lcell.queued .lcount').forEach(el => { const txt = left ? String(left) : ''; if (el.textContent !== txt) el.textContent = txt; });
 }

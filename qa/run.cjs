@@ -137,8 +137,10 @@ async function openPage(ready) {
   page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
   await page.addInitScript(PAGE_HELPERS);
   await page.goto(BASE); await page.waitForSelector('.clip');
-  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await closeWelcome(page);
 }
+/** Premier lancement d'un profil neuf : l'accueil s'ouvre ; on le referme par « Commencer ». */
+async function closeWelcome(pg) { if (await pg.$('#welcome')) { await pg.click('#bWelGo'); await pg.waitForSelector('#welcome', { state: 'detached' }); } }
 let page, browser, dialogText, refuseConfirm = false, ignoreErr = null, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
@@ -152,9 +154,11 @@ async function reset() {
     const k = window.kh; k.engine.stop(); k.engine.stop(); k.engine.pos = 0;
     k.setLang('fr');
     k.S.project = k.demoProject(); k.S.project.countIn = false;
-    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
+    Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, epx: 28, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1; k.S.recOffsetMs = 0; try { localStorage.removeItem('kh-rec-offset'); localStorage.removeItem('kh-wam-trust'); } catch { }
+    k.meters.clipped.clear();
+    Object.assign(k.mixSect, { eq: true, fx: true, send: true, dyn: true }); try { localStorage.removeItem('kh-mix-sect'); } catch { }
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
     k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
@@ -213,6 +217,10 @@ async function setSlider(scope, label, v) {
     el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
   }, [label, v]);
 }
+
+/** Fenêtres maison (question ou accord, à la place de celles du navigateur) : répondre `text` et valider, ou refuser. */
+async function answer(text, pg = page) { await pg.waitForSelector('dialog.ask[open]'); if (text !== undefined) await pg.fill('dialog.ask input', text); await pg.click('dialog.ask [data-act=ok]'); await sleep(80); }
+async function refuse(pg = page) { await pg.waitForSelector('dialog.ask[open]'); await pg.click('dialog.ask [data-act=cancel]'); await sleep(80); }
 
 const cases = [];
 const test = (id, cat, title, fn) => cases.push({ id, cat, title, fn });
@@ -274,7 +282,7 @@ test('A02', 'Arrangement', 'Renommer une piste', async () => {
   const sel = '.head >> nth=1 >> .tname'; await page.fill(sel, 'Ma basse'); await page.keyboard.press('Enter');
   expect((await proj()).tracks[1].name === 'Ma basse', 'nom non enregistré');
 });
-test('A03', 'Arrangement', 'Supprimer une piste (avec confirmation)', async () => {
+test('A03', 'Arrangement', 'Supprimer une piste (sans question, annulable)', async () => {
   await headAct(1, '.del'); const p = await proj();
   near(p.tracks.length, 4, 0, 'nombre de pistes'); expect(!p.tracks.some(t => t.name === 'Basse'), 'piste encore présente');
 });
@@ -1110,7 +1118,7 @@ test('MK01', 'Repères', 'Poser des repères, y sauter, les renommer et les supp
   await page.click('#bMark'); expect((await proj()).markers.length === 2 && (await page.textContent('#toast')).includes('déjà'), 'doublon accepté');
   await page.click('.mark >> nth=0'); near(await S(() => window.kh.engine.pos), 0, 0, 'saut au premier repère');
   await page.click('.mark >> nth=1'); near(await S(() => window.kh.engine.pos), 64, 0, 'saut au second repère');
-  dialogText = 'Refrain'; await page.dblclick('.mark >> nth=1'); dialogText = undefined; await sleep(100);
+  await page.dblclick('.mark >> nth=1'); await answer('Refrain');
   expect((await proj()).markers[1].name === 'Refrain' && (await page.textContent('.mark >> nth=1')).includes('Refrain'), 'renommage');
   await page.click('.mark >> nth=0', { button: 'right' }); m = (await proj()).markers; expect(m.length === 1 && m[0].name === 'Refrain', 'suppression');
   await page.keyboard.press('Control+z'); near((await proj()).markers.length, 2, 0, 'annulation');
@@ -1121,7 +1129,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-    await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
     expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top <= 120 && lay.topScroll <= lay.iw + 1, `barre supérieure non compacte ou qui déborde (${lay.top} px, ${lay.topScroll} px de large)`);   // V18 : deux lignes sans défilement
     expect(lay.panel > 250 && lay.arr > 180 && lay.lane < 140, `zones mal réparties (${JSON.stringify(lay)})`);
@@ -1141,7 +1149,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
 test('MB02', 'Téléphone', 'Au doigt : déplacer un clip et dessiner une courbe d\'automation', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     const cdp = await ctx2.newCDPSession(pg);
     const swipe = async (x, y, dx, dy) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 5, y: y + dy * i / 5 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150); };
     await pg.evaluate(() => { const k = window.kh; k.S.project.tracks[1].clips[0].len = 16; k.S.project.tracks[1].autoShow = 'vol'; k.commit(); });
@@ -1168,7 +1176,7 @@ test('OK01', 'Clavier à l\'écran', 'Afficher le clavier, jouer une touche à l
 test('OK02', 'Clavier à l\'écran', 'Sur écran tactile : clavier affiché d\'office, accord à deux doigts', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     await pg.tap('.head >> nth=1 >> .tname'); expect(await pg.$('.okb'), 'clavier absent sur écran tactile');
     const a = await (await pg.$('.wk[data-m="48"]')).boundingBox(), b = await (await pg.$('.wk[data-m="55"]')).boundingBox(), cdp = await ctx2.newCDPSession(pg);
     const pt = (r, id) => ({ x: r.x + r.width / 2, y: r.y + r.height - 12, id });
@@ -1288,7 +1296,8 @@ test('LB03', 'Projets', 'Dupliquer et supprimer un projet ; la bibliothèque sur
   expect(await page.$('#lib .plist li:has-text("Original QA 2")'), 'copie absente'); await page.keyboard.press('Escape');
   await page.reload(); await page.waitForSelector('.clip'); expect((await proj()).name === 'Original QA', 'projet courant non retrouvé après rechargement');
   await libOpen(); near(await libCount(), n0 + 1, 0, 'bibliothèque après rechargement');
-  await page.click('#lib .plist li:has-text("Original QA 2") [data-act=libdel]'); await sleep(300); near(await libCount(), n0, 0, 'après suppression'); await page.keyboard.press('Escape');
+  await page.click('#lib .plist li:has-text("Original QA 2") [data-act=libdel]'); await refuse(); near(await libCount(), n0 + 1, 0, 'un refus ne doit rien supprimer');
+  await page.click('#lib .plist li:has-text("Original QA 2") [data-act=libdel]'); await answer(); await sleep(300); near(await libCount(), n0, 0, 'après suppression'); await page.keyboard.press('Escape');
   await page.keyboard.press('Space'); await sleep(250); expect(await S(() => window.kh.engine.playing), 'après fermeture de la fenêtre, les raccourcis doivent reprendre');
 });
 test('LB04', 'Projets', 'Ouvrir un fichier .khm crée un nouveau projet sans écraser celui en cours', async () => {
@@ -1461,7 +1470,7 @@ test('TR01', 'Visite guidée', 'La visite se lance depuis l\'aide, éclaire 8 zo
 test('TR02', 'Visite guidée', 'Sur téléphone, chaque bulle de la visite tient à l\'écran', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#bTour'); else await pg.evaluate(() => window.kh.startTour());
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$('#welcome')) await pg.tap('#bWelTour'); else await pg.evaluate(() => window.kh.startTour());
     await pg.waitForSelector('.tour');
     for (let i = 1; i <= 8; i++) { await pg.waitForTimeout(260); const st = await tourState(pg); expect(st && st.n === `${i} / 8` && st.inView, `étape ${i} : ${JSON.stringify(st)}`); await pg.tap('[data-act=tournext]'); }
     expect(!(await pg.$('.tour')), 'visite non terminée');
@@ -1847,12 +1856,12 @@ test('TP01', 'Tempo', 'Un changement de tempo en cours de morceau s\'entend au b
 });
 test('TP02', 'Tempo', 'Poser, modifier et supprimer un changement de tempo depuis la règle', async () => {
   await page.click('#bTempoAdd'); expect((await page.textContent('#toast')).includes('départ') && (await proj()).tempos.length === 0, 'au tout début, le tempo se règle dans le champ BPM');
-  await S(() => window.kh.engine.seek(34)); dialogText = '90'; await page.click('#bTempoAdd'); await sleep(80);
+  await S(() => window.kh.engine.seek(34)); await page.click('#bTempoAdd'); await answer('90');
   let tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].s === 32 && tp[0].bpm === 90, `changement posé : ${JSON.stringify(tp)}`);
   expect((await page.textContent('.tmark')).includes('90'), 'repère de tempo non affiché');
-  dialogText = '150'; await page.click('.tmark'); await sleep(80); expect((await proj()).tempos[0].bpm === 150, 'modification');
-  dialogText = '999'; await page.click('.tmark'); await sleep(80); expect((await proj()).tempos[0].bpm === 150 && (await page.textContent('#toast')).includes('40'), 'une valeur hors limites doit être refusée');
-  dialogText = undefined; await S(() => window.kh.engine.seek(64)); dialogText = '100'; await page.click('#bTempoAdd'); dialogText = undefined; await sleep(80);
+  await page.click('.tmark'); await answer('150'); expect((await proj()).tempos[0].bpm === 150, 'modification');
+  await page.click('.tmark'); await answer('999'); expect((await proj()).tempos[0].bpm === 150 && (await page.textContent('#toast')).includes('40'), 'une valeur hors limites doit être refusée');
+  await S(() => window.kh.engine.seek(64)); await page.click('#bTempoAdd'); await answer('100');
   near((await proj()).tempos.length, 2, 0, 'deux changements');
   await page.click('.tmark >> nth=0', { button: 'right' }); tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].s === 64, 'suppression');
   await page.keyboard.press('Control+z'); near((await proj()).tempos.length, 2, 0, 'annulation');
@@ -1964,18 +1973,24 @@ test('WAM02', 'Plugins web', 'Plugin introuvable : message clair, le son passe q
 test('WAM03', 'Plugins web', 'Un plugin venu d\'un autre site demande un accord explicite ; une adresse dangereuse est refusée', async () => {
   ignoreErr = /Failed to load|ERR_|import|CORS|net::/i;
   await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
-  const asked = []; const onDlg = d => asked.push(d.type() + ':' + d.message().slice(0, 60)); page.on('dialog', onDlg);
+  // Les deux questions passent par les fenêtres maison (plus aucune fenêtre du navigateur).
+  const native = []; const onDlg = d => native.push(d.type()); page.on('dialog', onDlg);
+  const url = 'https://plugins.example.org/echo/index.js', add = () => page.selectOption('[data-role=fxadd]', 'wam:?');
   try {
-    dialogText = 'https://plugins.example.org/echo/index.js'; refuseConfirm = true; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300);
-    expect(asked.length === 2 && asked[0].startsWith('prompt') && asked[1].startsWith('confirm') && asked[1].includes('plugins.example.org'), `demandes : ${asked}`);
+    await add(); await page.waitForSelector('dialog.ask[open] input'); expect(await page.inputValue('dialog.ask input') === 'https://', 'adresse proposée au départ');
+    await answer(url); await page.waitForSelector('dialog.ask[open] .askmsg'); expect((await page.textContent('dialog.ask .askmsg')).includes('plugins.example.org'), 'la demande d’accord ne nomme pas le site');
+    expect(await page.evaluate(() => document.activeElement?.dataset.act) === 'cancel', 'le focus doit être sur Annuler : Entrée ne doit pas accepter un plugin');
+    await refuse(); await sleep(200);
     expect((await insertsOf(1)).length === 0 && await S(() => !localStorage.getItem('kh-wam-trust')), 'un refus ne doit rien ajouter ni mémoriser');
-    refuseConfirm = false; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300);
-    const l = await insertsOf(1); expect(l.length === 1 && l[0].url === dialogText && l[0].name === 'echo', `après accord : ${JSON.stringify(l)}`);
+    await add(); await answer(url); await answer(); await sleep(250);
+    const l = await insertsOf(1); expect(l.length === 1 && l[0].url === url && l[0].name === 'echo', `après accord : ${JSON.stringify(l)}`);
     expect(await S(() => localStorage.getItem('kh-wam-trust')) === '["https://plugins.example.org"]', 'site de confiance non mémorisé');
-    asked.length = 0; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(300); expect(asked.length === 1, 'un site déjà accepté ne doit pas redemander l\'accord');
-    dialogText = 'javascript:alert(1)'; await page.selectOption('[data-role=fxadd]', 'wam:?'); await sleep(200);
+    await add(); await answer(url); await sleep(250); expect(!(await page.$('dialog.ask[open]')) && (await insertsOf(1)).length === 2, 'un site déjà accepté ne doit pas redemander l\'accord');
+    await add(); await answer('javascript:alert(1)'); await sleep(200);
     expect((await insertsOf(1)).length === 2 && (await page.textContent('#toast')).includes('invalide'), 'adresse dangereuse acceptée');
-  } finally { page.off('dialog', onDlg); dialogText = undefined; refuseConfirm = false; }
+    await add(); await page.waitForSelector('dialog.ask[open]'); await page.keyboard.press('Escape'); await sleep(150); expect((await insertsOf(1)).length === 2, 'Échap doit annuler la question');
+    expect(native.length === 0, 'fenêtre du navigateur encore utilisée : ' + native);
+  } finally { page.off('dialog', onDlg); }
 });
 test('LAT01', 'Latence', 'Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur', async () => {
   await clickIn('#bAudio'); expect(await page.$eval('#audio', d => d.open), 'fenêtre non ouverte');
@@ -2312,7 +2327,7 @@ test('BN06', 'Banque généraliste', 'Sur téléphone, le sélecteur de sons et 
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   try {
     const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     await pg.tap('.head >> nth=1');
     await pg.selectOption('[data-role=preset]', 'r_steelpan');
     expect(await pg.evaluate(() => window.kh.engine.prepare()), 'chargement sur téléphone');
@@ -2556,7 +2571,7 @@ test('SB06', 'Navigateur de sons', 'La recherche bloque les raccourcis musicaux 
 test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     await pg.tap('.head >> nth=1 >> .tname'); await pg.tap('[data-act=sound-browser]');
     await pg.fill('[data-role=sound-search]', 'orgue'); await pg.selectOption('[data-role=sound-family]', 'realKeys');
     await pg.tap(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
@@ -3141,7 +3156,7 @@ test('SV07', 'Sauvegarde', 'Supprimer un projet de la bibliothèque supprime aus
   });
   expect(r.before >= 1, 'aucune version avant suppression');
   await S(() => window.kh.showLibrary()); await page.waitForSelector(`#lib li[data-pid="${r.pid}"]`);
-  await page.click(`#lib li[data-pid="${r.pid}"] [data-act=libdel]`); await sleep(400);
+  await page.click(`#lib li[data-pid="${r.pid}"] [data-act=libdel]`); await answer(); await sleep(400);
   const after = await page.evaluate(pid => window.kh.store.listVersions(pid), r.pid);
   expect(!after.length, `il reste ${after.length} version(s)`);
   await page.keyboard.press('Escape');
@@ -3817,7 +3832,7 @@ test('TB05', 'Barre du haut', 'Téléphone : barre sans débordement, transport 
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); pg.on('dialog', d => d.accept('Titre au doigt')); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     expect(await pg.$eval('#top', e => e.scrollWidth <= e.clientWidth + 1), 'la barre déborde sur téléphone');
     for (const id of ['bPlay', 'bStop', 'bRec', 'pos', 'bpm', 'bMetro', 'bLoop', 'bUndo']) {
       const b = await pg.locator('#' + id).boundingBox(); expect(b && b.x >= 0 && b.x + b.width <= 375, `${id} hors écran : ${JSON.stringify(b)}`);
@@ -3830,7 +3845,7 @@ test('TB05', 'Barre du haut', 'Téléphone : barre sans débordement, transport 
     const ls = await pg.locator('#mSettings .menu-list').boundingBox(); expect(ls.x >= 0 && ls.x + ls.width <= 375, 'liste des réglages hors écran');
     await pg.tap('#tabs [data-tab=editor]'); expect(!(await pg.$eval('#more', d => d.open)) && !(await pg.$eval('#mSettings', d => d.open)), 'toucher ailleurs doit refermer ☰ et les réglages');
     await pg.tap('#menu > summary'); expect(await pg.isVisible('#bRename'), 'Renommer absent du menu Projet sur téléphone');
-    await pg.tap('#bRename'); await sleep(100);
+    await pg.tap('#bRename'); await answer('Titre au doigt', pg);
     expect(await pg.evaluate(() => window.kh.S.project.name) === 'Titre au doigt', 'renommer au doigt ne marche pas');
     await pg.tap('#mTake > summary'); expect(await pg.isVisible('#bPunch'), 'Prise inaccessible au doigt');
     await pg.screenshot({ path: path.join(__dirname, 'shots/v18-phone.png') });
@@ -3914,7 +3929,7 @@ test('AD04', 'Correctifs audit', 'Tempo au centième : 93,5 BPM gardé (champ, c
   for (const v of ['', '0']) { await page.fill('#bpm', v); await page.keyboard.press('Tab'); await sleep(80); expect((await proj()).bpm === 93.5 && await page.inputValue('#bpm') === '93.5', `« ${v} » a changé le tempo`); }
   await page.fill('#bpm', '300'); await page.keyboard.press('Tab'); await sleep(80); expect((await proj()).bpm === 240, 'tempo non borné à 240');
   await page.keyboard.press('Control+z'); expect((await proj()).bpm === 93.5, 'annulation');
-  await S(() => window.kh.engine.seek(32)); dialogText = '87,25'; try { await clickIn('#bTempoAdd'); await sleep(150); } finally { dialogText = undefined; }
+  await S(() => window.kh.engine.seek(32)); await clickIn('#bTempoAdd'); await answer('87,25'); await sleep(80);
   const tp = (await proj()).tempos; expect(tp.length === 1 && tp[0].bpm === 87.25, `changement de tempo : ${JSON.stringify(tp)}`);
   const back = await S(() => { const k = window.kh, m = k.exportMidi(k.S.project), r = k.importMidi(m.buffer.slice(m.byteOffset, m.byteOffset + m.byteLength)); return { bpm: r.bpm, t: r.tempos.map(x => x.bpm) }; });
   expect(back.bpm === 93.5 && back.t[0] === 87.25, `MIDI aller-retour : ${JSON.stringify(back)}`);
@@ -4054,7 +4069,7 @@ test('TH05', 'Têtes de piste', 'Téléphone : noms lisibles, ⋯ au doigt (mont
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     const fit = await pg.$$eval('.head .tname', l => l.slice(0, 4).map(i => i.scrollWidth <= i.clientWidth + 1));
     expect(fit.every(Boolean), 'noms coupés sur téléphone : ' + JSON.stringify(fit));
     const order = () => pg.evaluate(() => window.kh.S.project.tracks.map(t => t.name).join(','));
@@ -4204,7 +4219,7 @@ test('CT08', 'Contrôles joués', 'Fichier MIDI : bend, molette et pression expo
   expect(r.ctl && r.ctl.pb && r.ctl.mod && r.ctl.at, 'contrôles perdus à la relecture : ' + JSON.stringify(r.ctl));
   near(r.ctl.pb.find(p => p.s === 4).v, 0.5, 0.001, 'bend +0,5 relu'); near(r.ctl.pb.find(p => p.s === 8).v, -1, 0.001, 'bend -1 relu');
   near(r.ctl.mod[0].v, 0.75, 0.01, 'molette relue'); near(r.ctl.at[0].v, 0.3, 0.01, 'pression relue');
-  await S(() => window.kh.store.saveNow()); await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await S(() => window.kh.store.saveNow()); await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   const back = await S(() => window.kh.S.project.tracks[1].clips[0].ctl);
   expect(back && back.pb.length === 3 && back.mod[0].v === 0.75 && back.at[0].v === 0.3, 'contrôles perdus après rechargement : ' + JSON.stringify(back));
 });
@@ -4258,7 +4273,7 @@ test('CT12', 'Contrôles joués', 'Téléphone : molettes couchées au-dessus du
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.addInitScript(PAGE_HELPERS); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     await pg.evaluate(() => { const k = window.kh, tr = k.S.project.tracks[1]; k.S.selTrack = tr.id; k.S.selClip = ''; k.S.kbShow = true; k.S.tab = 'editor'; k.commit(); k.onMidi([0x90, 69, 90]); });
     await pg.waitForSelector('.wheel.flat[data-ctl=pb]');
     const kw = await pg.$$eval('.okb .wk', l => Math.min(...l.map(e => e.getBoundingClientRect().width)));
@@ -4454,7 +4469,7 @@ test('CP04', 'Comping', 'Prise entière, annulation, scission et rognage à gauc
 test('CP05', 'Comping', 'Le comping est gardé au rechargement de la page', async () => {
   await takesClip();
   await S(async () => { const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[0]; c.comp = [{ s: 0, take: 2 }, { s: 8, take: 1 }]; k.commit(); await k.store.saveNow(); });
-  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   const c = await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(x => x.id === 'ctk'));
   expect(c && JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 2 }, { s: 8, take: 1 }]), 'comping perdu : ' + JSON.stringify(c && c.comp));
   const hz = await pitchAt([0.5, 1.5]); expect(Math.abs(hz[0] - 550) < 10 && Math.abs(hz[1] - 440) < 8, 'hauteurs après rechargement : ' + hz);
@@ -4519,7 +4534,7 @@ test('CF04', 'Fondus enchaînés', 'Export parallèle d’un gros projet, scissi
   expect(r.diff < 1e-3, 'parallèle ≠ un seul tenant : ' + r.diff);   // même seuil qu'AD07 (−60 dB)
   expect(await toneIn(330, 2.02, 2.1) > 0.2, 'fondu absent de l’export');
   await S(async () => { await window.kh.store.saveNow(); });
-  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   expect(await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(c => c.id === 'xb')?.xfade) === 2, 'fondu perdu au rechargement');
 });
 
@@ -4638,7 +4653,7 @@ test('SD03', 'Envois', 'Gros projet : export parallèle identique à l’export 
 test('SD04', 'Envois', 'Envois et source du sidechain traduits, gardés au rechargement', async () => {
   await scProject();
   await S(async () => { const k = window.kh, [syn, au] = k.S.project.tracks; syn.sc = au.id; syn.duck = 0.6; k.S.project.buses = [k.newBus(1)]; syn.sends = [{ id: 'sx', bus: k.S.project.buses[0].id, amt: 0.4, pre: true }]; k.commit(); await k.store.saveNow(); });
-  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   const t0 = await S(() => window.kh.S.project.tracks[0]);
   expect(t0.sc === (await S(() => window.kh.S.project.tracks[1].id)) && t0.sends?.[0]?.pre === true && t0.sends[0].amt === 0.4, 'réglages perdus : ' + JSON.stringify([t0.sc, t0.sends]));
   await tab('mixer');
@@ -4776,6 +4791,550 @@ test('AI05', 'Instruments du Mac', 'Version web : pas de liste, piste muette ann
   expect((await page.textContent('.synth')).includes('Mac instrument'), 'non traduit en anglais');
   await S(() => window.kh.setLang('es')); expect((await page.textContent('.synth')).includes('Instrumento del Mac'), 'non traduit en espagnol');
   await S(() => window.kh.setLang('fr'));
+});
+
+// ============ UX15 : quinze améliorations d'interface ============
+/** Projet assez lourd pour qu'un export dure (la démo recopiée `n` fois). */
+const heavy = (n = 3) => page.evaluate(n => { const k = window.kh, p = k.S.project, base = JSON.parse(JSON.stringify(p.tracks)); for (let r = 0; r < n; r++) for (const t of base) { const c = JSON.parse(JSON.stringify(t)); c.id = 'h' + r + t.id; c.clips.forEach((x, i) => { x.id = 'h' + r + i + x.id; }); p.tracks.push(c); } k.commit(); }, n);
+test('UX01a', 'Export', 'Pendant un export, le bouton Exporter devient une barre qui avance, puis revient ; le fichier arrive', async () => {
+  await heavy();
+  const dlp = page.waitForEvent('download', { timeout: 120000 }); await page.click('#bExport');
+  await until(() => page.isVisible('#xProg'), 'barre d’avancement absente');
+  expect(!(await page.isVisible('#bExport')) && await page.isVisible('#bExportCancel'), 'Exporter doit laisser la place à Annuler');
+  expect(await page.getAttribute('#xProg', 'role') === 'progressbar', 'rôle de la barre');
+  await until(async () => +(await page.getAttribute('#xProg', 'aria-valuenow')) > 0 || !(await page.isVisible('#xProg')), 'la barre ne quitte pas 0 %', 60000);
+  const mid = await S(() => ({ busy: window.kh.exportJob.busy, toast: document.getElementById('toast').textContent }));
+  if (mid.busy) expect(/Rendu|moitié/.test(mid.toast) && mid.toast.includes('Annuler'), 'message d’export sans bouton Annuler : ' + mid.toast);
+  const dl = await dlp; expect(dl.suggestedFilename().endsWith('.wav'), 'fichier : ' + dl.suggestedFilename());
+  await until(() => page.isVisible('#bExport'), 'le bouton Exporter ne revient pas');
+  expect(!(await page.isVisible('#xProg')) && !(await page.isVisible('#bExportCancel')), 'barre encore affichée après l’export');
+  expect((await page.textContent('#toast')).includes('terminé'), 'message de fin : ' + await page.textContent('#toast'));
+});
+test('UX01b', 'Export', 'Annuler un export : aucun fichier, message clair, et l’export suivant marche', async () => {
+  await heavy(5);
+  let got = 0; const onDl = () => { got++; }; page.on('download', onDl);
+  try {
+    await page.click('#bExport'); await until(() => page.isVisible('#bExportCancel'), 'bouton Annuler absent');
+    // Un second export pendant le premier est refusé.
+    await S(() => window.kh.exportJob.busy && document.getElementById('bMp3').click()); expect(await S(() => window.kh.exportJob.busy), 'export interrompu par une seconde demande');
+    await page.click('#bExportCancel');
+    await until(() => page.isVisible('#bExport'), 'le bouton Exporter ne revient pas après l’annulation', 5000);
+    expect((await page.textContent('#toast')).includes('annulé'), 'message d’annulation : ' + await page.textContent('#toast'));
+    await sleep(1500); expect(got === 0, 'un fichier a été téléchargé malgré l’annulation');
+    await S(() => { const p = window.kh.S.project; p.tracks.length = 2; window.kh.commit(); });
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('#bExport')]);
+    expect(dl.suggestedFilename().endsWith('.wav'), 'export suivant : ' + dl.suggestedFilename());
+  } finally { page.off('download', onDl); }
+});
+test('UX01c', 'Export', 'Pistes séparées : « piste i sur n » dans la barre ; part faite calculée juste ; annulation au clavier ; trois langues', async () => {
+  const r = await S(() => { const j = window.kh.jobPct; return [j(0, 1, 0.5), j(2, 4, 0.5), j(3, 3, 1), j(0, 0, 2), j(1, 4, -1)]; });
+  expect(JSON.stringify(r) === '[0.5,0.625,1,1,0.25]', 'part faite : ' + JSON.stringify(r));
+  await heavy(2);
+  await menu('bStems'); await until(() => page.isVisible('#xProg'), 'barre absente pour les pistes séparées');
+  await until(async () => /piste \d+ sur \d+/i.test(await page.textContent('#xProg')), 'la barre ne dit pas quelle piste est rendue : ' + await page.textContent('#xProg'));
+  expect(/piste \d+ sur \d+/i.test(await page.getAttribute('#xProg', 'aria-valuetext')), 'texte lu par les lecteurs d’écran');
+  await page.focus('#bExportCancel'); await page.keyboard.press('Enter');
+  await until(() => page.isVisible('#bExport'), 'annulation au clavier sans effet', 5000);
+  for (const [l, w] of [['en', 'Cancel'], ['es', 'Cancelar'], ['fr', 'Annuler']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('#bExportCancel')).includes(w), 'bouton Annuler non traduit en ' + l); }
+});
+
+test('UX02a', 'Arrangement', 'Ctrl + molette zoome autour du pointeur : la mesure visée ne bouge pas ; les boutons − et + restent', async () => {
+  const z = await S(() => { const f = window.kh.zoomAt; return [f(10, 2, 100, 50), f(10, 0.5, 100, 50), f(40, 2, 0, 0), f(4, 0.1, 30, 0)]; });
+  expect(JSON.stringify(z) === JSON.stringify([{ px: 20, scroll: 200 }, { px: 5, scroll: 0 }, { px: 44, scroll: 0 }, { px: 3, scroll: 0 }]), 'calcul du zoom : ' + JSON.stringify(z));
+  const sel = await clipSel(0, 1), b0 = await box(sel);   // deuxième clip de la batterie : il commence à la mesure 5
+  await page.mouse.move(b0.x, b0.y + 30); await page.keyboard.down('Control');
+  for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -100); await sleep(60); }
+  await page.keyboard.up('Control'); await sleep(150);
+  const px1 = await S(() => window.kh.S.px), b1 = await box(sel);
+  expect(px1 > 11 * 1.5, `le zoom n'a pas agrandi (${px1} px par pas)`); near(b1.x, b0.x, 3, 'le début de la mesure visée a glissé sous le pointeur');
+  expect(b1.width > b0.width * 1.5, 'le clip ne s’est pas élargi');
+  await page.keyboard.down('Control'); for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 100); await sleep(40); } await page.keyboard.up('Control'); await sleep(150);
+  const px2 = await S(() => window.kh.S.px); expect(px2 < px1 && px2 >= 3, `dézoom : ${px2}`);
+  await page.click('#bZoomIn'); expect(await S(() => window.kh.S.px) > px2, 'le bouton + ne zoome plus');
+});
+test('UX02b', 'Arrangement', 'Maj + molette fait défiler dans le temps ; la molette seule ne zoome pas', async () => {
+  const l = await box('.lane >> nth=1'); await page.mouse.move(l.x + 300, l.y + 30);
+  await page.keyboard.down('Shift'); await page.mouse.wheel(0, 300); await page.keyboard.up('Shift'); await sleep(120);
+  const r = await S(() => ({ x: document.getElementById('arr').scrollLeft, px: window.kh.S.px }));
+  expect(r.x >= 250, `pas de défilement horizontal (${r.x})`); near(r.px, 11, 0, 'Maj + molette ne doit pas zoomer');
+  await page.mouse.wheel(0, 200); await sleep(100); near(await S(() => window.kh.S.px), 11, 0, 'la molette seule ne doit pas zoomer');
+  await S(() => { document.getElementById('arr').scrollLeft = 0; });
+});
+test('UX02c', 'Piano roll', 'Ctrl + molette zoome le piano roll autour du pointeur ; les notes restent éditables', async () => {
+  await page.click(await clipSel(1, 0)); await page.waitForSelector('.pr-grid');
+  const n0 = await box('.note >> nth=2'); await page.mouse.move(n0.x, n0.y + 5);
+  await page.keyboard.down('Control'); for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, -100); await sleep(80); } await page.keyboard.up('Control'); await sleep(200);
+  const epx = await S(() => window.kh.S.epx), n1 = await box('.note >> nth=2');
+  expect(epx > 28 * 1.3, `piano roll non zoomé (${epx})`); near(n1.x, n0.x, 3, 'la note visée a glissé sous le pointeur'); expect(n1.width > n0.width * 1.3, 'la note ne s’est pas élargie');
+  // Une note posée après le zoom tombe sur le bon pas.
+  await page.$eval('.pr', e => { e.scrollLeft = 0; }); await sleep(80);
+  const g = await box('.pr-grid'), pr = await box('.pr'), used = new Set((await proj()).tracks[1].clips[0].notes.map(n => n.p)), before = used.size && (await proj()).tracks[1].clips[0].notes.length;
+  let y = pr.y + 40; while (used.has(96 - Math.floor((y - g.y) / 16))) y += 16;   // une rangée sans note
+  await page.mouse.click(g.x + 8.5 * epx, y); await sleep(150);
+  const notes = (await proj()).tracks[1].clips[0].notes; expect(notes.length === before + 1, 'note non ajoutée après le zoom');
+  near(notes[notes.length - 1].s, 8, 0.001, 'pas de la note posée après le zoom');
+  await page.keyboard.down('Control'); for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 100); await sleep(30); } await page.keyboard.up('Control'); await sleep(150);
+  expect(await S(() => window.kh.S.epx) >= 10, 'zoom minimal du piano roll');
+});
+test('UX02d', 'Téléphone', 'Pincer à deux doigts zoome l’arrangement ; un clip touché en premier ne se déplace pas', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 820, height: 700 }, hasTouch: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
+    await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const cdp = await ctx2.newCDPSession(pg), l = await (await pg.$('.lane >> nth=0')).boundingBox(), y = l.y + 40;
+    const before = await pg.evaluate(() => ({ px: window.kh.S.px, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
+    const pts = (a, b) => [{ x: a, y, id: 1 }, { x: b, y: y + 4, id: 2 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 420, y, id: 1 }] }); await pg.waitForTimeout(60);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(420, 480) }); await pg.waitForTimeout(60);
+    for (let i = 1; i <= 6; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(420 - i * 15, 480 + i * 15) }); await pg.waitForTimeout(40); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(200);
+    const after = await pg.evaluate(() => ({ px: window.kh.S.px, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
+    expect(after.px > before.px * 2, `pincement sans zoom (${before.px} → ${after.px})`);
+    expect(JSON.stringify(after.starts) === JSON.stringify(before.starts), 'un clip a bougé pendant le pincement : ' + JSON.stringify(after.starts));
+  } finally { await ctx2.close(); }
+});
+
+const ctxItems = () => page.$$eval('.menu-list.ctx [role=menuitem]', l => l.map(b => ({ id: b.dataset.ctx, txt: b.querySelector('span').textContent, key: b.querySelector('kbd')?.textContent ?? '', off: b.disabled })));
+test('UX03a', 'Arrangement', 'Clic droit sur un clip : menu avec Renommer, Dupliquer, Scinder ici, Boucler, Copier, Supprimer et leurs raccourcis', async () => {
+  const sel = await clipSel(1, 0); await page.click(sel, { button: 'right', position: { x: 200, y: 40 } });
+  expect(await page.isVisible('.menu-list.ctx'), 'menu du clip absent');
+  const it = await ctxItems(); expect(it.map(x => x.id).join() === 'rename,dup,split,loop,copy,del', 'lignes : ' + JSON.stringify(it));
+  expect(it[1].key === 'Ctrl+D' && it[4].key === 'Ctrl+C' && it[5].key === 'Suppr' && it[2].txt === 'Scinder ici', 'raccourcis ou libellés : ' + JSON.stringify(it));
+  expect(await page.getAttribute('.menu-list.ctx', 'role') === 'menu' && (await page.getAttribute('.menu-list.ctx', 'aria-label')).includes('Ligne de basse'), 'nom accessible du menu');
+  expect(await S(() => window.kh.S.selClip === window.kh.S.project.tracks[1].clips[0].id), 'le clip visé doit être sélectionné');
+  const m = await box('.menu-list.ctx'); expect(m.x >= 0 && m.y >= 0 && m.x + m.width <= 1500 && m.y + m.height <= 900, 'menu hors de l’écran');
+  await page.click('[data-ctx=dup]'); expect(!(await page.$('.menu-list.ctx')), 'le menu reste ouvert après un choix');
+  near((await proj()).tracks[1].clips.length, 2, 0, 'clip non dupliqué');
+  // Échap referme sans rien faire et rend le focus au clip ; un clic ailleurs referme aussi.
+  await page.click(sel, { button: 'right', position: { x: 100, y: 40 } }); await page.keyboard.press('Escape');
+  expect(!(await page.$('.menu-list.ctx')), 'Échap ne referme pas'); expect(await page.evaluate(s => document.activeElement === document.querySelector(s), sel), 'le focus ne revient pas au clip');
+  await page.click(sel, { button: 'right', position: { x: 100, y: 40 } }); await page.mouse.click(700, 500); expect(!(await page.$('.menu-list.ctx')), 'un clic ailleurs ne referme pas');
+  near((await proj()).tracks[1].clips.length, 2, 0, 'rien ne doit changer en refermant');
+});
+test('UX03b', 'Arrangement', 'Menu du clip : scinder à l’endroit visé, boucler, copier puis coller, renommer, supprimer', async () => {
+  const sel = await clipSel(1, 0), open = x => page.click(sel, { button: 'right', position: { x, y: 40 } });
+  await open(11 * 20 + 3); await page.click('[data-ctx=split]');   // pas 20 : aimanté sur le temps (grille de 4 pas)
+  let c = (await proj()).tracks[1].clips; expect(c.length === 2 && c[0].len === 20 && c[1].start === 20 && c[1].len === 44, 'scission : ' + JSON.stringify(c.map(x => [x.start, x.len])));
+  await open(30); await page.click('[data-ctx=loop]'); let p = await proj(); expect(p.loop && p.loopStart === 0 && p.loopLen === 2, `boucle ${p.loopStart}+${p.loopLen}`);
+  await open(30); await page.click('[data-ctx=copy]'); await S(() => window.kh.engine.seek(96)); await page.keyboard.press('Control+v');
+  c = (await proj()).tracks[1].clips; expect(c.length === 3 && c[2].start === 96 && c[2].len === 20, 'copier puis coller : ' + JSON.stringify(c.map(x => [x.start, x.len])));
+  await tab('mixer'); await open(30); await page.click('[data-ctx=rename]');
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('cname-in')), 'le champ du nom ne prend pas le focus');
+  await page.keyboard.type('Couplet'); await page.keyboard.press('Tab'); expect((await proj()).tracks[1].clips[0].name === 'Couplet', 'nom non enregistré');
+  await open(30); await page.click('[data-ctx=del]'); c = (await proj()).tracks[1].clips; expect(c.length === 2 && !c.some(x => x.name === 'Couplet'), 'clip non supprimé');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].clips.length === 3, 'la suppression doit être annulable');
+  // Au bord du clip, « Scinder ici » est grisé.
+  await open(2); expect((await ctxItems())[2].off, 'scinder au bord du clip devrait être grisé'); await page.keyboard.press('Escape');
+});
+test('UX03c', 'Accessibilité', 'Menu du clip au clavier : Maj+F10 l’ouvre, les flèches le parcourent, Entrée choisit ; Suppr n’agit pas derrière le menu', async () => {
+  const sel = await clipSel(2, 0); await page.focus(sel); await page.keyboard.press('Shift+F10');
+  expect(await page.isVisible('.menu-list.ctx'), 'Maj+F10 n’ouvre pas le menu');
+  const it = await ctxItems(); expect(it[2].txt === 'Scinder à la tête de lecture' && it[2].key === 'Ctrl+E' && it[2].off, 'scission au clavier : ' + JSON.stringify(it[2]));
+  expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'rename', 'la première ligne doit avoir le focus');
+  await page.keyboard.press('Delete'); await page.keyboard.press('Space');   // Espace actionne la ligne (Renommer), pas la lecture ; refermons
+  expect(!(await S(() => window.kh.engine.playing)), 'Espace a lancé la lecture derrière le menu'); near((await proj()).tracks[2].clips.length, 1, 0, 'Suppr a supprimé le clip derrière le menu');
+  await page.focus(sel); await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('ArrowDown'); expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'dup', 'flèche bas');
+  await page.keyboard.press('End'); expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'del', 'touche Fin');
+  await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); expect(await page.evaluate(() => document.activeElement?.dataset.ctx) === 'loop', 'flèche haut (la ligne grisée est sautée)');
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  near((await proj()).tracks[2].clips.length, 0, 0, 'Entrée sur Supprimer');
+  for (const [l, w] of [['en', 'Split here'], ['es', 'Dividir aquí'], ['fr', 'Scinder ici']]) { await page.evaluate(l => window.kh.setLang(l), l); await page.click(await clipSel(1, 0), { button: 'right', position: { x: 100, y: 40 } }); expect((await ctxItems())[2].txt === w, 'non traduit en ' + l); await page.keyboard.press('Escape'); }
+});
+test('UX03d', 'Téléphone', 'Appui long au doigt sur un clip : le menu s’ouvre, le clip ne bouge pas, Supprimer et Dupliquer marchent au doigt', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
+    await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const cdp = await ctx2.newCDPSession(pg), b = await (await pg.$('.lane >> nth=0 >> .clip >> nth=0')).boundingBox(), x = b.x + 40, y = b.y + 40;
+    const hold = async ms => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await pg.waitForTimeout(ms); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(120); };
+    await hold(150); expect(!(await pg.$('.menu-list.ctx')), 'un appui bref ne doit pas ouvrir le menu');
+    await hold(800); expect(await pg.isVisible('.menu-list.ctx'), 'l’appui long n’ouvre pas le menu');
+    const m = await (await pg.$('.menu-list.ctx')).boundingBox(), hgt = await pg.$eval('[data-ctx=del]', e => e.offsetHeight);
+    expect(m.x >= 0 && m.x + m.width <= 390 && m.y + m.height <= 844, 'menu hors de l’écran du téléphone'); expect(hgt >= 44, `ligne trop petite pour le doigt (${hgt} px)`);
+    const n0 = await pg.evaluate(() => window.kh.S.project.tracks[0].clips.length);
+    await pg.tap('[data-ctx=dup]'); expect(await pg.evaluate(() => window.kh.S.project.tracks[0].clips.length) === n0 + 1, 'Dupliquer au doigt');
+    await hold(800); await pg.tap('[data-ctx=del]'); const r = await pg.evaluate(() => ({ n: window.kh.S.project.tracks[0].clips.length, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
+    expect(r.n === n0, 'Supprimer au doigt'); expect(r.starts.every(s => s % 16 === 0), 'un clip a bougé pendant l’appui long : ' + r.starts);
+  } finally { await ctx2.close(); }
+});
+
+test('UX04a', 'Enregistrement', 'Décompte visible : 4 · 3 · 2 · 1 en grand à la place du compteur, puis la position revient ; la barre ne change pas de hauteur', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 100; p.countIn = true; k.S.selTrack = p.tracks[1].id; k.S.selClip = ''; k.commit(); });
+  const h0 = await page.$eval('#top', e => e.offsetHeight);
+  await page.keyboard.press('r');
+  const seen = [], hs = new Set(); let after = '';
+  for (let i = 0; i < 80; i++) {
+    const r = await page.evaluate(() => ({ t: document.getElementById('pos').textContent, c: document.querySelector('.display').classList.contains('count'), h: document.getElementById('top').offsetHeight, rec: !!window.kh.engine.recording }));
+    if (r.c) { if (seen[seen.length - 1] !== r.t) seen.push(r.t); hs.add(r.h); expect(r.rec, 'décompte affiché sans enregistrement'); }
+    else if (seen.length) { after = r.t; break; }
+    await sleep(50);
+  }
+  await page.keyboard.press('Space');
+  expect(seen.length >= 3 && seen[0] === '4' && seen[seen.length - 1] === '1' && seen.every((v, i) => !i || +v < +seen[i - 1]), 'décompte affiché : ' + JSON.stringify(seen));
+  expect(/^\d+\.\d\.\d$/.test(after), 'après le décompte, la position doit revenir : ' + after);
+  expect([...hs].every(h => h === h0), `la barre du haut change de hauteur pendant le décompte (${h0} → ${[...hs]})`);
+  expect(!(await page.$eval('.display', e => e.classList.contains('count'))), 'décompte encore affiché à l’arrêt');
+});
+test('UX04b', 'Transport', 'Témoin du temps : il bat à chaque temps, plus fort sur le premier ; éteint à l’arrêt ; fixe si le système demande moins d’animations', async () => {
+  const r = await S(() => { const f = window.kh.beatLight; return [f(false, 0, 3, 16, false), f(true, 0, 0.5, 16, false), f(true, 0, 2, 16, false), f(true, 0, 4.2, 16, false), f(true, 0, 16.1, 16, false), f(true, 3.9, 0, 16, false), f(true, 3.3, 0, 16, false), f(true, 0, 2, 16, true), f(true, 0, 12.3, 12, false)].map(x => +x.on + '' + +x.acc).join(); });
+  expect(r === '00,11,01,10,11,11,01,10,11', 'calcul du témoin : ' + r);
+  expect(!(await page.$eval('#beat', e => e.classList.contains('on'))), 'témoin allumé à l’arrêt');
+  await S(() => { window.kh.S.project.bpm = 120; window.kh.commit(); }); await page.keyboard.press('Space');
+  const st = new Set(); for (let i = 0; i < 50; i++) { st.add(await page.$eval('#beat', e => (e.classList.contains('on') ? 'on' : 'off') + (e.classList.contains('acc') ? '+' : ''))); await sleep(40); }
+  expect(st.has('on') && st.has('on+') && (st.has('off') || st.has('off+')), 'le témoin ne bat pas : ' + [...st]);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  try { await sleep(150); const s2 = new Set(); for (let i = 0; i < 20; i++) { s2.add(await page.$eval('#beat', e => e.className)); await sleep(40); } expect(s2.size === 1 && s2.has('on'), 'avec « moins d’animations », le témoin doit rester fixe : ' + [...s2]); }
+  finally { await page.emulateMedia({ reducedMotion: 'no-preference' }); }
+  await S(() => window.kh.engine.stop()); await until(() => page.$eval('#beat', e => !e.classList.contains('on')), 'témoin encore allumé après l’arrêt', 4000);
+});
+
+const sects = (n, dots = false) => page.$$eval(`.mixer > .strip >> nth=${n} >> details.msec`, (l, dots) => l.map(d => `${d.dataset.sect}:${d.open ? 'o' : 'f'}${dots && d.classList.contains('act') ? '*' : ''}`).join(), dots);
+test('UX05a', 'Mixeur', 'Tranche en quatre sections (Égaliseur, Effets, Envois, Dynamique) ; le panoramique est au-dessus du fader et règle la piste', async () => {
+  await S(() => { window.kh.S.project.buses = [window.kh.newBus(1)]; window.kh.commit(); }); await tab('mixer');
+  expect(await sects(0) === 'eq:o,fx:o,send:o,dyn:o', 'sections d’une piste : ' + await sects(0));
+  expect(await sects(5) === 'eq:o,fx:o,dyn:o', 'sections d’un bus (pas d’envois) : ' + await sects(5));
+  const names = await page.$$eval('.mixer > .strip >> nth=0 >> details.msec > summary .sect', l => l.map(e => e.textContent).join()); expect(names === 'Égaliseur,Effets,Envois,Dynamique', 'titres : ' + names);
+  const where = await page.$eval('.mixer > .strip >> nth=1 >> .sl.panc', e => ({ inF: !!e.closest('.fcol'), inS: !!e.closest('.scol'), above: e.getBoundingClientRect().bottom <= e.closest('.fcol').querySelector('.vert').getBoundingClientRect().top + 1, n: e.closest('.strip').querySelectorAll('.sl').length - e.closest('.strip').querySelectorAll('.scol .sl').length }));
+  expect(where.inF && !where.inS && where.above && where.n === 1, 'place du panoramique : ' + JSON.stringify(where));
+  await setSlider('.mixer > .strip >> nth=1', 'Pan', -0.5); near((await proj()).tracks[1].pan, -0.5, 0, 'panoramique');
+  expect(await page.$eval('.mixer > .strip >> nth=1 >> .sl.panc input', e => e.getAttribute('aria-valuetext')) === 'G 50', 'valeur annoncée du panoramique');
+  const w = await S(() => window.qa.wins(window.qa.only(1, (p, t) => { t.pan = -1; t.rev = 0; }), [[0.1, 1.5]])); expect(w[0].l > w[0].r * 5, 'le panoramique n’agit pas sur le son');
+  // Tout tient dans la tranche : rien ne déborde sur le fader.
+  const fit = await page.$eval('.mixer > .strip >> nth=1', e => e.scrollWidth <= e.clientWidth + 1); expect(fit, 'la tranche déborde en largeur');
+});
+test('UX05b', 'Mixeur', 'Replier une section la replie sur toutes les tranches ; l’état est gardé après un redessin et dans l’appareil ; les réglages repliés marchent toujours', async () => {
+  await tab('mixer'); const h0 = await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight);
+  await page.click('.mixer > .strip >> nth=0 >> details[data-sect=fx] > summary');
+  expect(await sects(0) === 'eq:o,fx:f,send:o,dyn:o' && await sects(3) === 'eq:o,fx:f,send:o,dyn:o', `repli : ${await sects(0)} / ${await sects(3)}`);
+  expect(!(await page.isVisible('.mixer > .strip >> nth=0 >> [data-act=rack]')), 'les effets repliés restent visibles');
+  expect(await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight) < h0 - 100, 'la tranche ne raccourcit pas');
+  await S(() => { window.kh.S.project.tracks[0].vol = 0.7; window.kh.commit(); }); expect(await sects(2) === 'eq:o,fx:f,send:o,dyn:o', 'état perdu après un redessin');
+  expect(await S(() => JSON.parse(localStorage.getItem('kh-mix-sect')).fx === false), 'état non gardé dans l’appareil');
+  await setSlider('.mixer > .strip >> nth=0', 'Saturation', 0.4); near((await proj()).tracks[0].drive, 0.4, 0, 'réglage dans une section repliée');
+  // Au clavier : Entrée sur le titre déplie.
+  await page.focus('.mixer > .strip >> nth=1 >> details[data-sect=fx] > summary'); await page.keyboard.press('Enter'); await sleep(80);
+  expect(await sects(0, true) === 'eq:o,fx:o*,send:o,dyn:o', 'dépli au clavier : ' + await sects(0, true));
+});
+test('UX05c', 'Mixeur', 'Un point signale les sections qui contiennent un réglage actif, même repliées ; titres traduits', async () => {
+  const a = await S(() => { const k = window.kh, f = k.stripActive, t = k.newBus(1); const r = [f(t)]; t.eqMid = -3; r.push(f(t)); t.eqMid = 0; t.rev = 0.2; r.push(f(t)); t.rev = 0; t.inserts = [k.newInsert('delay')]; r.push(f(t)); t.inserts = []; t.sends = [{ id: 'x', bus: 'b', amt: 1, pre: false }]; r.push(f(t)); t.sends = []; t.comp = true; r.push(f(t)); t.comp = false; t.duck = 0.3; r.push(f(t)); return r.map(x => Object.keys(x).filter(k => x[k]).join('+')).join(); });
+  expect(a === ',eq,fx,fx,send,dyn,dyn', 'sections actives : ' + a);
+  await S(() => { const k = window.kh, [d, b] = k.S.project.tracks; d.eqLow = 4; d.rev = 0; d.dly = 0; d.drive = 0; d.filter = 0; d.chorus = 0; d.trem = 0; d.crush = 0; d.inserts = []; d.sends = undefined; d.comp = true; d.duck = 0; b.eqLow = b.eqMid = b.eqHigh = 0; k.commit(); }); await tab('mixer');
+  expect(await sects(0, true) === 'eq:o*,fx:o,send:o,dyn:o*', 'points de la tranche : ' + await sects(0, true));
+  await page.click('.mixer > .strip >> nth=0 >> details[data-sect=eq] > summary');
+  expect(await page.isVisible('.mixer > .strip >> nth=0 >> details[data-sect=eq] .sdot') && !(await page.$('.mixer > .strip >> nth=1 >> details[data-sect=eq] .sdot')), 'point de la section repliée');
+  expect((await page.getAttribute('.mixer > .strip >> nth=0 >> details[data-sect=eq] .sdot', 'aria-label')).includes('actif'), 'nom du point pour les lecteurs d’écran');
+  for (const [l, w] of [['en', 'Equalizer,Effects,Sends,Dynamics'], ['es', 'Ecualizador,Efectos,Envíos,Dinámica']]) { await page.evaluate(l => window.kh.setLang(l), l); const n = await page.$$eval('.mixer > .strip >> nth=0 >> details.msec > summary .sect', x => x.map(e => e.textContent).join()); expect(n === w, `titres en ${l} : ${n}`); }
+});
+
+const slIn = (n, label) => `.mixer > .strip >> nth=${n} >> .sl:has(.lb:text-is("${label}")) >> input`;
+test('UX06a', 'Mixeur', 'Double-clic sur un curseur : retour à sa valeur d’origine, annulable ; un repère la marque ; le fader revient à 80 %', async () => {
+  await tab('mixer'); await setSlider('.mixer > .strip >> nth=1', 'Saturation', 0.7);
+  const drive = slIn(1, 'Saturation'); expect(await page.$eval(drive, e => e.classList.contains('hasdef') && e.dataset.def === '0' && e.style.getPropertyValue('--def') === '0.0000'), 'repère de la valeur d’origine (saturation)');
+  expect(await page.$eval(slIn(1, 'Aigus'), e => e.style.getPropertyValue('--def')) === '0.5000' && await page.$eval(slIn(1, 'Fréq. méd.'), e => e.dataset.def) === '1000', 'repère de l’égaliseur');
+  await page.dblclick(drive); near((await proj()).tracks[1].drive, 0, 0, 'saturation après double-clic');
+  expect(await page.$eval('.mixer > .strip >> nth=1 >> .sl:has(.lb:text-is("Saturation")) >> .val', e => e.textContent) === '0 %', 'valeur affichée');
+  await page.keyboard.press('Control+z'); expect((await proj()).tracks[1].drive > 0, 'le retour à l’origine doit être annulable');
+  await S(() => { window.kh.S.project.tracks[1].vol = 0.3; window.kh.S.project.master = 0.4; window.kh.commit(); });
+  await page.dblclick('.mixer > .strip >> nth=1 >> input.vert'); near((await proj()).tracks[1].vol, 0.8, 0, 'fader après double-clic');
+  await page.dblclick('.strip.master input.vert'); near((await proj()).master, 0.9, 0, 'fader général après double-clic');
+  expect((await page.getAttribute(drive, 'title')).includes('Double-clic'), 'bulle d’aide du curseur');
+  await page.evaluate(() => window.kh.setLang('en')); expect((await page.getAttribute(slIn(1, 'Drive'), 'title')).includes('Double-click'), 'bulle non traduite');
+});
+test('UX06b', 'Mixeur', 'Suppr sur un curseur le remet à l’origine sans supprimer le clip sélectionné ; Maj + glissé règle finement', async () => {
+  await tab('mixer'); await setSlider('.mixer > .strip >> nth=0', 'Graves', 9); const low = slIn(0, 'Graves');
+  await page.focus(low); await page.keyboard.press('Delete');
+  let p = await proj(); near(p.tracks[0].eqLow, 0, 0, 'Suppr sur le curseur'); near(p.tracks[0].clips.length, 2, 0, 'Suppr a supprimé le clip sélectionné');
+  // Maj + glissé : un cinquième de la course normale.
+  const b = await box(low), y = b.y + b.height / 2;
+  await page.keyboard.down('Shift'); await drag(b.x + b.width / 2, y, 40, 0); await page.keyboard.up('Shift');
+  const fine = (await proj()).tracks[0].eqLow, want = Math.round(40 / b.width * 30 * 0.2 / 0.5) * 0.5;
+  near(fine, want, 0.5, 'réglage fin'); expect(fine > 0 && fine < 40 / b.width * 30 * 0.6, `Maj + glissé pas plus fin que le glissé (${fine} dB pour 40 px sur ${Math.round(b.width)})`);
+  await page.keyboard.press('Control+z'); near((await proj()).tracks[0].eqLow, 0, 0, 'le réglage fin doit être annulable d’un coup');
+  // Sans Maj, le curseur se comporte comme avant.
+  await drag(b.x + b.width / 2, y, 40, 0); expect((await proj()).tracks[0].eqLow > fine * 2, 'glissé normal');
+});
+test('UX06c', 'Interface', 'Retour à l’origine dans l’arrangement, le Live et les effets ; les curseurs sans valeur neutre ne changent pas', async () => {
+  await S(() => { window.kh.S.project.tracks[2].vol = 0.2; window.kh.commit(); });
+  await page.dblclick('.head >> nth=2 >> .tvol'); near((await proj()).tracks[2].vol, 0.8, 0, 'volume de la tête de piste');
+  await page.click(await clipSel(1, 0)); await S(() => { window.kh.S.synthOpen = true; window.kh.emit(); });
+  expect(await page.$$eval('.synth .sl input', l => l.length > 3 && l.every(e => !e.classList.contains('hasdef'))), 'les réglages du son n’ont pas de valeur neutre : pas de repère');
+  await tab('live'); await S(() => { window.kh.S.project.filter = 0.6; window.kh.commit(); }); await page.dblclick('.perf .sl.wide input'); near((await proj()).filter, 0, 0, 'filtre du Live');
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.inserts = [k.newInsert('delay')]; tr.inserts[0].p.fb = 0.8; k.commit(); k.showRack(tr.id); });
+  await page.dblclick('#fx .fxbody .sl >> nth=1 >> input'); near((await proj()).tracks[1].inserts[0].p.fb, 0.35, 0, 'réinjection de l’écho (valeur d’origine de l’effet)');
+});
+
+test('UX07a', 'Interface', 'Supprimer une piste : plus de question, la piste part et le message propose Annuler', async () => {
+  const native = []; const onDlg = d => native.push(d.type()); page.on('dialog', onDlg);
+  try {
+    await headAct(1, '.del'); let p = await proj(); expect(p.tracks.length === 4 && !p.tracks.some(t => t.name === 'Basse'), 'piste encore présente');
+    expect(native.length === 0 && !(await page.$('dialog.ask[open]')), 'une question a été posée');
+    expect(/Piste « Basse » supprimée/.test(await page.textContent('#toast')) && await page.isVisible('#toast [data-act=toastact]'), 'message sans bouton Annuler : ' + await page.textContent('#toast'));
+    await page.click('#toast [data-act=toastact]'); p = await proj(); expect(p.tracks.length === 5 && p.tracks[1].name === 'Basse' && p.tracks[1].clips.length === 1, 'la piste ne revient pas avec ses clips');
+    // Si le morceau a changé depuis, le bouton ne défait pas autre chose à la place.
+    await headAct(1, '.del'); await S(() => { window.kh.S.project.bpm = 99; window.kh.commit(); }); await page.click('#toast [data-act=toastact]');
+    p = await proj(); expect(p.bpm === 99 && p.tracks.length === 4, 'le bouton Annuler a défait un autre changement'); expect((await page.textContent('#toast')).includes('Ctrl+Z'), 'message d’explication absent');
+  } finally { page.off('dialog', onDlg); }
+});
+test('UX07b', 'Interface', 'Fenêtres maison : la valeur est sélectionnée, Entrée valide, Échap annule ; renommer le projet et un repère ; trois langues', async () => {
+  await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]');
+  const st = await page.evaluate(() => { const i = document.querySelector('dialog.ask input'); return { v: i.value, sel: i.selectionEnd - i.selectionStart, focus: document.activeElement === i, modal: document.querySelector('dialog.ask').matches(':modal'), lbl: i.getAttribute('aria-label') }; });
+  expect(st.v === 'Démo' && st.sel === 4 && st.focus && st.modal && st.lbl === 'Nom du projet', 'fenêtre de question : ' + JSON.stringify(st));
+  await page.keyboard.type('Mon titre'); await page.keyboard.press('Enter'); await sleep(100);
+  expect((await proj()).name === 'Mon titre' && !(await page.$('dialog.ask')), 'Entrée ne valide pas');
+  await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]'); await page.keyboard.type('Autre'); await page.keyboard.press('Escape'); await sleep(100);
+  expect((await proj()).name === 'Mon titre' && !(await page.$('dialog.ask')), 'Échap ne doit rien changer');
+  // Tant que la fenêtre est ouverte, les raccourcis ne jouent pas derrière elle.
+  await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]'); await page.keyboard.type('a s d'); expect(!(await S(() => window.kh.engine.playing)), 'Espace a lancé la lecture derrière la fenêtre'); await refuse();
+  for (const [l, ok, no] of [['en', 'OK', 'Cancel'], ['es', 'Aceptar', 'Cancelar'], ['fr', 'Valider', 'Annuler']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]');
+    expect(await page.textContent('dialog.ask [data-act=ok]') === ok && await page.textContent('dialog.ask [data-act=cancel]') === no, 'boutons non traduits en ' + l); await refuse();
+  }
+});
+
+const fillOf = sel => page.$eval(sel, e => parseFloat(e.style.transform.replace('scaleY(', '')) || 0);
+test('UX08a', 'Arrangement', 'Chaque tête de piste montre le niveau de sa piste pendant la lecture, comme le vumètre du mixeur', async () => {
+  expect(await page.$$eval('.head .meter.hmeter .mfill', l => l.length) === 5, 'un vumètre par tête de piste');
+  expect(await fillOf('.head >> nth=0 >> .mfill') === 0, 'niveau non nul à l’arrêt');
+  await S(() => { const p = window.kh.S.project; p.tracks[4].mute = true; window.kh.commit(); }); await page.keyboard.press('Space');
+  let top = 0, muted = 0; for (let i = 0; i < 25; i++) { top = Math.max(top, await fillOf('.head >> nth=0 >> .mfill')); muted = Math.max(muted, await fillOf('.head >> nth=4 >> .mfill')); await sleep(40); }
+  expect(top > 0.3, `le niveau de la batterie ne bouge pas dans sa tête (${top})`); expect(muted < 0.05, `une piste muette montre du niveau (${muted})`);
+  // Le trait de crête est au-dessus (ou au niveau) de la barre.
+  const pk = await page.$eval('.head >> nth=0 >> .meter', e => ({ on: e.querySelector('.mpeak').style.opacity === '1', b: parseFloat(e.querySelector('.mpeak').style.bottom.replace('calc(', '')) }));
+  expect(pk.on && pk.b > 20, 'crête retenue non affichée : ' + JSON.stringify(pk));
+  await tab('mixer'); let both = 0; for (let i = 0; i < 20 && both < 0.2; i++) { const [a, b] = [await fillOf('.head >> nth=0 >> .mfill'), await fillOf('.mixer > .strip >> nth=0 >> .mfill')]; if (Math.abs(a - b) < 0.2) both = Math.max(both, Math.min(a, b)); await sleep(50); }
+  expect(both > 0.2, 'la tête de piste et le mixeur ne montrent pas le même niveau');
+  await page.keyboard.press('Space');
+});
+test('UX08b', 'Mixeur', 'Crête retenue une seconde ; le témoin de saturation reste allumé jusqu’au clic, dans la tête de piste comme dans le mixeur', async () => {
+  const r = await S(() => { const f = window.kh.meters.peakHold; const a = f(undefined, 0.5, 0), b = f(a, 0.3, 400), c = f(b, 0.7, 500), d = f(c, 0.2, 1400), e = f(d, 0.2, 1600); return [a.v, b.v, c.v, d.v, e.v, e.t].join(); });
+  expect(r === '0.5,0.5,0.7,0.7,0.2,1600', 'crête retenue : ' + r);
+  near(await S(() => window.kh.meters.CLIP_AT), 54 / 57, 0.001, 'seuil du témoin (0 dB)');
+  await S(() => { const k = window.kh, p = k.S.project; Object.assign(p.tracks[0], { vol: 1.25, eqLow: 15, eqMid: 15, eqHigh: 15, comp: false, mute: false }); p.tracks.slice(1).forEach(t => { t.vol = 0.2; }); k.commit(); });
+  expect(!(await page.$('.head .meter.clip')), 'témoin allumé avant toute lecture');
+  await page.keyboard.press('Space'); await until(() => page.$('.head >> nth=0 >> .meter.clip'), 'la piste trop forte n’allume pas son témoin', 6000);
+  await S(() => window.kh.engine.stop()); await sleep(1500);
+  expect(await page.isVisible('.head >> nth=0 >> .mclip') && !(await page.$('.head >> nth=1 >> .meter.clip')), 'le témoin doit rester allumé après l’arrêt, et seulement sur la piste qui sature');
+  expect((await page.getAttribute('.head >> nth=0 >> .mclip', 'aria-label')).includes('Batterie'), 'nom du témoin pour les lecteurs d’écran');
+  await tab('mixer'); expect(await page.isVisible('.mixer > .strip >> nth=0 >> .mclip'), 'le mixeur ne montre pas le témoin');
+  await page.click('.mixer > .strip >> nth=0 >> .meter'); expect(!(await page.isVisible('.mixer > .strip >> nth=0 >> .mclip')), 'un clic n’éteint pas le témoin');
+  await S(() => window.kh.emit()); expect(!(await page.$('.meter.clip')), 'le témoin revient après un redessin');
+});
+
+const liveCell = (ti, ci) => page.evaluate(([a, b]) => { const t = window.kh.S.project.tracks[a], c = [...t.clips].sort((x, y) => x.start - y.start)[b]; return `.lcell[data-clip="${c.id}"]`; }, [ti, ci]);
+test('UX09a', 'Live', 'La case qui joue se remplit au fil de sa boucle, puis repart de zéro', async () => {
+  const r = await S(() => { const f = window.kh.loopPart, g = window.kh.beatsToLaunch; return [f(0, 0, 16), f(4, 0, 16), f(20, 0, 16), f(40, 32, 16), f(3, 0, 0), g(0, 16), g(1, 16), g(12, 16), g(15.5, 16), g(2, 4), g(7, 1)].join(); });
+  expect(r === '0,0.25,0.25,0.5,0,4,4,1,1,1,0', 'calculs du Live : ' + r);
+  await S(() => { const p = window.kh.S.project; p.bpm = 240; p.tracks[0].clips[0].len = 16; window.kh.commit(); }); await tab('live');
+  const sel = await liveCell(0, 0); await page.click(sel); await until(() => page.$(sel + '.playing'), 'la case ne passe pas en lecture');
+  const seen = []; for (let i = 0; i < 40; i++) { seen.push(+(await page.$eval(sel, e => e.style.getPropertyValue('--p'))) || 0); await sleep(40); }
+  const max = Math.max(...seen), drops = seen.filter((v, i) => i && v < seen[i - 1] - 0.3).length;
+  expect(max > 0.6 && seen.every(v => v >= 0 && v <= 1), 'avancement de la boucle : ' + seen.map(v => v.toFixed(2)).join(' ')); expect(drops >= 1, 'la boucle d’une mesure doit repartir de zéro : ' + seen.map(v => v.toFixed(2)).join(' '));
+  await S(() => window.kh.engine.stop()); await sleep(150); expect(await page.$eval(sel, e => e.style.getPropertyValue('--p')) === '', 'avancement encore affiché à l’arrêt');
+});
+test('UX09b', 'Live', 'La case en attente compte les temps avant son départ (3 · 2 · 1), puis joue', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 80; p.liveQ = 0; window.kh.commit(); }); await tab('live');
+  const a = await liveCell(0, 0), b = await liveCell(0, 1); await page.click(a); await until(() => page.$(a + '.playing'), 'premier clip non lancé');
+  await until(() => S(() => window.kh.engine.currentStep() % 16 > 0.5 && window.kh.engine.currentStep() % 16 < 4), 'attente du début d’une mesure', 8000);
+  await page.click(b); const seen = [];
+  for (let i = 0; i < 120; i++) { const st = await page.$eval(b, e => ({ q: e.classList.contains('queued'), p: e.classList.contains('playing'), n: e.querySelector('.lcount').textContent })); if (st.q && st.n && seen[seen.length - 1] !== st.n) seen.push(st.n); if (st.p) break; await sleep(40); }
+  expect(seen.length >= 2 && seen[seen.length - 1] === '1' && seen.every((v, i) => !i || +v < +seen[i - 1]) && +seen[0] <= 4, 'décompte de la case en attente : ' + JSON.stringify(seen));
+  await until(() => page.$(b + '.playing'), 'le clip en attente ne part pas'); expect(await page.$eval(b, e => e.querySelector('.lcount').textContent) === '', 'décompte encore affiché après le départ');
+  // Lancement immédiat : pas de décompte.
+  await S(() => { window.kh.S.project.liveQ = 1; window.kh.commit(); }); await page.click(a); await sleep(60);
+  expect(await page.$eval(a, e => e.querySelector('.lcount').textContent) === '', 'un lancement immédiat ne doit pas compter');
+});
+test('UX09c', 'Live', 'La scène en cours est marquée, la scène attendue clignote ; rien n’est marqué à l’arrêt', async () => {
+  await S(() => { const p = window.kh.S.project; p.bpm = 200; p.liveQ = 0; window.kh.commit(); }); await tab('live');
+  expect(!(await page.$('.lscene.on')), 'scène marquée à l’arrêt');
+  await page.keyboard.press('1'); await until(() => page.$('.lscene[data-scene="0"].on'), 'la scène 1 n’est pas marquée');
+  expect(await page.getAttribute('.lscene[data-scene="0"]', 'aria-current') === 'true' && (await page.getAttribute('.lscene[data-scene="0"]', 'title')).includes('en cours'), 'état de la scène pour les lecteurs d’écran');
+  await page.click('.lscene[data-scene="1"]'); const st = await page.$eval('.lscene[data-scene="1"]', e => e.className);
+  expect(/next|on/.test(st), 'la scène 2 attendue n’est pas signalée : ' + st);
+  await until(() => page.$('.lscene[data-scene="1"].on'), 'la scène 2 ne devient pas la scène en cours'); expect(!(await page.$('.lscene[data-scene="0"].on')), 'deux scènes marquées');
+  await page.click('[data-act=stopall]'); await sleep(150); expect(!(await page.$('.lscene.on, .lscene.next')), 'scène encore marquée après l’arrêt');
+});
+
+/** Profil neuf (première visite) dans un contexte à part. */
+async function firstVisit(fn, opts = {}) {
+  const c = await browser.newContext({ viewport: { width: 1500, height: 900 }, locale: 'fr-FR', ...opts });
+  try { const pg = await c.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(BASE); await pg.waitForSelector('.clip'); await pg.waitForSelector('#welcome[open]');
+    await pg.evaluate(() => Promise.all(document.getElementById('welcome').getAnimations().map(a => a.finished)));   // mesures sur la fenêtre posée, pas pendant son ouverture animée
+    await fn(pg); expect(!errs.length, 'erreur dans la page : ' + errs[0]); }
+  finally { await c.close(); }
+}
+test('UX10a', 'Accueil', 'Première visite : un accueil court (question, cinq modèles, visite guidée, Commencer) à la place de la notice ; « ? » ouvre toujours l’aide', async () => {
+  await firstVisit(async pg => {
+    expect(!(await pg.$eval('#help', d => d.open)), 'la notice complète s’ouvre encore à la première visite');
+    const w = await pg.evaluate(() => { const d = document.getElementById('welcome'); return { q: d.querySelector('.welq').textContent, tpl: [...d.querySelectorAll('.tpl')].map(b => b.dataset.tpl).join(), tour: !!d.querySelector('#bWelTour'), focus: document.activeElement?.id, modal: d.matches(':modal'), words: d.textContent.trim().split(/\s+/).length, h: d.getBoundingClientRect().height, name: document.getElementById(d.getAttribute('aria-labelledby'))?.textContent }; });
+    expect(w.q === 'Par quoi voulez-vous commencer ?' && w.tpl === 'empty,trap,house,lofi,demo' && w.tour && w.focus === 'bWelGo' && w.modal, 'accueil : ' + JSON.stringify(w));
+    expect(w.words < 90 && w.h < 620 && w.name.includes('Bienvenue'), `l’accueil doit rester court (${w.words} mots, ${Math.round(w.h)} px)`);
+    await pg.keyboard.press('Enter'); await pg.waitForSelector('#welcome', { state: 'detached' });
+    expect(await pg.evaluate(() => window.kh.S.project.name) === 'Démo' && await pg.evaluate(() => localStorage.getItem('kh-welcome')) === '1', '« Commencer » doit garder le morceau d’exemple et ne plus revenir');
+    await pg.click('#bHelp'); expect(await pg.$eval('#help', d => d.open) && (await pg.textContent('#help')).includes('Ctrl'), 'l’aide complète n’est plus derrière « ? »');
+    await pg.keyboard.press('Escape'); await pg.reload(); await pg.waitForSelector('.clip'); await pg.waitForTimeout(300); expect(!(await pg.$('#welcome')), 'l’accueil revient à la deuxième visite');
+  });
+});
+test('UX10b', 'Accueil', 'Choisir un modèle à l’accueil : il remplace le morceau d’exemple (un seul projet dans la bibliothèque) et joue', async () => {
+  await firstVisit(async pg => {
+    await pg.click('#welcome [data-tpl=house]'); await pg.waitForSelector('#welcome', { state: 'detached' });
+    const p = await pg.evaluate(() => ({ name: window.kh.S.project.name, bpm: window.kh.S.project.bpm, clips: window.kh.S.project.tracks[0].clips.length, sel: !!window.kh.S.selTrack }));
+    expect(p.name === 'House' && p.bpm === 124 && p.clips >= 1 && p.sel, 'modèle non ouvert : ' + JSON.stringify(p));
+    await pg.evaluate(() => window.kh.store.saveNow()); await pg.evaluate(() => window.kh.showLibrary());
+    expect(await pg.$$eval('#lib .plist li', l => l.length) === 1, 'le morceau d’exemple jamais utilisé ne doit pas encombrer la bibliothèque');
+    await pg.keyboard.press('Escape'); await pg.keyboard.press('Space'); await pg.waitForTimeout(600);
+    expect(await pg.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1), 'le modèle ne joue pas');
+    await pg.keyboard.press('Control+z'); expect(await pg.evaluate(() => window.kh.S.project.name) === 'House', 'Annuler ne doit pas ramener le morceau d’exemple');
+  });
+});
+test('UX10c', 'Accueil', 'Accueil : la visite guidée démarre ; Échap referme ; téléphone et trois langues', async () => {
+  await firstVisit(async pg => {
+    await pg.click('#bWelTour'); await pg.waitForSelector('.tour'); expect(!(await pg.$('#welcome')), 'accueil encore là pendant la visite'); await pg.keyboard.press('Escape');
+    for (const [l, w] of [['en', 'Get started'], ['es', 'Empezar'], ['fr', 'Commencer']]) { await pg.evaluate(l => { window.kh.setLang(l); window.kh.showWelcome(); }, l); expect(await pg.textContent('#bWelGo') === w, 'accueil non traduit en ' + l); }
+    await pg.keyboard.press('Escape'); await pg.waitForTimeout(150); expect(!(await pg.$('#welcome')), 'Échap ne referme pas l’accueil');
+  });
+  await firstVisit(async pg => {
+    const b = await pg.evaluate(() => { const r = document.getElementById('welcome').getBoundingClientRect(); return { x: r.left, w: r.width, h: r.height, vh: innerHeight, sw: document.documentElement.scrollWidth, btn: Math.min(...[...document.querySelectorAll('#welcome .pill, #welcome .tpl')].map(e => e.getBoundingClientRect().height)) }; });
+    expect(b.x >= 0 && b.x + b.w <= 375 && b.h <= b.vh && b.sw <= 376, 'accueil hors de l’écran du téléphone : ' + JSON.stringify(b)); expect(b.btn >= 44, `cibles trop petites au doigt (${b.btn} px)`);
+    await pg.tap('#welcome [data-tpl=lofi]'); await pg.waitForSelector('#welcome', { state: 'detached' }); expect(await pg.evaluate(() => window.kh.S.project.bpm) === 82, 'modèle au doigt');
+  }, { viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
+});
+
+/** Bibliothèque réduite au seul projet ouvert (les cas précédents y ont laissé des projets), fenêtre des projets ouverte. */
+async function libOnlyCurrent() {
+  await S(async () => { await window.kh.store.saveNow(); window.kh.showLibrary(); });
+  for (let i = 0; i < 80; i++) {
+    const b = await page.$('#lib .plist li:not(.cur) [data-act=libdel]');
+    if (!b) break;
+    const n = (await page.$$('#lib .plist li')).length;
+    await b.click(); await answer(); await until(async () => (await page.$$('#lib .plist li')).length === n - 1, 'projet non retiré de la bibliothèque', 5000);
+  }
+}
+test('UX11a', 'Projets', 'Chaque projet de la bibliothèque montre son tempo, ses pistes, sa durée et une miniature de l’arrangement', async () => {
+  const r = await S(() => { const k = window.kh, i = k.projectInfo(k.S.project); return { bpm: i.bpm, tracks: i.tracks, sec: i.sec, end: i.end, rows: i.rows.length, first: i.rows[0].clips[0], c: [k.clock(0), k.clock(64), k.clock(125.4), k.clock(59.6)].join() }; });
+  expect(r.bpm === 120 && r.tracks === 5 && r.end === 128 && Math.abs(r.sec - 16) < 0.01 && r.rows === 5 && r.first.join() === '0,64' && r.c === '0:00,1:04,2:05,1:00', 'aperçu calculé : ' + JSON.stringify(r));
+  await S(() => { window.kh.S.project.name = 'Aperçu QA'; window.kh.commit(); }); await libOnlyCurrent();
+  await until(async () => /120 BPM · 5 piste\(s\) · 0:16/.test(await page.textContent('#lib .plist li.cur small')), 'tempo, pistes et durée absents');
+  expect((await page.textContent('#lib .plist li.cur small')).includes('ouvert'), 'le projet ouvert n’est plus signalé');
+  const px = await page.$eval('#lib .plist li.cur canvas.pthumb', cv => { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; const cols = new Set(); for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { n++; cols.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, cols: cols.size, w: cv.getBoundingClientRect().width }; });
+  expect(px.n > 800 && px.cols >= 3 && px.w >= 60, 'miniature vide ou d’une seule couleur : ' + JSON.stringify(px));
+  await page.keyboard.press('Escape');
+});
+test('UX11b', 'Projets', 'Renommer un projet depuis la liste, ouvert ou non ; le nom est gardé', async () => {
+  await S(() => { window.kh.S.project.name = 'Renom QA'; window.kh.commit(); }); await libOnlyCurrent();
+  await page.click('#lib .plist li.cur [data-act=libdup]'); await page.waitForSelector('#lib .plist li:has-text("Renom QA 2")');
+  await page.click('#lib .plist li:has-text("Renom QA 2") [data-act=librename]'); await page.waitForSelector('dialog.ask[open] input');
+  expect(await page.inputValue('dialog.ask input') === 'Renom QA 2', 'nom actuel proposé'); await answer('Maquette du soir');
+  await page.waitForSelector('#lib .plist li:has-text("Maquette du soir")'); expect(!(await page.$('#lib .plist li:has-text("Renom QA 2")')), 'ancien nom encore affiché');
+  await page.click('#lib .plist li.cur [data-act=librename]'); await answer('Morceau ouvert'); await page.waitForSelector('#lib .plist li.cur:has-text("Morceau ouvert")');
+  expect((await proj()).name === 'Morceau ouvert' && await page.inputValue('#pname') === 'Morceau ouvert', 'le projet ouvert n’est pas renommé partout');
+  await page.click('#lib .plist li:has-text("Maquette du soir") [data-act=librename]'); await refuse(); expect(await page.$('#lib .plist li:has-text("Maquette du soir")'), 'un refus ne doit rien changer');
+  await page.click('#lib .plist li:has-text("Maquette du soir") [data-act=libopen]'); await until(async () => (await proj()).name === 'Maquette du soir', 'le nouveau nom n’est pas gardé dans le projet', 5000);
+});
+test('UX11c', 'Projets', 'Au-delà de huit projets, un champ de recherche filtre la liste par nom (sans tenir compte des accents)', async () => {
+  await S(() => { window.kh.S.project.name = 'Été indien'; window.kh.commit(); }); await libOnlyCurrent();
+  expect(!(await page.$('[data-role=libsearch]')), 'recherche affichée pour un seul projet');
+  for (let i = 0; i < 8; i++) { await page.click('#lib .plist li.cur [data-act=libdup]'); await until(async () => (await page.$$('#lib .plist li')).length === i + 2, 'duplication ' + i, 5000); }
+  expect(await page.isVisible('[data-role=libsearch]'), 'pas de recherche avec neuf projets');
+  await page.click('#lib .plist li:not(.cur) >> nth=0 >> [data-act=librename]'); await answer('Valse lente'); await page.waitForSelector('#lib .plist li:has-text("Valse lente")');
+  const shown = () => page.$$eval('#lib .plist li', l => l.filter(e => !e.hidden).length);
+  await page.fill('[data-role=libsearch]', 'ete IND'); near(await shown(), 8, 0, 'recherche sans accents ni majuscules');
+  await page.fill('[data-role=libsearch]', 'valse'); near(await shown(), 1, 0, 'recherche d’un nom'); expect(!(await page.isVisible('#lib .tip[role=status]')), 'message « aucun projet » affiché à tort');
+  await page.fill('[data-role=libsearch]', 'zzz'); near(await shown(), 0, 0, 'aucun résultat'); expect(await page.isVisible('#lib .tip[role=status]'), 'pas de message quand rien ne correspond');
+  await page.fill('[data-role=libsearch]', ''); near(await shown(), 9, 0, 'recherche vidée');
+  await libOnlyCurrent(); await page.keyboard.press('Escape');
+});
+
+const recLook = () => page.evaluate(() => { const z = document.getElementById('recz'), cs = getComputedStyle(document.getElementById('ph')), rec = document.querySelector('#arr .head.rec'); return { ph: cs.backgroundColor, rec: rec?.dataset.id ?? '', zone: getComputedStyle(z).display !== 'none', w: z.offsetWidth, top: z.offsetTop, left: z.offsetLeft, ruler: getComputedStyle(document.querySelector('.ruler')).boxShadow.includes('255, 77, 109') }; });
+test('UX12a', 'Enregistrement', 'Pendant une prise : tête de lecture et règle rouges, liseré sur la piste enregistrée, voile sur la zone déjà captée ; tout s’efface à l’arrêt', async () => {
+  const r = await S(() => { const f = window.kh.recSpan; let z = f(null, 8); z = f(z, 12); z = f(z, 30); const a = [z.from, z.to]; z = f(z, 16); return [...a, z.from, z.to, f(f(null, 40), 32).from].join(); });
+  expect(r === '8,30,8,30,32', 'zone parcourue : ' + r);
+  const idle = await recLook(); expect(idle.ph === 'rgb(255, 255, 255)' && !idle.rec && !idle.zone && !idle.ruler, 'rouge affiché sans enregistrement : ' + JSON.stringify(idle));
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 180; p.countIn = false; p.loop = false; k.S.selTrack = p.tracks[2].id; k.S.selClip = ''; k.commit(); k.engine.seek(16); });
+  await page.keyboard.press('r'); await until(() => S(() => window.kh.engine.recording === 'midi' && window.kh.engine.currentStep() > 20), 'la prise ne démarre pas', 8000);
+  const lane = await page.evaluate(() => { const t = window.kh.S.project.tracks[2], l = document.querySelector(`.lane[data-id="${t.id}"]`); return { id: t.id, top: l.offsetTop }; });
+  const a = await recLook(); await sleep(500); const b = await recLook();
+  expect(a.ph === 'rgb(255, 77, 109)' && a.ruler, 'tête de lecture ou règle pas rouges : ' + JSON.stringify(a));
+  expect(a.rec === lane.id, 'liseré sur la mauvaise piste : ' + a.rec);
+  expect(a.zone && a.top === lane.top && a.left === 16 * 11 && b.w > a.w && a.w > 20, 'zone captée : ' + JSON.stringify([a, b]));
+  await S(() => window.kh.emit()); await sleep(120); const c = await recLook(); expect(c.zone && c.rec === lane.id && c.w >= b.w, 'un redessin efface la zone captée : ' + JSON.stringify(c));
+  await S(() => window.kh.engine.stop()); await sleep(250);
+  const end = await recLook(); expect(end.ph === 'rgb(255, 255, 255)' && !end.rec && !end.zone && !end.ruler, 'le rouge reste après la prise : ' + JSON.stringify(end));
+});
+test('UX12b', 'Enregistrement', 'Prise micro : la piste audio sélectionnée est marquée ; rien n’est voilé pendant le décompte', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 120; p.countIn = true; p.loop = false; p.punch = false; k.S.selTrack = p.tracks[4].id; k.S.selClip = ''; k.commit(); });
+  await page.keyboard.press('r'); await until(() => S(() => window.kh.engine.recording === 'audio' && window.kh.engine.countLeft() > 0.5), 'décompte de la prise micro non atteint', 8000);
+  const a = await recLook(), id = await S(() => window.kh.S.project.tracks[4].id);
+  expect(a.rec === id && !a.zone && a.ph === 'rgb(255, 77, 109)', 'pendant le décompte : ' + JSON.stringify(a));
+  await until(() => S(() => window.kh.engine.countLeft() === 0 && window.kh.engine.currentStep() > 3), 'la prise ne démarre pas après le décompte', 8000);
+  const b = await recLook(); expect(b.zone && b.w > 15 && b.left === 0, 'pas de voile après le décompte : ' + JSON.stringify(b));
+  await S(() => window.kh.engine.stop()); await sleep(600); expect(!(await recLook()).zone, 'voile encore là après la prise');
+});
+
+test('UX13a', 'Interface', 'Icônes dessinées : les types de piste ont le même dessin partout (têtes, mixeur, Live, éditeur), à la couleur de la piste, sans emoji', async () => {
+  const emoji = /[\u{1F300}-\u{1FAFF}]/u;
+  const head = await page.$$eval('.head .ticon', l => l.map(e => ({ ico: e.querySelector('svg.ico')?.dataset.ico, txt: e.textContent, hidden: e.querySelector('svg')?.getAttribute('aria-hidden'), stroke: e.querySelector('svg')?.getAttribute('stroke'), color: getComputedStyle(e.querySelector('svg')).color, title: e.title })));
+  expect(head.map(x => x.ico).join() === 'drums,synth,synth,synth,audio', 'icônes des têtes de piste : ' + JSON.stringify(head.map(x => x.ico)));
+  expect(head.every(x => x.txt === '' && x.hidden === 'true' && x.stroke === 'currentColor' && x.title), 'icône mal faite : ' + JSON.stringify(head[0]));
+  expect(new Set(head.map(x => x.color)).size >= 3, 'les icônes doivent prendre la couleur de leur piste : ' + head.map(x => x.color));
+  expect((await page.$$eval('.corner .add svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,audio', 'boutons d’ajout de piste');
+  expect(await page.$eval('.ebar strong svg.ico', e => e.dataset.ico) === 'drums' && !emoji.test(await page.textContent('.ebar strong')), 'titre de l’éditeur');
+  await tab('mixer');
+  expect((await page.$$eval('.mixer > .strip[data-id] .sname svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,synth,synth,audio', 'noms des tranches');
+  const mix = await page.textContent('.mixer'); expect(!emoji.test(mix.replace('⚡', '')), 'emoji restant dans le mixeur : ' + (mix.match(emoji) || [])[0]);
+  expect(await page.$('[data-act=rack] svg.ico') && await page.$('[data-act=learn] svg.ico') && await page.$('[data-act=analyze] svg.ico') && await page.$('.strip.master .sname svg.ico'), 'icônes des boutons du mixeur');
+  expect((await page.textContent('.mixer > .strip >> nth=1 >> .sname')).trim() === 'Basse', 'le nom de la tranche doit rester lisible seul');
+  await tab('live'); expect((await page.$$eval('.lhead svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,synth,synth,audio', 'têtes du Live');
+  expect(await page.$('#bNotes svg.ico') && (await page.getAttribute('#bNotes', 'aria-label')), 'bouton des notes : icône et nom accessible');
+});
+
+test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant le script, puis disparaît ; icônes PNG 192 et 512, version maskable et icône iPhone', async () => {
+  const html = await (await page.request.get(BASE)).text();
+  expect(/<div id="boot"[^>]*><span>KH<\/span><\/div>/.test(html) && html.indexOf('id="boot"') < html.indexOf('/src/main.ts'), 'le logo d’attente doit être dans la page, avant le script');
+  expect(/#boot span \{[^}]*animation: bootbeat/.test(html) && /prefers-reduced-motion: reduce\) \{ #boot span \{ animation: none/.test(html), 'battement du logo, coupé si le système demande moins d’animations');
+  expect(!(await page.$('#boot')), 'l’écran d’attente reste affiché après le démarrage');
+  // Sans script (page bloquée avant son exécution), le logo est bien ce qu'on voit.
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
+  try {
+    const pg = await c.newPage(); await pg.goto(BASE);
+    const b = await pg.$eval('#boot span', e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return { w: r.width, cx: r.left + r.width / 2, cy: r.top + r.height / 2, bg: cs.backgroundImage, txt: e.textContent }; });
+    expect(b.txt === 'KH' && b.w >= 60 && Math.abs(b.cx - 195) < 12 && Math.abs(b.cy - 422) < 12 && b.bg.includes('gradient'), 'logo d’attente : ' + JSON.stringify(b));
+  } finally { await c.close(); }
+  const man = await (await page.request.get(new URL('manifest.webmanifest', BASE).href)).json(), sizes = {};
+  for (const ic of man.icons.filter(i => i.type === 'image/png')) {
+    const buf = await (await page.request.get(new URL(ic.src, BASE).href)).body();
+    expect(buf.slice(1, 4).toString() === 'PNG', ic.src + ' n’est pas un PNG'); sizes[ic.purpose + ' ' + ic.sizes] = `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`;
+  }
+  expect(JSON.stringify(sizes) === JSON.stringify({ 'any 192x192': '192x192', 'any 512x512': '512x512', 'maskable 512x512': '512x512' }), 'icônes du manifeste : ' + JSON.stringify(sizes));
+  expect(!man.icons.some(i => i.purpose.includes('any') && i.purpose.includes('maskable')), 'une même icône ne doit pas servir à la fois telle quelle et masquée');
+  const apple = await page.$eval('link[rel=apple-touch-icon]', l => l.href), ab = await (await page.request.get(apple)).body();
+  expect(ab.readUInt32BE(16) === 180 && ab.readUInt32BE(20) === 180, 'icône iPhone de 180 px');
+  // Version maskable : rien d'important hors de la zone sûre (cercle de 80 % du côté) ; les coins sont du fond uni.
+  const safe = await page.evaluate(async url => { const img = new Image(); img.src = url; await img.decode(); const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, 512, 512).data; let out = 0; for (let y = 0; y < 512; y += 4) for (let x = 0; x < 512; x += 4) { const i = (y * 512 + x) * 4, bg = Math.abs(d[i] - 6) + Math.abs(d[i + 1] - 9) + Math.abs(d[i + 2] - 20) < 12; if (!bg && Math.hypot(x - 256, y - 256) > 205) out++; } return out; }, new URL('icon-maskable-512.png', BASE).href);
+  expect(safe === 0, `icône maskable : ${safe} points du dessin hors de la zone sûre`);
+});
+
+test('UX15a', 'Interface', 'Fenêtres et menus s’ouvrent en 140 ms (fondu, léger agrandissement, voile qui s’installe) ; rien ne bouge si le système demande moins d’animations', async () => {
+  const look = () => page.evaluate(() => {
+    const d = document.querySelector('dialog[open]'), m = document.querySelector('details.menu[open] > .menu-list'), cs = e => (e ? getComputedStyle(e) : null);
+    return { dlg: cs(d)?.animationName, dur: cs(d)?.animationDuration, veil: d ? getComputedStyle(d, '::backdrop').animationName : undefined, menu: cs(m)?.animationName, mdur: cs(m)?.animationDuration, origin: cs(m)?.transformOrigin };
+  });
+  await page.click('#bHelp'); let a = await look();
+  expect(a.dlg === 'dlg-in' && a.dur === '0.14s' && a.veil === 'veil-in', 'ouverture d’une fenêtre : ' + JSON.stringify(a));
+  // L'animation se termine : la fenêtre est nette, à sa taille, et se referme comme avant.
+  await page.evaluate(() => Promise.all(document.querySelector('dialog[open]').getAnimations().map(x => x.finished)));
+  const end = await page.$eval('#help', d => ({ o: getComputedStyle(d).opacity, t: getComputedStyle(d).transform })); expect(end.o === '1' && (end.t === 'none' || end.t === 'matrix(1, 0, 0, 1, 0, 0)'), 'fenêtre après l’animation : ' + JSON.stringify(end));
+  await page.keyboard.press('Escape'); expect(!(await page.$eval('#help', d => d.open)), 'la fenêtre ne se referme plus');
+  await page.click('#menu > summary'); a = await look();
+  expect(a.menu === 'menu-in' && parseFloat(a.mdur) <= 0.14 && /^[\d.]+px 0px/.test(a.origin), 'déroulé du menu depuis son bouton : ' + JSON.stringify(a));
+  expect(await page.isVisible('#bSave'), 'le menu doit rester utilisable pendant son ouverture'); await page.keyboard.press('Escape');
+  await headAct(0, '.tdup'); near((await proj()).tracks.length, 6, 0, 'un choix dans un menu animé doit agir');
+  await page.click(await clipSel(1, 0), { button: 'right', position: { x: 60, y: 40 } }); expect(await page.$eval('.menu-list.ctx', e => getComputedStyle(e).animationName) === 'menu-in', 'menu du clip sans déroulé'); await page.keyboard.press('Escape');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  try {
+    await page.click('#bHelp'); a = await look(); expect(a.dlg === 'none' && a.veil === 'none', 'fenêtre animée malgré « moins d’animations » : ' + JSON.stringify(a)); await page.keyboard.press('Escape');
+    await page.click('#menu > summary'); a = await look(); expect(a.menu === 'none', 'menu animé malgré « moins d’animations » : ' + JSON.stringify(a)); await page.keyboard.press('Escape');
+  } finally { await page.emulateMedia({ reducedMotion: 'no-preference' }); }
 });
 
 (async () => {

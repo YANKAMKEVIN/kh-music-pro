@@ -9,13 +9,16 @@ import { hasKey, lang, t } from '../i18n';
 import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
 import { BAR, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
-import { ICON, drawAudio, drawFades, drawWave } from './arr';
+import { drawAudio, drawFades, drawWave, wheelFactor, zoomAt } from './arr';
+import { icon, typeIcon } from './icons';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
 const okbDown = new Map<number, number>();
 
-const RH = 16, SW = 28, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150;
+const RH = 16, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150, KEYS_W = 62;
+/** Largeur d'un pas dans le piano roll : suit le zoom (`S.epx`), relue à chaque dessin. */
+let SW = 28;
 const SOLF = { fr: ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], es: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], en: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] };
 const isBlack = (p: number) => [1, 3, 6, 8, 10].includes(p % 12);
 export const noteName = (p: number) => SOLF[lang()][p % 12] + (Math.floor(p / 12) - 1);
@@ -58,8 +61,8 @@ function lengthSelect(c: Clip, opts: number[]) {
 function clipTools(c: Clip) {
   const name = h('input', { class: 'cname-in', value: c.name, 'aria-label': t('clip.name'), spellcheck: false });
   name.onchange = () => { c.name = name.value.trim() || c.name; commit(); };
-  const b = (key: string, icon: string, fn: () => void, cls = '') => h('button', { class: cls, title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
-  return h('div', { class: 'tools' }, name, b('dup', '⧉', duplicateClip), b('split', '✂', splitClip), b('loop', '⟲', setLoopToClip), b('del', '🗑', deleteClip, 'danger'));
+  const b = (key: string, ico: string | Node, fn: () => void, cls = '') => h('button', { class: cls, title: t('tip.' + key), data: { act: key }, onclick: fn }, ico, ' ' + t('act.' + key));
+  return h('div', { class: 'tools' }, name, b('dup', '⧉', duplicateClip), b('split', '✂', splitClip), b('loop', '⟲', setLoopToClip), b('del', icon('trash', 15), deleteClip, 'danger'));
 }
 
 // ---------- Batterie : séquenceur et pads ----------
@@ -76,11 +79,11 @@ function drumBar(tr: Track, c: Clip | null) {
     class: 'seg' + (S.drumView === v || (!c && v === 'pads') ? ' on' : ''), disabled: !c && v === 'seq', data: { view: v },
     onclick: () => { S.drumView = v; emit(); },
   }, label);
-  return h('div', { class: 'ebar' }, h('strong', {}, `${ICON.drums} ${tr.name}`),
+  return h('div', { class: 'ebar' }, h('strong', {}, typeIcon('drums'), ' ' + tr.name),
     h('div', { class: 'segs', role: 'group' }, view('seq', t('drum.seq')), view('pads', t('drum.pads'))),
     c && clipTools(c), c && lengthSelect(c, [1, 2, 4]), c && resSelect(c),
     h('label', { class: 'fld' }, t('drum.kit'), kit),
-    slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct),
+    slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct, '', false, 0),
     c && h('button', { title: t('tip.clear'), data: { act: 'clear' }, onclick: () => { c.drums = c.drums!.map(r => r.map(() => 0)); commit(); } }, t('act.clear')),
     c && h('div', { class: 'segs', role: 'group', 'aria-label': t('pat.tools') },
       h('button', { class: 'seg', data: { act: 'patleft' }, title: t('pat.left'), 'aria-label': t('pat.left'), onclick: () => shiftPattern(-1) }, '◀'),
@@ -131,9 +134,9 @@ function padsView(tr: Track) {
     const r = S.padEdit, cur = tr.padFx?.[r] ?? { vol: 1, tune: 0, pan: 0 };
     const set = (k: 'vol' | 'tune' | 'pan', v: number) => { tr.padFx ??= {}; const f = tr.padFx[r] ??= { vol: 1, tune: 0, pan: 0 }; f[k] = v; if (f.vol === 1 && !f.tune && !f.pan) delete tr.padFx[r]; };
     fxBox = h('div', { class: 'padfx' }, h('strong', {}, `⚙ ${padName(tr, r)}`),
-      slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct),
-      slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st'),
-      slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100))),
+      slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct, '', false, 1),
+      slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st', '', false, 0),
+      slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100)), '', false, 0),
       h('div', { class: 'tools' },
         h('button', { class: 'pill', data: { act: 'padtest' }, onclick: () => { padHit(r, 1, tr); flashPad(r); } }, '▶ ' + t('pad.test')),
         h('button', { class: 'pill', data: { act: 'padfxload' }, onclick: () => pickFiles(async fs => { const smp = await loadSample(fs[0]); if (smp) { tr.pads![r] = { bufferId: smp.id, name: smp.name }; commit(); } }) }, '📂 ' + t('smp.load')),
@@ -493,6 +496,7 @@ function scaleTools() {
 
 // ---------- Piano roll ----------
 function pianoRoll(tr: Track, c: Clip) {
+  SW = S.epx;
   const rows = PMAX - PMIN + 1, W = c.patLen! * SW, P = S.project, scaled = P.scale !== 'off', G = GRIDS[S.grid] ?? 1;
   const fit = (p: number) => clamp(scaled ? snapToScale(P, p) : p, PMIN, PMAX);
   if (selOwner !== c.id) { selNotes.clear(); selOwner = c.id; }
@@ -606,6 +610,14 @@ function pianoRoll(tr: Track, c: Clip) {
     h('div', { class: 'pr-foot' }, h('div', { class: 'vel-row' }, h('div', { class: 'vel-lbl', title: t('tip.velocity') }, t('ed.velocity')), vel), showCtl && ctlLane(c, W)));
   const key = c.id;
   scroll.onscroll = () => { scrollKey = key; scrollPos = { x: scroll.scrollLeft, y: scroll.scrollTop }; };
+  // Ctrl ou Cmd + molette (ou pincement au trackpad) : zoom dans le temps, le pas visé reste sous le pointeur.
+  scroll.onwheel = e => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const z = zoomAt(S.epx, wheelFactor(e), Math.max(0, e.clientX - scroll.getBoundingClientRect().left - KEYS_W), scroll.scrollLeft, 10, 72);
+    if (z.px === S.epx) return;
+    S.epx = z.px; scrollKey = key; scrollPos = { x: z.scroll, y: scroll.scrollTop }; emit();
+  };
   const restore = scrollKey === key ? { ...scrollPos } : null;
   queueMicrotask(() => {
     if (restore) { scroll.scrollLeft = restore.x; scroll.scrollTop = restore.y; return; }
@@ -614,7 +626,7 @@ function pianoRoll(tr: Track, c: Clip) {
   });
   edStepW = SW;
   return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), clipTools(c), lengthSelect(c, [1, 2, 4, 8]),
+    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('synth'), ' ' + tr.name), clipTools(c), lengthSelect(c, [1, 2, 4, 8]),
       h('div', { class: 'segs', role: 'group', 'aria-label': t('ed.transpose'), title: t('ed.transpose') },
         ...[-12, -1, 1, 12].map(n => h('button', { class: 'seg', data: { act: 'tr' + n }, 'aria-label': `${t('ed.transpose')} ${n > 0 ? '+' : ''}${n}`, onclick: () => transposeClip(n) }, (n > 0 ? '+' : '−') + Math.abs(n)))),
       gridTools(c), scaleTools()),
@@ -631,7 +643,7 @@ function inputPanel() {
     h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, '🎤 ' + t(on ? 'in.on' : 'in.open')),
     h('div', { class: 'meter', title: t('in.level') }, h('div', { class: 'mfill', data: { id: 'input' } })),
     on && h('div', { class: 'tuner', role: 'status', title: t('tuner.tip'), 'aria-label': t('tuner.title') }, h('span', { class: 'tnote' }, '—'), h('span', { class: 'tbar' }, h('i', {})), h('span', { class: 'tcents' }, '')),
-    slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true),
+    slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true, 1),
     h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, '🎧 ' + t('in.monitor')));
 }
 
@@ -652,10 +664,10 @@ function audioEditor(tr: Track, c: Clip) {
   const bpm = h('input', { type: 'number', min: '40', max: '240', placeholder: '—', 'aria-label': t('st.bpm'), title: t('st.bpmTip'), data: { role: 'srcbpm' } });
   bpm.onchange = () => { const v = +bpm.value; if (v >= 20 && v <= 400) { st.pct = clamp(Math.round(v / S.project.bpm * 100), 50, 200); emit(); } };
   return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`), clipTools(c),
-      slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct),
-      slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec),
-      slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec),
+    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('audio'), ' ' + tr.name), clipTools(c),
+      slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct, '', false, 1),
+      slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec, '', false, 0),
+      slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec, '', false, 0),
       act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip),
       // V17 : le clip suit le tempo du morceau (étirement sans changer la hauteur), à partir de son tempo d'origine.
       h('button', { class: 'pill switch' + (c.warp ? ' on' : ''), role: 'switch', 'aria-checked': String(!!c.warp), title: t('warp.tip'), data: { act: 'warp' }, onclick: toggleWarp }, '🎚 ' + t('warp.label')),
@@ -669,9 +681,9 @@ function audioEditor(tr: Track, c: Clip) {
       leftNeighbour(tr, c) && slider(t('xf.label'), 0, Math.max(1, Math.min(8, c.len)), 0.25, Math.min(c.xfade ?? 0, 8), v => setXfade(v), v => v ? sec(v) : t('xf.none'), 'xf')),
     (c.takes?.length ?? 0) > 1 && compPanel(c),
     h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),
-      slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true),
+      slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true, 100),
       h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
-      slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true),
+      slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true, 0),
       act('stretch', '⏱', () => stretchClip(st.pct, st.semis)),
       h('span', { class: 'sect' }, t('tune.title')),
       slider(t('tune.amount'), 0.1, 1, 0.05, S.tuneAmt, v => { S.tuneAmt = v; }, pct, '', true),
@@ -729,9 +741,9 @@ function compPanel(c: Clip) {
 function emptyState(tr?: Track) {
   if (tr?.type === 'drums') return drumEditor(tr, null);
   if (tr?.type === 'synth') return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, `${ICON.synth} ${tr.name}`), scaleTools(), h('span', { class: 'tip' }, t('hint.synthEmpty', ['A', 'S', 'D', 'F', 'G', 'H', 'J'].map(keyLabel).join(' '), keyLabel('Z'), 'X'))),
+    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('synth'), ' ' + tr.name), scaleTools(), h('span', { class: 'tip' }, t('hint.synthEmpty', ['A', 'S', 'D', 'F', 'G', 'H', 'J'].map(keyLabel).join(' '), keyLabel('Z'), 'X'))),
     synthPanel(tr), S.kbShow && screenKeys());
-  if (tr) return h('div', { class: 'editor' }, h('div', { class: 'ebar' }, h('strong', {}, `${ICON.audio} ${tr.name}`)), inputPanel(),
+  if (tr) return h('div', { class: 'editor' }, h('div', { class: 'ebar' }, h('strong', {}, typeIcon('audio'), ' ' + tr.name)), inputPanel(),
     h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.audioEmpty'))));
   return h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.nothing')));
 }

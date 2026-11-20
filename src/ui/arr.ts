@@ -1,13 +1,14 @@
-import { addTrack, audioFiles, deleteTrack, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, selectedClips, unfreezeTrack } from '../actions';
+import { addTrack, audioFiles, copyClip, deleteClip, deleteTrack, duplicateClip, duplicateTrack, editTempo, freezeTrack, importFiles, moveTrack, pickAudio, removeTempo, renameMarker, selectedClips, setLoopToClip, splitClipAt, unfreezeTrack } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
 import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
-import { clamp, followDrag, h } from './dom';
+import { clamp, followDrag, h, popMenu, resettable } from './dom';
+import { meter } from './meters';
+import { typeIcon } from './icons';
 
-export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
 // ---------- Formes d'onde ----------
 const BLK = 256, peakCache = new Map<string, Float32Array>();
@@ -93,7 +94,7 @@ export function drawFades(g: CanvasRenderingContext2D, c: Clip, w: number, hgt: 
 const TRACK_H = 84;
 
 function addBtn(type: TrackType) {
-  return h('button', { class: 'add', data: { add: type }, title: t('track.add', t('type.' + type)), onclick: () => addTrack(type) }, `＋ ${ICON[type]}`, h('span', {}, t('type.' + type)));
+  return h('button', { class: 'add', data: { add: type }, title: t('track.add', t('type.' + type)), onclick: () => addTrack(type) }, '＋ ', typeIcon(type, 16), h('span', {}, t('type.' + type)));
 }
 
 function head(tr: Track) {
@@ -120,17 +121,20 @@ function head(tr: Track) {
   vol.value = String(tr.vol);
   vol.oninput = () => { tr.vol = +vol.value; engine.sync(); };
   vol.onchange = () => commit();
+  resettable(vol, 0.8, v => { tr.vol = v; engine.sync(); }, commit, t('sl.resetTip'));
   return h('div', {
     class: 'head' + (S.selTrack === tr.id ? ' sel' : '') + (tr.frozen ? ' frozen' : ''), data: { id: tr.id }, style: `--c:${tr.color}`,
     onpointerdown: () => { if (S.selTrack !== tr.id) select(tr.id, ''); },
   },
-    h('div', { class: 'hrow' }, h('span', { class: 'ticon', title: t('type.' + tr.type) }, ICON[tr.type]), name,
+    h('div', { class: 'hrow' }, h('span', { class: 'ticon', title: t('type.' + tr.type) }, typeIcon(tr.type)), name,
       tr.frozen ? h('span', { class: 'tfrzbadge', title: t('frz.frozen'), role: 'img', 'aria-label': t('frz.frozen') }, '❄') : '', tmenu),
     h('div', { class: 'hrow' }, tog('mute', 'M'), tog('solo', 'S'),
       h('button', {
         class: 'mini autob' + (tr.autoShow ? ' on' : '') + (hasAuto ? ' has' : ''), title: t('auto.toggle'), 'aria-label': `${t('auto.toggle')} – ${tr.name}`, 'aria-pressed': String(!!tr.autoShow),
         onclick: (e: Event) => { e.stopPropagation(); tr.autoShow = tr.autoShow ? '' : 'vol'; commit(); },
       }, 'A'), vol),
+    // Niveau de la piste, visible sans quitter l'arrangement (même mesure que le vumètre du mixeur).
+    meter(tr.id, tr.name, 'hmeter'),
   );
 }
 
@@ -229,11 +233,50 @@ function clipEl(tr: Track, c: Clip) {
   return el;
 }
 
+/**
+ * Menu d'un clip (clic droit, appui long au doigt, touche Menu ou Maj+F10) : les actions de la barre de l'éditeur et du clavier,
+ * là où l'on regarde. `at` : pas visé par le pointeur (« Scinder ici ») ; sans pointeur, la scission se fait à la tête de lecture.
+ */
+function clipMenu(tr: Track, c: Clip, x: number, y: number, at: number | null) {
+  // Le clip visé devient le clip sélectionné, sauf s'il fait partie d'une sélection multiple (les actions portent alors sur elle).
+  if (S.selClip !== c.id && !S.selMore.has(c.id)) select(tr.id, c.id);
+  const here = at ?? Math.round(engine.currentStep()), inside = here > c.start && here < c.start + c.len;
+  popMenu(x, y, [
+    { id: 'rename', label: t('ctx.rename'), fn: () => {
+      select(tr.id, c.id); S.tab = 'editor'; emit();
+      const f = document.querySelector<HTMLInputElement>('#panel .cname-in'); f?.focus(); f?.select();
+    } },
+    { id: 'dup', label: t('act.dup'), key: 'Ctrl+D', fn: duplicateClip },
+    { id: 'split', label: t(at === null ? 'ctx.splitPlay' : 'ctx.splitHere'), key: at === null ? 'Ctrl+E' : undefined, disabled: !inside, fn: () => { select(tr.id, c.id); splitClipAt(here); } },
+    { id: 'loop', label: t('act.loop'), fn: () => { select(tr.id, c.id); setLoopToClip(); } },
+    { id: 'copy', label: t('ctx.copy'), key: 'Ctrl+C', fn: () => { select(tr.id, c.id); copyClip(); } },
+    null,
+    { id: 'del', label: t('act.del'), key: t('help.key.del'), danger: true, fn: deleteClip },
+  ], t('ctx.clip', c.name), () => document.querySelector<HTMLElement>(`.clip[data-id="${c.id}"]`));
+}
+const ctxOpen = () => !!document.querySelector('.menu-list.ctx');
+
 function lane(tr: Track) {
   const el = h('div', { class: 'lane' + (S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id } });
   for (const c of tr.clips) el.append(clipEl(tr, c));
   if (!tr.clips.length) el.append(h('div', { class: 'hint' }, t(tr.type === 'audio' ? 'hint.audioLane' : 'hint.patternLane')));
   el.onpointerdown = e => laneDown(e, tr);
+  const clipOf = (e: Event) => { const ce = (e.target as HTMLElement).closest<HTMLElement>('.clip'), c = ce && tr.clips.find(x => x.id === ce.dataset.id); return ce && c ? { ce, c } : null; };
+  el.oncontextmenu = e => {
+    const hit = clipOf(e);
+    if (!hit) return;
+    e.preventDefault();
+    if (ctxOpen()) return;   // déjà ouvert par l'appui long ou par le clavier
+    const r = hit.ce.getBoundingClientRect(), on = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    if (on) clipMenu(tr, hit.c, e.clientX, e.clientY, Math.round((e.clientX - el.getBoundingClientRect().left) / S.px / S.snap) * S.snap);
+    else clipMenu(tr, hit.c, r.left + 12, r.top + 24, null);   // demandé au clavier : posé sur le clip
+  };
+  el.onkeydown = e => {
+    const hit = (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) && clipOf(e);
+    if (!hit) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = hit.ce.getBoundingClientRect(); clipMenu(tr, hit.c, Math.max(r.left, el.parentElement!.getBoundingClientRect().left) + 12, r.top + 24, null);
+  };
   el.ondblclick = e => {
     if ((e.target as HTMLElement).closest('.clip')) { S.tab = 'editor'; emit(); return; }
     const start = Math.floor((e.clientX - el.getBoundingClientRect().left) / S.px / BAR) * BAR;
@@ -266,8 +309,14 @@ function laneDown(e: PointerEvent, tr: Track) {
   // Déplacement de groupe : les autres clips sélectionnés suivent, chacun sur sa piste.
   const others = grouped && !resize && !trim ? selectedClips().filter(x => x.clip !== clip).map(x => ({ c: x.clip, s: x.clip.start, el: document.querySelector<HTMLElement>(`.clip[data-id="${x.clip.id}"]`) })) : [];
   const minStart = Math.min(o.start, ...others.map(x => x.s));
-  let changed = false, target = tr;
+  let changed = false, target = tr, stop = () => { };
+  // Appui long au doigt ou au stylet (sans bouger) : le menu du clip s'ouvre, le glissé est abandonné.
+  const hold = e.pointerType === 'mouse' ? 0 : window.setTimeout(() => {
+    if (changed || ctxOpen()) return;
+    stop(); clipMenu(tr, clip, e.clientX + 4, e.clientY + 4, Math.round((e.clientX - el.parentElement!.getBoundingClientRect().left) / px / S.snap) * S.snap);
+  }, 550);
   const mv = (ev: PointerEvent) => {
+    if (Math.hypot(ev.clientX - sx, ev.clientY - e.clientY) > 8) clearTimeout(hold);
     let d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
     if (resize) { clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen); if (o.comp) { clip.comp = o.comp.map(x => ({ ...x })); compSlice(clip, 0, clip.len); } }
     else if (trim) {
@@ -290,11 +339,12 @@ function laneDown(e: PointerEvent, tr: Track) {
     if (over && tt && tt.type === tr.type && tt !== target) { target = tt; over.append(el); changed = true; }
   };
   const up = () => {
+    clearTimeout(hold);
     if (target !== tr) { tr.clips.splice(tr.clips.indexOf(clip), 1); target.clips.push(clip); S.selTrack = target.id; }
     if (changed) commit();
   };
   // Geste annulé : le clip (et ceux qui le suivaient) reviennent à leur place, sur leur piste.
-  followDrag(e, mv, up, () => { revert(); if (target !== tr) emit(); });
+  stop = followDrag(e, mv, up, () => { clearTimeout(hold); revert(); if (target !== tr) emit(); });
 }
 
 export function renderArr() {
@@ -317,7 +367,7 @@ export function renderArr() {
   for (const m of p.markers) ruler.append(h('button', {
     class: 'mark', style: `left:${m.s * px}px`, title: t('mark.tip'), data: { mark: String(m.s) },
     onpointerdown: (e: Event) => e.stopPropagation(), onclick: () => engine.seek(m.s),
-    ondblclick: () => { const n = prompt(t('mark.rename'), m.name); if (n?.trim()) { m.name = n.trim().slice(0, 24); commit(); } },
+    ondblclick: () => renameMarker(m.s),
     oncontextmenu: (e: Event) => { e.preventDefault(); p.markers.splice(p.markers.indexOf(m), 1); commit(); },
   }, '⚑ ' + m.name));
   ruler.onpointerdown = e => {
@@ -337,15 +387,107 @@ export function renderArr() {
     if (tr.autoShow) { heads.append(ahead(tr)); lanes.append(alane(tr, total)); }
   }
   if (!p.tracks.length) lanes.append(h('div', { class: 'empty' }, t('hint.noTracks')));
-  lanes.append(h('div', { id: 'ph' }));
+  lanes.append(h('div', { id: 'recz' }), h('div', { id: 'ph' }));
 
   root.replaceChildren(h('div', { class: 'arr-inner' }, heads, lanes));
+}
+
+// ---------- Prise en cours : piste enregistrée et zone déjà captée ----------
+/** Zone parcourue par une prise, en pas : elle s'étend avec la tête de lecture (en boucle, elle finit par couvrir toute la boucle). */
+export function recSpan(prev: { from: number; to: number } | null, step: number): { from: number; to: number } {
+  return prev ? { from: Math.min(prev.from, step), to: Math.max(prev.to, step) } : { from: step, to: step };
+}
+let recZone: { from: number; to: number } | null = null, recOn = false;
+/**
+ * À chaque image pendant un enregistrement : liseré rouge sur la tête de la piste enregistrée et voile rouge léger sur la zone
+ * déjà captée (rien pendant le décompte ; en punch, seulement la zone de boucle). Tout s'efface à la fin de la prise.
+ */
+export function updateRecView(step: number) {
+  const z = document.getElementById('recz');
+  if (!z) return;
+  if (!engine.recording) {
+    if (recOn) { recOn = false; recZone = null; z.style.display = ''; document.querySelectorAll('#arr .head.rec').forEach(e => e.classList.remove('rec')); }
+    return;
+  }
+  recOn = true;
+  // Piste qui reçoit la prise : celle du jeu enregistré, ou la piste audio sélectionnée (sinon la prise ira sur une piste audio libre).
+  const id = engine.recording === 'midi' ? engine.recTrack : findTrack(S.selTrack)?.type === 'audio' ? S.selTrack : '';
+  document.querySelectorAll<HTMLElement>('#arr .head').forEach(e => e.classList.toggle('rec', !!id && e.dataset.id === id));
+  if (engine.countLeft() > 0) { recZone = null; z.style.display = ''; return; }
+  // La zone part du point de départ de la prise (la tête de lecture y était à l'arrêt), pas de la première image affichée.
+  recZone = recSpan(recZone ?? recSpan(null, engine.pos), step);
+  let { from, to } = recZone;
+  if (engine.recording === 'audio' && engine.recMode === 'punch') { const p = S.project; from = Math.max(from, p.loopStart * BAR); to = Math.min(to, (p.loopStart + p.loopLen) * BAR); }
+  const lane = id ? document.querySelector<HTMLElement>(`#arr .lane[data-id="${id}"]`) : null, all = z.parentElement!;
+  if (to <= from) { z.style.display = ''; return; }
+  z.style.cssText = `display:block;left:${from * S.px}px;width:${(to - from) * S.px}px;top:${lane ? lane.offsetTop : 36}px;height:${lane ? lane.offsetHeight : all.scrollHeight - 36}px`;
 }
 
 /** Met à jour les surbrillances de sélection sans reconstruire le DOM. */
 export function refreshSelection() {
   document.querySelectorAll<HTMLElement>('#arr .head, #arr .lane').forEach(e => e.classList.toggle('sel', e.dataset.id === S.selTrack));
   document.querySelectorAll<HTMLElement>('#arr .clip').forEach(e => { const more = S.selMore.has(e.dataset.id!); e.classList.toggle('sel', more || e.dataset.id === S.selClip); e.classList.toggle('sel2', more); });
+}
+
+// ---------- Zoom à la molette et au pincement ----------
+/**
+ * Zoom autour d'un point : le pas qui se trouve à `x` px du bord gauche de la zone visible y reste après le zoom.
+ * Renvoie la nouvelle largeur d'un pas et le défilement qui garde ce pas sous le pointeur.
+ */
+export function zoomAt(px: number, factor: number, x: number, scroll: number, min = 3, max = 44): { px: number; scroll: number } {
+  const n = clamp(px * factor, min, max);
+  return { px: n, scroll: Math.max(0, (scroll + x) / px * n - x) };
+}
+/** Facteur de zoom d'un cran de molette (ou d'un pincement au trackpad, que le navigateur envoie comme Ctrl+molette). */
+export const wheelFactor = (e: WheelEvent) => Math.exp(-clamp(e.deltaY * (e.deltaMode === 1 ? 16 : 1), -240, 240) * 0.0022);
+
+/**
+ * Arrangement : Ctrl ou Cmd + molette (ou pincement au trackpad) zoome en gardant sous le pointeur la mesure visée ;
+ * Maj + molette fait défiler dans le temps ; deux doigts qui s'écartent ou se rapprochent zooment sur un écran tactile.
+ */
+export function initArrZoom() {
+  const root = document.getElementById('arr')!;
+  const headW = () => root.querySelector<HTMLElement>('.heads')?.offsetWidth ?? 0;
+  /** Applique le zoom une fois par image : plusieurs crans de molette ne redessinent l'arrangement qu'une fois. */
+  let want: { px: number; scroll: number } | null = null, raf = 0;
+  const apply = (z: { px: number; scroll: number }) => {
+    want = z;
+    raf ||= requestAnimationFrame(() => { raf = 0; if (!want) return; const w = want; want = null; if (w.px !== S.px) { S.px = w.px; emit(); } root.scrollLeft = w.scroll; });
+  };
+  const xOf = (clientX: number) => Math.max(0, clientX - root.getBoundingClientRect().left - headW());
+  root.addEventListener('wheel', e => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      apply(zoomAt(want?.px ?? S.px, wheelFactor(e), xOf(e.clientX), want?.scroll ?? root.scrollLeft));
+    } else if (e.shiftKey && !e.deltaX && e.deltaY) { e.preventDefault(); root.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : 1); }
+  }, { passive: false });
+
+  // Pincement à deux doigts. Le doigt posé en premier a pu commencer à déplacer un clip : ce glissé est annulé.
+  let lastTouch = -1, pinch: { d: number; px: number; step: number } | null = null;
+  root.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') lastTouch = e.pointerId; }, true);
+  const span = (t: TouchList) => ({ d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), x: xOf((t[0].clientX + t[1].clientX) / 2) });
+  const move = (e: TouchEvent) => {
+    if (!pinch || e.touches.length !== 2) return;
+    if (e.cancelable) e.preventDefault();
+    const { d, x } = span(e.touches), px = clamp(pinch.px * d / pinch.d, 3, 44);
+    apply({ px, scroll: Math.max(0, pinch.step * px - x) });
+  };
+  root.addEventListener('touchstart', e => {
+    if (e.touches.length !== 2) { pinch = null; return; }
+    const { d, x } = span(e.touches);
+    if (d < 10) return;
+    pinch = { d, px: S.px, step: (root.scrollLeft + x) / S.px };
+    if (lastTouch >= 0) dispatchEvent(new PointerEvent('pointercancel', { pointerId: lastTouch, pointerType: 'touch' }));
+    // Le zoom redessine les pistes : l'élément touché quitte la page, mais c'est lui qui continue de recevoir les mouvements
+    // des doigts. On l'écoute donc directement, jusqu'à ce qu'un doigt se lève.
+    const targets = [...new Set([...e.touches].map(t => t.target))];
+    const end = (ev: Event) => {
+      if ((ev as TouchEvent).touches.length >= 2) return;
+      pinch = null;
+      for (const el of targets) { el.removeEventListener('touchmove', move as EventListener); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end); }
+    };
+    for (const el of targets) { el.addEventListener('touchmove', move as EventListener, { passive: false }); el.addEventListener('touchend', end); el.addEventListener('touchcancel', end); }
+  }, { passive: true });
 }
 
 export function initArrDrop() {

@@ -613,3 +613,127 @@ dialog [data-act=versnap] { margin-bottom: 10px; }
 .qmenu > .menu-list { min-width: 260px; }
 .qmenu .sl { padding: 2px 8px; }
 .qmenu .tip { margin: 0 8px; font-size: 11px; line-height: 1.35; max-width: 240px; }
+
+/* ================= UX : avancement de l'export ================= */
+.split-btn [hidden], #toast [hidden] { display: none !important; }
+.xprog { position: relative; height: 36px; min-width: 150px; max-width: 260px; padding: 0 12px; border-radius: 10px 0 0 10px; border: 1px solid var(--a1); border-right: 0; background: rgba(0, 0, 0, .35); overflow: hidden; display: grid; place-items: center; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xprog::before { content: ''; position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--p, 0)); background: var(--grad); opacity: .5; transition: transform .15s linear; }
+.xprog span { position: relative; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.xcancel { border-radius: 0 10px 10px 0; border-color: var(--a1); }
+.xcancel:hover { border-color: var(--rec); color: var(--rec); }
+#toast.act { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
+#toast .tact { height: 32px; flex: none; }
+
+/* ================= UX : menu contextuel des clips ================= */
+.menu-list.ctx { position: fixed; top: auto; right: auto; z-index: 70; min-width: 230px; max-width: calc(100vw - 16px); }
+.menu-list.ctx button { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; }
+.menu-list.ctx button:disabled { opacity: .4; cursor: not-allowed; }
+.menu-list.ctx kbd { color: var(--dim); font-size: 10.5px; }
+.menu-list.ctx .danger { color: #ff8fa3; }
+.clip:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+@media (pointer: coarse) { .menu-list.ctx button { height: 44px; } }
+@media (max-width: 760px) { .menu-list.ctx { left: auto; right: auto; min-width: 230px !important; } }
+
+/* ================= UX : décompte et temps visibles ================= */
+.display { position: relative; }
+#beat { position: absolute; left: 7px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); opacity: .3; pointer-events: none; }
+#beat.on { background: var(--a1); opacity: 1; box-shadow: 0 0 10px var(--a1); }
+#beat.on.acc { background: #fff; box-shadow: 0 0 14px 3px var(--a1); transform: scale(1.4); }
+.display.count #pos { font-size: 34px; line-height: 39px; color: var(--rec); text-shadow: 0 0 16px rgba(255, 77, 109, .8); }
+.display.count #pos + small { display: none; }
+.display.count #beat.on { background: var(--rec); box-shadow: 0 0 14px 3px var(--rec); }
+@media (max-width: 760px) { .display.count #pos { font-size: 26px; line-height: 33px; } #beat { left: 4px; top: 4px; width: 6px; height: 6px; } }
+
+/* ================= UX : sections repliables du mixeur, panoramique près du fader ================= */
+.msec { border-top: 1px solid var(--line); }
+.msec:first-child { border-top: 0; }
+.msec > summary { list-style: none; display: flex; align-items: center; gap: 6px; height: 26px; cursor: pointer; border-radius: 6px; }
+.msec > summary::-webkit-details-marker { display: none; }
+.msec > summary::before { content: '▸'; width: 10px; color: var(--dim); font-size: 10px; transition: transform .12s; }
+.msec[open] > summary::before { transform: rotate(90deg); }
+.msec > summary:hover .sect { color: var(--txt); }
+.msec > summary .sect { margin: 0; }
+.sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--a1)); box-shadow: 0 0 8px var(--c, var(--a1)); }
+.mbody { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; }
+.fcol .sl.panc { width: 66px; grid-template-columns: 1fr auto; gap: 0 4px; font-size: 10.5px; }
+.fcol .sl.panc input { grid-column: 1 / -1; }
+.fcol .sl.panc .val { font-size: 10.5px; }
+@media (pointer: coarse) { .msec > summary { height: 36px; } }
+
+/* ================= UX : valeur d'origine des curseurs (double-clic pour y revenir) ================= */
+input[type=range].hasdef { background: linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .55)) no-repeat calc(8px + (100% - 16px) * var(--def, 0)) 100% / 2px 4px; }
+input[type=range].vert.hasdef { background-position: 100% calc(8px + (100% - 16px) * (1 - var(--def, 0))); background-size: 5px 2px; }
+
+/* ================= UX : petites fenêtres maison (question, accord) ================= */
+dialog.ask { width: min(440px, 92vw); padding: 22px 24px; }
+.asklb { display: grid; gap: 10px; flex: 1 0 100%; font-weight: 600; }
+.askin { height: 44px; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, .35); padding: 0 12px; font-size: 15px; user-select: text; }
+.askin:focus { border-color: var(--a1); outline: none; box-shadow: 0 0 0 2px rgba(34, 211, 238, .25); }
+.askmsg { margin: 0; line-height: 1.5; }
+dialog.ask form { flex-wrap: wrap; }
+dialog.ask .pill { min-height: 40px; min-width: 96px; }
+.pill.dangerb { background: var(--rec); border-color: var(--rec); color: #fff; font-weight: 700; }
+
+/* ================= UX : niveau dans les têtes de piste, crête retenue, témoin de saturation ================= */
+.meter { position: relative; cursor: pointer; }
+.mpeak { position: absolute; left: 0; right: 0; height: 2px; background: #fff; opacity: 0; pointer-events: none; }
+.mclip { position: absolute; left: 0; right: 0; top: 0; height: 7px; padding: 0; border: 0; border-radius: 0; background: var(--rec); box-shadow: 0 0 8px var(--rec); }
+.mclip[hidden] { display: none; }
+.meter.clip { border-color: var(--rec); }
+.head .hmeter { position: absolute; right: 2px; top: 5px; bottom: 5px; width: 5px; border-radius: 3px; }
+@media (max-width: 760px) { .head .hmeter { right: 0; width: 3px; border: 0; } }
+
+/* ================= UX : Live — avancement de la boucle, décompte avant le départ, scène en cours ================= */
+.lcell { position: relative; }
+.lcell.playing::after, .lcell.ending::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; transform-origin: left; transform: scaleX(var(--p, 0)); background: rgba(6, 16, 28, .6); }
+.lcell.ending::after { background: #fff; }
+.lcount { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-width: 26px; padding: 2px 6px; border-radius: 8px; text-align: center; font: 700 17px ui-monospace, 'SF Mono', Menlo, monospace; font-style: normal; color: #fff; background: rgba(6, 16, 28, .88); }
+.lcount:empty { display: none; }
+.lcell.queued { padding-right: 40px; }
+.lscene.on { background: var(--grad); color: #050816; border-color: transparent; box-shadow: 0 0 16px rgba(34, 211, 238, .5); }
+.lscene.next { border-color: #fff; animation: blink .5s steps(2) infinite; --c: var(--a1); }
+
+/* ================= UX : accueil du premier lancement ================= */
+dialog.welcome { width: min(720px, 94vw); }
+dialog.welcome h2 { font-size: 22px; }
+.welq { margin: 4px 0 14px; font-size: 16px; color: var(--txt); }
+dialog.welcome .tip { margin: 14px 0 0; line-height: 1.5; }
+dialog.welcome .pill { min-height: 44px; padding: 0 18px; }
+@media (max-width: 760px) { dialog.welcome h2 { font-size: 18px; } dialog.welcome .tpls { grid-template-columns: 1fr 1fr; } dialog.welcome .tpl { min-height: 0; padding: 10px; } }
+
+/* ================= UX : aperçu des projets de la bibliothèque ================= */
+.plist li[data-pid] .lopen { height: auto; min-height: 56px; padding: 6px 12px 6px 6px; justify-content: flex-start; gap: 12px; }
+.pthumb { flex: none; width: 96px; height: 40px; border-radius: 7px; background: rgba(0, 0, 0, .4); border: 1px solid var(--line); }
+.pinfo { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.pinfo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pinfo small { white-space: normal; }
+.plist li[hidden] { display: none; }
+.psearch { width: 100%; height: 40px; margin-bottom: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); padding: 0 12px; user-select: text; }
+@media (max-width: 760px) { .pthumb { width: 64px; height: 32px; } .plist li[data-pid] { flex-wrap: wrap; } .plist li[data-pid] .lopen { flex: 1 0 100%; } }
+
+/* ================= UX : une prise se voit (tête de lecture, règle, piste et zone captée en rouge) ================= */
+.recording #ph { background: var(--rec); box-shadow: 0 0 14px 3px var(--rec); }
+.recording .ruler { box-shadow: inset 0 -3px 0 var(--rec); }
+.head.rec { box-shadow: inset 0 0 0 1px rgba(255, 77, 109, .75); background: linear-gradient(90deg, rgba(255, 77, 109, .2), transparent); }
+.head.rec::before { background: var(--rec); box-shadow: 0 0 14px var(--rec); }
+#recz { display: none; position: absolute; z-index: 3; pointer-events: none; background: rgba(255, 77, 109, .16); border-left: 1px solid rgba(255, 77, 109, .7); }
+
+/* ================= UX : icônes dessinées au trait (src/ui/icons.ts) ================= */
+.ico { flex: none; vertical-align: -3px; }
+.ticon { display: inline-flex; color: var(--c); }
+.sname .ico, .lhead .ico, .ebar strong .ico { color: var(--c, currentColor); }
+.add .ico { vertical-align: -3px; }
+.pill .ico, .mini .ico { vertical-align: -3px; }
+#bNotes { display: inline-grid; place-items: center; }
+dialog h2 .ico { color: var(--a1); }
+
+/* ================= UX : ouverture des fenêtres et des menus ================= */
+dialog[open] { animation: dlg-in .14s ease-out; }
+dialog[open]::backdrop { animation: veil-in .14s ease-out; }
+details.menu[open] > .menu-list, .menu-list.ctx { animation: menu-in .12s ease-out; transform-origin: top; }
+@keyframes dlg-in { from { opacity: 0; transform: scale(.97); } }
+@keyframes veil-in { from { opacity: 0; } }
+@keyframes menu-in { from { opacity: 0; transform: scaleY(.94); } }
+@media (max-width: 760px) { #more[open] > .grp.out { animation: menu-in .12s ease-out; transform-origin: top; } }
+/* La règle générale « moins d'animations » ne touche pas le voile des fenêtres (pseudo-élément) : on le fige ici. */
+@media (prefers-reduced-motion: reduce) { dialog[open]::backdrop { animation: none; } }

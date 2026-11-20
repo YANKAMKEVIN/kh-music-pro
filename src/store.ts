@@ -1,4 +1,4 @@
-import { Clip, Project, Track, demoProject, migrate, uid } from './types';
+import { Clip, Project, Track, contentEnd, demoProject, migrate, timeOf, uid } from './types';
 
 export const S = {
   project: demoProject() as Project,
@@ -20,6 +20,7 @@ export const S = {
   quant: { str: 1, swing: 0, hum: 0.5 }, // V19 : force et swing de la quantification, force de l'humanisation (réglages de séance)
   ctlShow: false, ctlKind: 'pb' as 'pb' | 'mod' | 'at', // V19 : ligne des contrôles joués sous le piano roll, et contrôle affiché
   px: 11,     // pixels par pas dans l'arrangement
+  epx: 28,    // pixels par pas dans le piano roll (zoom à la molette)
   snap: 4,    // grille magnétique, en pas
   file: { path: '', name: '' }, // version bureau : fichier .khm lié au projet ouvert ('' = aucun)
 };
@@ -287,6 +288,8 @@ function install(p: Project, id: string) {
   S.file = fileOf(id); setDirty(false);
   resetHistory(); autosave(); emit();
 }
+/** Remplace le projet ouvert, sans en créer un autre dans la bibliothèque (accueil du premier lancement : la démo n'a pas encore servi). */
+export function replaceProject(p: Project) { install(p, S.pid || uid()); }
 /** Démarre un nouveau projet ; le précédent reste dans la bibliothèque. */
 export function startProject(p: Project) {
   saveNow().catch(() => { });
@@ -313,6 +316,37 @@ export async function deleteProject(id: string) {
   library = library.filter(x => x.id !== id);
   for (const v of await listVersions(id)) await idbDel(`ver:${id}:${v.t}`);
   await idbDel('vers:' + id); await idbDel('proj:' + id); await idbSet('lib', library);
+}
+
+// ---------- Aperçu des projets de la bibliothèque ----------
+/** Ce qu'on montre d'un projet sans l'ouvrir : tempo, nombre de pistes, durée, et ses clips piste par piste (miniature). */
+export interface ProjInfo { bpm: number; tracks: number; sec: number; end: number; rows: { color: string; clips: [number, number][] }[] }
+export function projectInfo(p: Project): ProjInfo {
+  const end = contentEnd(p);
+  return { bpm: p.bpm, tracks: p.tracks.length, sec: end ? timeOf(p, end) : 0, end, rows: p.tracks.map(t => ({ color: t.color, clips: t.clips.map(c => [c.start, c.len] as [number, number]) })) };
+}
+const infoCache = new Map<string, { updated: number; info: ProjInfo }>();
+/** Aperçu du projet `id` de la bibliothèque (relu dans l'appareil, gardé en mémoire tant que le projet ne change pas). */
+export async function libraryInfo(id: string): Promise<ProjInfo | null> {
+  if (id === S.pid) return projectInfo(S.project);
+  const e = library.find(x => x.id === id), hit = infoCache.get(id);
+  if (e && hit && hit.updated === e.updated) return hit.info;
+  try {
+    const json = await idbGet<string>('proj:' + id);
+    if (!json) return null;
+    const info = projectInfo(migrate(JSON.parse(json)));
+    if (e) infoCache.set(id, { updated: e.updated, info });
+    return info;
+  } catch { return null; }
+}
+/** Renomme un projet de la bibliothèque, ouvert ou non. */
+export async function renameLibProject(id: string, name: string) {
+  const n = name.trim(); if (!n) return;
+  if (id === S.pid) { S.project.name = n; commit(); await saveNow().catch(() => { }); return; }
+  const json = await idbGet<string>('proj:' + id), e = library.find(x => x.id === id);
+  if (!json || !e) return;
+  const p: Project = JSON.parse(json); p.name = n; e.name = n;
+  await idbSet('proj:' + id, JSON.stringify(p)); await idbSet('lib', library);
 }
 
 // ---------- Fichier projet (.khm) ----------

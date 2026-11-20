@@ -1,7 +1,7 @@
 import './style.css';
 import './ui/savealert.css';
 import { watchSaveHealth } from './ui/savealert';
-import { copyClip, deleteClip, duplicateClip, listenSystemOpen, openProjectFile, pasteClip, saveFile, saveFileAs, splitClip, toggleRecord } from './actions';
+import { cancelExport, copyClip, deleteClip, duplicateClip, exportJob, jobPct, listenSystemOpen, openProjectFile, pasteClip, saveFile, saveFileAs, splitClip, toggleRecord } from './actions';
 import { encodeWav, engine, lastRender, measureLoad, renderGroups, renderOffline, renderOpts } from './audio/engine';
 import { auBridge, createAu, createAuInstrument } from './audio/au';
 import { ioBridge } from './audio/native-io';
@@ -16,17 +16,18 @@ import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
-import { S, addBuffer, buffers, commit, crash, saveHealth, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
+import { projectInfo, S, addBuffer, buffers, commit, crash, saveHealth, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
 import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
-import { initArrDrop, refreshSelection, renderArr } from './ui/arr';
+import { initArrDrop, initArrZoom, recSpan, refreshSelection, renderArr, updateRecView, zoomAt } from './ui/arr';
 import { clamp, followDrag, h, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
 import { flashPad, notesKey, readKeyboardLayout, renderEditor, setKeyboardLayout, updateEditorPlayhead, updateTuner } from './ui/editor';
 import { refreshRack, showRack } from './ui/rack';
 import { startTour } from './ui/tour';
-import { createFromTemplate, showLibrary, showVersions } from './ui/library';
-import { refreshLive, renderLive } from './ui/live';
-import { renderMixer, updateMeters } from './ui/mixer';
+import { clock, createFromTemplate, showLibrary, showVersions, showWelcome } from './ui/library';
+import { beatsToLaunch, loopPart, refreshLive, renderLive, updateLive } from './ui/live';
+import { renderMixer, sectOpen, stripActive, updateMeters } from './ui/mixer';
+import { CLIP_AT, clipped, peakHold } from './ui/meters';
 import { buildTop, initFileInputs, renderTop } from './ui/top';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -130,6 +131,17 @@ addEventListener('keyup', e => { const pi = PADS.indexOf(e.code); if (pi >= 0) p
 addEventListener('blur', () => { down.clear(); allNotesOff(); });
 
 // ---------- Boucle d'affichage ----------
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+/**
+ * État du témoin du temps : allumé pendant le premier tiers de chaque temps, accentué sur le premier temps de la mesure
+ * (et à chaque clic du décompte). `still` (moins d'animations) : allumé sans clignoter tant que ça joue.
+ */
+export function beatLight(playing: boolean, countLeft: number, step: number, bar: number, still: boolean): { on: boolean; acc: boolean } {
+  if (!playing) return { on: false, acc: false };
+  if (still) return { on: true, acc: false };
+  if (countLeft > 0) return { on: Math.ceil(countLeft) - countLeft < 0.34, acc: true };
+  return { on: (step % 4) / 4 < 0.34, acc: Math.floor(step / 4) % Math.max(1, bar / 4) === 0 };
+}
 function frame() {
   const step = engine.currentStep(), p = S.project, live = engine.mode === 'live';
   const ph = document.getElementById('ph');
@@ -137,7 +149,13 @@ function frame() {
   const s = Math.floor(step + 1e-6), sec = live ? step * 15 / p.bpm : timeOf(p, step);
   // Avec des changements de tempo, l'afficheur suit le tempo en vigueur sous la tête de lecture.
   const bpmEl = $<HTMLInputElement>('bpm'); if (p.tempos.length && !live && document.activeElement !== bpmEl) bpmEl.value = String(bpmAt(p, step));
-  $('pos').textContent = `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / 4) + 1}.${(s % 4) + 1}`;
+  // Décompte : un grand 4 · 3 · 2 · 1 remplace le compteur, pour savoir quand jouer même sans entendre les clics.
+  const left = engine.countLeft(), count = Math.ceil(left - 1e-6), posEl = $('pos');
+  posEl.textContent = count ? String(count) : `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / 4) + 1}.${(s % 4) + 1}`;
+  posEl.closest('.display')!.classList.toggle('count', count > 0);
+  // Témoin du temps : un point bat à chaque temps, plus vif sur le premier de la mesure ; fixe si le système demande moins d'animations.
+  const b = beatLight(engine.playing, left, step, BAR, still.matches), dot = $('beat');
+  dot.classList.toggle('on', b.on); dot.classList.toggle('acc', b.acc);
   $('time').textContent = `${Math.floor(sec / 60)}:${(sec % 60).toFixed(1).padStart(4, '0')}`;
   document.body.classList.toggle('playing', engine.playing);
   document.body.classList.toggle('recording', !!engine.recording);
@@ -147,8 +165,8 @@ function frame() {
     const arr = $('arr'), x = step * S.px, view = arr.clientWidth - 256;
     if (x > arr.scrollLeft + view - 40 || x < arr.scrollLeft) arr.scrollLeft = Math.max(0, x - 80);
   }
-  updateEditorPlayhead(step); updateTuner();
-  updateMeters();
+  updateEditorPlayhead(step); updateTuner(); updateRecView(step);
+  updateMeters(); updateLive();
   requestAnimationFrame(frame);
 }
 
@@ -180,8 +198,9 @@ function crashNotice() {
   resetHistory();
   S.selTrack = S.project.tracks[0]?.id ?? '';
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
-  initArrDrop(); initFileInputs(); listenSystemOpen();
+  initArrDrop(); initArrZoom(); initFileInputs(); listenSystemOpen();
   rebuild();
+  document.getElementById('boot')?.remove();   // l'écran d'attente d'index.html laisse la place à l'application
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   // Version bureau macOS : moteur audio natif, s'il a été activé dans les Réglages audio.
   initNative();
@@ -189,12 +208,12 @@ function crashNotice() {
   // Version d'ouverture : on peut toujours revenir au morceau tel qu'il était au démarrage.
   snapshot(crash.found ? 'crash' : 'open').catch(() => { });
   let welcome = false;
-  try { if (!localStorage.getItem('kh-welcome')) { welcome = true; help.showModal(); localStorage.setItem('kh-welcome', '1'); } } catch { /* stockage désactivé */ }
+  try { if (!localStorage.getItem('kh-welcome')) { welcome = true; showWelcome(); localStorage.setItem('kh-welcome', '1'); } } catch { /* stockage désactivé */ }
   if (crash.found && !welcome) crashNotice();
 })();
 
 // Point d'accès pour les tests automatisés (QA) et le débogage.
-Object.assign(window, { kh: { S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
+Object.assign(window, { kh: { recSpan, clock, projectInfo, showWelcome, loopPart, beatsToLaunch, meters: { CLIP_AT, clipped, peakHold }, mixSect: sectOpen, stripActive, beatLight, zoomAt, exportJob, jobPct, cancelExport, S, engine, buffers, addBuffer, commit, emit, renderOffline, encodeWav, renderOpts, renderGroups, exportMidi, importMidi, zip, stretchBuffer, tuneBuffer, kb, learn, showLibrary, createFromTemplate, MIX_PRESETS, setRes, newBus, showRack, newInsert, liveWams, lastRender, timeOf, bpmAt, bar: () => BAR, PRESETS, makeSynth, detectPitch, startTour, lufs, templateProject, noteOn, noteOff, padHit, onMidi, setLang: (l: 'fr' | 'en' | 'es') => { setLang(l); rebuild(); }, demoProject, resetHistory, listenSystemOpen, measureLoad, store: { saveHealth, versioning, listVersions, restoreVersion, snapshot, saveNow, crash }, showVersions, banks: { BANKS, forgetBank, SUSTAIN_BANKS, loadBank, sampleFor, expressiveSample, bankReady, noteLoudness, touchSoftness, touchCutoff }, createAu, createAuInstrument, auBridge, ioBridge, setNativeEngine, initNative, setKeyboardLayout: (m: Record<string, string> | null) => { setKeyboardLayout(m && new Map(Object.entries(m))); rebuild(); } } });
 
 // Application installable et utilisable hors-ligne (version construite uniquement).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) addEventListener('load', async () => {

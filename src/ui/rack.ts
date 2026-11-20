@@ -1,3 +1,4 @@
+import { icon } from './icons';
 import { addAu, addInsert, addWam, moveInsert, removeInsert, saveWamStates } from '../actions';
 import { AuInstance, AuParam, auBridge, auFromPos, auList, auLog, auName, auToPos } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
@@ -60,8 +61,8 @@ function auBody(tr: Track, ins: Insert, body: HTMLElement) {
     const step = whole ? 1 : (pr.max - pr.min) / 1000 || 0.001, val = ins.p[k] ?? pr.value;
     // Fréquences : curseur logarithmique (la course est en position 0 à 1, la valeur reste en Hz dans le projet).
     const sl = auLog(pr)
-      ? slider(pr.name, 0, 1, 0.001, auToPos(pr, val), x => { ins.p[k] = auFromPos(pr, x); delete ins.preset; }, x => auFmt(pr, auFromPos(pr, x)))
-      : slider(pr.name, pr.min, pr.max, step, val, v => { ins.p[k] = v; delete ins.preset; }, v => auFmt(pr, v));
+      ? slider(pr.name, 0, 1, 0.001, auToPos(pr, val), x => { ins.p[k] = auFromPos(pr, x); delete ins.preset; }, x => auFmt(pr, auFromPos(pr, x)), '', false, auToPos(pr, pr.def))
+      : slider(pr.name, pr.min, pr.max, step, val, v => { ins.p[k] = v; delete ins.preset; }, v => auFmt(pr, v), '', false, pr.def);
     sl.dataset.addr = k; sl.dataset.scale = auLog(pr) ? 'log' : 'lin';
     return sl;
   }));
@@ -117,7 +118,7 @@ export function openAuWindow(tr: Track, ins: Insert, inst: AuInstance) {
 function card(tr: Track, ins: Insert, i: number) {
   const name = ins.type === 'wam' ? (ins.name || t('fx.wam')) : ins.type === 'au' ? '🍎 ' + (ins.name || t('au.plugin')) : t('fxn.' + ins.type);
   const btn = (act: string, label: string, tip: string, fn: () => void, off = false) => h('button', { class: 'mini', data: { act }, title: tip, 'aria-label': `${tip} – ${name}`, disabled: off, onclick: fn }, label);
-  const body = h('div', { class: 'fxbody' }, ...(FX[ins.type] ?? []).map(([k, min, max, step]) => slider(t('fxp.' + k), min, max, step, ins.p[k], v => { ins.p[k] = v; }, v => fmt(ins.type, k, v))));
+  const body = h('div', { class: 'fxbody' }, ...(FX[ins.type] ?? []).map(([k, min, max, step, def]) => slider(t('fxp.' + k), min, max, step, ins.p[k], v => { ins.p[k] = v; }, v => fmt(ins.type, k, v), '', false, def)));
   if (ins.type === 'wam') {
     // L'interface du plugin est fournie par le plugin lui-même, dès qu'il est chargé.
     const inst = liveWams.get(wamKey(tr.id, ins.id));
@@ -150,7 +151,7 @@ function render() {
     else if (v.startsWith('wam:')) addWam(tr.id, v === 'wam:?' ? null : v.slice(4), v === 'wam:?' ? undefined : 'KH Tape Echo'); else if (v) addInsert(tr.id, v);
   };
   d.replaceChildren(
-    h('h2', {}, `🧩 ${t('fx.title')} — ${tr.name}`),
+    h('h2', {}, icon('fx', 22), `${t('fx.title')} — ${tr.name}`),
     h('p', { class: 'tip' }, t('fx.help')),
     tr.inserts.length ? h('div', { class: 'fxlist' }, ...tr.inserts.map((ins, i) => card(tr, ins, i))) : h('p', { class: 'tip', data: { empty: '1' } }, t('fx.none')),
     h('div', { class: 'fxfoot' }, add, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close')))));

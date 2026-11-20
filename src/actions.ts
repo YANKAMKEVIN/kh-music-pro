@@ -1,13 +1,13 @@
-import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline } from './audio/engine';
+import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline, renderProgress } from './audio/engine';
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty } from './store';
+import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty, undo } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
 import { BAR, Clip, MIX_PRESETS, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
-import { toast } from './ui/dom';
+import { ask, confirmBox, toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
   const a = document.createElement('a');
@@ -29,10 +29,12 @@ export function addTrack(type: TrackType) {
 export function deleteTrack(id: string) {
   const tr = findTrack(id);
   if (!tr) return;
-  if (tr.clips.length && !confirm(t('confirm.delTrack', tr.name, tr.clips.length))) return;
   S.project.tracks = S.project.tracks.filter(x => x.id !== id);
   if (S.selTrack === id) { S.selTrack = ''; S.selClip = ''; }
   commit();
+  // Pas de question avant : la piste part tout de suite, et le message propose de la ramener (comme Ctrl+Z).
+  const after = JSON.stringify(S.project);
+  toast(t('toast.trackDeleted', tr.name), 'info', { action: { label: t('dlg.undo'), fn: () => { if (JSON.stringify(S.project) === after) undo(); else toast(t('toast.undoLate')); } } });
 }
 
 /**
@@ -229,12 +231,45 @@ function rangeName(): string {
   const e = S.project.exp, p = S.project;
   return e.range === 'loop' ? `_m${p.loopStart + 1}-${p.loopStart + p.loopLen}` : e.range === 'bars' ? `_m${Math.round(e.from)}-${Math.max(Math.round(e.from), Math.round(e.to))}` : '';
 }
-export async function exportMp3() {
+// ---------- Export : avancement et annulation ----------
+/** Export en cours : part faite (0..1), texte court (« Piste 3 sur 12 », « Encodage… ») ; la barre du haut s'abonne par `onChange`. */
+export const exportJob = { busy: false, pct: 0, label: '', onChange: () => { /* branché par ui/top.ts */ } };
+let cancelJob: (() => void) | null = null;
+/** Abandonne l'export en cours : rien n'est téléchargé. Le calcul déjà lancé se termine en arrière-plan et son résultat est jeté. */
+export function cancelExport() { cancelJob?.(); }
+/** Part faite d'un export en plusieurs rendus : `i` rendus finis sur `n`, plus la part `cur` (0..1) du rendu en cours. */
+export const jobPct = (i: number, n: number, cur: number) => Math.max(0, Math.min(1, (i + Math.max(0, Math.min(1, cur))) / Math.max(1, n)));
+/**
+ * Mène un export : un seul à la fois, avancement suivi pendant le calcul, annulation possible à tout moment.
+ * `work` reçoit `step(i, n, label)` pour annoncer le rendu qu'il commence, et `guard(promesse)` qui rend la main dès l'annulation.
+ */
+async function runExport(work: (step: (i: number, n: number, label?: string) => void, guard: <T>(p: Promise<T>) => Promise<T>) => Promise<void>, fail: (e: Error) => string) {
+  if (exportJob.busy) return toast(t('exp.busy'));
+  let i = 0, n = 1, half = false, stop!: (e: Error) => void;
+  const cancelled = new Promise<never>((_, rej) => { stop = rej; }); cancelled.catch(() => { });
+  cancelJob = () => stop(new Error('cancel'));
+  const say = (m: string) => toast(m, 'info', { sticky: true, action: { label: t('exp.cancel'), fn: cancelExport } });
+  Object.assign(exportJob, { busy: true, pct: 0, label: '' }); exportJob.onChange(); say(t('toast.rendering'));
+  const timer = window.setInterval(() => {
+    exportJob.pct = jobPct(i, n, renderProgress() ?? (exportJob.pct * n - i)); exportJob.onChange();
+    // Une seule annonce en cours de route (mi-parcours) : la zone de statut ne doit pas parler sans arrêt.
+    if (!half && n === 1 && exportJob.pct >= 0.5 && exportJob.pct < 0.95) { half = true; say(t('exp.half')); }
+  }, 150);
   try {
-    toast(t('toast.rendering'));
-    download(await encodeMp3(await renderOffline(S.project, true, exportRange())), safeName() + rangeName() + '.mp3');
+    await work((a, b, label = '') => { i = a; n = b; exportJob.label = label; exportJob.pct = jobPct(a, b, 0); exportJob.onChange(); if (label) say(label); }, p => Promise.race([p, cancelled]));
+  } catch (e) {
+    if ((e as Error).message === 'cancel') toast(t('exp.cancelled')); else toast(fail(e as Error), 'error');
+  } finally { clearInterval(timer); cancelJob = null; Object.assign(exportJob, { busy: false, pct: 0, label: '' }); exportJob.onChange(); }
+}
+const exportError = (e: Error) => e.message === 'empty' ? t('toast.emptyProject') : e.message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail');
+
+export function exportMp3() {
+  return runExport(async (step, guard) => {
+    const buf = await guard(renderOffline(S.project, true, exportRange()));
+    step(1, 1, t('exp.encoding'));
+    download(await guard(encodeMp3(buf)), safeName() + rangeName() + '.mp3');
     toast(t('toast.mp3Exported'));
-  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
+  }, exportError);
 }
 
 /**
@@ -306,11 +341,10 @@ const trusted = (): string[] => { try { return JSON.parse(localStorage.getItem('
  * Ajoute un plugin web. Un plugin est du code exécuté dans l'application : s'il vient d'un autre site,
  * l'utilisateur doit l'accepter explicitement (une fois par site).
  */
-export function addWam(trackId: string, url: string | null, name?: string) {
-  const tr = strip(trackId);
-  if (!tr) return;
-  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
-  const raw = url ?? prompt(t('wam.ask'), 'https://')?.trim();
+export async function addWam(trackId: string, url: string | null, name?: string) {
+  if (!strip(trackId)) return;
+  if (strip(trackId)!.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  const raw = url ?? (await ask(t('wam.ask'), 'https://', { mode: 'url' }))?.trim();
   if (!raw) return;
   let full: URL;
   try { full = new URL(wamUrl(raw)); } catch { return toast(t('wam.badUrl'), 'error'); }
@@ -318,10 +352,14 @@ export function addWam(trackId: string, url: string | null, name?: string) {
   if (full.origin !== location.origin) {
     const list = trusted();
     if (!list.includes(full.origin)) {
-      if (!confirm(t('wam.trust', full.host))) return;
+      if (!await confirmBox(t('wam.trust', full.host), t('wam.accept'), { danger: true })) return;
       try { localStorage.setItem('kh-wam-trust', JSON.stringify([...list, full.origin])); } catch { /* stockage désactivé */ }
     }
   }
+  // La question a pu rester ouverte un moment : la piste est relue (elle a pu être supprimée, ou remplie entre-temps).
+  const tr = strip(trackId);
+  if (!tr) return;
+  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
   const ins = newInsert('wam'); ins.url = raw; ins.name = name ?? (full.pathname.split('/').filter(Boolean).slice(-2, -1)[0] || full.host);
   tr.inserts.push(ins); commit();
 }
@@ -364,23 +402,36 @@ export function applyMixPreset(tr: Track, key: string) {
 }
 
 /** Demande un tempo (40 à 240) ; renvoie null si la saisie est annulée ou invalide. */
-function askTempo(current: number): number | null {
-  const v = Math.round(parseFloat((prompt(t('tempo.ask'), String(current)) ?? '').replace(',', '.')) * 100) / 100;
+async function askTempo(current: number): Promise<number | null> {
+  const v = Math.round(parseFloat(((await ask(t('tempo.ask'), String(current), { mode: 'decimal' })) ?? '').replace(',', '.')) * 100) / 100;
   if (!v) return null;
   if (v < 40 || v > 240) { toast(t('tempo.range'), 'error'); return null; }
   return v;
 }
 /** Place un changement de tempo au début de la mesure où se trouve la tête de lecture. */
-export function addTempo() {
-  const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
+export async function addTempo() {
+  const s = Math.round(engine.currentStep() / BAR) * BAR;
   if (s <= 0) return toast(t('tempo.start'));
-  const v = askTempo(bpmAt(p, s));
+  const v = await askTempo(bpmAt(S.project, s));
   if (!v) return;
+  const p = S.project;   // relu après la question (annulation ou autre projet entre-temps)
   p.tempos = [...p.tempos.filter(m => m.s !== s), { s, bpm: v }].sort((a, b) => a.s - b.s); commit();
 }
-export function editTempo(s: number) {
-  const m = S.project.tempos.find(x => x.s === s), v = m && askTempo(m.bpm);
+export async function editTempo(s: number) {
+  const cur = S.project.tempos.find(x => x.s === s), v = cur && await askTempo(cur.bpm);
+  const m = S.project.tempos.find(x => x.s === s);
   if (m && v) { m.bpm = v; commit(); }
+}
+/** Renomme le repère posé au pas `s`. */
+export async function renameMarker(s: number) {
+  const cur = S.project.markers.find(x => x.s === s), n = cur && (await ask(t('mark.rename'), cur.name))?.trim();
+  const m = S.project.markers.find(x => x.s === s);
+  if (m && n) { m.name = n.slice(0, 24); commit(); }
+}
+/** Renomme le projet (menu Projet, utile sur téléphone où le champ du nom est masqué). */
+export async function renameProject() {
+  const n = (await ask(t('top.pname'), S.project.name))?.trim();
+  if (n) { S.project.name = n; commit(); }
 }
 export function removeTempo(s: number) { S.project.tempos = S.project.tempos.filter(m => m.s !== s); commit(); }
 
@@ -503,10 +554,12 @@ export function tuneClip(amount: number) {
   commit(); toast(t('toast.tuned', Math.round(r.meanCents)));
 }
 
-export function splitClip() {
+export function splitClip() { splitClipAt(Math.round(engine.currentStep())); }
+/** Scinde le clip sélectionné au pas `at` (la tête de lecture pour Ctrl+E, l'endroit visé pour « Scinder ici »). */
+export function splitClipAt(at: number) {
   const f = findClip(S.selClip);
   if (!f) return toast(t('toast.selectClip'));
-  const { clip, track } = f, at = Math.round(engine.currentStep());
+  const { clip, track } = f;
   if (at <= clip.start || at >= clip.start + clip.len) return toast(t('toast.playheadInside'));
   const right: Clip = JSON.parse(JSON.stringify(clip));
   right.id = uid(); right.start = at; right.len = clip.start + clip.len - at;
@@ -605,30 +658,29 @@ export async function toggleRecord() {
 }
 engine.onRecEnd = kind => { allNotesOff(); if (kind === 'midi') setTimeout(commit, 350); };
 
-export async function exportWav() {
-  try {
-    toast(t('toast.rendering'));
-    download(encodeWav(await renderOffline(S.project, true, exportRange()), S.project.exp.bits), safeName() + rangeName() + '.wav');
+export function exportWav() {
+  return runExport(async (_step, guard) => {
+    download(encodeWav(await guard(renderOffline(S.project, true, exportRange())), S.project.exp.bits), safeName() + rangeName() + '.wav');
     toast(lastRender.wamFailed ? t('toast.exportedNoWam', lastRender.wamFailed) : t('toast.exported'), lastRender.wamFailed ? 'error' : 'info');
-  } catch (e) { toast((e as Error).message === 'empty' ? t('toast.emptyProject') : (e as Error).message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail'), 'error'); }
+  }, exportError);
 }
 
 /** Une piste = un fichier WAV, tous de la même durée, réunis dans une archive ZIP. */
 export async function exportStems() {
   const p = S.project;
   if (!contentEnd(p)) return toast(t('toast.emptyProject'), 'error');
-  try {
+  return runExport(async (step, guard) => {
     const files: { name: string; data: Uint8Array }[] = [];
     const list = p.tracks.filter(tr => tr.clips.length && !tr.mute);
     for (const [i, tr] of list.entries()) {
-      toast(t('toast.stem', i + 1, list.length));
+      step(i, list.length, t('toast.stem', i + 1, list.length));
       const solo: typeof p = { ...p, tracks: p.tracks.map(x => ({ ...x, solo: false, mute: x.id !== tr.id })) };
-      const wav = encodeWav(await renderOffline(solo, false, exportRange()), p.exp.bits);
+      const wav = encodeWav(await guard(renderOffline(solo, false, exportRange())), p.exp.bits);
       files.push({ name: `${String(i + 1).padStart(2, '0')}_${ascii(tr.name)}.wav`, data: new Uint8Array(await wav.arrayBuffer()) });
     }
     download(zip(files), safeName() + rangeName() + '_stems.zip');
     toast(t('toast.stemsDone', files.length));
-  } catch { toast(t('toast.exportFail'), 'error'); }
+  }, () => t('toast.exportFail'));
 }
 
 export function exportMidiFile() {

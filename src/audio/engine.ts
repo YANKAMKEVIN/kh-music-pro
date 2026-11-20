@@ -35,6 +35,13 @@ class Engine {
   private nextStep = 0;
   private nextTime = 0;
   private t0 = 0;
+  /** Durée du décompte de la lecture en cours (0 = aucun) : ne sert qu'à l'afficher. */
+  private pre = 0;
+  /** Décompte en cours : temps restants avant le départ (4 au premier clic, puis 3, 2, 1 ; valeur continue), 0 hors décompte. */
+  countLeft(): number {
+    if (!this.playing || this.pre <= 0) return 0;
+    return Math.max(0, Math.min(4, (this.t0 - this.ctx.currentTime) / (this.pre / 4)));
+  }
   /** Instant de départ de la lecture en cours : distingue une prise de la suivante. */
   get runStart() { return this.t0; }
   private seg = true;
@@ -113,6 +120,7 @@ class Engine {
     this.sync();
     this.playing = true;
     this.t0 = this.nextTime = this.ctx.currentTime + 0.06 + preroll;
+    this.pre = preroll;
     this.seg = true; this.marks = [];
     if (preroll > 0) { const beat = preroll / 4; for (let i = 0; i < 4; i++) this.click(this.t0 - preroll + i * beat, i === 0); }
     this.timer = window.setInterval(() => this.tick(), 25);
@@ -525,6 +533,20 @@ setLiveInstOf(id => engine.mix.instOf(id));
 /** `parts` : nombre de rendus menés en parallèle pour le dernier export (1 = d'un seul tenant). */
 export const lastRender = { wamFailed: 0, pdc: 0, parts: 1 };
 
+/** Rendus hors-ligne en cours : ne sert qu'à afficher l'avancement d'un export, le calcul n'en dépend pas. */
+const rendering = new Set<OfflineAudioContext>();
+async function tracked(off: OfflineAudioContext): Promise<AudioBuffer> {
+  rendering.add(off);
+  try { return await off.startRendering(); } finally { rendering.delete(off); }
+}
+/** Avancement du rendu en cours, de 0 à 1 (null si rien ne se calcule). Avec des rendus parallèles, le plus en retard donne le ton. */
+export function renderProgress(): number | null {
+  if (!rendering.size) return null;
+  let m = 1;
+  for (const c of rendering) m = Math.min(m, c.currentTime * c.sampleRate / c.length);
+  return Math.max(0, Math.min(1, m));
+}
+
 /** Rend une partie du projet (toutes ses pistes, ou un groupe d'entre elles) jusqu'au pas `end`.
  *  `stem` : la sortie s'arrête au volume général, avant sa chaîne (filtre, égaliseur, largeur, limiteur), appliquée ensuite une seule fois. */
 async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, limit: number | null = null) {
@@ -542,7 +564,7 @@ async function renderPart(p: Project, end: number, stem: boolean, sr = 44100, li
     off.suspend(q * 128 / sr).then(() => { fns.forEach(f => f()); off.resume(); });
   }
   await mix.flushInsts();   // instruments du Mac : toutes leurs notes sont arrivées avant le calcul
-  const out = await off.startRendering();
+  const out = await tracked(off);
   mix.active.clear(); mix.disposePlugins();
   return { out, wamFailed, pdc: mix.pdcMax };
 }
@@ -605,7 +627,7 @@ export async function renderOffline(p: Project, normalize = true, range: RenderR
     const off = new OfflineAudioContext(2, len, sr), mix = new Mix(off, false);
     mix.sync({ ...p, tracks: [], buses: [] });
     const src = off.createBufferSource(); src.buffer = sum; mix.masterChainIn(src); src.start(0);
-    out = await off.startRendering();
+    out = await tracked(off);
   }
   lastRender.parts = groups?.length ?? 1;
   // Compensation de latence des plugins : tout le mixage sort en retard de `pdcMax` ; on le ramène au début du fichier,

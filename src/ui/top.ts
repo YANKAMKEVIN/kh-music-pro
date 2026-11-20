@@ -1,4 +1,4 @@
-import { addMarker, addTempo, deskFiles, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
+import { addMarker, addTempo, cancelExport, deskFiles, exportJob, exportMidiFile, exportMp3, exportStems, exportWav, filesPicked, importMidiFile, openFile, openProjectFile, openRecentFile, pickAudio, renameProject, saveFile, saveFileAs, tapTempo, toggleRecord } from '../actions';
 import { engine } from '../audio/engine';
 import { LANGS, Lang, lang, setLang, t } from '../i18n';
 import { connectMidi, midi } from '../input';
@@ -8,6 +8,7 @@ import { keyLabel } from './editor';
 import { showAudio } from './audio';
 import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
+import { icon } from './icons';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -59,7 +60,7 @@ function wireMenus() {
 
 /** Construit la barre supérieure dans la langue courante. */
 export function buildTop(onLang: () => void) {
-  const b = (id: string, cls: string, label: string, tip: string, fn: () => void) => h('button', { id, class: cls, title: tip, 'aria-label': tip, onclick: fn }, label);
+  const b = (id: string, cls: string, label: string | Node, tip: string, fn: () => void) => h('button', { id, class: cls, title: tip, 'aria-label': tip, onclick: fn }, label);
   const tgl = (id: string, label: string, tip: string, fn: () => void) => h('button', { id, class: 'pill', title: tip, 'aria-label': tip, 'aria-pressed': 'false', onclick: fn }, label);
   const num = (id: string, label: string, min: number, max: number, fn: () => void) => { const i = h('input', { id, type: 'number', min: String(min), max: String(max), step: '1', 'aria-label': label, title: label }); i.onchange = fn; return i; };
 
@@ -104,7 +105,7 @@ export function buildTop(onLang: () => void) {
       ...(list.length ? [h('button', { id: 'bRecentClear', class: 'rclear', onclick: async () => { await desk.clearRecent(); fillRecent(); } }, t('file.clear'))] : []));
   };
   const menu = drop('menu', [t('top.project') + ' ▾'], t('top.project'),
-    item('bRename', t('top.rename'), () => { const n = prompt(t('top.pname'), S.project.name)?.trim(); if (n) { S.project.name = n; commit(); } }),
+    item('bRename', t('top.rename'), renameProject),
     item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bVersions', t('ver.menu'), showVersions), item('bOpen', t('top.open'), openProjectFile),
     item('bSave', t('top.save'), saveFile), ...(desk ? [item('bSaveAs', t('file.saveAs'), saveFileAs)] : []), item('bImport', t('top.import'), () => pickAudio()),
     ...(desk ? [recent] : []), item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()));
@@ -125,7 +126,10 @@ export function buildTop(onLang: () => void) {
   const more = h('details', { class: 'more', id: 'more' });
   more.append(h('summary', { class: 'pill', title: t('top.more'), 'aria-label': t('top.more') }, '☰'),
     h('div', { class: 'grp out' },
-      h('div', { class: 'split-btn' }, b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav), exportMore),
+      h('div', { class: 'split-btn' }, b('bExport', 'pill accent', t('top.export'), t('top.exportTip'), exportWav), exportMore,
+        // Pendant un export : le bouton laisse la place à une barre d'avancement et à un bouton Annuler.
+        h('div', { id: 'xProg', class: 'xprog', role: 'progressbar', 'aria-label': t('exp.progress'), 'aria-valuemin': '0', 'aria-valuemax': '100', hidden: true }, h('span', {})),
+        h('button', { id: 'bExportCancel', class: 'pill xcancel', title: t('exp.cancelTip'), 'aria-label': t('exp.cancelTip'), hidden: true, onclick: cancelExport }, '✕ ' + t('exp.cancel'))),
       settings, b('bHelp', 'icon', '?', t('top.help'), () => $<HTMLDialogElement>('help').showModal())));
   const wide = matchMedia('(min-width: 761px)');
   const syncMore = () => { more.open = wide.matches; };
@@ -140,6 +144,7 @@ export function buildTop(onLang: () => void) {
       b('bPlay', 'tbtn play', '▶', t('top.play'), () => engine.toggle()),
       b('bRec', 'tbtn rec', '●', t('top.rec'), () => toggleRecord())),
     h('div', { class: 'grp display' },
+      h('i', { id: 'beat', 'aria-hidden': 'true' }),
       h('div', {}, h('span', { id: 'pos' }, '1.1.1'), h('small', {}, t('top.bar'))),
       h('div', { class: 'dtime' }, h('span', { id: 'time' }, '0:00.0'), h('small', {}, t('top.time'))),
       h('label', {}, bpm, h('small', {}, 'BPM'))),
@@ -156,11 +161,26 @@ export function buildTop(onLang: () => void) {
     h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
     b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
     b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo),
-    b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', '📝', t('notes.title'), showNotes));
+    b('bMark', 'pill', '⚑', t('mark.add'), addMarker), b('bNotes', 'pill', icon('note', 17), t('notes.title'), showNotes));
 
+  exportJob.onChange = syncExport; syncExport();
   document.querySelectorAll<HTMLElement>('#tabs button').forEach(x => { x.textContent = t('tab.' + x.dataset.tab); });
   $('split').title = t('split.tip');
   buildHelp();
+}
+
+/** Bouton Exporter ↔ barre d'avancement : suit l'export en cours (pourcentage, ou « piste 3 sur 12 » pour les pistes séparées). */
+function syncExport() {
+  const prog = $('xProg'), j = exportJob, n = Math.round(j.pct * 100);
+  if (!prog) return;
+  const was = !prog.hidden;
+  $('bExport').hidden = $('mExport').hidden = j.busy; prog.hidden = $('bExportCancel').hidden = !j.busy;
+  prog.style.setProperty('--p', String(j.pct)); prog.setAttribute('aria-valuenow', String(n));
+  prog.setAttribute('aria-valuetext', j.label ? `${j.label} ${n} %` : `${n} %`);
+  prog.firstElementChild!.textContent = j.label ? `${j.label.replace(/…$/, '')} · ${n} %` : `${n} %`;
+  // Le focus ne se perd pas quand le bouton change : Exporter → Annuler au départ, Annuler → Exporter à la fin.
+  if (j.busy && !was && document.activeElement === document.body) $('bExportCancel').focus({ preventScroll: true });
+  if (!j.busy && was && document.activeElement === document.body) $('bExport').focus({ preventScroll: true });
 }
 
 /** Résumé des réglages d'export (bulle du bouton Exporter, fenêtre des options). */
@@ -207,7 +227,7 @@ export function showExportOptions() {
 function showNotes() {
   const d = $<HTMLDialogElement>('notes'), area = h('textarea', { id: 'notesText', 'aria-label': t('notes.title'), placeholder: t('notes.placeholder'), spellcheck: true });
   area.value = S.project.notes;
-  d.replaceChildren(h('h2', {}, '📝 ' + t('notes.title')), area, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close'))));
+  d.replaceChildren(h('h2', {}, icon('note', 22), t('notes.title')), area, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close'))));
   d.onclose = () => { if (area.value !== S.project.notes) { S.project.notes = area.value; commit(); } };
   d.showModal(); area.focus();
 }
@@ -236,7 +256,7 @@ function buildHelp() {
     [k(t('help.key.space')), 'space'], [k(t('help.key.enter')), 'enter'], [k('R'), 'rec'], [`${k('L')} / ${k('M')}`, 'loop'],
     [`${k('Ctrl')}+${k('Z')} / ${k('Y')}`, 'undo'], [`${k('Ctrl')}+${k('D')}`, 'dup'], [`${k('Ctrl')}+${k('E')}`, 'split'],
     [k(t('help.key.del')), 'del'], [`${k('Ctrl')}+${k('S')}`, 'save'], [piano + '…', 'piano'],
-    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [`${k('1')}–${k('9')}`, 'scenes'], [k(t('help.key.shiftClick')), 'multi'], [k(t('help.key.shiftDrag')), 'looprule'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
+    [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [`${k('1')}–${k('9')}`, 'scenes'], [k(t('help.key.shiftClick')), 'multi'], [k(t('help.key.shiftDrag')), 'looprule'], [k(t('help.key.ctrlWheel')), 'zoom'], [k(t('help.key.shiftWheel')), 'hscroll'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
   ];
   $('help').innerHTML = `
     <h2><span class="logo">KH</span> ${t('help.title')}</h2>
