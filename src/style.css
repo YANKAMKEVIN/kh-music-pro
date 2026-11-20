@@ -673,3 +673,12 @@ dialog.ask { width: min(440px, 92vw); padding: 22px 24px; }
 dialog.ask form { flex-wrap: wrap; }
 dialog.ask .pill { min-height: 40px; min-width: 96px; }
 .pill.dangerb { background: var(--rec); border-color: var(--rec); color: #fff; font-weight: 700; }
+
+/* ================= UX : niveau dans les têtes de piste, crête retenue, témoin de saturation ================= */
+.meter { position: relative; cursor: pointer; }
+.mpeak { position: absolute; left: 0; right: 0; height: 2px; background: #fff; opacity: 0; pointer-events: none; }
+.mclip { position: absolute; left: 0; right: 0; top: 0; height: 7px; padding: 0; border: 0; border-radius: 0; background: var(--rec); box-shadow: 0 0 8px var(--rec); }
+.mclip[hidden] { display: none; }
+.meter.clip { border-color: var(--rec); }
+.head .hmeter { position: absolute; right: 2px; top: 5px; bottom: 5px; width: 5px; border-radius: 3px; }
+@media (max-width: 760px) { .head .hmeter { right: 0; width: 3px; border: 0; } }

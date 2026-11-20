@@ -6,6 +6,7 @@ import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, co
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { clamp, followDrag, h, popMenu, resettable } from './dom';
+import { meter } from './meters';
 
 export const ICON: Record<TrackType, string> = { drums: '🥁', synth: '🎹', audio: '🎙️' };
 
@@ -132,6 +133,8 @@ function head(tr: Track) {
         class: 'mini autob' + (tr.autoShow ? ' on' : '') + (hasAuto ? ' has' : ''), title: t('auto.toggle'), 'aria-label': `${t('auto.toggle')} – ${tr.name}`, 'aria-pressed': String(!!tr.autoShow),
         onclick: (e: Event) => { e.stopPropagation(); tr.autoShow = tr.autoShow ? '' : 'vol'; commit(); },
       }, 'A'), vol),
+    // Niveau de la piste, visible sans quitter l'arrangement (même mesure que le vumètre du mixeur).
+    meter(tr.id, tr.name, 'hmeter'),
   );
 }
 

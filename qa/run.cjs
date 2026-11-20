@@ -155,6 +155,7 @@ async function reset() {
     Object.assign(k.S, { tab: 'editor', drumView: 'seq', px: 11, epx: 28, snap: 4, synthOpen: false, grid: '16', tuneAmt: 1, quant: { str: 1, swing: 0, hum: 0.5 }, ctlShow: false, ctlKind: 'pb' }); k.engine.ctlNow.clear(); k.kb.chord = 1; k.kb.octave = 0; k.kb.arp = 'off'; k.kb.arpRate = 2; k.kb.repeat = 0; k.S.kbShow = false; if (k.engine.padAt0) k.engine.padAt = k.engine.padAt0;
     document.querySelectorAll('dialog[open]').forEach(d => d.close()); if (document.querySelector('.tour')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     k.S.selMore.clear(); k.S.padEdit = -1; k.S.recOffsetMs = 0; try { localStorage.removeItem('kh-rec-offset'); localStorage.removeItem('kh-wam-trust'); } catch { }
+    k.meters.clipped.clear();
     Object.assign(k.mixSect, { eq: true, fx: true, send: true, dyn: true }); try { localStorage.removeItem('kh-mix-sect'); } catch { }
     k.learn.on = false; k.learn.target = ''; k.learn.map = {}; try { localStorage.removeItem('kh-midimap'); } catch { }
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
@@ -5087,6 +5088,35 @@ test('UX07b', 'Interface', 'Fenêtres maison : la valeur est sélectionnée, Ent
     await page.evaluate(l => window.kh.setLang(l), l); await S(() => { document.getElementById('bRename').click(); }); await page.waitForSelector('dialog.ask[open]');
     expect(await page.textContent('dialog.ask [data-act=ok]') === ok && await page.textContent('dialog.ask [data-act=cancel]') === no, 'boutons non traduits en ' + l); await refuse();
   }
+});
+
+const fillOf = sel => page.$eval(sel, e => parseFloat(e.style.transform.replace('scaleY(', '')) || 0);
+test('UX08a', 'Arrangement', 'Chaque tête de piste montre le niveau de sa piste pendant la lecture, comme le vumètre du mixeur', async () => {
+  expect(await page.$$eval('.head .meter.hmeter .mfill', l => l.length) === 5, 'un vumètre par tête de piste');
+  expect(await fillOf('.head >> nth=0 >> .mfill') === 0, 'niveau non nul à l’arrêt');
+  await S(() => { const p = window.kh.S.project; p.tracks[4].mute = true; window.kh.commit(); }); await page.keyboard.press('Space');
+  let top = 0, muted = 0; for (let i = 0; i < 25; i++) { top = Math.max(top, await fillOf('.head >> nth=0 >> .mfill')); muted = Math.max(muted, await fillOf('.head >> nth=4 >> .mfill')); await sleep(40); }
+  expect(top > 0.3, `le niveau de la batterie ne bouge pas dans sa tête (${top})`); expect(muted < 0.05, `une piste muette montre du niveau (${muted})`);
+  // Le trait de crête est au-dessus (ou au niveau) de la barre.
+  const pk = await page.$eval('.head >> nth=0 >> .meter', e => ({ on: e.querySelector('.mpeak').style.opacity === '1', b: parseFloat(e.querySelector('.mpeak').style.bottom.replace('calc(', '')) }));
+  expect(pk.on && pk.b > 20, 'crête retenue non affichée : ' + JSON.stringify(pk));
+  await tab('mixer'); let both = 0; for (let i = 0; i < 20 && both < 0.2; i++) { const [a, b] = [await fillOf('.head >> nth=0 >> .mfill'), await fillOf('.mixer > .strip >> nth=0 >> .mfill')]; if (Math.abs(a - b) < 0.2) both = Math.max(both, Math.min(a, b)); await sleep(50); }
+  expect(both > 0.2, 'la tête de piste et le mixeur ne montrent pas le même niveau');
+  await page.keyboard.press('Space');
+});
+test('UX08b', 'Mixeur', 'Crête retenue une seconde ; le témoin de saturation reste allumé jusqu’au clic, dans la tête de piste comme dans le mixeur', async () => {
+  const r = await S(() => { const f = window.kh.meters.peakHold; const a = f(undefined, 0.5, 0), b = f(a, 0.3, 400), c = f(b, 0.7, 500), d = f(c, 0.2, 1400), e = f(d, 0.2, 1600); return [a.v, b.v, c.v, d.v, e.v, e.t].join(); });
+  expect(r === '0.5,0.5,0.7,0.7,0.2,1600', 'crête retenue : ' + r);
+  near(await S(() => window.kh.meters.CLIP_AT), 54 / 57, 0.001, 'seuil du témoin (0 dB)');
+  await S(() => { const k = window.kh, p = k.S.project; Object.assign(p.tracks[0], { vol: 1.25, eqLow: 15, eqMid: 15, eqHigh: 15, comp: false, mute: false }); p.tracks.slice(1).forEach(t => { t.vol = 0.2; }); k.commit(); });
+  expect(!(await page.$('.head .meter.clip')), 'témoin allumé avant toute lecture');
+  await page.keyboard.press('Space'); await until(() => page.$('.head >> nth=0 >> .meter.clip'), 'la piste trop forte n’allume pas son témoin', 6000);
+  await S(() => window.kh.engine.stop()); await sleep(1500);
+  expect(await page.isVisible('.head >> nth=0 >> .mclip') && !(await page.$('.head >> nth=1 >> .meter.clip')), 'le témoin doit rester allumé après l’arrêt, et seulement sur la piste qui sature');
+  expect((await page.getAttribute('.head >> nth=0 >> .mclip', 'aria-label')).includes('Batterie'), 'nom du témoin pour les lecteurs d’écran');
+  await tab('mixer'); expect(await page.isVisible('.mixer > .strip >> nth=0 >> .mclip'), 'le mixeur ne montre pas le témoin');
+  await page.click('.mixer > .strip >> nth=0 >> .meter'); expect(!(await page.isVisible('.mixer > .strip >> nth=0 >> .mclip')), 'un clic n’éteint pas le témoin');
+  await S(() => window.kh.emit()); expect(!(await page.$('.meter.clip')), 'le témoin revient après un redessin');
 });
 
 (async () => {

@@ -6,6 +6,7 @@ import { S, commit, emit, select } from '../store';
 import { MIX_PRESETS, Project, Track, blankProject, newTrack } from '../types';
 import { ICON } from './arr';
 import { showRack } from './rack';
+import { meter, updateLevels } from './meters';
 import { db, h, pct, resettable, slider } from './dom';
 
 /** Valeurs d'origine d'une tranche et du général : là où reviennent les curseurs sur un double-clic. */
@@ -117,7 +118,7 @@ function strip(tr: Track, i: number, bus = false) {
       h('div', { class: 'fcol' },
         // Le panoramique reste sous la main, au-dessus du fader, avec le volume, le muet et le solo.
         T(slider(t('mix.pan'), -1, 1, 0.01, tr.pan, v => tr.pan = v, panFmt, 'panc', false, D.pan), 'pan'),
-        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: tr.id } })), bus ? f.inp : tag(f.inp, `${i}:vol`)),
+        h('div', { class: 'fwrap' }, meter(tr.id, tr.name), bus ? f.inp : tag(f.inp, `${i}:vol`)),
         f.out,
         h('div', { class: 'srow' }, tog('mute', 'M'), !bus && tog('solo', 'S')))));
 }
@@ -178,7 +179,7 @@ export function renderMixer(): HTMLElement {
           h('span', { class: 'sect' }, t('mix.export')), target,
           h('button', { class: 'mini', data: { act: 'analyze' }, title: t('mix.analyzeTip'), onclick: async () => { lastResult = await analyzeMix(); result.textContent = lastResult; } }, '📊 ' + t('mix.analyze')), result),
         h('div', { class: 'fcol' },
-        h('div', { class: 'fwrap' }, h('div', { class: 'meter' }, h('div', { class: 'mfill', data: { id: 'master' } })), tag(m.inp, 'm:master')),
+        h('div', { class: 'fwrap' }, meter('master', t('mix.master')), tag(m.inp, 'm:master')),
         m.out, h('p', { class: 'tip' }, t('mix.limiter'))))));
   // En mode assignation, un clic sur un réglage le désigne au lieu de le modifier.
   root.addEventListener('pointerdown', e => {
@@ -222,10 +223,7 @@ function drawEq() {
 }
 
 export function updateMeters() {
-  drawSpectrum(); drawEq();
-  document.querySelectorAll<HTMLElement>('.mfill').forEach(el => {
-    el.style.transform = `scaleY(${engine.level(el.dataset.id!).toFixed(3)})`;
-  });
+  drawSpectrum(); drawEq(); updateLevels();
 }
 
 // ---------- Indicateur de charge (V17) ----------
