@@ -288,6 +288,8 @@ function install(p: Project, id: string) {
   S.file = fileOf(id); setDirty(false);
   resetHistory(); autosave(); emit();
 }
+/** Remplace le projet ouvert, sans en créer un autre dans la bibliothèque (accueil du premier lancement : la démo n'a pas encore servi). */
+export function replaceProject(p: Project) { install(p, S.pid || uid()); }
 /** Démarre un nouveau projet ; le précédent reste dans la bibliothèque. */
 export function startProject(p: Project) {
   saveNow().catch(() => { });

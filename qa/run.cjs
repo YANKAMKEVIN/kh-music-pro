@@ -137,8 +137,10 @@ async function openPage(ready) {
   page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
   await page.addInitScript(PAGE_HELPERS);
   await page.goto(BASE); await page.waitForSelector('.clip');
-  if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await closeWelcome(page);
 }
+/** Premier lancement d'un profil neuf : l'accueil s'ouvre ; on le referme par « Commencer ». */
+async function closeWelcome(pg) { if (await pg.$('#welcome')) { await pg.click('#bWelGo'); await pg.waitForSelector('#welcome', { state: 'detached' }); } }
 let page, browser, dialogText, refuseConfirm = false, ignoreErr = null, errors = [];
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const near = (a, b, tol, msg) => expect(Math.abs(a - b) <= tol, `${msg} (attendu ≈ ${b}, obtenu ${typeof a === 'number' ? +a.toFixed(4) : a})`);
@@ -1127,7 +1129,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-    await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
     expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top <= 120 && lay.topScroll <= lay.iw + 1, `barre supérieure non compacte ou qui déborde (${lay.top} px, ${lay.topScroll} px de large)`);   // V18 : deux lignes sans défilement
     expect(lay.panel > 250 && lay.arr > 180 && lay.lane < 140, `zones mal réparties (${JSON.stringify(lay)})`);
@@ -1147,7 +1149,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
 test('MB02', 'Téléphone', 'Au doigt : déplacer un clip et dessiner une courbe d\'automation', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     const cdp = await ctx2.newCDPSession(pg);
     const swipe = async (x, y, dx, dy) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 5, y: y + dy * i / 5 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150); };
     await pg.evaluate(() => { const k = window.kh; k.S.project.tracks[1].clips[0].len = 16; k.S.project.tracks[1].autoShow = 'vol'; k.commit(); });
@@ -1174,7 +1176,7 @@ test('OK01', 'Clavier à l\'écran', 'Afficher le clavier, jouer une touche à l
 test('OK02', 'Clavier à l\'écran', 'Sur écran tactile : clavier affiché d\'office, accord à deux doigts', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     await pg.tap('.head >> nth=1 >> .tname'); expect(await pg.$('.okb'), 'clavier absent sur écran tactile');
     const a = await (await pg.$('.wk[data-m="48"]')).boundingBox(), b = await (await pg.$('.wk[data-m="55"]')).boundingBox(), cdp = await ctx2.newCDPSession(pg);
     const pt = (r, id) => ({ x: r.x + r.width / 2, y: r.y + r.height - 12, id });
@@ -1468,7 +1470,7 @@ test('TR01', 'Visite guidée', 'La visite se lance depuis l\'aide, éclaire 8 zo
 test('TR02', 'Visite guidée', 'Sur téléphone, chaque bulle de la visite tient à l\'écran', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#bTour'); else await pg.evaluate(() => window.kh.startTour());
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$('#welcome')) await pg.tap('#bWelTour'); else await pg.evaluate(() => window.kh.startTour());
     await pg.waitForSelector('.tour');
     for (let i = 1; i <= 8; i++) { await pg.waitForTimeout(260); const st = await tourState(pg); expect(st && st.n === `${i} / 8` && st.inView, `étape ${i} : ${JSON.stringify(st)}`); await pg.tap('[data-act=tournext]'); }
     expect(!(await pg.$('.tour')), 'visite non terminée');
@@ -2325,7 +2327,7 @@ test('BN06', 'Banque généraliste', 'Sur téléphone, le sélecteur de sons et 
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   try {
     const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     await pg.tap('.head >> nth=1');
     await pg.selectOption('[data-role=preset]', 'r_steelpan');
     expect(await pg.evaluate(() => window.kh.engine.prepare()), 'chargement sur téléphone');
@@ -2569,7 +2571,7 @@ test('SB06', 'Navigateur de sons', 'La recherche bloque les raccourcis musicaux 
 test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
     await pg.tap('.head >> nth=1 >> .tname'); await pg.tap('[data-act=sound-browser]');
     await pg.fill('[data-role=sound-search]', 'orgue'); await pg.selectOption('[data-role=sound-family]', 'realKeys');
     await pg.tap(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
@@ -3830,7 +3832,7 @@ test('TB05', 'Barre du haut', 'Téléphone : barre sans débordement, transport 
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); pg.on('dialog', d => d.accept('Titre au doigt')); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     expect(await pg.$eval('#top', e => e.scrollWidth <= e.clientWidth + 1), 'la barre déborde sur téléphone');
     for (const id of ['bPlay', 'bStop', 'bRec', 'pos', 'bpm', 'bMetro', 'bLoop', 'bUndo']) {
       const b = await pg.locator('#' + id).boundingBox(); expect(b && b.x >= 0 && b.x + b.width <= 375, `${id} hors écran : ${JSON.stringify(b)}`);
@@ -4067,7 +4069,7 @@ test('TH05', 'Têtes de piste', 'Téléphone : noms lisibles, ⋯ au doigt (mont
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     const fit = await pg.$$eval('.head .tname', l => l.slice(0, 4).map(i => i.scrollWidth <= i.clientWidth + 1));
     expect(fit.every(Boolean), 'noms coupés sur téléphone : ' + JSON.stringify(fit));
     const order = () => pg.evaluate(() => window.kh.S.project.tracks.map(t => t.name).join(','));
@@ -4217,7 +4219,7 @@ test('CT08', 'Contrôles joués', 'Fichier MIDI : bend, molette et pression expo
   expect(r.ctl && r.ctl.pb && r.ctl.mod && r.ctl.at, 'contrôles perdus à la relecture : ' + JSON.stringify(r.ctl));
   near(r.ctl.pb.find(p => p.s === 4).v, 0.5, 0.001, 'bend +0,5 relu'); near(r.ctl.pb.find(p => p.s === 8).v, -1, 0.001, 'bend -1 relu');
   near(r.ctl.mod[0].v, 0.75, 0.01, 'molette relue'); near(r.ctl.at[0].v, 0.3, 0.01, 'pression relue');
-  await S(() => window.kh.store.saveNow()); await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await S(() => window.kh.store.saveNow()); await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   const back = await S(() => window.kh.S.project.tracks[1].clips[0].ctl);
   expect(back && back.pb.length === 3 && back.mod[0].v === 0.75 && back.at[0].v === 0.3, 'contrôles perdus après rechargement : ' + JSON.stringify(back));
 });
@@ -4271,7 +4273,7 @@ test('CT12', 'Contrôles joués', 'Téléphone : molettes couchées au-dessus du
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.addInitScript(PAGE_HELPERS); await pg.goto(BASE); await pg.waitForSelector('.clip');
-    if (await pg.$eval('#help', d => d.open)) await pg.tap('#help button.accent');
+    await closeWelcome(pg);
     await pg.evaluate(() => { const k = window.kh, tr = k.S.project.tracks[1]; k.S.selTrack = tr.id; k.S.selClip = ''; k.S.kbShow = true; k.S.tab = 'editor'; k.commit(); k.onMidi([0x90, 69, 90]); });
     await pg.waitForSelector('.wheel.flat[data-ctl=pb]');
     const kw = await pg.$$eval('.okb .wk', l => Math.min(...l.map(e => e.getBoundingClientRect().width)));
@@ -4467,7 +4469,7 @@ test('CP04', 'Comping', 'Prise entière, annulation, scission et rognage à gauc
 test('CP05', 'Comping', 'Le comping est gardé au rechargement de la page', async () => {
   await takesClip();
   await S(async () => { const k = window.kh, c = k.S.project.tracks.find(t => t.type === 'audio').clips[0]; c.comp = [{ s: 0, take: 2 }, { s: 8, take: 1 }]; k.commit(); await k.store.saveNow(); });
-  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   const c = await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(x => x.id === 'ctk'));
   expect(c && JSON.stringify(c.comp) === JSON.stringify([{ s: 0, take: 2 }, { s: 8, take: 1 }]), 'comping perdu : ' + JSON.stringify(c && c.comp));
   const hz = await pitchAt([0.5, 1.5]); expect(Math.abs(hz[0] - 550) < 10 && Math.abs(hz[1] - 440) < 8, 'hauteurs après rechargement : ' + hz);
@@ -4532,7 +4534,7 @@ test('CF04', 'Fondus enchaînés', 'Export parallèle d’un gros projet, scissi
   expect(r.diff < 1e-3, 'parallèle ≠ un seul tenant : ' + r.diff);   // même seuil qu'AD07 (−60 dB)
   expect(await toneIn(330, 2.02, 2.1) > 0.2, 'fondu absent de l’export');
   await S(async () => { await window.kh.store.saveNow(); });
-  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   expect(await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio').clips.find(c => c.id === 'xb')?.xfade) === 2, 'fondu perdu au rechargement');
 });
 
@@ -4651,7 +4653,7 @@ test('SD03', 'Envois', 'Gros projet : export parallèle identique à l’export 
 test('SD04', 'Envois', 'Envois et source du sidechain traduits, gardés au rechargement', async () => {
   await scProject();
   await S(async () => { const k = window.kh, [syn, au] = k.S.project.tracks; syn.sc = au.id; syn.duck = 0.6; k.S.project.buses = [k.newBus(1)]; syn.sends = [{ id: 'sx', bus: k.S.project.buses[0].id, amt: 0.4, pre: true }]; k.commit(); await k.store.saveNow(); });
-  await page.reload(); await page.waitForSelector('.clip'); if (await page.$eval('#help', d => d.open)) await page.click('#help button.accent');
+  await page.reload(); await page.waitForSelector('.clip'); await closeWelcome(page);
   const t0 = await S(() => window.kh.S.project.tracks[0]);
   expect(t0.sc === (await S(() => window.kh.S.project.tracks[1].id)) && t0.sends?.[0]?.pre === true && t0.sends[0].amt === 0.4, 'réglages perdus : ' + JSON.stringify([t0.sc, t0.sends]));
   await tab('mixer');
@@ -5151,6 +5153,49 @@ test('UX09c', 'Live', 'La scène en cours est marquée, la scène attendue clign
   expect(/next|on/.test(st), 'la scène 2 attendue n’est pas signalée : ' + st);
   await until(() => page.$('.lscene[data-scene="1"].on'), 'la scène 2 ne devient pas la scène en cours'); expect(!(await page.$('.lscene[data-scene="0"].on')), 'deux scènes marquées');
   await page.click('[data-act=stopall]'); await sleep(150); expect(!(await page.$('.lscene.on, .lscene.next')), 'scène encore marquée après l’arrêt');
+});
+
+/** Profil neuf (première visite) dans un contexte à part. */
+async function firstVisit(fn, opts = {}) {
+  const c = await browser.newContext({ viewport: { width: 1500, height: 900 }, locale: 'fr-FR', ...opts });
+  try { const pg = await c.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(BASE); await pg.waitForSelector('.clip'); await pg.waitForSelector('#welcome[open]'); await fn(pg); expect(!errs.length, 'erreur dans la page : ' + errs[0]); }
+  finally { await c.close(); }
+}
+test('UX10a', 'Accueil', 'Première visite : un accueil court (question, cinq modèles, visite guidée, Commencer) à la place de la notice ; « ? » ouvre toujours l’aide', async () => {
+  await firstVisit(async pg => {
+    expect(!(await pg.$eval('#help', d => d.open)), 'la notice complète s’ouvre encore à la première visite');
+    const w = await pg.evaluate(() => { const d = document.getElementById('welcome'); return { q: d.querySelector('.welq').textContent, tpl: [...d.querySelectorAll('.tpl')].map(b => b.dataset.tpl).join(), tour: !!d.querySelector('#bWelTour'), focus: document.activeElement?.id, modal: d.matches(':modal'), words: d.textContent.trim().split(/\s+/).length, h: d.getBoundingClientRect().height, name: document.getElementById(d.getAttribute('aria-labelledby'))?.textContent }; });
+    expect(w.q === 'Par quoi voulez-vous commencer ?' && w.tpl === 'empty,trap,house,lofi,demo' && w.tour && w.focus === 'bWelGo' && w.modal, 'accueil : ' + JSON.stringify(w));
+    expect(w.words < 90 && w.h < 620 && w.name.includes('Bienvenue'), `l’accueil doit rester court (${w.words} mots, ${Math.round(w.h)} px)`);
+    await pg.keyboard.press('Enter'); await pg.waitForSelector('#welcome', { state: 'detached' });
+    expect(await pg.evaluate(() => window.kh.S.project.name) === 'Démo' && await pg.evaluate(() => localStorage.getItem('kh-welcome')) === '1', '« Commencer » doit garder le morceau d’exemple et ne plus revenir');
+    await pg.click('#bHelp'); expect(await pg.$eval('#help', d => d.open) && (await pg.textContent('#help')).includes('Ctrl'), 'l’aide complète n’est plus derrière « ? »');
+    await pg.keyboard.press('Escape'); await pg.reload(); await pg.waitForSelector('.clip'); await pg.waitForTimeout(300); expect(!(await pg.$('#welcome')), 'l’accueil revient à la deuxième visite');
+  });
+});
+test('UX10b', 'Accueil', 'Choisir un modèle à l’accueil : il remplace le morceau d’exemple (un seul projet dans la bibliothèque) et joue', async () => {
+  await firstVisit(async pg => {
+    await pg.click('#welcome [data-tpl=house]'); await pg.waitForSelector('#welcome', { state: 'detached' });
+    const p = await pg.evaluate(() => ({ name: window.kh.S.project.name, bpm: window.kh.S.project.bpm, clips: window.kh.S.project.tracks[0].clips.length, sel: !!window.kh.S.selTrack }));
+    expect(p.name === 'House' && p.bpm === 124 && p.clips >= 1 && p.sel, 'modèle non ouvert : ' + JSON.stringify(p));
+    await pg.evaluate(() => window.kh.store.saveNow()); await pg.evaluate(() => window.kh.showLibrary());
+    expect(await pg.$$eval('#lib .plist li', l => l.length) === 1, 'le morceau d’exemple jamais utilisé ne doit pas encombrer la bibliothèque');
+    await pg.keyboard.press('Escape'); await pg.keyboard.press('Space'); await pg.waitForTimeout(600);
+    expect(await pg.evaluate(() => window.kh.engine.playing && window.kh.engine.currentStep() > 1), 'le modèle ne joue pas');
+    await pg.keyboard.press('Control+z'); expect(await pg.evaluate(() => window.kh.S.project.name) === 'House', 'Annuler ne doit pas ramener le morceau d’exemple');
+  });
+});
+test('UX10c', 'Accueil', 'Accueil : la visite guidée démarre ; Échap referme ; téléphone et trois langues', async () => {
+  await firstVisit(async pg => {
+    await pg.click('#bWelTour'); await pg.waitForSelector('.tour'); expect(!(await pg.$('#welcome')), 'accueil encore là pendant la visite'); await pg.keyboard.press('Escape');
+    for (const [l, w] of [['en', 'Get started'], ['es', 'Empezar'], ['fr', 'Commencer']]) { await pg.evaluate(l => { window.kh.setLang(l); window.kh.showWelcome(); }, l); expect(await pg.textContent('#bWelGo') === w, 'accueil non traduit en ' + l); }
+    await pg.keyboard.press('Escape'); await pg.waitForTimeout(150); expect(!(await pg.$('#welcome')), 'Échap ne referme pas l’accueil');
+  });
+  await firstVisit(async pg => {
+    const b = await pg.evaluate(() => { const r = document.getElementById('welcome').getBoundingClientRect(); return { x: r.left, w: r.width, h: r.height, vh: innerHeight, sw: document.documentElement.scrollWidth, btn: Math.min(...[...document.querySelectorAll('#welcome .pill, #welcome .tpl')].map(e => e.getBoundingClientRect().height)) }; });
+    expect(b.x >= 0 && b.x + b.w <= 375 && b.h <= b.vh && b.sw <= 376, 'accueil hors de l’écran du téléphone : ' + JSON.stringify(b)); expect(b.btn >= 44, `cibles trop petites au doigt (${b.btn} px)`);
+    await pg.tap('#welcome [data-tpl=lofi]'); await pg.waitForSelector('#welcome', { state: 'detached' }); expect(await pg.evaluate(() => window.kh.S.project.bpm) === 82, 'modèle au doigt');
+  }, { viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
 });
 
 (async () => {

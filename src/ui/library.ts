@@ -1,24 +1,50 @@
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { allNotesOff } from '../input';
-import { S, emit, deleteProject, duplicateProject, library, listVersions, openProject, restoreVersion, snapshot, startProject } from '../store';
+import { S, emit, deleteProject, duplicateProject, library, listVersions, openProject, replaceProject, restoreVersion, snapshot, startProject } from '../store';
 import { TEMPLATES, Template, templateProject } from '../types';
 import { confirmBox, h, toast } from './dom';
+import { startTour } from './tour';
 
 const ICONS: Record<Template, string> = { empty: '📄', trap: '🔥', house: '🪩', lofi: '☕', demo: '✨' };
 const dlg = () => document.getElementById('lib') as HTMLDialogElement;
 const halt = () => { engine.stop(); engine.stop(); allNotesOff(); };
 
-export function createFromTemplate(tpl: Template) {
-  halt(); startProject(templateProject(tpl));
+/** Ouvre un modèle. `replace` : à la place du projet ouvert (premier lancement), au lieu d'un nouveau projet dans la bibliothèque. */
+export function createFromTemplate(tpl: Template, replace = false) {
+  halt(); (replace ? replaceProject : startProject)(templateProject(tpl));
   S.selTrack = S.project.tracks[0].id; S.selClip = S.project.tracks[0].clips[0]?.id ?? '';
   emit(); engine.prepare();
 }
 
+/** Les modèles en cartes (Vide, Trap, House, Lo-fi, Démo) : dans la fenêtre des projets et à l'accueil. */
+function tplCards(pick: (k: Template) => void) {
+  return h('div', { class: 'tpls' }, ...TEMPLATES.map(k => h('button', { class: 'tpl', data: { tpl: k }, onclick: () => pick(k) },
+    h('span', { class: 'tico' }, ICONS[k]), h('strong', {}, t('tpl.' + k)), h('small', {}, t('tpl.' + k + '.d')))));
+}
+
+/**
+ * Accueil du premier lancement : au lieu de la notice complète, une question (« Par quoi commencer ? »), les modèles en cartes,
+ * la visite guidée et un bouton pour commencer. L'aide complète reste derrière le bouton « ? ».
+ */
+export function showWelcome() {
+  document.getElementById('welcome')?.remove();
+  const d = h('dialog', { id: 'welcome', class: 'welcome', 'aria-labelledby': 'welT' });
+  const end = () => { if (d.open) d.close(); d.remove(); };
+  const go = h('button', { class: 'pill accent', id: 'bWelGo', onclick: end }, t('wel.go'));
+  d.append(
+    h('h2', { id: 'welT' }, h('span', { class: 'logo' }, 'KH'), t('help.title')),
+    h('p', { class: 'welq' }, t('wel.q')),
+    tplCards(k => { createFromTemplate(k, true); end(); }),
+    h('p', { class: 'tip' }, t('wel.tip')),
+    h('div', { class: 'vrow' }, h('button', { class: 'pill', id: 'bWelTour', onclick: () => { end(); setTimeout(startTour, 50); } }, '🧭 ' + t('tour.start')), go));
+  d.addEventListener('cancel', end); d.addEventListener('close', end);
+  document.body.append(d); d.showModal(); go.focus();
+}
+
 function render() {
   const d = dlg(), fmt = new Intl.DateTimeFormat(document.documentElement.lang, { dateStyle: 'medium', timeStyle: 'short' });
-  const tpl = h('div', { class: 'tpls' }, ...TEMPLATES.map(k => h('button', { class: 'tpl', data: { tpl: k }, onclick: () => { createFromTemplate(k); d.close(); toast(t('lib.created')); } },
-    h('span', { class: 'tico' }, ICONS[k]), h('strong', {}, t('tpl.' + k)), h('small', {}, t('tpl.' + k + '.d')))));
+  const tpl = tplCards(k => { createFromTemplate(k); d.close(); toast(t('lib.created')); });
   const rows = [...library].sort((a, b) => b.updated - a.updated).map(e => {
     const cur = e.id === S.pid;
     return h('li', { class: cur ? 'cur' : '', data: { pid: e.id } },

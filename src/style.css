@@ -692,3 +692,11 @@ dialog.ask .pill { min-height: 40px; min-width: 96px; }
 .lcell.queued { padding-right: 40px; }
 .lscene.on { background: var(--grad); color: #050816; border-color: transparent; box-shadow: 0 0 16px rgba(34, 211, 238, .5); }
 .lscene.next { border-color: #fff; animation: blink .5s steps(2) infinite; --c: var(--a1); }
+
+/* ================= UX : accueil du premier lancement ================= */
+dialog.welcome { width: min(720px, 94vw); }
+dialog.welcome h2 { font-size: 22px; }
+.welq { margin: 4px 0 14px; font-size: 16px; color: var(--txt); }
+dialog.welcome .tip { margin: 14px 0 0; line-height: 1.5; }
+dialog.welcome .pill { min-height: 44px; padding: 0 18px; }
+@media (max-width: 760px) { dialog.welcome h2 { font-size: 18px; } dialog.welcome .tpls { grid-template-columns: 1fr 1fr; } dialog.welcome .tpl { min-height: 0; padding: 10px; } }
