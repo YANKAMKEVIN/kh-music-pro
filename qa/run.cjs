@@ -5243,6 +5243,32 @@ test('UX11c', 'Projets', 'Au-delà de huit projets, un champ de recherche filtre
   await libOnlyCurrent(); await page.keyboard.press('Escape');
 });
 
+const recLook = () => page.evaluate(() => { const z = document.getElementById('recz'), cs = getComputedStyle(document.getElementById('ph')), rec = document.querySelector('#arr .head.rec'); return { ph: cs.backgroundColor, rec: rec?.dataset.id ?? '', zone: getComputedStyle(z).display !== 'none', w: z.offsetWidth, top: z.offsetTop, left: z.offsetLeft, ruler: getComputedStyle(document.querySelector('.ruler')).boxShadow.includes('255, 77, 109') }; });
+test('UX12a', 'Enregistrement', 'Pendant une prise : tête de lecture et règle rouges, liseré sur la piste enregistrée, voile sur la zone déjà captée ; tout s’efface à l’arrêt', async () => {
+  const r = await S(() => { const f = window.kh.recSpan; let z = f(null, 8); z = f(z, 12); z = f(z, 30); const a = [z.from, z.to]; z = f(z, 16); return [...a, z.from, z.to, f(f(null, 40), 32).from].join(); });
+  expect(r === '8,30,8,30,32', 'zone parcourue : ' + r);
+  const idle = await recLook(); expect(idle.ph === 'rgb(255, 255, 255)' && !idle.rec && !idle.zone && !idle.ruler, 'rouge affiché sans enregistrement : ' + JSON.stringify(idle));
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 180; p.countIn = false; p.loop = false; k.S.selTrack = p.tracks[2].id; k.S.selClip = ''; k.commit(); k.engine.seek(16); });
+  await page.keyboard.press('r'); await until(() => S(() => window.kh.engine.recording === 'midi' && window.kh.engine.currentStep() > 20), 'la prise ne démarre pas', 8000);
+  const lane = await page.evaluate(() => { const t = window.kh.S.project.tracks[2], l = document.querySelector(`.lane[data-id="${t.id}"]`); return { id: t.id, top: l.offsetTop }; });
+  const a = await recLook(); await sleep(500); const b = await recLook();
+  expect(a.ph === 'rgb(255, 77, 109)' && a.ruler, 'tête de lecture ou règle pas rouges : ' + JSON.stringify(a));
+  expect(a.rec === lane.id, 'liseré sur la mauvaise piste : ' + a.rec);
+  expect(a.zone && a.top === lane.top && a.left === 16 * 11 && b.w > a.w && a.w > 20, 'zone captée : ' + JSON.stringify([a, b]));
+  await S(() => window.kh.emit()); await sleep(120); const c = await recLook(); expect(c.zone && c.rec === lane.id && c.w >= b.w, 'un redessin efface la zone captée : ' + JSON.stringify(c));
+  await S(() => window.kh.engine.stop()); await sleep(250);
+  const end = await recLook(); expect(end.ph === 'rgb(255, 255, 255)' && !end.rec && !end.zone && !end.ruler, 'le rouge reste après la prise : ' + JSON.stringify(end));
+});
+test('UX12b', 'Enregistrement', 'Prise micro : la piste audio sélectionnée est marquée ; rien n’est voilé pendant le décompte', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 120; p.countIn = true; p.loop = false; p.punch = false; k.S.selTrack = p.tracks[4].id; k.S.selClip = ''; k.commit(); });
+  await page.keyboard.press('r'); await until(() => S(() => window.kh.engine.recording === 'audio' && window.kh.engine.countLeft() > 0.5), 'décompte de la prise micro non atteint', 8000);
+  const a = await recLook(), id = await S(() => window.kh.S.project.tracks[4].id);
+  expect(a.rec === id && !a.zone && a.ph === 'rgb(255, 77, 109)', 'pendant le décompte : ' + JSON.stringify(a));
+  await until(() => S(() => window.kh.engine.countLeft() === 0 && window.kh.engine.currentStep() > 3), 'la prise ne démarre pas après le décompte', 8000);
+  const b = await recLook(); expect(b.zone && b.w > 15 && b.left === 0, 'pas de voile après le décompte : ' + JSON.stringify(b));
+  await S(() => window.kh.engine.stop()); await sleep(600); expect(!(await recLook()).zone, 'voile encore là après la prise');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

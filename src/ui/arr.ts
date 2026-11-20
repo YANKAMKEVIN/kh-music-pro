@@ -387,9 +387,40 @@ export function renderArr() {
     if (tr.autoShow) { heads.append(ahead(tr)); lanes.append(alane(tr, total)); }
   }
   if (!p.tracks.length) lanes.append(h('div', { class: 'empty' }, t('hint.noTracks')));
-  lanes.append(h('div', { id: 'ph' }));
+  lanes.append(h('div', { id: 'recz' }), h('div', { id: 'ph' }));
 
   root.replaceChildren(h('div', { class: 'arr-inner' }, heads, lanes));
+}
+
+// ---------- Prise en cours : piste enregistrée et zone déjà captée ----------
+/** Zone parcourue par une prise, en pas : elle s'étend avec la tête de lecture (en boucle, elle finit par couvrir toute la boucle). */
+export function recSpan(prev: { from: number; to: number } | null, step: number): { from: number; to: number } {
+  return prev ? { from: Math.min(prev.from, step), to: Math.max(prev.to, step) } : { from: step, to: step };
+}
+let recZone: { from: number; to: number } | null = null, recOn = false;
+/**
+ * À chaque image pendant un enregistrement : liseré rouge sur la tête de la piste enregistrée et voile rouge léger sur la zone
+ * déjà captée (rien pendant le décompte ; en punch, seulement la zone de boucle). Tout s'efface à la fin de la prise.
+ */
+export function updateRecView(step: number) {
+  const z = document.getElementById('recz');
+  if (!z) return;
+  if (!engine.recording) {
+    if (recOn) { recOn = false; recZone = null; z.style.display = ''; document.querySelectorAll('#arr .head.rec').forEach(e => e.classList.remove('rec')); }
+    return;
+  }
+  recOn = true;
+  // Piste qui reçoit la prise : celle du jeu enregistré, ou la piste audio sélectionnée (sinon la prise ira sur une piste audio libre).
+  const id = engine.recording === 'midi' ? engine.recTrack : findTrack(S.selTrack)?.type === 'audio' ? S.selTrack : '';
+  document.querySelectorAll<HTMLElement>('#arr .head').forEach(e => e.classList.toggle('rec', !!id && e.dataset.id === id));
+  if (engine.countLeft() > 0) { recZone = null; z.style.display = ''; return; }
+  // La zone part du point de départ de la prise (la tête de lecture y était à l'arrêt), pas de la première image affichée.
+  recZone = recSpan(recZone ?? recSpan(null, engine.pos), step);
+  let { from, to } = recZone;
+  if (engine.recording === 'audio' && engine.recMode === 'punch') { const p = S.project; from = Math.max(from, p.loopStart * BAR); to = Math.min(to, (p.loopStart + p.loopLen) * BAR); }
+  const lane = id ? document.querySelector<HTMLElement>(`#arr .lane[data-id="${id}"]`) : null, all = z.parentElement!;
+  if (to <= from) { z.style.display = ''; return; }
+  z.style.cssText = `display:block;left:${from * S.px}px;width:${(to - from) * S.px}px;top:${lane ? lane.offsetTop : 36}px;height:${lane ? lane.offsetHeight : all.scrollHeight - 36}px`;
 }
 
 /** Met à jour les surbrillances de sélection sans reconstruire le DOM. */
