@@ -493,6 +493,11 @@ class Engine {
     if (!a) return 0;
     const buf = this.scratch.subarray(0, a.fftSize);
     a.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>);
+    // Trame abîmée : la fenêtre commence avant le son (ouverture de l'entrée, attaque d'une note), sa hauteur serait fausse
+    // de quelques centièmes. On la saute : son début est nettement plus faible que sa fin.
+    const q = buf.length >> 3; let head = 0, tail = 0;
+    for (let i = 0; i < q; i++) { head += buf[i] * buf[i]; tail += buf[buf.length - 1 - i] * buf[buf.length - 1 - i]; }
+    if (head < tail * 0.25) return 0;
     return detectPitch(buf, this.ctx.sampleRate);
   }
 

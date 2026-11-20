@@ -757,20 +757,23 @@ export function renderEditor(): HTMLElement {
 }
 
 /** Accordeur : affiche la note reçue et son écart (lissé pour rester lisible). */
-let tunerHz = 0, tunerMiss = 0;
+let tunerHz = 0, tunerMiss = 0, tunerShown = false;
 /** Dernières mesures brutes : une note ne s'affiche qu'une fois confirmée par 3 mesures concordantes (à 3 % près),
  *  pour qu'une trame abîmée (ordinateur chargé, attaque, bruit) ne donne pas un écart faux. */
 const tunerRaw: number[] = [];
 export function updateTuner() {
   const el = document.querySelector<HTMLElement>('.tuner');
-  if (!el) return;
+  if (!el) { tunerShown = false; return; }
+  // Accordeur rouvert : on repart de zéro, sans lisser depuis une note entendue la fois d'avant.
+  if (!tunerShown) { tunerShown = true; tunerHz = 0; tunerMiss = 0; tunerRaw.length = 0; }
   const hz = engine.inputPitch();
   if (hz) {
     tunerRaw.push(hz); if (tunerRaw.length > 5) tunerRaw.shift();
     const med = [...tunerRaw].sort((a, b) => a - b)[tunerRaw.length >> 1];
     const agree = tunerRaw.filter(v => Math.abs(Math.log2(v / med)) < 0.03);
     if (agree.length >= 3) {
-      const est = agree.reduce((a, v) => a + Math.log2(v), 0) / agree.length, f = 2 ** est;
+      // Médiane des mesures concordantes : une trame abîmée, même proche de la note, ne déplace pas l'affichage.
+      const f = agree.sort((a, b) => a - b)[agree.length >> 1];
       tunerHz = tunerHz && Math.abs(Math.log2(f / tunerHz)) < 0.03 ? tunerHz * 0.7 + f * 0.3 : f;
     }
     tunerMiss = 0;

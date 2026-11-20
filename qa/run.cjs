@@ -3973,6 +3973,33 @@ test('AD06', 'Correctifs audit', 'Accordeur : une mesure abîmée (ordinateur ch
   await page.click('[data-act=inopen]');
 });
 
+test('AD06b', 'Correctifs audit', 'Accordeur : la trame où la note commence est sautée ; une trame abîmée proche de la note ne décale pas l’affichage ; rouvert, il ne lisse pas depuis la note d’avant', async () => {
+  // Trame dont le début est silencieux (entrée qui s'ouvre, attaque) : sautée ; la même note entière est mesurée juste.
+  const r = await S(() => {
+    const e = window.kh.engine, keep = e.inp;
+    const fake = lead => ({ fftSize: 2048, getFloatTimeDomainData: d => { for (let i = 0; i < d.length; i++) d[i] = i < lead ? 0 : 0.5 * Math.sin(2 * Math.PI * 440 * (i - lead) / e.ctx.sampleRate); } });
+    try { return [0, 300, 600].map(lead => { e.inp = { analyser: fake(lead) }; return Math.round(e.inputPitch() * 10) / 10; }); } finally { e.inp = keep; }
+  });
+  expect(Math.abs(r[0] - 440) < 0.5 && r[1] === 0 && r[2] === 0, 'trames où la note commence : ' + JSON.stringify(r));
+  await page.click(await headSel(4));
+  const watch = seq => page.evaluate(async seq => {
+    const e = window.kh.engine, orig = e.inputPitch.bind(e); e.inputPitch = () => seq.length ? seq.shift() : 440;
+    const seen = []; const mo = new MutationObserver(() => { const n = document.querySelector('.tnote')?.textContent, c = document.querySelector('.tcents')?.textContent; if (n && n !== '—') seen.push(n + '|' + c); });
+    mo.observe(document.querySelector('.tuner'), { subtree: true, childList: true, characterData: true });
+    await new Promise(r => setTimeout(r, 600)); mo.disconnect(); e.inputPitch = orig; return [...new Set(seen)];
+  }, seq);
+  // Une trame à +8 centièmes (dans la tolérance de 3 %) parmi des la justes : jamais affichée.
+  await page.click('[data-act=inopen]'); await page.waitForSelector('.tuner');
+  let shown = await watch([442, 440, 440, 440, 440, 440]);
+  expect(shown.length && shown.every(s => /^La4\|[+-]?[0-2]$/.test(s)), `trame abîmée affichée : ${JSON.stringify(shown)}`);
+  // Accordeur refermé puis rouvert sur un la un peu haut (+10) : il s'affiche tel quel, pas lissé depuis le la juste d'avant.
+  await page.click('[data-act=inopen]'); await page.waitForSelector('.tuner', { state: 'detached' }); await sleep(100);
+  await page.click('[data-act=inopen]'); await page.waitForSelector('.tuner');
+  const sharp = 440 * 2 ** (10 / 1200); shown = await watch(Array(40).fill(sharp));
+  expect(shown.length && shown.every(s => s === 'La4|+10'), `accordeur rouvert : ${JSON.stringify(shown)}`);
+  await page.click('[data-act=inopen]');
+});
+
 test('AD07', 'Correctifs audit', 'Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide', async () => {
   const r = await S(async () => {
     const k = window.kh, p = k.demoProject(), sy = p.tracks.find(t => t.type === 'synth'), sr = 44100;
