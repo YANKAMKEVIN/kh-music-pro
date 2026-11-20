@@ -5008,6 +5008,8 @@ test('UX05a', 'Mixeur', 'Tranche en quatre sections (Égaliseur, Effets, Envois,
 test('UX05b', 'Mixeur', 'Replier une section la replie sur toutes les tranches ; l’état est gardé après un redessin et dans l’appareil ; les réglages repliés marchent toujours', async () => {
   await tab('mixer'); const h0 = await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight);
   await page.click('.mixer > .strip >> nth=0 >> details[data-sect=fx] > summary');
+  // Le navigateur signale le repli (évènement « toggle ») juste après le clic, pas pendant : les autres tranches suivent un instant plus tard.
+  await until(async () => await sects(3) === 'eq:o,fx:f,send:o,dyn:o', 'repli non suivi', 2000).catch(() => { });   // l'échec détaillé vient de la ligne suivante
   expect(await sects(0) === 'eq:o,fx:f,send:o,dyn:o' && await sects(3) === 'eq:o,fx:f,send:o,dyn:o', `repli : ${await sects(0)} / ${await sects(3)}`);
   expect(!(await page.isVisible('.mixer > .strip >> nth=0 >> [data-act=rack]')), 'les effets repliés restent visibles');
   expect(await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight) < h0 - 100, 'la tranche ne raccourcit pas');
