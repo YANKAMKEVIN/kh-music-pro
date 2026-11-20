@@ -200,6 +200,7 @@ function crashNotice() {
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
   initArrDrop(); initArrZoom(); initFileInputs(); listenSystemOpen();
   rebuild();
+  document.getElementById('boot')?.remove();   // l'écran d'attente d'index.html laisse la place à l'application
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   // Version bureau macOS : moteur audio natif, s'il a été activé dans les Réglages audio.
   initNative();

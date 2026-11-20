@@ -5286,6 +5286,32 @@ test('UX13a', 'Interface', 'Icônes dessinées : les types de piste ont le même
   expect(await page.$('#bNotes svg.ico') && (await page.getAttribute('#bNotes', 'aria-label')), 'bouton des notes : icône et nom accessible');
 });
 
+test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant le script, puis disparaît ; icônes PNG 192 et 512, version maskable et icône iPhone', async () => {
+  const html = await (await page.request.get(BASE)).text();
+  expect(/<div id="boot"[^>]*><span>KH<\/span><\/div>/.test(html) && html.indexOf('id="boot"') < html.indexOf('/src/main.ts'), 'le logo d’attente doit être dans la page, avant le script');
+  expect(/#boot span \{[^}]*animation: bootbeat/.test(html) && /prefers-reduced-motion: reduce\) \{ #boot span \{ animation: none/.test(html), 'battement du logo, coupé si le système demande moins d’animations');
+  expect(!(await page.$('#boot')), 'l’écran d’attente reste affiché après le démarrage');
+  // Sans script (page bloquée avant son exécution), le logo est bien ce qu'on voit.
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
+  try {
+    const pg = await c.newPage(); await pg.goto(BASE);
+    const b = await pg.$eval('#boot span', e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return { w: r.width, cx: r.left + r.width / 2, cy: r.top + r.height / 2, bg: cs.backgroundImage, txt: e.textContent }; });
+    expect(b.txt === 'KH' && b.w >= 60 && Math.abs(b.cx - 195) < 12 && Math.abs(b.cy - 422) < 12 && b.bg.includes('gradient'), 'logo d’attente : ' + JSON.stringify(b));
+  } finally { await c.close(); }
+  const man = await (await page.request.get(new URL('manifest.webmanifest', BASE).href)).json(), sizes = {};
+  for (const ic of man.icons.filter(i => i.type === 'image/png')) {
+    const buf = await (await page.request.get(new URL(ic.src, BASE).href)).body();
+    expect(buf.slice(1, 4).toString() === 'PNG', ic.src + ' n’est pas un PNG'); sizes[ic.purpose + ' ' + ic.sizes] = `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`;
+  }
+  expect(JSON.stringify(sizes) === JSON.stringify({ 'any 192x192': '192x192', 'any 512x512': '512x512', 'maskable 512x512': '512x512' }), 'icônes du manifeste : ' + JSON.stringify(sizes));
+  expect(!man.icons.some(i => i.purpose.includes('any') && i.purpose.includes('maskable')), 'une même icône ne doit pas servir à la fois telle quelle et masquée');
+  const apple = await page.$eval('link[rel=apple-touch-icon]', l => l.href), ab = await (await page.request.get(apple)).body();
+  expect(ab.readUInt32BE(16) === 180 && ab.readUInt32BE(20) === 180, 'icône iPhone de 180 px');
+  // Version maskable : rien d'important hors de la zone sûre (cercle de 80 % du côté) ; les coins sont du fond uni.
+  const safe = await page.evaluate(async url => { const img = new Image(); img.src = url; await img.decode(); const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, 512, 512).data; let out = 0; for (let y = 0; y < 512; y += 4) for (let x = 0; x < 512; x += 4) { const i = (y * 512 + x) * 4, bg = Math.abs(d[i] - 6) + Math.abs(d[i + 1] - 9) + Math.abs(d[i + 2] - 20) < 12; if (!bg && Math.hypot(x - 256, y - 256) > 205) out++; } return out; }, new URL('icon-maskable-512.png', BASE).href);
+  expect(safe === 0, `icône maskable : ${safe} points du dessin hors de la zone sûre`);
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
