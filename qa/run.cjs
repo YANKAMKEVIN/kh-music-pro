@@ -5158,7 +5158,9 @@ test('UX09c', 'Live', 'La scène en cours est marquée, la scène attendue clign
 /** Profil neuf (première visite) dans un contexte à part. */
 async function firstVisit(fn, opts = {}) {
   const c = await browser.newContext({ viewport: { width: 1500, height: 900 }, locale: 'fr-FR', ...opts });
-  try { const pg = await c.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(BASE); await pg.waitForSelector('.clip'); await pg.waitForSelector('#welcome[open]'); await fn(pg); expect(!errs.length, 'erreur dans la page : ' + errs[0]); }
+  try { const pg = await c.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(BASE); await pg.waitForSelector('.clip'); await pg.waitForSelector('#welcome[open]');
+    await pg.evaluate(() => Promise.all(document.getElementById('welcome').getAnimations().map(a => a.finished)));   // mesures sur la fenêtre posée, pas pendant son ouverture animée
+    await fn(pg); expect(!errs.length, 'erreur dans la page : ' + errs[0]); }
   finally { await c.close(); }
 }
 test('UX10a', 'Accueil', 'Première visite : un accueil court (question, cinq modèles, visite guidée, Commencer) à la place de la notice ; « ? » ouvre toujours l’aide', async () => {
