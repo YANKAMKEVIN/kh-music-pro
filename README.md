@@ -38,7 +38,7 @@ La barre du haut tient sur une ligne et se lit en trois groupes :
 
 Une **barre d'arrangement**, juste au-dessus des pistes, réunit la grille, le zoom, les changements de tempo, les repères et les notes du projet.
 
-Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ». Un appui long sur un clip ouvre son menu même quand le téléphone est occupé (chargement des sons, gros redessin) : c'est la durée de l'appui qui compte (depuis le 21/11/2026).
+Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ». Un appui long sur un clip ouvre son menu même quand le téléphone est occupé (chargement des sons, gros redessin) : c'est la durée de l'appui qui compte ; le menu reste ouvert quand le doigt se lève, même juste après un appui bref (depuis le 21/11/2026).
 
 **Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom. Le menu ⋯ reste ouvert pendant la lecture ou une prise (depuis le 21/11/2026) : il se referme par un clic ailleurs, Échap ou un choix.
 

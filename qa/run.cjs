@@ -5113,21 +5113,31 @@ test('UX03d', 'Téléphone', 'Appui long au doigt sur un clip : le menu s’ouvr
   try {
     const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
     await pg.goto(BASE); await pg.waitForSelector('.clip');
-    const cdp = await ctx2.newCDPSession(pg), b = await (await pg.$('.lane >> nth=0 >> .clip >> nth=0')).boundingBox(), x = b.x + Math.min(40, b.width / 3), y = b.y + 40;   // téléphone : quatre mesures visibles, clips plus étroits (loin de la poignée de droite)
-    const hold = async ms => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await pg.waitForTimeout(ms); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(120); };
+    // Page qui vient de s'ouvrir : polices et instruments arrivent encore et peuvent déplacer les pistes. On attend qu'ils soient
+    // là, puis l'endroit touché est relu avant chaque appui et vérifié : le doigt doit tomber sur le clip, pas à côté.
+    await pg.evaluate(async () => { await document.fonts.ready; await window.kh.engine.prepare(); });
+    const cid = await pg.evaluate(() => window.kh.S.project.tracks[0].clips[0].id);
+    const cdp = await ctx2.newCDPSession(pg); let x = 0, y = 0;
+    const aim = async () => {
+      const b = await pg.locator(`.clip[data-id="${cid}"]`).boundingBox(); x = b.x + Math.min(40, b.width / 3); y = b.y + 40;   // téléphone : quatre mesures visibles, clips plus étroits (loin de la poignée de droite)
+      expect(await pg.evaluate(([x, y, id]) => document.elementFromPoint(x, y)?.closest('.clip')?.dataset.id === id, [x, y, cid]), 'le doigt ne tombe pas sur le clip');
+    };
+    const hold = async ms => { await aim(); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await pg.waitForTimeout(ms); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(120); };
     await hold(150); expect(!(await pg.$('.menu-list.ctx')), 'un appui bref ne doit pas ouvrir le menu');
     await hold(800); expect(await pg.isVisible('.menu-list.ctx'), 'l’appui long n’ouvre pas le menu');
     // Téléphone occupé quand le doigt se pose (chargement des sons, gros redessin) : l'appui n'est traité qu'avec retard, et le lever
     // arrive avant que le minuteur de l'appui long ait pu passer. Le menu s'ouvre quand même, parce que c'est la durée réelle de
     // l'appui qui compte ; un appui bref reste un appui bref.
     const busyHold = async ms => {
-      await pg.evaluate(() => { setTimeout(() => { const a = performance.now(); while (performance.now() - a < 700) { /* occupé */ } }, 0); }); await pg.waitForTimeout(30);
+      await aim(); await pg.evaluate(() => { setTimeout(() => { const a = performance.now(); while (performance.now() - a < 700) { /* occupé */ } }, 0); }); await pg.waitForTimeout(30);
       const down = cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await pg.waitForTimeout(ms);
       await Promise.all([down, cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })]); await pg.waitForTimeout(120);
     };
     await pg.keyboard.press('Escape'); await busyHold(150); expect(!(await pg.$('.menu-list.ctx')), 'téléphone occupé : un appui bref ne doit pas ouvrir le menu');
     await busyHold(800); expect(await pg.isVisible('.menu-list.ctx'), 'téléphone occupé : l’appui long n’ouvre pas le menu');
     expect((await pg.evaluate(() => window.kh.S.project.tracks[0].clips.map(c => c.start))).every(s => s % 16 === 0), 'téléphone occupé : le clip a bougé');
+    // Doigt gardé longtemps après l'ouverture du menu : le clic produit par le lever ne doit pas le refermer.
+    await pg.keyboard.press('Escape'); await hold(1300); await pg.waitForTimeout(400); expect(await pg.isVisible('.menu-list.ctx'), 'le menu se referme quand le doigt se lève après un long appui');
     const m = await (await pg.$('.menu-list.ctx')).boundingBox(), hgt = await pg.$eval('[data-ctx=del]', e => e.offsetHeight);
     expect(m.x >= 0 && m.x + m.width <= 390 && m.y + m.height <= 844, 'menu hors de l’écran du téléphone'); expect(hgt >= 44, `ligne trop petite pour le doigt (${hgt} px)`);
     const n0 = await pg.evaluate(() => window.kh.S.project.tracks[0].clips.length);

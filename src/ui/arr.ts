@@ -324,12 +324,22 @@ function laneDown(e: PointerEvent, tr: Track) {
   const minStart = Math.min(o.start, ...others.map(x => x.s));
   let changed = false, target = tr, stop = () => { };
   // Appui long au doigt ou au stylet (sans bouger) : le menu du clip s'ouvre, le glissé est abandonné.
-  const HOLD = 550, longPress = () => {
+  const HOLD = 550, longPress = (lifted = false) => {
     if (changed || ctxOpen()) return;
     stop(); clipMenu(tr, clip, e.clientX + 4, e.clientY + 4, Math.round((e.clientX - el.parentElement!.getBoundingClientRect().left) / px / S.snap) * S.snap);
+    // Le lever du doigt peut encore produire un clic sur le clip, voire un double-clic avec un appui bref juste avant : le
+    // double-clic ouvrirait l'éditeur, dont le redessin referme aussitôt le menu. Ces clics-là sont ignorés, jusqu'au prochain
+    // appui (dans le menu ou ailleurs), qui agit normalement.
+    const swallow = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
+    const MOUSE = ['mousedown', 'mouseup', 'click', 'dblclick'];
+    const done = () => { for (const t of MOUSE) removeEventListener(t, swallow, true); removeEventListener('pointerdown', done, true); removeEventListener('pointerup', later, true); };
+    const later = () => setTimeout(done, 400);
+    for (const t of MOUSE) addEventListener(t, swallow, true);
+    addEventListener('pointerdown', done, true);
+    if (lifted) later(); else addEventListener('pointerup', later, { capture: true, once: true });
   };
   let held = e.pointerType !== 'mouse';
-  const hold = held ? window.setTimeout(longPress, HOLD) : 0;
+  const hold = held ? window.setTimeout(() => longPress(), HOLD) : 0;
   const mv = (ev: PointerEvent) => {
     if (Math.hypot(ev.clientX - sx, ev.clientY - e.clientY) > 8) { clearTimeout(hold); held = false; }
     let d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
@@ -357,7 +367,7 @@ function laneDown(e: PointerEvent, tr: Track) {
     clearTimeout(hold);
     // Téléphone occupé (chargement des sons, redessin) : le doigt a été tenu assez longtemps, mais le minuteur n'a pas encore pu
     // passer quand le lever arrive. La durée de l'appui (horodatage des deux gestes) décide, pas l'heure du minuteur.
-    if (held && !changed && target === tr && ev.timeStamp - e.timeStamp >= HOLD) { longPress(); return; }
+    if (held && !changed && target === tr && ev.timeStamp - e.timeStamp >= HOLD) { longPress(true); return; }
     if (target !== tr) { tr.clips.splice(tr.clips.indexOf(clip), 1); target.clips.push(clip); S.selTrack = target.id; }
     if (changed) commit();
   };
