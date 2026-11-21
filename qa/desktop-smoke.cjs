@@ -13,7 +13,9 @@ const path = require('path');
     // Règle de contenu (CSP) : aucun refus, aucun avertissement de sécurité d'Electron.
     win.on('console', m => { if (/Content Security Policy|Electron Security Warning/.test(m.text())) errors.push(m.text().split('\n')[0]); });
     await win.waitForSelector('.clip', { timeout: 30000 });
-    if (await win.$eval('#help', d => d.open)) await win.click('#help form button.accent');
+    // Premier lancement (profil neuf) : l'accueil (UX15) remplace la notice d'aide et s'ouvre par-dessus l'application ;
+    // « Commencer » le referme en gardant le morceau d'exemple, comme le fait la campagne web (closeWelcome).
+    if (await win.$('#welcome')) { await win.click('#bWelGo'); await win.waitForSelector('#welcome', { state: 'detached' }); }
     const r = await win.evaluate(async () => {
       const k = window.kh, b = await k.renderOffline(k.S.project), d = b.getChannelData(0); let e = 0;
       for (const v of d) e += v * v;

@@ -748,8 +748,11 @@ test('X07', 'Robustesse', 'Projet vide : lecture, export et scission ne plantent
   for (const v of ['mixer', 'live', 'editor']) await tab(v);
 });
 test('X08', 'Robustesse', 'Supprimer la piste en cours de lecture ou d\'enregistrement ne plante pas', async () => {
-  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400); await S(() => window.kh.noteOn(60));
-  await headAct(1, '.del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
+  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400);
+  // Menu ⋯ ouvert et posé (déroulé animé, UX15a) avant de jouer : la note jouée s'écrit 300 ms plus tard en redessinant
+  // l'écran, ce qui referme le menu ; la suppression doit tomber dans cet intervalle, pendant que l'écriture est en attente.
+  await reveal('.head >> nth=1 >> .del'); await page.$eval('.head >> nth=1 >> .tmenu .menu-list', l => Promise.all(l.getAnimations().map(a => a.finished)));
+  await S(() => window.kh.noteOn(60)); await page.click('.head >> nth=1 >> .del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
   near((await proj()).tracks.length, 4, 0, 'pistes');
 });
 test('X09', 'Robustesse', 'Changer le tempo et le zoom pendant la lecture', async () => {
@@ -3970,6 +3973,33 @@ test('AD06', 'Correctifs audit', 'Accordeur : une mesure abîmée (ordinateur ch
   await page.click('[data-act=inopen]');
 });
 
+test('AD06b', 'Correctifs audit', 'Accordeur : la trame où la note commence est sautée ; une trame abîmée proche de la note ne décale pas l’affichage ; rouvert, il ne lisse pas depuis la note d’avant', async () => {
+  // Trame dont le début est silencieux (entrée qui s'ouvre, attaque) : sautée ; la même note entière est mesurée juste.
+  const r = await S(() => {
+    const e = window.kh.engine, keep = e.inp;
+    const fake = lead => ({ fftSize: 2048, getFloatTimeDomainData: d => { for (let i = 0; i < d.length; i++) d[i] = i < lead ? 0 : 0.5 * Math.sin(2 * Math.PI * 440 * (i - lead) / e.ctx.sampleRate); } });
+    try { return [0, 300, 600].map(lead => { e.inp = { analyser: fake(lead) }; return Math.round(e.inputPitch() * 10) / 10; }); } finally { e.inp = keep; }
+  });
+  expect(Math.abs(r[0] - 440) < 0.5 && r[1] === 0 && r[2] === 0, 'trames où la note commence : ' + JSON.stringify(r));
+  await page.click(await headSel(4));
+  const watch = seq => page.evaluate(async seq => {
+    const e = window.kh.engine, orig = e.inputPitch.bind(e); e.inputPitch = () => seq.length ? seq.shift() : 440;
+    const seen = []; const mo = new MutationObserver(() => { const n = document.querySelector('.tnote')?.textContent, c = document.querySelector('.tcents')?.textContent; if (n && n !== '—') seen.push(n + '|' + c); });
+    mo.observe(document.querySelector('.tuner'), { subtree: true, childList: true, characterData: true });
+    await new Promise(r => setTimeout(r, 600)); mo.disconnect(); e.inputPitch = orig; return [...new Set(seen)];
+  }, seq);
+  // Une trame à +8 centièmes (dans la tolérance de 3 %) parmi des la justes : jamais affichée.
+  await page.click('[data-act=inopen]'); await page.waitForSelector('.tuner');
+  let shown = await watch([442, 440, 440, 440, 440, 440]);
+  expect(shown.length && shown.every(s => /^La4\|[+-]?[0-2]$/.test(s)), `trame abîmée affichée : ${JSON.stringify(shown)}`);
+  // Accordeur refermé puis rouvert sur un la un peu haut (+10) : il s'affiche tel quel, pas lissé depuis le la juste d'avant.
+  await page.click('[data-act=inopen]'); await page.waitForSelector('.tuner', { state: 'detached' }); await sleep(100);
+  await page.click('[data-act=inopen]'); await page.waitForSelector('.tuner');
+  const sharp = 440 * 2 ** (10 / 1200); shown = await watch(Array(40).fill(sharp));
+  expect(shown.length && shown.every(s => s === 'La4|+10'), `accordeur rouvert : ${JSON.stringify(shown)}`);
+  await page.click('[data-act=inopen]');
+});
+
 test('AD07', 'Correctifs audit', 'Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide', async () => {
   const r = await S(async () => {
     const k = window.kh, p = k.demoProject(), sy = p.tracks.find(t => t.type === 'synth'), sr = 44100;
@@ -4399,6 +4429,8 @@ test('XP08', 'Export', 'Options d’export traduites, lisibles au clavier ; Éch
   await page.evaluate(() => window.kh.setLang('fr'));
   await menu('bExpOpts'); await page.focus('[data-range=all]'); await page.keyboard.press('ArrowDown');
   expect((await proj()).exp.range === 'loop', 'flèche : le choix suivant n’est pas pris');
+  // Tailles mesurées sur la fenêtre posée : pendant son ouverture animée (UX15a, léger agrandissement), tout est un peu plus petit.
+  await page.$eval('#expopts', d => Promise.all(d.getAnimations({ subtree: true }).map(a => a.finished)));
   const sizes = await page.$$eval('#expopts input[type=radio], #expopts input[type=checkbox]', l => l.map(e => e.getBoundingClientRect().width));
   expect(sizes.every(w => w >= 20), 'cases trop petites : ' + sizes);
   await page.keyboard.press('Escape');
@@ -5006,6 +5038,8 @@ test('UX05a', 'Mixeur', 'Tranche en quatre sections (Égaliseur, Effets, Envois,
 test('UX05b', 'Mixeur', 'Replier une section la replie sur toutes les tranches ; l’état est gardé après un redessin et dans l’appareil ; les réglages repliés marchent toujours', async () => {
   await tab('mixer'); const h0 = await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight);
   await page.click('.mixer > .strip >> nth=0 >> details[data-sect=fx] > summary');
+  // Le navigateur signale le repli (évènement « toggle ») juste après le clic, pas pendant : les autres tranches suivent un instant plus tard.
+  await until(async () => await sects(3) === 'eq:o,fx:f,send:o,dyn:o', 'repli non suivi', 2000).catch(() => { });   // l'échec détaillé vient de la ligne suivante
   expect(await sects(0) === 'eq:o,fx:f,send:o,dyn:o' && await sects(3) === 'eq:o,fx:f,send:o,dyn:o', `repli : ${await sects(0)} / ${await sects(3)}`);
   expect(!(await page.isVisible('.mixer > .strip >> nth=0 >> [data-act=rack]')), 'les effets repliés restent visibles');
   expect(await page.$eval('.mixer > .strip >> nth=0 >> .scol', e => e.scrollHeight) < h0 - 100, 'la tranche ne raccourcit pas');
