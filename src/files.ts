@@ -87,7 +87,9 @@ const text = (s: string) => [...new TextEncoder().encode(s)];
 export function exportMidi(p: Project): Uint8Array {
   // Piste 0 : nom, tempo de départ, puis chaque changement de tempo à sa position.
   const tempo = (bpm: number) => { const us = Math.round(60e6 / bpm); return [0xff, 0x51, 3, us >> 16, (us >> 8) & 255, us & 255]; };
-  const head = [...meta(0x03, text(p.name)), 0, ...tempo(p.bpm)]; let lastT = 0;
+  // Signature (FF 58) : numérateur, dénominateur en puissance de 2, clics de métronome par temps (24 = noire, 36 = noire pointée), 8 triples-croches par noire.
+  const den = p.den === 8 ? 8 : 4, sigEv = [0xff, 0x58, 4, p.sig || 4, den === 8 ? 3 : 2, den === 8 && (p.sig || 4) % 3 === 0 && p.sig > 3 ? 36 : den === 8 ? 12 : 24, 8];
+  const head = [...meta(0x03, text(p.name)), 0, ...sigEv, 0, ...tempo(p.bpm)]; let lastT = 0;
   for (const m of p.tempos ?? []) { const tk = Math.round(m.s * TICK); head.push(...vlq(tk - lastT), ...tempo(m.bpm)); lastT = tk; }
   const tracks = [chunk('MTrk', [...head, ...meta(0x2f, [])])];
   let ch = 0;

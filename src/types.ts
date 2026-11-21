@@ -227,7 +227,8 @@ export interface Project {
   punch: boolean;                            // enregistrement audio limité à la zone de boucle (punch-in / punch-out)
   buses: Track[];                            // bus de mixage : des tranches sans clip, où l'on envoie plusieurs pistes
   tempos: { s: number; bpm: number }[];      // changements de tempo en cours de morceau (triés par position)
-  sig: number;                               // temps par mesure (signature x/4)
+  sig: number;                               // numérateur de la signature : temps (x/4) ou croches (x/8) par mesure
+  den: 4 | 8;                                // dénominateur (suite, 21/11/2026) : 4 = noires, 8 = croches (6/8, 9/8, 12/8, 5/8, 7/8)
   liveQ: number;                             // mode Live : calage du lancement des clips, en pas (0 = à la mesure)
   exp: ExportOpts;                           // réglages d'export (V19)
   tracks: Track[];
@@ -239,7 +240,17 @@ export const defaultExport = (): ExportOpts => ({ range: 'all', from: 1, to: 4, 
 
 /** Longueur d'une mesure en pas. Suit la signature rythmique du projet ouvert (4/4 = 16 pas, 3/4 = 12…). */
 export let BAR = 16;
-export const setBar = (steps: number) => { BAR = steps; };
+/** Longueur d'un temps en pas : la noire (4) ; en 6/8, 9/8 et 12/8 la noire pointée (6), en 5/8 et 7/8 la croche (2). */
+export let BEAT = 4;
+export const setBar = (steps: number, beat = 4) => { BAR = steps; BEAT = beat; };
+/** Mesure en pas pour une signature : x/4 = 4x pas, x/8 = 2x pas. */
+export const barSteps = (sig: number, den: number = 4) => Math.round(sig * 16 / (den === 8 ? 8 : 4));
+/** Temps en pas : signatures composées (6/8, 9/8, 12/8) par noires pointées, autres x/8 par croches, x/4 par noires. */
+export const beatSteps = (sig: number, den: number = 4) => (den === 8 ? (sig % 3 === 0 && sig > 3 ? 6 : 2) : 4);
+/** Signatures proposées : valeur du menu (« 3 » pour 3/4, comme avant ; « 6/8 » pour les croches). */
+/** Mode Live : calage du lancement en pas ; « au temps » (4) suit le temps de la signature (noire pointée en 6/8). */
+export const liveQuant = (q: number) => (q === 4 ? BEAT : q || BAR);
+export const SIGS: [number, 4 | 8][] = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [5, 8], [6, 8], [7, 8], [9, 8], [12, 8]];
 
 /** Tempo en vigueur au pas `s` : le tempo de départ, puis les changements placés dans le morceau. */
 export function bpmAt(p: Project, s: number): number {
@@ -407,7 +418,7 @@ export function contentEnd(p: Project): number {
 
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, liveQ: 0, exp: defaultExport(),
+    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, den: 4, liveQ: 0, exp: defaultExport(),
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }
@@ -417,7 +428,7 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 /** Met à niveau un projet enregistré avec une version antérieure. */
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
-  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.liveQ ??= 0; p.exp = { ...defaultExport(), ...p.exp };
+  p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.den = p.den === 8 ? 8 : 4; p.liveQ ??= 0; p.exp = { ...defaultExport(), ...p.exp };
   for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; b.inserts ??= []; }
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4; tr.inserts ??= [];

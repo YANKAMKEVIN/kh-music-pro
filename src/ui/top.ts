@@ -9,6 +9,7 @@ import { showAudio } from './audio';
 import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
 import { icon } from './icons';
+import { SIGS } from '../types';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -74,8 +75,8 @@ export function buildTop(onLang: () => void) {
   const snap = h('select', { id: 'snap', 'aria-label': t('top.gridTip') },
     h('option', { value: '16' }, t('grid.bar')), h('option', { value: '4' }, t('grid.beat')), h('option', { value: '1' }, '1/16'));
   snap.onchange = () => { S.snap = +snap.value; };
-  const sig = h('select', { id: 'sig', 'aria-label': t('top.sig'), title: t('top.sig'), data: { role: 'sig' } }, ...[2, 3, 4, 5, 6, 7].map(n => h('option', { value: String(n) }, `${n}/4`)));
-  sig.onchange = () => { S.project.sig = +sig.value; commit(); };
+  const sig = h('select', { id: 'sig', 'aria-label': t('top.sig'), title: t('top.sig'), data: { role: 'sig' } }, ...SIGS.map(([n, d]) => h('option', { value: d === 4 ? String(n) : `${n}/8` }, `${n}/${d}`)));
+  sig.onchange = () => { const [n, d] = sig.value.split('/'); S.project.sig = +n; S.project.den = d === '8' ? 8 : 4; commit(); };
   const zoom = (f: number) => { S.px = clamp(S.px * f, 3, 44); emit(); };
   const pname = h('input', { id: 'pname', class: 'pname', 'aria-label': t('top.pname'), title: t('top.pname'), spellcheck: false });
   pname.onchange = () => { S.project.name = pname.value.trim() || t('proj.new'); commit(); };
@@ -245,7 +246,7 @@ export function renderTop() {
   $('bLoop').title = t('top.loopTip') + ' — ' + lr; $('bLoop').setAttribute('aria-label', t('top.loop') + ' — ' + lr);
   $('bExport').title = t('top.exportTip') + ' — ' + exportSummary();
   $<HTMLSelectElement>('snap').value = String(S.snap);
-  $<HTMLSelectElement>('sig').value = String(p.sig);
+  $<HTMLSelectElement>('sig').value = p.den === 8 ? `${p.sig}/8` : String(p.sig);
   for (const [id, on] of [['bLoop', p.loop], ['bMetro', p.metronome], ['bCount', p.countIn], ['bPunch', p.punch], ['bMidi', midi.inputs > 0], ['bNotes', !!p.notes.trim()]] as const) {
     $(id).classList.toggle('on', on); $(id).setAttribute('aria-pressed', String(on));
   }

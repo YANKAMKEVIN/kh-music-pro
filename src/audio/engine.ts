@@ -4,7 +4,7 @@ import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, setLiveInstOf, swingT, warmWarp } from './graph';
 import { S, buffers } from '../store';
 import { IoOptions, NativeIO, nativeName } from './native-io';
-import { BAR, CtlKind, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
+import { BAR, BEAT, CtlKind, liveQuant, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
@@ -122,7 +122,7 @@ class Engine {
     this.t0 = this.nextTime = this.ctx.currentTime + 0.06 + preroll;
     this.pre = preroll;
     this.seg = true; this.marks = [];
-    if (preroll > 0) { const beat = preroll / 4; for (let i = 0; i < 4; i++) this.click(this.t0 - preroll + i * beat, i === 0); }
+    if (preroll > 0) { const n = Math.max(1, Math.round(BAR / BEAT)), beat = preroll / n; for (let i = 0; i < n; i++) this.click(this.t0 - preroll + i * beat, i === 0); }   // un clic par temps de la mesure (3 en 3/4, 2 en 6/8)
     this.timer = window.setInterval(() => this.tick(), 25);
     this.tick();
   }
@@ -170,7 +170,7 @@ class Engine {
     if (this.mode === 'live') {
       while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
         const s = this.nextStep, t = this.nextTime;
-        if (s % (p.liveQ || BAR) === 0 && this.liveQueued.size) {
+        if (s % liveQuant(p.liveQ) === 0 && this.liveQueued.size) {
           for (const [tid, cid] of this.liveQueued) {
             for (const src of this.liveSrc.get(tid) ?? []) { try { src.stop(t); } catch { /* fini */ } }
             this.liveSrc.delete(tid);
@@ -182,7 +182,7 @@ class Engine {
         scheduleLive(this.mix, p, buffers, s, swingT(p, s, t), this.liveActive, (tid, src) => {
           const l = this.liveSrc.get(tid) ?? []; l.push(src); this.liveSrc.set(tid, l.slice(-4));
         });
-        if (p.metronome && s % 4 === 0) this.click(t, s % BAR === 0);
+        if (p.metronome && s % BEAT === 0) this.click(t, s % BAR === 0);
         this.marks.push({ t, s }); this.nextStep++; this.nextTime += dur;
       }
       return;
@@ -202,7 +202,7 @@ class Engine {
       const limit = looping && this.nextStep < le ? le : null;
       this.mix.applyAuto(p, this.nextStep, this.nextTime); this.onStep(this.nextStep, this.nextTime);
       scheduleStep(this.mix, p, buffers, this.nextStep, swingT(p, this.nextStep, this.nextTime), this.seg, limit);
-      if (p.metronome && this.nextStep % 4 === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
+      if (p.metronome && this.nextStep % BEAT === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
       this.marks.push({ t: this.nextTime, s: this.nextStep });
       this.nextTime += durAt(p, this.nextStep); this.nextStep++; this.seg = false; // le tempo peut changer d'un pas à l'autre
     }

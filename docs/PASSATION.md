@@ -58,7 +58,7 @@ Principes à respecter :
 
 - Instruments enregistrés : une seule prise par note (les nuances sont imitées par un filtre, voir section 9), sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
 - Tempo : depuis la V17, un clip audio peut suivre le tempo (réglage « Suit le tempo », désactivé par défaut) ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
-- Signature : une seule pour tout le morceau, de 2/4 à 7/4.
+- Signature : une seule pour tout le morceau, de 2/4 à 7/4, ou 5/8, 6/8, 7/8, 9/8, 12/8 depuis la section 18. Pas de changement de signature en cours de morceau ; pas de regroupement libre des croches (7/8 compté en croches, pas en 2+2+3).
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
 - Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac ; depuis la section 18, l'égaliseur et le seuil du compresseur de la tranche, le filtre et la résonance de l'instrument (lus au départ de chaque note). Restent non automatisables : saturation, lo-fi, trémolo, taux du compresseur, fréquence du médium, enveloppe et oscillateurs de l'instrument, instruments du Mac.
 - Installateurs non signés ; pas de mise à jour automatique.
@@ -842,3 +842,10 @@ Aucune branche n'est supprimée.
 - **Déjà fait** depuis la V17 (section 13, étape 5 : « Suit le tempo », WP01-WP07) ; l'idée était restée dans la liste des idées non engagées.
 - Ajouté : la dernière limite connue de cette fonction est levée. Un clip qui suit le tempo se prolonge maintenant pendant le fondu enchaîné avec le clip suivant, lu dans sa version étirée au tempo de sa fin (`graph.ts`, `fireClip`). QA CF05 (deux clips à 96 BPM d'origine joués à 120).
 - Restent : le mode Live joue au tempo de départ (pas de changement de tempo en Live), écho et trémolo calés sur le tempo de départ.
+
+### Mesures en 6/8 et signatures composées (idée de la feuille de route « 6/8 »)
+
+- Nouveau champ `Project.den` (4 ou 8 ; `migrate` met 4). `BAR` = numérateur × 16 / dénominateur ; nouveau `BEAT` (`types.ts`, `setBar(pas, temps)`) : noire (4 pas) en x/4, noire pointée (6 pas) en 6/8, 9/8, 12/8, croche (2 pas) en 5/8 et 7/8.
+- `BEAT` sert au métronome, au décompte (un clic par temps : 2 en 6/8 ; corrige au passage le décompte de 4 clics en 3/4, qui en fait maintenant 3), au compteur mesure.temps.double-croche, au témoin du temps, aux lignes de temps de l'arrangement et du piano roll (qui ignorait jusqu'ici la signature : lignes de mesure toutes les 16 pas même en 3/4), aux cases alternées du séquenceur, au calage « au temps » du mode Live.
+- Menu de la signature : valeurs « 2 » à « 7 » inchangées pour x/4 (anciens tests et anciens projets), « 5/8 » à « 12/8 » pour les croches. Export MIDI : évènement de signature (FF 58), y compris en x/4 ; pas lu à l'import.
+- QA : SG02-SG05 (souris, règle, compteur, séquenceur, métronome et décompte épiés, 12/8 à 5/8, boucle d'une mesure de 7/8 à l'écoute, MIDI, fichier projet, ancien projet).

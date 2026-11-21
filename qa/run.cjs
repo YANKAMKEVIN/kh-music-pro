@@ -5519,6 +5519,58 @@ test('CF05', 'Fondus enchaînés', 'Clips qui suivent le tempo (joués plus vite
   expect(a2 < 0.02 && b2 > 0.3, `après le fondu, seul le second reste : ${a2.toFixed(3)} / ${b2.toFixed(3)}`);
 });
 
+// ============ Suite (21/11/2026) : mesures en 6/8 et signatures composées ============
+/** Clics du métronome joués (instant, accent) : le moteur est épié le temps de `fn`. */
+async function spyClicks(fn) {
+  await S(() => { const e = window.kh.engine; window.__clicks = []; e.__click ??= e.click; e.click = (t, acc) => { window.__clicks.push([t, acc]); return e.__click.call(e, t, acc); }; });
+  try { await fn(); return await S(() => window.__clicks.slice()); } finally { await S(() => { const e = window.kh.engine; if (e.__click) { e.click = e.__click; delete e.__click; } }); }
+}
+test('SG02', 'Signature', 'Passer en 6/8 à la souris : mesure de 12 pas en deux temps d’une noire pointée (règle, lignes de temps, compteur, séquenceur)', async () => {
+  const labels = await page.$$eval('#sig option', o => o.map(x => x.textContent));
+  expect(['2/4', '3/4', '4/4', '6/8', '9/8', '12/8', '5/8', '7/8'].every(l => labels.includes(l)), 'signatures proposées : ' + labels.join(' '));
+  await page.selectOption('#sig', '6/8');
+  const p = await proj(); expect(p.sig === 6 && p.den === 8 && await S(() => window.kh.bar()) === 12, `signature : ${p.sig}/${p.den}, ${await S(() => window.kh.bar())} pas`);
+  const r = await box('.ruler'), x2 = await page.$eval('.ruler span >> nth=1', e => e.getBoundingClientRect().left); near(x2 - r.x, 12 * 11, 1, 'position de la mesure 2 dans la règle');
+  expect(await page.$eval('.lanes', e => e.style.getPropertyValue('--beat')) === '66px', 'lignes de temps toutes les noires pointées (6 pas)');
+  await S(() => { window.kh.engine.seek(9); }); await sleep(150);
+  expect((await page.textContent('#pos')).trim() === '1.2.4', 'compteur au pas 9 en 6/8 : ' + await page.textContent('#pos'));
+  await page.click(await clipSel(0, 0));
+  const alt = await page.$$eval('.cell[data-r="0"]', l => l.slice(0, 12).map(c => c.classList.contains('alt') ? 1 : 0).join(''));
+  expect(alt === '000000111111', 'séquenceur : cases du second temps marquées : ' + alt);
+  await page.selectOption('#sig', '4'); const q = await proj(); expect(q.sig === 4 && q.den === 4 && await S(() => window.kh.bar()) === 16, 'retour en 4/4');
+});
+test('SG03', 'Signature', 'Métronome en 6/8 : deux clics par mesure, le premier accentué ; décompte de deux clics ; en 3/4, trois clics de décompte', async () => {
+  await S(() => { const p = window.kh.S.project; p.sig = 6; p.den = 8; p.bpm = 120; p.metronome = true; p.countIn = false; p.loop = true; p.loopStart = 0; p.loopLen = 2; window.kh.commit(); });
+  const c = await spyClicks(async () => { await page.keyboard.press('Space'); await sleep(2300); await page.keyboard.press('Space'); });
+  expect(c.length >= 4, `clics joués : ${c.length}`);
+  const gaps = c.slice(1).map((x, i) => x[0] - c[i][0]);
+  expect(gaps.every(g => Math.abs(g - 0.75) < 0.01), 'écart entre clics (noire pointée à 120 = 0,75 s) : ' + gaps.map(g => g.toFixed(3)).join(' '));
+  expect(c.every((x, i) => x[1] === (i % 2 === 0)), 'accent sur le premier temps de chaque mesure : ' + c.map(x => x[1] ? 'A' : '.').join(''));
+  const pre = async (sig, den) => { await S(() => { window.kh.engine.stop(); window.kh.engine.stop(); }); await page.evaluate(([a, b]) => { const p = window.kh.S.project; p.sig = a; p.den = b; p.metronome = false; p.countIn = true; p.loop = false; window.kh.commit(); }, [sig, den]);
+    const k = await spyClicks(async () => { await page.click('#bRec'); await sleep(300); }); await S(() => { window.kh.engine.stop(); }); return k.length; };   // les clics du décompte sont programmés dès le départ
+  expect(await pre(6, 8) === 2, 'décompte en 6/8 : deux clics');
+  expect(await pre(3, 4) === 3, 'décompte en 3/4 : trois clics');
+});
+test('SG04', 'Signature', '12/8, 9/8, 7/8 et 5/8 : longueur de mesure, temps, boucle d’une mesure à l’écoute', async () => {
+  const r = await S(() => { const k = window.kh, out = {}; for (const [n, d] of [[12, 8], [9, 8], [7, 8], [5, 8], [5, 4]]) { k.S.project.sig = n; k.S.project.den = d; k.commit(); out[`${n}/${d}`] = k.bar(); } return out; });
+  expect(JSON.stringify(r) === JSON.stringify({ '12/8': 24, '9/8': 18, '7/8': 14, '5/8': 10, '5/4': 20 }), 'pas par mesure : ' + JSON.stringify(r));
+  await S(() => { const p = window.kh.S.project; p.sig = 7; p.den = 8; p.bpm = 240; p.loop = true; p.loopStart = 0; p.loopLen = 1; window.kh.commit(); });
+  await page.keyboard.press('Space'); await sleep(1500); const st = await S(() => window.kh.engine.currentStep()); await page.keyboard.press('Space');
+  expect(st < 14, `la boucle d’une mesure de 7/8 doit faire 14 pas (position ${st.toFixed(1)})`);
+  expect(await page.$eval('#sig', e => e.value) === '7/8', 'menu de la signature');
+});
+test('SG05', 'Signature', '6/8 dans le fichier MIDI exporté, dans le fichier projet ; un ancien projet s’ouvre en x/4', async () => {
+  await page.selectOption('#sig', '6/8');
+  const mid = await S(() => Array.from(window.kh.exportMidi(window.kh.S.project)));
+  const i = mid.findIndex((b, j) => b === 0xff && mid[j + 1] === 0x58);
+  expect(i > 0 && mid.slice(i + 2, i + 7).join() === '4,6,3,36,8', 'signature MIDI : ' + mid.slice(i, i + 7).join());
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'sig68.khm'); await dl.saveAs(f);
+  const saved = JSON.parse(fs.readFileSync(f, 'utf8')); expect(saved.project.sig === 6 && saved.project.den === 8, 'signature absente du fichier');
+  delete saved.project.den; saved.project.sig = 3; const g = path.join(TMP, 'old-sig.khm'); fs.writeFileSync(g, JSON.stringify(saved));
+  await page.setInputFiles('#fProj', g); await sleep(400);
+  const p = await proj(); expect(p.sig === 3 && p.den === 4 && await S(() => window.kh.bar()) === 12 && await page.$eval('#sig', e => e.value) === '3', `ancien projet : ${p.sig}/${p.den}`);
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

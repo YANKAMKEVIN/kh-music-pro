@@ -2,7 +2,7 @@ import { tapTempo } from '../actions';
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, commit } from '../store';
-import { BAR } from '../types';
+import { BEAT, liveQuant } from '../types';
 import { typeIcon } from './icons';
 import { h, slider } from './dom';
 import { filterFmt } from './mixer';
@@ -89,12 +89,12 @@ export function refreshLive() {
 /** Part déjà jouée de la boucle d'un clip (0..1), `step` étant la position du Live et `since` le pas où le clip est parti. */
 export const loopPart = (step: number, since: number, len: number) => (len > 0 ? ((((step - since) % len) + len) % len) / len : 0);
 /** Temps restants avant le prochain départ possible, sur une grille de `q` pas (mesure ou temps) ; 0 si le départ est immédiat. */
-export const beatsToLaunch = (step: number, q: number) => (q <= 1 ? 0 : Math.ceil((q - (((step % q) + q) % q)) / 4 - 1e-6));
+export const beatsToLaunch = (step: number, q: number, beat = 4) => (q <= 1 ? 0 : Math.ceil((q - (((step % q) + q) % q)) / beat - 1e-6));
 
 /** À chaque image, en Live : la case qui joue se remplit au fil de sa boucle, la case en attente compte les temps avant son départ. */
 export function updateLive() {
   if (engine.mode !== 'live' || !engine.playing) return;
-  const step = engine.currentStep(), left = beatsToLaunch(step, S.project.liveQ || BAR);
+  const step = engine.currentStep(), left = beatsToLaunch(step, liveQuant(S.project.liveQ), BEAT);
   document.querySelectorAll<HTMLElement>('.lcell.playing, .lcell.ending').forEach(el => {
     const a = engine.liveActive.get(el.dataset.track!);
     if (a) el.style.setProperty('--p', loopPart(step, a.since, +el.dataset.len!).toFixed(3));

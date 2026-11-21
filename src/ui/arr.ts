@@ -2,7 +2,7 @@ import { addTrack, audioFiles, copyClip, deleteClip, deleteTrack, duplicateClip,
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
-import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, parseSetKey, setKey, setToNorm, srcStep } from '../types';
+import { AutoParam, BAR, BEAT, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, parseSetKey, setKey, setToNorm, srcStep } from '../types';
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { clamp, followDrag, h, popMenu, resettable } from './dom';
@@ -364,7 +364,7 @@ export function renderArr() {
   const root = document.getElementById('arr')!, p = S.project, px = S.px;
   const total = Math.max(contentEnd(p) + BAR * 8, BAR * 48);
   const heads = h('div', { class: 'heads' });
-  const lanes = h('div', { class: 'lanes', style: `width:${total * px}px;--bar:${BAR * px}px;--beat:${4 * px}px` });
+  const lanes = h('div', { class: 'lanes', style: `width:${total * px}px;--bar:${BAR * px}px;--beat:${BEAT * px}px` });
 
   heads.append(h('div', { class: 'corner' }, addBtn('drums'), addBtn('synth'), addBtn('audio')));
 

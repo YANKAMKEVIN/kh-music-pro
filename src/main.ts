@@ -17,7 +17,7 @@ import { exportMidi, importMidi, zip } from './files';
 import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { projectInfo, S, addBuffer, buffers, commit, crash, saveHealth, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
-import { BAR, MIX_PRESETS, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
+import { BAR, BEAT, MIX_PRESETS, barSteps, beatSteps, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
 import { initArrDrop, initArrZoom, recSpan, refreshSelection, renderArr, updateRecView, zoomAt } from './ui/arr';
 import { clamp, followDrag, h, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
@@ -59,7 +59,7 @@ function keepFocus(draw: () => void) {
   el?.focus({ preventScroll: true });
 }
 
-function renderAll() { keepFocus(() => { setBar((S.project.sig || 4) * 4); engine.sync(); refreshRack(); renderArr(); renderPanel(); renderTop(); }); }
+function renderAll() { keepFocus(() => { setBar(barSteps(S.project.sig || 4, S.project.den), beatSteps(S.project.sig || 4, S.project.den)); engine.sync(); refreshRack(); renderArr(); renderPanel(); renderTop(); }); }
 onChange(renderAll);
 onSelect(() => {
   refreshSelection();
@@ -136,11 +136,11 @@ const still = matchMedia('(prefers-reduced-motion: reduce)');
  * État du témoin du temps : allumé pendant le premier tiers de chaque temps, accentué sur le premier temps de la mesure
  * (et à chaque clic du décompte). `still` (moins d'animations) : allumé sans clignoter tant que ça joue.
  */
-export function beatLight(playing: boolean, countLeft: number, step: number, bar: number, still: boolean): { on: boolean; acc: boolean } {
+export function beatLight(playing: boolean, countLeft: number, step: number, bar: number, still: boolean, beat = 4): { on: boolean; acc: boolean } {
   if (!playing) return { on: false, acc: false };
   if (still) return { on: true, acc: false };
   if (countLeft > 0) return { on: Math.ceil(countLeft) - countLeft < 0.34, acc: true };
-  return { on: (step % 4) / 4 < 0.34, acc: Math.floor(step / 4) % Math.max(1, bar / 4) === 0 };
+  return { on: (step % beat) / beat < 0.34, acc: Math.floor(step / beat) % Math.max(1, Math.round(bar / beat)) === 0 };
 }
 function frame() {
   const step = engine.currentStep(), p = S.project, live = engine.mode === 'live';
@@ -151,10 +151,10 @@ function frame() {
   const bpmEl = $<HTMLInputElement>('bpm'); if (p.tempos.length && !live && document.activeElement !== bpmEl) bpmEl.value = String(bpmAt(p, step));
   // Décompte : un grand 4 · 3 · 2 · 1 remplace le compteur, pour savoir quand jouer même sans entendre les clics.
   const left = engine.countLeft(), count = Math.ceil(left - 1e-6), posEl = $('pos');
-  posEl.textContent = count ? String(count) : `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / 4) + 1}.${(s % 4) + 1}`;
+  posEl.textContent = count ? String(count) : `${Math.floor(s / BAR) + 1}.${Math.floor((s % BAR) / BEAT) + 1}.${(s % BEAT) + 1}`;   // mesure.temps.double-croche (6/8 : temps d'une noire pointée)
   posEl.closest('.display')!.classList.toggle('count', count > 0);
   // Témoin du temps : un point bat à chaque temps, plus vif sur le premier de la mesure ; fixe si le système demande moins d'animations.
-  const b = beatLight(engine.playing, left, step, BAR, still.matches), dot = $('beat');
+  const b = beatLight(engine.playing, left, step, BAR, still.matches, BEAT), dot = $('beat');
   dot.classList.toggle('on', b.on); dot.classList.toggle('acc', b.acc);
   $('time').textContent = `${Math.floor(sec / 60)}:${(sec % 60).toFixed(1).padStart(4, '0')}`;
   document.body.classList.toggle('playing', engine.playing);
@@ -200,7 +200,7 @@ function crashNotice() {
   S.selClip = S.project.tracks[0]?.clips[0]?.id ?? '';
   initArrDrop(); initArrZoom(); initFileInputs(); listenSystemOpen();
   // Téléphone (audit D3) : le morceau s'ouvre avec quatre mesures visibles au lieu d'une et demie.
-  if (matchMedia('(max-width: 760px)').matches) S.px = clamp((innerWidth - 156 - 12) / (4 * (S.project.sig || 4) * 4), 3, 44);
+  if (matchMedia('(max-width: 760px)').matches) S.px = clamp((innerWidth - 156 - 12) / (4 * barSteps(S.project.sig || 4, S.project.den)), 3, 44);
   rebuild();
   document.getElementById('boot')?.remove();   // l'écran d'attente d'index.html laisse la place à l'application
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
