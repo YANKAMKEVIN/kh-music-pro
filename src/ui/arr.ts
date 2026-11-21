@@ -324,12 +324,14 @@ function laneDown(e: PointerEvent, tr: Track) {
   const minStart = Math.min(o.start, ...others.map(x => x.s));
   let changed = false, target = tr, stop = () => { };
   // Appui long au doigt ou au stylet (sans bouger) : le menu du clip s'ouvre, le glissé est abandonné.
-  const hold = e.pointerType === 'mouse' ? 0 : window.setTimeout(() => {
+  const HOLD = 550, longPress = () => {
     if (changed || ctxOpen()) return;
     stop(); clipMenu(tr, clip, e.clientX + 4, e.clientY + 4, Math.round((e.clientX - el.parentElement!.getBoundingClientRect().left) / px / S.snap) * S.snap);
-  }, 550);
+  };
+  let held = e.pointerType !== 'mouse';
+  const hold = held ? window.setTimeout(longPress, HOLD) : 0;
   const mv = (ev: PointerEvent) => {
-    if (Math.hypot(ev.clientX - sx, ev.clientY - e.clientY) > 8) clearTimeout(hold);
+    if (Math.hypot(ev.clientX - sx, ev.clientY - e.clientY) > 8) { clearTimeout(hold); held = false; }
     let d = Math.round((ev.clientX - sx) / px / S.snap) * S.snap;
     if (resize) { clip.len = clamp(o.len + d, Math.min(S.snap, o.len), maxLen); if (o.comp) { clip.comp = o.comp.map(x => ({ ...x })); compSlice(clip, 0, clip.len); } }
     else if (trim) {
@@ -351,8 +353,11 @@ function laneDown(e: PointerEvent, tr: Track) {
     const tt = over && findTrack(over.dataset.id!);
     if (over && tt && tt.type === tr.type && tt !== target) { target = tt; over.append(el); changed = true; }
   };
-  const up = () => {
+  const up = (ev: PointerEvent) => {
     clearTimeout(hold);
+    // Téléphone occupé (chargement des sons, redessin) : le doigt a été tenu assez longtemps, mais le minuteur n'a pas encore pu
+    // passer quand le lever arrive. La durée de l'appui (horodatage des deux gestes) décide, pas l'heure du minuteur.
+    if (held && !changed && target === tr && ev.timeStamp - e.timeStamp >= HOLD) { longPress(); return; }
     if (target !== tr) { tr.clips.splice(tr.clips.indexOf(clip), 1); target.clips.push(clip); S.selTrack = target.id; }
     if (changed) commit();
   };
