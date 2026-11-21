@@ -17,6 +17,8 @@ export interface TrackNodes {
   /** V17 (performance) : voix du chorus, et état des branches allumées seulement quand elles servent. */
   chVoices: { d: DelayNode; lfo: OscillatorNode; depth: GainNode }[]; chorusOn?: boolean; tremOn?: boolean; eqSig?: string;
   outId?: string;
+  /** Chaînes d'effets : vrai quand la tranche fixe est débranchée (l'entrée va droit à la chaîne). */
+  chainOn?: boolean;
   insIn: GainNode; insOut: GainNode; ins: Map<string, InsNode>; insSig?: string;
   /** Compensation de latence : retard ajouté après la chaîne d'effets, pour rester calé sur la tranche la plus en retard. */
   pdc: DelayNode;
@@ -33,7 +35,14 @@ export interface TrackNodes {
 /** `pitch` est branché sur le désaccord (detune) de chaque voix de la piste : le pitch bend et le vibrato bougent toutes les notes tenues. */
 export interface CtlNodes { pitch: GainNode; bend: ConstantSourceNode; lfo: OscillatorNode; gMod: GainNode; gAt: GainNode; range: number }
 /** Un effet de la chaîne : on y entre par `in`, on en sort par `out` ; `set` applique ses réglages. */
-export interface InsNode { in: GainNode; out: GainNode; set(i: Insert, p: Project, set: (prm: AudioParam, v: number) => void): void; wam?: WamInstance; loading?: boolean }
+export interface InsNode {
+  in: GainNode; out: GainNode;
+  /** `auto` : réglages de l'effet qui ont une courbe (certains étages en dépendent : résonance du filtre, branches allumées). */
+  set(i: Insert, p: Project, set: (prm: AudioParam, v: number) => void, auto?: Set<string>): void;
+  wam?: WamInstance; loading?: boolean;
+  /** Étages de tranche en chaîne : filtres affichés dans la courbe d'égaliseur du mixeur, compresseur dont on lit la réduction. */
+  bq?: BiquadFilterNode[]; dyn?: DynamicsCompressorNode;
+}
 export interface Voice { release(at: number): void }
 type Buffers = Map<string, AudioBuffer>;
 
@@ -193,8 +202,87 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       return { in: input, out, set: (i, _p, set) => { set(f.frequency, i.p.freq); set(f.gain, i.p.gain); set(f.Q, i.p.q); } };
     }
     if (type === 'gain') { input.connect(out); return { in: input, out, set: (i, _p, set) => { set(out.gain, Math.pow(10, i.p.gain / 20)); } }; }
+    const strip = this.buildStripFx(type, input, out);
+    if (strip) return strip;
     input.connect(out); // plugin web : le son passe tel quel tant que le plugin n'est pas chargé
     return { in: input, out, set: () => { } };
+  }
+
+  /**
+   * Étages de la tranche fixe devenus effets (chaînes d'effets, 21/11/2026) : mêmes nœuds, mêmes réglages et mêmes
+   * branchements que dans `makeTrack` et `sync`, pour qu'une tranche convertie sonne exactement pareil.
+   */
+  private buildStripFx(type: string, input: GainNode, out: GainNode): InsNode | null {
+    const c = this.ctx;
+    if (type === 'filter') {
+      const lp = c.createBiquadFilter(), hp = c.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 20000; hp.type = 'highpass'; hp.frequency.value = 20;
+      lp.Q.value = REST_Q; hp.Q.value = REST_Q; hp.frequency.value = 10;
+      input.connect(lp).connect(hp).connect(out);
+      return { in: input, out, bq: [lp, hp], set: (i, _p, set, auto) => {
+        const v = i.p.v, [fl, fh] = djFreqs(v), swept = !!auto?.has('v');
+        set(lp.frequency, fl); set(hp.frequency, fh);
+        set(lp.Q, swept || v < 0 ? SWEEP_Q : REST_Q); set(hp.Q, swept || v > 0 ? SWEEP_Q : REST_Q);
+      } };
+    }
+    if (type === 'drive') {
+      const sh = c.createWaveShaper(); sh.oversample = '2x'; let val: number | undefined;
+      input.connect(sh).connect(out);
+      return { in: input, out, set: i => { if (val !== i.p.amt) { sh.curve = i.p.amt > 0 ? driveCurve(i.p.amt) : null; val = i.p.amt; } } };
+    }
+    if (type === 'lofi') {
+      // Comme dans la tranche : le signal est amplifié avant la réduction puis ramené à son niveau.
+      const cin = c.createGain(), cr = c.createWaveShaper(), cout = c.createGain(); let val: number | undefined;
+      input.connect(cin).connect(cr).connect(cout).connect(out);
+      return { in: input, out, set: i => { const a = i.p.amt; if (val !== a) { cr.curve = a > 0 ? crushCurve(a) : null; cin.gain.value = a > 0 ? 3 : 1; cout.gain.value = a > 0 ? 1 / 3 : 1; val = a; } } };
+    }
+    if (type === 'chorus') {
+      const wet = c.createGain(), voices: { d: DelayNode; lfo: OscillatorNode; depth: GainNode }[] = []; let on: boolean | undefined;
+      wet.gain.value = 0; input.connect(out);
+      for (const [ms, hz] of [[17, 0.7], [26, 1.1]]) {
+        const d = c.createDelay(0.1), lfo = c.createOscillator(), depth = c.createGain();
+        d.delayTime.value = ms / 1000; lfo.frequency.value = hz; depth.gain.value = 0.0035;
+        depth.connect(d.delayTime); lfo.start(); d.connect(wet); voices.push({ d, lfo, depth });
+      }
+      wet.connect(out);
+      return { in: input, out, set: (i, _p, set, auto) => {
+        set(wet.gain, i.p.mix * 0.8);
+        const want = i.p.mix > 0 || !!auto?.has('mix');   // voix branchées seulement quand le chorus sert
+        if (on !== want) { for (const v of voices) { if (want) { input.connect(v.d); v.lfo.connect(v.depth); } else if (on !== undefined) { input.disconnect(v.d); v.lfo.disconnect(); } } on = want; }
+      } };
+    }
+    if (type === 'trem') {
+      const g = c.createGain(), depth = c.createGain(), lfo = c.createOscillator(); let on: boolean | undefined;
+      depth.gain.value = 0; depth.connect(g.gain); lfo.start();
+      input.connect(g).connect(out);
+      return { in: input, out, set: (i, p, set, auto) => {
+        const dp = i.p.depth;
+        set(g.gain, 1 - dp / 2); set(depth.gain, dp / 2); set(lfo.frequency, p.bpm / 30);
+        const want = dp > 0 || !!auto?.has('depth');
+        if (on !== want) { if (want) lfo.connect(depth); else if (on !== undefined) lfo.disconnect(); on = want; }
+      } };
+    }
+    if (type === 'eq3') {
+      const low = c.createBiquadFilter(), mid = c.createBiquadFilter(), high = c.createBiquadFilter(); let on: boolean | undefined;
+      low.type = 'lowshelf'; low.frequency.value = 200; mid.type = 'peaking'; mid.frequency.value = 1000; mid.Q.value = 0.9; high.type = 'highshelf'; high.frequency.value = 5000;
+      low.connect(mid).connect(high);
+      return { in: input, out, bq: [low, mid, high], set: (i, _p, set, auto) => {
+        set(mid.frequency, i.p.freq); set(low.gain, i.p.low); set(mid.gain, i.p.mid); set(high.gain, i.p.high);
+        // À plat, l'égaliseur est contourné (comme dans la tranche) : rien n'est calculé et le son passe tel quel.
+        const want = !!(i.p.low || i.p.mid || i.p.high) || ['low', 'mid', 'high'].some(k => auto?.has(k));
+        if (on !== want) { input.disconnect(); high.disconnect(); if (want) { input.connect(low); high.connect(out); } else input.connect(out); on = want; }
+      } };
+    }
+    if (type === 'comp') {
+      const cp = c.createDynamicsCompressor(), mk = c.createGain();
+      cp.threshold.value = -24; cp.ratio.value = 4; cp.attack.value = 0.005; cp.release.value = 0.2; mk.gain.value = 1.5;
+      input.connect(cp).connect(mk).connect(out);
+      return { in: input, out, dyn: cp, set: (i, _p, set) => {
+        // Le gain de compensation suit le seuil et le taux, comme au mixeur.
+        set(cp.threshold, i.p.thr); set(cp.ratio, i.p.ratio); set(mk.gain, Math.pow(10, -i.p.thr * (1 - 1 / i.p.ratio) * 0.2 / 20));
+      } };
+    }
+    return null;
   }
 
   /** Branche un plugin web chargé à la place du passage direct. */
@@ -226,8 +314,8 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
         }, () => { if (!gone()) this.onWam?.(t.id, i.id, false); }).finally(() => { made.loading = false; });
       }
       // Pendant la lecture, les réglages automatisés sont pilotés par leur courbe (applyAuto), pas par la valeur fixe.
-      const auto = this.autoOn ? autoKeysOf(t, i.id) : null;
-      if (!auto?.size) node.set(i, p, (prm, v) => this.set(prm, v));
+      const keys = autoKeysOf(t, i.id), auto = this.autoOn ? keys : null;
+      if (!auto?.size) node.set(i, p, (prm, v) => this.set(prm, v), keys);
       if (i.type === 'au' && node.wam) (node.wam as AuInstance).apply(auto?.size ? Object.fromEntries(Object.entries(i.p).filter(([k]) => !auto.has(k))) : i.p);
     }
     if (n.insSig === sig) return;
@@ -401,6 +489,13 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
         if (eqOn) { n.trem.connect(n.low); n.high.connect(dest); } else n.trem.connect(dest);
         n.eqSig = sig; n.compOn = t.comp;
       }
+      // Chaîne d'effets (21/11/2026) : la tranche fixe est débranchée, l'entrée de la piste va droit à la chaîne.
+      const chainOn = t.strip === 'chaine';
+      if (n.chainOn !== chainOn) {
+        if (chainOn) { n.input.disconnect(n.lp); n.input.connect(n.insIn); }
+        else if (n.chainOn !== undefined) { n.input.disconnect(n.insIn); n.input.connect(n.lp); }
+        n.chainOn = chainOn;
+      }
       this.syncInserts(t, n, p);
       if (t.type === 'synth' && !t.frozen) this.ctlNodes(n).range = t.synth?.bend ?? 2;
       this.syncInst(t, n);
@@ -484,8 +579,8 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
           if (sig !== last) { this.auLast.set(tr.id + ins.id, sig); this.auAt(t, () => au.apply(vals)); }
         } else if (FX[ins.type]) {
           const at = (x: number) => ({ ...ins, p: { ...ins.p, ...Object.fromEntries([...keys].map(k => [k, fxFromNorm(ins.type, k, autoAt(a[`ins:${ins.id}:${k}`]!, x))])) } });
-          node.set(at(s), p, (prm, v) => prm.setValueAtTime(v, t));
-          node.set(at(s + 1), p, (prm, v) => prm.linearRampToValueAtTime(v, t + d));
+          node.set(at(s), p, (prm, v) => prm.setValueAtTime(v, t), keys);
+          node.set(at(s + 1), p, (prm, v) => prm.linearRampToValueAtTime(v, t + d), keys);
         }
       }
     }
@@ -517,7 +612,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       const node = this.tracks.get(tr.id)?.ins.get(ins.id);
       const keys = autoKeysOf(tr, ins.id);
       if (!node || !keys.size) continue;
-      node.set(ins, p, prm => prm.cancelScheduledValues(now));
+      node.set(ins, p, prm => prm.cancelScheduledValues(now), keys);
       // Plugin du Mac : un réglage jamais touché à la main n'est pas dans le projet ; on lui rend sa valeur d'origine.
       const au = ins.type === 'au' ? node.wam as AuInstance | undefined : undefined;
       if (au) au.apply(Object.fromEntries([...keys].map(k => [k, ins.p[k] ?? au.params.find(q => String(q.address) === k)?.value ?? NaN])));
@@ -530,8 +625,19 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     const n = this.tracks.get(id);
     if (!n) return null;
     const out = new Float32Array(freqs.length), mag = new Float32Array(freqs.length), ph = new Float32Array(freqs.length);
-    for (const f of [n.lp, n.hp, n.low, n.mid, n.high]) { f.getFrequencyResponse(freqs as Float32Array<ArrayBuffer>, mag, ph); for (let i = 0; i < out.length; i++) out[i] += 20 * Math.log10(Math.max(1e-6, mag[i])); }
+    // Chaîne : les filtres et égaliseurs allumés de la chaîne (les égaliseurs contournés, à plat, ne changent rien).
+    const list = n.chainOn ? (this.lastProject && [...this.lastProject.tracks, ...this.lastProject.buses].find(t => t.id === id)?.inserts || []).filter(i => i.on).flatMap(i => n.ins.get(i.id)?.bq ?? []) : [n.lp, n.hp, n.low, n.mid, n.high];
+    for (const f of list) { f.getFrequencyResponse(freqs as Float32Array<ArrayBuffer>, mag, ph); for (let i = 0; i < out.length; i++) out[i] += 20 * Math.log10(Math.max(1e-6, mag[i])); }
     return out;
+  }
+  /** Réduction de gain du compresseur d'une tranche (dB, négatif) : celui de la tranche fixe, ou le premier allumé de la chaîne. */
+  reduction(id: string): number {
+    const n = this.tracks.get(id);
+    if (!n) return 0;
+    if (!n.chainOn) return n.compOn ? n.comp.reduction : 0;
+    const tr = this.lastProject && [...this.lastProject.tracks, ...this.lastProject.buses].find(t => t.id === id);
+    const ins = tr?.inserts.find(i => i.type === 'comp' && i.on);
+    return (ins && n.ins.get(ins.id)?.dyn?.reduction) || 0;
   }
 
   // ---------- Instruments du Mac (V19) ----------

@@ -1,21 +1,25 @@
 import { icon } from './icons';
-import { addAu, addInsert, addWam, moveInsert, removeInsert, saveWamStates } from '../actions';
+import { addAu, addInsert, addWam, convertAllStrips, convertStrip, moveInsert, removeInsert, revertStrip, saveWamStates } from '../actions';
+import { canRevert } from '../chain';
 import { AuInstance, AuParam, auBridge, auFromPos, auList, auLog, auName, auToPos } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { engine } from '../audio/engine';
 import { autoKeysOf } from '../audio/graph';
 import { t } from '../i18n';
 import { S, commit } from '../store';
-import { FX, Insert, Track } from '../types';
+import { FX, Insert, STRIP_FX, Track, isStripFx } from '../types';
 import { h, slider, toast } from './dom';
 
 const dlg = () => document.getElementById('fx') as HTMLDialogElement;
 let current = '';
 const find = (): Track | undefined => [...S.project.tracks, ...S.project.buses].find(x => x.id === current);
 
+const dB = (v: number) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
 const fmt = (type: string, key: string, v: number) =>
-  key === 'mix' || key === 'depth' || key === 'fb' ? Math.round(v * 100) + ' %'
-    : key === 'gain' ? (v > 0 ? '+' : '') + v.toFixed(1) + ' dB'
+  key === 'mix' || key === 'depth' || key === 'fb' || key === 'amt' ? Math.round(v * 100) + ' %'
+    : key === 'gain' || key === 'low' || key === 'mid' || key === 'high' ? dB(v)
+      : key === 'v' ? (Math.abs(v) < 0.02 ? '—' : (v < 0 ? 'LP ' : 'HP ') + Math.round(Math.abs(v) * 100))
+        : key === 'thr' ? Math.round(v) + ' dB' : key === 'ratio' ? v + ':1'
       : key === 'freq' ? (v >= 1000 ? (v / 1000).toFixed(1) + ' kHz' : Math.round(v) + ' Hz')
         : key === 'rate' ? v.toFixed(2) + ' Hz' : key === 'size' ? v.toFixed(1) + ' s' : type === 'delay' && key === 'time' ? v + '/16' : v.toFixed(1);
 
@@ -136,12 +140,29 @@ function card(tr: Track, ins: Insert, i: number) {
     body);
 }
 
+/** Mode de la tranche (fixe ou chaîne) et passage de l'un à l'autre. */
+function modeBar(tr: Track) {
+  if (tr.strip !== 'chaine') return h('div', { class: 'fxmode', data: { mode: 'fixe' } },
+    h('p', { class: 'tip' }, t('fx.help')),
+    h('div', { class: 'srow' },
+      h('button', { class: 'pill', data: { act: 'chainconv' }, title: t('chain.convTip'), onclick: () => convertStrip(tr.id) }, '⛓ ' + t('chain.conv')),
+      h('button', { class: 'pill', data: { act: 'chainall' }, title: t('chain.allTip'), onclick: convertAllStrips }, t('chain.all'))));
+  const ok = canRevert(tr);
+  return h('div', { class: 'fxmode', data: { mode: 'chaine' } },
+    h('p', { class: 'tip' }, t('fx.helpChain')),
+    h('div', { class: 'srow' },
+      h('button', { class: 'pill', data: { act: 'chainback' }, disabled: !ok, title: t(ok ? 'chain.backTip' : 'chain.cantRevert'), onclick: () => revertStrip(tr.id) }, '↩ ' + t('chain.back')),
+      !ok && h('span', { class: 'tip', data: { role: 'chainwhy' } }, t('chain.cantRevert'))));
+}
+
 function render() {
   const tr = find(), d = dlg();
   if (!tr) { if (d.open) d.close(); return; }
+  // Le contenu est recréé : après une conversion (ou un retour), le focus va sur la commande qui la remplace.
+  const was = d.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.act : undefined;
   const macs = auList();
   const add = h('select', { 'aria-label': t('fx.add'), data: { role: 'fxadd' } }, h('option', { value: '' }, '＋ ' + t('fx.add') + '…'),
-    ...Object.keys(FX).filter(k => k !== 'wam').map(k => h('option', { value: k }, t('fxn.' + k))),
+    ...Object.keys(FX).filter(k => k !== 'wam' && !isStripFx(k)).map(k => h('option', { value: k }, t('fxn.' + k))),
     h('optgroup', { label: t('fx.wam') }, h('option', { value: 'wam:wam/kh-tape/index.js' }, 'KH Tape Echo'), h('option', { value: 'wam:?' }, t('wam.url'))),
     // Plugins Audio Unit installés sur le Mac (version bureau macOS seulement).
     ...macs.length ? [h('optgroup', { label: '🍎 ' + t('au.group'), data: { role: 'aulist' } }, ...macs.map(d => h('option', { value: `au:${d.type}:${d.subtype}:${d.manufacturer}` }, auName(d.name))))] : []);
@@ -152,9 +173,14 @@ function render() {
   };
   d.replaceChildren(
     h('h2', {}, icon('fx', 22), `${t('fx.title')} — ${tr.name}`),
-    h('p', { class: 'tip' }, t('fx.help')),
+    modeBar(tr),
     tr.inserts.length ? h('div', { class: 'fxlist' }, ...tr.inserts.map((ins, i) => card(tr, ins, i))) : h('p', { class: 'tip', data: { empty: '1' } }, t('fx.none')),
     h('div', { class: 'fxfoot' }, add, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close')))));
+  const swap: Record<string, string> = { chainconv: 'chainback', chainall: 'chainback', chainback: 'chainconv' };
+  if (was && swap[was]) {
+    const q = (act: string) => d.querySelector<HTMLElement>(`[data-act=${act}]:not(:disabled)`);
+    (q(was) ?? q(swap[was]) ?? d.querySelector<HTMLElement>('[data-role=fxadd]'))?.focus();
+  }
 }
 
 /** Ouvre la chaîne d'effets d'une tranche (piste ou bus). */

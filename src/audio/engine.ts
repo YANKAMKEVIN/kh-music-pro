@@ -543,7 +543,7 @@ class Engine {
   }
 
   /** Réduction de gain appliquée par le compresseur d'une tranche, en dB (0 = aucune). */
-  reduction(id: string): number { const n = this.mix.tracks.get(id); return n?.compOn ? n.comp.reduction : 0; }
+  reduction(id: string): number { return this.mix.reduction(id); }
 
   /** Spectre du général (amplitudes 0..255 par bande de fréquence). */
   spectrum(): Uint8Array | null {

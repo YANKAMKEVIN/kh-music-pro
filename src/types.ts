@@ -118,15 +118,34 @@ export const FX: Record<string, [string, number, number, number, number][]> = {
   autopan: [['rate', 0.1, 8, 0.1, 1], ['depth', 0, 1, 0.01, 0.8]],
   eq: [['freq', 40, 12000, 10, 1000], ['gain', -18, 18, 0.5, 0], ['q', 0.3, 8, 0.1, 1]],
   gain: [['gain', -24, 24, 0.5, 0]],
+  // Chaînes d'effets (21/11/2026) : les sept étages de la tranche fixe, devenus des effets comme les autres.
+  filter: [['v', -1, 1, 0.01, 0]],
+  drive: [['amt', 0, 1, 0.01, 0.3]],
+  lofi: [['amt', 0, 1, 0.01, 0.3]],
+  chorus: [['mix', 0, 1, 0.01, 0.5]],
+  trem: [['depth', 0, 1, 0.01, 0.5]],
+  eq3: [['low', -15, 15, 0.5, 0], ['mid', -15, 15, 0.5, 0], ['freq', 200, 8000, 10, 1000], ['high', -15, 15, 0.5, 0]],
+  comp: [['thr', -60, 0, 1, -24], ['ratio', 1, 20, 0.5, 4]],
   wam: [],
 };
+/**
+ * Étages de la tranche fixe, dans l'ordre où le son les traverse (filtre, saturation, lo-fi, chorus, trémolo, égaliseur,
+ * compresseur). Une piste en mode « chaîne » n'a plus de tranche fixe : ces étages sont des effets de sa chaîne.
+ * Ils ne comptent pas dans la limite de huit effets (sept au plus, un de chaque).
+ */
+export const STRIP_FX = ['filter', 'drive', 'lofi', 'chorus', 'trem', 'eq3', 'comp'] as const;
+export type StripFx = typeof STRIP_FX[number];
+export const isStripFx = (type: string): type is StripFx => (STRIP_FX as readonly string[]).includes(type);
+/** Effets « ordinaires » d'une tranche (ceux qui comptent dans la limite de huit). */
+export const fxCount = (tr: Track) => tr.inserts.filter(i => !isStripFx(i.type)).length;
 // ---------- Automation des réglages d'effets (V17) ----------
 // Clé « ins:<id de l'effet>:<réglage> » : réglage d'un effet intégré (clé de FX) ou adresse d'un réglage d'Audio Unit.
 // La courbe va de 0 à 1 sur toute la plage du réglage (échelle logarithmique pour les fréquences).
 export const insKey = (id: string, k: string) => `ins:${id}:${k}`;
 export function parseInsKey(key: string): { id: string; k: string } | null { const m = /^ins:([^:]+):(.+)$/.exec(key); return m ? { id: m[1], k: m[2] } : null; }
-/** La taille de la réverbération reconstruit sa réponse à chaque changement : elle n'est pas automatisable. */
-export const fxAutomatable = (type: string, k: string) => !!FX[type]?.some(d => d[0] === k) && !(type === 'reverb' && k === 'size');
+/** La taille de la réverbération reconstruit sa réponse à chaque changement : elle n'est pas automatisable ; la saturation et le lo-fi
+ *  (courbes recalculées) non plus, comme dans la tranche fixe. */
+export const fxAutomatable = (type: string, k: string) => !!FX[type]?.some(d => d[0] === k) && !(type === 'reverb' && k === 'size') && !((type === 'drive' || type === 'lofi') && k === 'amt');
 const fxDef = (type: string, k: string) => FX[type]?.find(d => d[0] === k);
 const isLogRange = (min: number, max: number) => min > 0 && max / min >= 20;
 export function fxFromNorm(type: string, k: string, v: number): number {
@@ -195,6 +214,8 @@ export interface Track {
   compThr: number; compRatio: number; // compresseur : seuil (dB) et taux
   out: string;                       // sortie : '' = général, sinon identifiant d'un bus
   inserts: Insert[];                 // chaîne d'effets ajoutés, dans l'ordre, après l'égaliseur et le compresseur
+  /** Chaînes d'effets (21/11/2026) : 'fixe' = tranche fixe puis chaîne (comme avant) ; 'chaine' = la chaîne seule, la tranche fixe est débranchée. */
+  strip: 'fixe' | 'chaine';
   /** Courbes d'automation : les six réglages de la piste (AutoParam) et, depuis la V17, les réglages de ses effets (insKey). */
   auto?: Partial<Record<AutoParam, Pt[]>> & Record<string, Pt[] | undefined>;
   autoShow?: string;
@@ -392,7 +413,7 @@ export function newTrack(type: TrackType, index: number, preset = 'lead'): Track
   return {
     id: uid(), name: `${t('type.' + type)} ${index}`, type,
     color: COLORS[(index - 1 + (type === 'drums' ? 0 : type === 'synth' ? 1 : 3)) % COLORS.length],
-    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0, eqMidF: 1000, compThr: -24, compRatio: 4, out: '', inserts: [],
+    vol: 0.8, pan: 0, mute: false, solo: false, eqLow: 0, eqMid: 0, eqHigh: 0, comp: false, rev: 0, dly: 0, drive: 0, filter: 0, duck: 0, chorus: 0, trem: 0, crush: 0, eqMidF: 1000, compThr: -24, compRatio: 4, out: '', inserts: [], strip: 'fixe',
     synth: type === 'synth' ? makeSynth(preset) : undefined,
     kit: type === 'drums' ? 'electro' : undefined,
     pads: type === 'drums' ? new Array(NPADS).fill(null) : undefined,
@@ -430,9 +451,10 @@ const OLD_PRESETS: Record<string, string> = { Lead: 'lead', Basse: 'bass', Nappe
 export function migrate(p: Project): Project {
   p.swing ??= 0; p.countIn ??= false; p.filter ??= 0;
   p.revSize ??= 2.4; p.dlySteps ??= 3; p.dlyFb ??= 0.38; p.key ??= 0; p.scale ??= 'off'; p.markers ??= []; p.mLow ??= 0; p.mMid ??= 0; p.mHigh ??= 0; p.width ??= 1; p.target ??= 0; p.notes ??= ''; p.punch ??= false; p.buses ??= []; p.tempos ??= []; p.sig ??= 4; p.den = p.den === 8 ? 8 : 4; p.liveQ ??= 0; p.liveLen ??= 2; p.exp = { ...defaultExport(), ...p.exp };
-  for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; b.inserts ??= []; }
+  for (const b of p.buses) { b.eqMidF ??= 1000; b.compThr ??= -24; b.compRatio ??= 4; b.out = ''; b.inserts ??= []; b.strip = b.strip === 'chaine' ? 'chaine' : 'fixe'; }
   for (const tr of p.tracks) {
     tr.drive ??= 0; tr.filter ??= 0; tr.duck ??= 0; tr.chorus ??= 0; tr.trem ??= 0; tr.crush ??= 0; tr.eqMidF ??= 1000; tr.compThr ??= -24; tr.compRatio ??= 4; tr.inserts ??= [];
+    tr.strip = tr.strip === 'chaine' ? 'chaine' : 'fixe';   // chaînes d'effets : un ancien projet garde sa tranche fixe (son identique)
     tr.out = tr.out && p.buses.some(b => b.id === tr.out) ? tr.out : '';
     if (tr.type === 'drums') {
       tr.kit ??= 'electro'; tr.pads ??= new Array(NPADS).fill(null);

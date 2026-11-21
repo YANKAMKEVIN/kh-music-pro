@@ -6,7 +6,8 @@ import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loa
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { BAR, Clip, MIX_PRESETS, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
+import { addStripFx, chainToStrip, stripToChain } from './chain';
+import { BAR, Clip, MIX_PRESETS, fxCount, isStripFx, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
 import { ask, confirmBox, toast } from './ui/dom';
 
 function download(blob: Blob, name: string) {
@@ -310,7 +311,12 @@ const strip = (id: string) => [...S.project.tracks, ...S.project.buses].find(x =
 export function addInsert(trackId: string, type: string) {
   const tr = strip(trackId);
   if (!tr) return;
-  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  // Étages de tranche (filtre, saturation…) : hors de la limite de huit, un de chaque au plus ; ils se placent dans l'ordre du son.
+  if (isStripFx(type)) {
+    if (tr.inserts.some(i => i.type === type)) return toast(t('fx.oneStrip', t('fxn.' + type)), 'error');
+    addStripFx(tr, type); commit(); return;
+  }
+  if (fxCount(tr) >= 8) return toast(t('fx.max'), 'error');
   tr.inserts.push(newInsert(type)); commit();
 }
 export function removeInsert(trackId: string, id: string) {
@@ -330,7 +336,7 @@ export function moveInsert(trackId: string, id: string, dir: -1 | 1) {
 export function addAu(trackId: string, id: string, name: string) {
   const tr = strip(trackId);
   if (!tr) return;
-  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  if (fxCount(tr) >= 8) return toast(t('fx.max'), 'error');
   if (!/^\w{4}:[^:]{4}:[^:]{4}$/.test(id)) return;
   const ins = newInsert('au'); ins.url = id; ins.name = name;
   tr.inserts.push(ins); commit();
@@ -343,7 +349,7 @@ const trusted = (): string[] => { try { return JSON.parse(localStorage.getItem('
  */
 export async function addWam(trackId: string, url: string | null, name?: string) {
   if (!strip(trackId)) return;
-  if (strip(trackId)!.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  if (fxCount(strip(trackId)!) >= 8) return toast(t('fx.max'), 'error');
   const raw = url ?? (await ask(t('wam.ask'), 'https://', { mode: 'url' }))?.trim();
   if (!raw) return;
   let full: URL;
@@ -359,7 +365,7 @@ export async function addWam(trackId: string, url: string | null, name?: string)
   // La question a pu rester ouverte un moment : la piste est relue (elle a pu être supprimée, ou remplie entre-temps).
   const tr = strip(trackId);
   if (!tr) return;
-  if (tr.inserts.length >= 8) return toast(t('fx.max'), 'error');
+  if (fxCount(tr) >= 8) return toast(t('fx.max'), 'error');
   const ins = newInsert('wam'); ins.url = raw; ins.name = name ?? (full.pathname.split('/').filter(Boolean).slice(-2, -1)[0] || full.host);
   tr.inserts.push(ins); commit();
 }
@@ -398,7 +404,29 @@ export function removeSend(tr: Track, id: string) { tr.sends = (tr.sends ?? []).
 export function applyMixPreset(tr: Track, key: string) {
   const p = MIX_PRESETS[key];
   if (!p) return;
-  Object.assign(tr, p); commit(); toast(t('toast.presetApplied', t('mp.' + key), tr.name));
+  Object.assign(tr, p);
+  commit(); toast(t('toast.presetApplied', t('mp.' + key), tr.name));
+}
+
+// ---------- Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ----------
+/** Convertit la tranche fixe d'une piste (ou d'un bus) en effets en tête de chaîne : même son, une seule entrée d'annulation. */
+export function convertStrip(trackId: string) {
+  const tr = strip(trackId);
+  if (!tr || !stripToChain(tr)) return;
+  commit(); toast(t('chain.done', tr.name));
+}
+/** Convertit toutes les tranches du projet (pistes et bus). */
+export function convertAllStrips() {
+  const n = [...S.project.tracks, ...S.project.buses].filter(tr => stripToChain(tr)).length;
+  if (!n) return toast(t('chain.none'));
+  commit(); toast(t('chain.doneAll', n));
+}
+/** Revient à la tranche fixe, quand la tête de chaîne le permet sans changer le son. */
+export function revertStrip(trackId: string) {
+  const tr = strip(trackId);
+  if (!tr) return;
+  if (!chainToStrip(tr)) return toast(t('chain.cantRevert'), 'error');
+  commit(); toast(t('chain.reverted', tr.name));
 }
 
 /** Demande un tempo (40 à 240) ; renvoie null si la saisie est annulée ou invalide. */

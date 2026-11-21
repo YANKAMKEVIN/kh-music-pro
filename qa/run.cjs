@@ -5811,6 +5811,111 @@ test('LR04', 'Live', 'Au clavier : ● se déclenche avec Entrée ; une piste au
   await page.evaluate(() => window.kh.setLang('fr'));
 });
 
+// ============ Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ============
+/**
+ * Projet de mesure des chaînes : trois synthés (les sept étages réglés ; courbes de filtre, de chorus, de graves et de seuil
+ * avec un écho et un phaser ajoutés ; tranche neutre), une piste audio (son de synthèse calculé, sans hasard) sortie dans un bus
+ * réglé lui aussi. Ni réverb ni batterie : leur part de hasard empêcherait la comparaison à l'échantillon près.
+ */
+const CE_PROJECT = () => {
+  const k = window.kh, sr = 44100, buf = new AudioBuffer({ length: sr * 2, numberOfChannels: 1, sampleRate: sr }), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = 0.4 * Math.sin(2 * Math.PI * 220 * i / sr) + 0.2 * Math.sin(2 * Math.PI * 3300 * i / sr) * Math.sin(i / sr * 7);
+  k.buffers.set('ce-src', buf);
+  const p = k.demoProject(); p.loop = false; p.master = 0.25; p.countIn = false;
+  const bass = p.tracks[1], audio = JSON.parse(JSON.stringify(p.tracks[4]));
+  const mk = (id, f) => { const t = JSON.parse(JSON.stringify(bass)); t.id = id; t.name = id; t.rev = 0; t.dly = 0.25; t.vol = 0.5; f(t); return t; };
+  const bus = Object.assign(k.newBus(1), { id: 'cebus', eqLow: -3, eqHigh: 2, drive: 0.2, comp: true, compThr: -18 });
+  Object.assign(audio, { id: 'ceA', name: 'ceA', rev: 0, out: 'cebus', filter: 0.15, crush: 0.25, trem: 0.6, eqMid: 5, eqMidF: 2500, comp: true, compThr: -20, compRatio: 3, auto: { 'set:eqHigh': [{ s: 0, v: 0.1 }, { s: 60, v: 0.95 }] } });
+  audio.clips = [0, 16, 32, 48].map((s, j) => ({ id: 'ca' + j, name: 's', start: s, len: 16, offset: 0, bufferId: 'ce-src', gain: 0.8 }));
+  p.buses = [bus];
+  p.tracks = [
+    mk('ce1', t => Object.assign(t, { filter: -0.3, drive: 0.4, crush: 0.3, chorus: 0.4, trem: 0.5, eqLow: 3, eqMid: -2, eqMidF: 1500, eqHigh: 4, comp: true, compThr: -30, compRatio: 6 })),
+    mk('ce2', t => { Object.assign(t, { filter: 0.2, eqHigh: 2, comp: true, compThr: -40 }); t.inserts = [k.newInsert('delay'), k.newInsert('phaser')]; t.autoShow = 'filter';
+      t.auto = { filter: [{ s: 0, v: -0.8 }, { s: 40, v: 0.6 }], chorus: [{ s: 0, v: 0 }, { s: 60, v: 1 }], 'set:eqLow': [{ s: 0, v: 0.2 }, { s: 50, v: 0.9 }], 'set:compThr': [{ s: 0, v: 0.1 }, { s: 64, v: 0.8 }] }; }),
+    mk('ce3', () => { }), audio];
+  return p;
+};
+/** Rendus séparés de chaque piste (avec les bus) du projet courant : à l'échantillon près, un rendu seul ne dépend d'aucun ordre de somme. */
+const ceSolo = () => S(async () => {
+  const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), out = {};
+  k.renderOpts.parallel = false;
+  for (const t of p.tracks) { const b = await k.renderOffline({ ...JSON.parse(JSON.stringify(p)), tracks: [t] }, false); out[t.id] = [b.getChannelData(0).slice(), b.getChannelData(1).slice()]; }
+  window.__ceSolo = out; k.renderOpts.parallel = true; return Object.keys(out).length;
+});
+/** Écart maximal entre les rendus séparés gardés par ceSolo et ceux du projet courant ; et le niveau de crête. */
+const ceDiff = () => S(async () => {
+  const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), out = {};
+  k.renderOpts.parallel = false;
+  for (const t of p.tracks) {
+    const b = await k.renderOffline({ ...JSON.parse(JSON.stringify(p)), tracks: [t] }, false), ref = window.__ceSolo[t.id];
+    let d = 0, pk = 0; for (let c = 0; c < 2; c++) { const x = ref[c], y = b.getChannelData(c); if (x.length !== y.length) d = Infinity; for (let i = 0; i < x.length; i++) { d = Math.max(d, Math.abs(x[i] - y[i])); pk = Math.max(pk, Math.abs(x[i])); } }
+    out[t.id] = [d, pk];
+  }
+  k.renderOpts.parallel = true; return out;
+});
+async function ceOpenOld() {
+  // Ancien projet : un fichier sans le champ « strip » (enregistré avant les chaînes d'effets).
+  const data = await S(new Function(`const p = (${CE_PROJECT.toString()})(); for (const t of [...p.tracks, ...p.buses]) delete t.strip; return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} });`));
+  const f = path.join(TMP, 'avant-chaines.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(500);
+  await S(new Function(`(${CE_PROJECT.toString()})();`));   // le son de synthèse de la piste audio (le fichier n'en contient pas)
+}
+
+test('CE01', 'Chaînes d\'effets', 'Migration : un ancien projet s’ouvre en tranche fixe ; « Tout le projet » convertit pistes et bus en chaînes, et le rendu reste identique à l’échantillon près (piste par piste, courbes comprises)', async () => {
+  await ceOpenOld();
+  const modes = await S(() => [...window.kh.S.project.tracks, ...window.kh.S.project.buses].map(t => t.strip));
+  expect(modes.length === 5 && modes.every(m => m === 'fixe'), 'un ancien projet doit garder sa tranche fixe : ' + modes);
+  const whole0 = await S(async () => { const k = window.kh; k.renderOpts.parallel = false; const a = await k.renderOffline(k.S.project, false), b = await k.renderOffline(k.S.project, false); window.__ceWhole = a.getChannelData(0).slice(); let d = 0; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a.getChannelData(0)[i] - b.getChannelData(0)[i])); k.renderOpts.parallel = true; return d; });
+  await ceSolo();
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  expect(await page.$('#fx [data-mode=fixe]'), 'la fenêtre des effets doit indiquer la tranche fixe');
+  await page.click('#fx [data-act=chainall]'); await sleep(200);
+  expect((await page.textContent('#toast')).includes('5 tranches'), 'message de conversion : ' + await page.textContent('#toast'));
+  expect(await page.$('#fx [data-mode=chaine]'), 'la fenêtre doit passer en mode chaîne');
+  const p = await proj();
+  expect([...p.tracks, ...p.buses].every(t => t.strip === 'chaine'), 'toutes les tranches doivent être converties');
+  const types = Object.fromEntries([...p.tracks, ...p.buses].map(t => [t.id, t.inserts.map(i => i.type + (i.on ? '' : '-off')).join(',')]));
+  expect(types.ce1 === 'filter,drive,lofi,chorus,trem,eq3,comp' && types.ce2 === 'filter,chorus,eq3,comp,delay,phaser' && types.ce3 === 'filter' && types.ceA === 'filter,lofi,trem,eq3,comp' && types.cebus === 'filter,drive,eq3,comp', 'étages convertis : ' + JSON.stringify(types));
+  const c1 = p.tracks[0].inserts; expect(c1[0].p.v === -0.3 && c1[1].p.amt === 0.4 && c1[5].p.freq === 1500 && c1[5].p.high === 4 && c1[6].p.thr === -30 && c1[6].p.ratio === 6, 'réglages recopiés : ' + JSON.stringify(c1.map(i => i.p)));
+  expect(p.tracks[0].eqHigh === 0 && p.tracks[0].comp === false && p.tracks[0].drive === 0, 'les anciens réglages de tranche doivent revenir au neutre');
+  const diffs = await ceDiff();
+  for (const [id, [d, pk]] of Object.entries(diffs)) expect(d === 0 && pk > 0.01, `${id} : le rendu doit rester identique à l’échantillon près (écart ${d}, crête ${pk.toFixed(3)})`);
+  // Morceau entier : les pistes se somment dans un ordre que le navigateur ne garantit pas ; l'écart reste celui de deux rendus du même projet.
+  const whole = await S(async () => { const k = window.kh; k.renderOpts.parallel = false; const b = await k.renderOffline(k.S.project, false); k.renderOpts.parallel = true; let d = 0; const a = window.__ceWhole; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b.getChannelData(0)[i])); return d; });
+  console.log('        écarts :', JSON.stringify({ pistes: Object.fromEntries(Object.entries(diffs).map(([k, v]) => [k, v[0]])), morceau: whole.toExponential(1), 'deux rendus identiques': whole0.toExponential(1) }));
+  expect(whole < Math.max(1e-3, 4 * whole0), 'le morceau entier doit sonner pareil : écart ' + whole);
+});
+test('CE02', 'Chaînes d\'effets', 'Migration sans perte : courbes renommées vers les effets, Annuler revient à la tranche fixe, le fichier garde la chaîne ; retour à la tranche fixe identique, refusé si l’ordre a changé', async () => {
+  await ceOpenOld(); await ceSolo();
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.click('#fx [data-act=chainconv]'); await sleep(150);
+  let t = (await proj()).tracks[1];
+  const id = type => t.inserts.find(i => i.type === type).id;
+  const keys = Object.keys(t.auto).sort().join();
+  expect(keys === [`ins:${id('filter')}:v`, `ins:${id('chorus')}:mix`, `ins:${id('eq3')}:low`, `ins:${id('comp')}:thr`].sort().join(), 'courbes renommées : ' + keys);
+  const f = t.auto[`ins:${id('filter')}:v`]; expect(Math.abs(f[0].v - 0.1) < 1e-9 && Math.abs(f[1].v - 0.8) < 1e-9 && f[1].s === 40, 'valeurs de la courbe du filtre (−0,8 → 0,1 ; 0,6 → 0,8) : ' + JSON.stringify(f));
+  expect(t.autoShow === `ins:${id('filter')}:v`, 'la courbe affichée doit suivre : ' + t.autoShow);
+  expect((await proj()).tracks[0].strip === 'fixe', 'seule la piste choisie est convertie');
+  // Le fichier garde la chaîne et ses courbes ; rouvert, il sonne pareil.
+  await page.keyboard.press('Escape');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const file = path.join(TMP, 'chaine.khm'); await dl.saveAs(file);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8')).project.tracks[1];
+  expect(saved.strip === 'chaine' && saved.inserts.length === 6 && Object.keys(saved.auto).length === 4, 'chaîne absente du fichier');
+  await page.keyboard.press('Control+z'); await sleep(150);
+  t = (await proj()).tracks[1];
+  expect(t.strip === 'fixe' && t.inserts.length === 2 && t.auto.filter?.length === 2 && t.eqHigh === 2 && t.comp, 'Annuler doit rendre la tranche fixe et ses courbes');
+  await page.setInputFiles('#fProj', file); await sleep(500); await S(new Function(`(${CE_PROJECT.toString()})();`));
+  let d = await ceDiff(); expect(Object.values(d).every(([x]) => x === 0), 'rouvert depuis le fichier, le projet doit sonner pareil : ' + JSON.stringify(d));
+  // Retour à la tranche fixe : même son ; il est refusé quand l'ordre des étages a changé.
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  expect(!(await page.$eval('#fx [data-act=chainback]', e => e.disabled)), 'le retour doit être possible');
+  await page.click('#fx .fxcard >> nth=0 >> [data-act=fxdown]');
+  expect(await page.$eval('#fx [data-act=chainback]', e => e.disabled) && await page.$('#fx [data-role=chainwhy]'), 'filtre déplacé après le chorus : le retour doit être refusé, avec la raison');
+  await page.click('#fx .fxcard >> nth=1 >> [data-act=fxup]');
+  await page.click('#fx [data-act=chainback]'); await sleep(150);
+  t = (await proj()).tracks[1];
+  expect(t.strip === 'fixe' && t.inserts.map(i => i.type).join() === 'delay,phaser' && Math.abs(t.filter - 0.2) < 1e-9 && t.comp && t.compThr === -40 && t.auto.filter?.length === 2 && t.autoShow === 'filter', 'retour à la tranche fixe : ' + JSON.stringify({ s: t.strip, f: t.filter, a: Object.keys(t.auto), sh: t.autoShow }));
+  d = await ceDiff(); expect(Object.values(d).every(([x]) => x < 1e-6), 'après l’aller-retour, le son doit être le même : ' + JSON.stringify(d));
+});
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
