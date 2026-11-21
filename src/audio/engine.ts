@@ -136,6 +136,7 @@ class Engine {
   async play(preroll = 0) {
     if (this.playing) return;
     this.mode = 'arr'; this.playFrom = this.pos; this.nextStep = Math.floor(this.pos);
+    this.mix.liveCtl = this.recording === 'midi' ? this.recTrack : '';
     await this.start(preroll);
   }
 
@@ -148,6 +149,7 @@ class Engine {
     if (!this.playing) { this.pos = 0; return; }
     this.playing = false; clearInterval(this.timer);
     this.mix.stopAll(); this.voices.clear(); this.mix.clearAuto(S.project);
+    this.mix.liveCtl = '';
     if (this.mode === 'live') { const r = this.liveRec; this.liveRec = null; if (r?.clipId) this.onLiveRec('stop', r); this.liveActive.clear(); this.liveQueued.clear(); this.liveSrc.clear(); this.mode = 'arr'; this.onLive(); }
     else this.pos = this.playFrom;
     const kind = this.recording;

@@ -353,8 +353,6 @@ function screenKeys() {
 // ---------- Molettes à l'écran (V19) : pitch bend (revient au centre au relâchement) et modulation (reste où on la laisse) ----------
 let bendHeld = 0;
 const ctlFmt = (k: CtlKind, v: number) => k === 'pb' ? (v > 0 ? '+' : '') + Math.round(v * 100) + ' %' : Math.round(v * 100) + ' %';
-/** Molettes en cours de glissé (souris ou doigt). */
-const wheelDrag = new Set<'pb' | 'mod'>();
 function wheel(k: 'pb' | 'mod') {
   // Sur téléphone, les molettes sont couchées au-dessus du clavier, pour laisser aux touches toute la largeur.
   const lo = k === 'pb' ? -1 : 0, v0 = k === 'pb' ? bendHeld : engine.ctlNow.get(S.selTrack)?.mod ?? 0, flat = innerWidth < 760;
@@ -372,8 +370,7 @@ function wheel(k: 'pb' | 'mod') {
   el.onpointerdown = e => {
     e.preventDefault(); el.focus();
     const r = el.getBoundingClientRect(), at = (ev: PointerEvent) => lo + (1 - lo) * (flat ? (ev.clientX - r.left) / r.width : (r.bottom - ev.clientY) / r.height);
-    wheelDrag.add(k); const end = () => { wheelDrag.delete(k); back(); };
-    set(at(e)); followDrag(e, ev => set(at(ev)), end, end);
+    set(at(e)); followDrag(e, ev => set(at(ev)), back, back);
   };
   const cur = () => +(document.querySelector(`.wheel[data-ctl=${k}]`)?.getAttribute('aria-valuenow') ?? 0);
   el.onkeydown = e => {
@@ -383,9 +380,7 @@ function wheel(k: 'pb' | 'mod') {
   };
   // Pitch bend au clavier : comme une vraie molette, il revient au centre quand on lâche la touche.
   el.onkeyup = e => { if (/^Arrow|Home|End/.test(e.key)) back(); };
-  // Perte du focus : comme une touche lâchée. Pas pendant un glissé : le redessin qui remplace la molette sous le doigt
-  // (écriture des points pendant une prise) peut lui retirer le focus, le geste continue (CT06).
-  el.onblur = () => { if (!wheelDrag.has(k)) back(); };
+  el.onblur = back;
   return el;
 }
 

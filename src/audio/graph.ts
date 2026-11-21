@@ -73,6 +73,11 @@ export class Mix {
   fxEcho?: GainNode; fxRev?: GainNode; fxDelay?: DelayNode; stutter?: AudioWorkletNode; private out: AudioNode;
   /** Vrai pendant la lecture de l'arrangement : les paramètres automatisés ne sont plus pilotés par `sync`. */
   autoOn = false;
+  /**
+   * Piste dont les contrôles joués (pitch bend, molette, aftertouch) sont en train d'être enregistrés : le geste en direct prime,
+   * le clip enregistré ne rejoue pas ses contrôles (ni leur retour au repos en fin de clip) par-dessus pendant la prise.
+   */
+  liveCtl = '';
   active = new Set<AudioScheduledSourceNode>();
   /** Repetitions are isolated per render and track; preview cannot alter export. */
   sampleTurns = new Map<string, number>();
@@ -1011,7 +1016,7 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       const f = nt.s - local;
       if (f >= 0 && f < 1) playNote(mix, n.input, sp, nt.p, t + f * dur, Math.max(0.02, Math.min(nt.l, remain - f) * dur * 0.98), nt.v, buffers);
     }
-    if (c.ctl) mix.schedCtl(n, c, local, t, dur, remain, startAudio);
+    if (c.ctl && mix.liveCtl !== tr.id) mix.schedCtl(n, c, local, t, dur, remain, startAudio);
   }
 }
 
