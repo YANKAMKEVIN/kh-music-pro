@@ -1,6 +1,6 @@
 # Correctifs de l'audit de novembre 2026 (branche `v18-correctifs`)
 
-Suite à `docs/audit-2026-11.md` (branche `audit-2026-11`) et à la demande de Kevin du 18/11/2026 : « fixe tous les soucis rencontrés ».
+Suite à `docs/audit-2026-11.md` et à la demande de Kevin du 18/11/2026 : « fixe tous les soucis rencontrés ».
 Branche partie de `v18` à `bf29829`. Les défauts du téléphone et des têtes de piste (D1 à D4) sont dans les fichiers que la session V18 modifie en ce moment (`arr.ts`, `top.ts`, `style.css`) : ils lui ont été confiés pour éviter les conflits.
 
 ## Ce qui est corrigé

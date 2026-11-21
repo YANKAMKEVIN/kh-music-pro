@@ -715,7 +715,7 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 
 ## 17. V19 — les manques prioritaires de l'audit (version 0.19.0, branche `v19`, 18/11/2026)
 
-Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.md`, branche `audit-2026-11`), un chantier à la fois. Branche `v19` partie de `v18` à `59bb5e4`. Pas de fusion dans `main` sans l'accord de Kevin.
+Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.md`), un chantier à la fois. Branche `v19` partie de `v18` à `59bb5e4`. Pas de fusion dans `main` sans l'accord de Kevin.
 
 ### Ce qui a été fait
 
@@ -796,6 +796,7 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
   - Bilan : 3 surcharges en 80 min au lieu d'environ 9 par heure, et la plupart des tenues sans aucun manque. Les surcharges ne disparaissent pas tout à fait (384 : origine non trouvée). **Réserve gardée à 768** ; 512 a tenu 20 min sans manque, à confirmer par une tenue d'une heure avant d'en faire le réglage des cartes externes. Pas vérifié à l'oreille.
 - Moteur natif : nouvelle option `inFirst` (première voie d'entrée captée, `io.mm` par la carte des voies de Core Audio) ; elle permettra aussi d'enregistrer les entrées 3-4 de la Scarlett (Yamaha). Pas encore de réglage dans l'interface.
 - `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
+- **Premier vrai enregistrement du piano (19/11/2026, version installée 0.19.1)** : DGX-670, prise PHONES/OUTPUT → câble en Y (jack stéréo 6,35 → 2 jacks mono) → entrées 1 et 2 de la Scarlett, INST éteint. Niveaux mesurés après réglage des gains : crêtes de −14 à −6 dBFS, rien au-dessus. Montage de Kevin : sortie du système (haut-parleurs du Mac), entrée Scarlett sur la piste audio, « Écoute » allumée (pas de casque), moteur natif éteint. Constaté par Kevin : vumètre et écoute OK, retard d'écoute non ressenti, son net, notes calées sur le métronome à la réécoute. Punch sur les mesures 6-7 d'une prise de 8 mesures : zone bien remplacée (constaté par Kevin). Craquements occasionnels attribués par Kevin à son ordinateur (déjà vus hors de KH), pas étudiés. Pas encore de câble USB du piano : MIDI et son par USB non essayés. Moteur natif avec entrée Scarlett et sortie Mac (deux cartes différentes) jamais essayé.
 
 ### Méthode de QA apprise
 
@@ -811,3 +812,20 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 - Fondu enchaîné sur un clip qui suit le tempo (« Suit le tempo ») : la montée du clip de droite s'applique, mais le clip de gauche ne se prolonge pas.
 - Instruments du Mac : seuls ceux d'Apple ont été essayés (aucun instrument tiers installé) ; un plugin lourd (Kontakt) recharge ses sons à chaque export (plusieurs secondes, beaucoup de mémoire) ; un AUv3 seul n'est pas ouvert (AUv2 seulement) ; pas d'aftertouch polyphonique par note (ramené à la pression de canal) ; la première note jouée pendant le chargement de l'instrument est perdue. La vraie fenêtre d'un instrument n'a pas été ouverte par l'essai automatique (elle s'afficherait sur l'écran) : c'est le même code que pour les effets, vérifié en V17. Module natif construit ici pour la puce Apple seulement (`KH_ARCHS=arm64`) ; la construction universelle se fait sur GitHub.
 - Compensation de latence des plugins du Mac sur un envoi qui va vers un bus où la piste ne sort pas : non calée (cas rare).
+
+## 18. Suite des éléments restants (branche `claude/suite`, 21/11/2026)
+
+Demande de Kevin : « mets en place tous ces éléments qui restent à faire ». Branche `claude/suite`, partie de `main` à `8345170` (QA 439/439). Un commit par élément ; pas de fusion ni de changement de version.
+
+### Tri des branches non fusionnées
+
+| Branche | Commit | Sur `main` ? | Suite donnée |
+|---|---|---|---|
+| `v19` | `9608859` docs : premier vrai enregistrement du DGX-670 par la Scarlett | Non | Repris dans la section 17 (Focusrite de Kevin), avec la précision du commit suivant. |
+| `v19` | `ae52403` docs : punch vérifié avec le vrai piano | Non | Repris (même ligne). |
+| `v19-telephone` | `5a9f9b8` téléphone, défauts D2 à D4 de l'audit | Non (seule la remise à zéro de l'accordeur y était, refaite par `claude/fix-qa`) | Repris, adapté à UX15 (PH01-PH04). |
+| `v19-telephone` | `7e5fe95` fusion de `v19` dans la branche | Oui (son contenu vient de `v19`, déjà dans `main`) | Rien à reprendre. |
+| `audit-2026-11` | `d613296` état des lieux (`docs/audit-2026-11.md`) | Non, alors que la passation et `docs/correctifs-audit-2026-11.md` y renvoient | Repris tel quel. |
+| `audit-2026-11` | `e8e5541` suite donnée aux défauts | Non | Repris (fin du même fichier). |
+
+Aucune branche n'est supprimée.
