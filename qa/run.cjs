@@ -2866,6 +2866,34 @@ test('EX10', 'Banques expressives', 'Un ancien projet garde le piano et le kit a
   await page.selectOption('[data-role=kit]', 'studio'); await page.keyboard.press('Control+z');
   expect((await proj()).tracks[0].kit === 'electro', 'changement de kit non annulable');
 });
+test('VD01', 'Banques expressives', 'Batterie à plusieurs nuances (Virtuosity Drums, décision du 21/11/2026) : le kit Studio se charge, une frappe douce et une frappe forte jouent des enregistrements différents', async () => {
+  await page.click(await headSel(0)); await page.selectOption('[data-role=kit]', 'studio');
+  expect(await S(() => window.kh.engine.prepare()), 'kit Studio non chargé');
+  const r = await S(async () => {
+    const k = window.kh, proto = AudioBufferSourceNode.prototype, start = proto.start, used = [];
+    proto.start = function (...a) { if (this.buffer) used.push(this.buffer); return start.apply(this, a); };
+    const out = {};
+    try {
+      for (const [row, name] of [[0, 'kick'], [1, 'snare']]) {
+        const bank = new Set(); for (let v = 0.05; v <= 1; v += 0.05) for (let i = 0; i < 3; i++) bank.add(k.banks.expressiveSample('studio_drums', row, v, i).s.buf);
+        const hit = async v => {
+          used.length = 0;
+          const p = window.qa.only(0, (p, tr) => { tr.kit = 'studio'; tr.rev = 0; tr.dly = 0; tr.chorus = 0; const c = tr.clips[0]; c.len = 16; c.drums = c.drums.map((x, i) => x.map((_, s2) => i === row && s2 === 0 ? v : 0)); });
+          const b = await k.renderOffline(p, false), d = b.getChannelData(0); let pk = 0; for (const x of d) pk = Math.max(pk, Math.abs(x));
+          return { buf: used.find(x => bank.has(x)), peak: pk };
+        };
+        const soft = await hit(0.15), loud = await hit(1);
+        out[name] = { layers: bank.size, soft: !!soft.buf, loud: !!loud.buf, differ: !!soft.buf && !!loud.buf && soft.buf !== loud.buf, softPeak: +soft.peak.toFixed(4), loudPeak: +loud.peak.toFixed(4) };
+      }
+    } finally { proto.start = start; }
+    return out;
+  });
+  for (const [name, x] of Object.entries(r)) {
+    expect(x.layers >= 2 && x.soft && x.loud, `${name} : échantillons du kit non joués ${JSON.stringify(x)}`);
+    expect(x.differ, `${name} : frappe douce et frappe forte jouent le même enregistrement ${JSON.stringify(x)}`);
+    expect(x.softPeak > 0.002 && x.loudPeak > x.softPeak, `${name} : niveaux ${JSON.stringify(x)}`);
+  }
+});
 test('MD01', 'Pédale MIDI', 'La pédale tient le piano après la touche, et son relâchement arrête le son', async () => {
   await page.click(await headSel(1)); await page.selectOption('[data-role=preset]', 'r_salamander'); await S(() => window.kh.engine.prepare()); await sleep(1400);
   await S(() => { const k = window.kh; k.onMidi([0xb0, 64, 127]); k.onMidi([0x90, 60, 100]); });
