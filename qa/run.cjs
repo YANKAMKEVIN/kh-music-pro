@@ -4193,7 +4193,11 @@ test('TH04', 'Têtes de piste', 'Faire défiler les pistes referme un menu ⋯ o
 test('TH07', 'Têtes de piste', 'Le menu ⋯ reste ouvert quand l’écran se redessine (lecture, note jouée en prise) ; seuls un clic dehors, Échap ou un choix le referment', async () => {
   const open = () => page.$eval('.head >> nth=1 >> details.tmenu', d => d.open);
   await page.click('.head >> nth=1 >> .tmore'); await page.waitForSelector('.head >> nth=1 >> details.tmenu[open]');
-  const box = await page.locator('.head >> nth=1 >> .tmenu .menu-list').boundingBox();
+  // La liste n'est posée à côté du bouton qu'à l'événement « toggle », qui suit l'ouverture, puis se déroule (0,12 s) : on mesure
+  // sa place une fois posée et déroulée, pas pendant (une mesure trop tôt donnait une autre hauteur et une autre place).
+  const list = page.locator('.head >> nth=1 >> .tmenu .menu-list');
+  await page.waitForFunction(() => { const l = document.querySelectorAll('.head')[1]?.querySelector('.tmenu .menu-list'); return l && l.style.top !== '' && l.getAnimations().length === 0; }, null, { timeout: 5000 });
+  const box = await list.boundingBox();
   // Redessins : un réglage (commit), puis la lecture et une note jouée pendant une prise.
   await page.$eval('.head >> nth=1 >> details.tmenu', d => { d.__avant = true; });
   const blur = () => page.evaluate(() => document.activeElement?.blur());   // Espace sur ⋯ le replierait : raccourcis lancés hors du bouton
@@ -4201,7 +4205,7 @@ test('TH07', 'Têtes de piste', 'Le menu ⋯ reste ouvert quand l’écran se re
   await S(() => window.kh.emit()); await sleep(200);
   const r = await page.$eval('.head >> nth=1 >> details.tmenu', d => ({ redrawn: !d.__avant, open: d.open, anim: d.querySelector('.menu-list').getAnimations().length }));
   expect(r.redrawn && r.open && r.anim === 0, `le menu doit rester ouvert, sans rejouer son déroulé : ${JSON.stringify(r)}`);
-  const box2 = await page.locator('.head >> nth=1 >> .tmenu .menu-list').boundingBox();
+  const box2 = await list.boundingBox();
   expect(Math.abs(box2.x - box.x) < 2 && Math.abs(box2.y - box.y) < 2, `le menu a bougé : ${JSON.stringify([box, box2])}`);
   await page.keyboard.press('Space'); await sleep(200);
   // Pendant une prise, chaque note jouée redessine l'écran.
