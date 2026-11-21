@@ -6,7 +6,7 @@ import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loa
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
 import { exportMidi, importMidi, zip } from './files';
-import { addStripFx, chainToStrip, stripToChain } from './chain';
+import { STRIP_MAP, StripField, addStripFx, chainToStrip, stripSet, stripToChain } from './chain';
 import { BAR, Clip, MIX_PRESETS, fxCount, isStripFx, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
 import { ask, confirmBox, toast } from './ui/dom';
 
@@ -412,7 +412,10 @@ export function removeSend(tr: Track, id: string) { tr.sends = (tr.sends ?? []).
 export function applyMixPreset(tr: Track, key: string) {
   const p = MIX_PRESETS[key];
   if (!p) return;
-  Object.assign(tr, p);
+  // Tranche en chaîne : les réglages de tranche du préréglage vont aux effets de la chaîne (créés au besoin) ; réverb et écho restent des envois.
+  if (tr.strip === 'chaine') {
+    for (const [k, v] of Object.entries(p)) if (k in STRIP_MAP) stripSet(tr, k as StripField, v as number | boolean, true); else (tr as unknown as Record<string, unknown>)[k] = v;
+  } else Object.assign(tr, p);
   commit(); toast(t('toast.presetApplied', t('mp.' + key), tr.name));
 }
 

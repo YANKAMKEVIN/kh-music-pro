@@ -5946,6 +5946,42 @@ test('CE03', 'Chaînes d\'effets', 'Interface : ajouter un étage de tranche dep
   const st = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; p.tracks[0].inserts.find(i => i.type === 'eq3').p.high = 12; const a = await window.qa.stats(p); p.tracks[0].inserts = p.tracks[0].inserts.filter(i => i.type !== 'eq3'); return [a.hf / a.rms, (await window.qa.stats(p)).hf / (await window.qa.stats(p)).rms]; });
   expect(st[0] > st[1] * 1.15, 'l’égaliseur de la chaîne doit s’entendre : ' + st.map(v => v.toFixed(3)));
 });
+test('CE04', 'Chaînes d\'effets', 'Mixeur d’une tranche en chaîne : les curseurs pilotent les effets de la chaîne, un étage absent n’a pas de curseur, le préréglage crée ce qui manque, la réduction du compresseur s’affiche', async () => {
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; t.eqHigh = 3; t.comp = true; k.commit(); });
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); await page.click('#fx [data-act=chainconv]'); await page.keyboard.press('Escape'); await sleep(100);
+  const s1 = '.strip >> nth=1';
+  expect(await page.$(`${s1} >> [data-role=chainmode]`), 'la tranche doit signaler le mode chaîne');
+  const labels = await page.$$eval('.strip >> nth=1', e => [...e[0].querySelectorAll('.scol .lb')].map(x => x.textContent));
+  expect(labels.includes('Aigus') && labels.includes('Filtre') && !labels.includes('Saturation') && !labels.includes('Lo-fi') && labels.includes('Seuil'), 'curseurs affichés : ' + labels.join(', '));
+  await setSlider(s1, 'Aigus', -6); await setSlider(s1, 'Filtre', -0.5); await setSlider(s1, 'Seuil', -36);
+  let t = (await proj()).tracks[1], by = ty => t.inserts.find(i => i.type === ty);
+  expect(by('eq3').p.high === -6 && by('filter').p.v === -0.5 && by('comp').p.thr === -36 && t.eqHigh === 0 && t.filter === 0, 'les curseurs doivent régler les effets : ' + JSON.stringify(t.inserts.map(i => i.p)));
+  // Interrupteur du compresseur = effet allumé ou éteint.
+  await page.click(`${s1} >> [data-tog=comp]`); t = (await proj()).tracks[1]; by = ty => t.inserts.find(i => i.type === ty);
+  expect(by('comp').on === false && !(await page.$$eval('.strip >> nth=1', e => [...e[0].querySelectorAll('.scol .lb')].some(x => x.textContent === 'Seuil'))), 'compresseur éteint depuis le mixeur');
+  await page.click(`${s1} >> [data-tog=comp]`);
+  // Préréglage « Lo-fi » : saturation, lo-fi, chorus créés à leur place ; réverb réglée comme avant.
+  await page.selectOption(`${s1} >> [data-role=mixpreset]`, 'lofi'); await sleep(100);
+  t = (await proj()).tracks[1];
+  expect(t.inserts.map(i => i.type).join() === 'filter,drive,lofi,chorus,eq3,comp' && t.inserts.find(i => i.type === 'lofi').p.amt === 0.35 && t.rev === 0.12 && t.inserts.find(i => i.type === 'eq3').p.high === -4, 'préréglage en mode chaîne : ' + JSON.stringify(t.inserts.map(i => [i.type, i.p])));
+  // Réduction du compresseur de la chaîne pendant la lecture.
+  await S(() => { const k = window.kh, c = k.S.project.tracks[1].inserts.find(i => i.type === 'comp'); c.p.thr = -50; c.p.ratio = 10; k.commit(); });
+  await page.keyboard.press('Space'); await sleep(1500);
+  const gr = await S(() => window.kh.engine.reduction(window.kh.S.project.tracks[1].id)); await page.keyboard.press('Space');
+  expect(gr < -1, 'réduction de gain lue sur le compresseur de la chaîne : ' + gr);
+  // Courbe d'égaliseur du mixeur : celle des filtres de la chaîne.
+  const eq = await S(() => { const c = window.kh.engine.mix.eqCurve(window.kh.S.project.tracks[1].id, new Float32Array([100, 12000])); return c && [...c]; });
+  expect(eq && eq[1] < eq[0] - 3, 'la courbe affichée doit suivre l’égaliseur et le filtre de la chaîne : ' + eq);
+});
+test('CE05', 'Chaînes d\'effets', 'Assignation MIDI : un bouton assigné au filtre pilote le filtre de la chaîne ; un étage absent ne bouge pas ; la tranche fixe ne bouge pas', async () => {
+  await S(() => { const k = window.kh; k.learn.map = { 21: '1:filter', 22: '1:drive' }; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
+  await S(() => { window.kh.onMidi([0xb0, 21, 0]); window.kh.onMidi([0xb0, 22, 127]); }); await sleep(200);
+  const t = (await proj()).tracks[1];
+  expect(t.inserts.find(i => i.type === 'filter').p.v === -1 && t.filter === 0, 'le bouton doit régler le filtre de la chaîne : ' + JSON.stringify(t.inserts.map(i => i.p)));
+  expect(!t.inserts.some(i => i.type === 'drive') && t.drive === 0, 'sans saturation dans la chaîne, rien ne doit changer');
+  const n = await S(() => { const k = window.kh, tr = k.S.project.tracks[1], node = k.engine.mix.tracks.get(tr.id).ins.get(tr.inserts[0].id); return node.bq[0].frequency.value; });
+  expect(n < 2000, 'le filtre de la chaîne doit se fermer à l’écoute : ' + n);
+});
 test('CE06', 'Chaînes d\'effets', 'Automation : le filtre de la chaîne se choisit dans le groupe de l’effet et se trace à la souris ; export plus brillant au fil de la courbe ; à l’écoute la courbe pilote le filtre, puis l’arrêt rend le réglage', async () => {
   const { lane, tid } = await sawSetup();
   await S(() => { const k = window.kh; k.S.project.tracks[1].synth.cutoff = 12000; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
@@ -6030,6 +6066,22 @@ test('CE09', 'Chaînes d\'effets', 'Gel d’une piste en chaîne d’effets : le
   await clickIn(await freezeBtn(1)); await sleep(150);
   expect(await S(() => !window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks[1].strip === 'chaine' && window.kh.S.project.tracks[1].inserts.length === 5), 'dégel : la piste revient avec sa chaîne');
 });
+test('CE10', 'Chaînes d\'effets', 'Textes traduits (fenêtre des effets, mixeur, noms des étages) ; au clavier, la conversion s’atteint et s’actionne avec Entrée', async () => {
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.focus('#fx [data-act=chainconv]'); await page.keyboard.press('Enter'); await sleep(150);
+  expect(await S(() => window.kh.S.project.tracks[1].strip) === 'chaine', 'Entrée doit convertir la tranche');
+  expect(await S(() => document.activeElement && document.getElementById('fx').contains(document.activeElement)), 'le focus doit rester dans la fenêtre');
+  for (const [l, back, name, mode] of [['en', 'Back to the fixed strip', 'Filter', 'Chain'], ['es', 'Volver al canal fijo', 'Filtro', 'Cadena']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await sleep(100);
+    if (!(await S(() => document.getElementById('fx').open))) { await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); }
+    expect((await page.textContent('#fx [data-act=chainback]')).includes(back) && (await page.textContent('#fx .fxcard strong')).includes(name), `fenêtre des effets non traduite en ${l}`);
+    expect(await page.$eval('#fx [data-role=stripfx]', g => g.label) === (l === 'en' ? 'Channel strip stages (one of each)' : 'Etapas del canal (una de cada)'), `groupe des étages non traduit en ${l}`);
+    await page.keyboard.press('Escape'); await tab('mixer');
+    expect((await page.textContent('.strip >> nth=1 >> [data-role=chainmode]')).includes(mode), `badge du mixeur non traduit en ${l}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

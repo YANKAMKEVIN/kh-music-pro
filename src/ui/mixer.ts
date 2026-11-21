@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { clearMidiMap, ccOf, learn } from '../input';
 import { S, commit, emit, select } from '../store';
 import { MIX_PRESETS, Project, Track, blankProject, newTrack } from '../types';
+import { StripField, stripGet, stripSet } from '../chain';
 import { icon, typeIcon } from './icons';
 import { showRack } from './rack';
 import { meter, updateLevels } from './meters';
@@ -44,11 +45,12 @@ export const sectOpen: Record<Sect, boolean> = (() => {
 })();
 /** Sections d'une tranche qui contiennent un réglage actif (un point les signale, pour ne rien oublier dans une section repliée). */
 export function stripActive(tr: Track): Record<Sect, boolean> {
+  const g = (f: StripField) => !!stripGet(tr, f);   // tranche en chaîne : les réglages des effets correspondants
   return {
-    eq: !!(tr.eqHigh || tr.eqMid || tr.eqLow),
-    fx: !!(tr.filter || tr.drive || tr.rev || tr.dly || tr.chorus || tr.trem || tr.crush || tr.inserts.some(i => i.on !== false)),
+    eq: g('eqHigh') || g('eqMid') || g('eqLow'),
+    fx: !!(g('filter') || g('drive') || tr.rev || tr.dly || g('chorus') || g('trem') || g('crush') || tr.inserts.some(i => i.on !== false)),
     send: !!tr.sends?.length,
-    dyn: !!(tr.comp || tr.duck),
+    dyn: !!(g('comp') || tr.duck),
   };
 }
 function sect(key: Sect, active: boolean, ...kids: (Node | false | null | undefined)[]) {
@@ -85,34 +87,45 @@ function strip(tr: Track, i: number, bus = false) {
   const hz = (v: number) => (v >= 1000 ? (v / 1000).toFixed(1) + ' kHz' : Math.round(v) + ' Hz');
   const panFmt = (v: number) => v === 0 ? t('mix.center') : (v < 0 ? t('mix.left') : t('mix.right')) + ' ' + Math.round(Math.abs(v) * 100);
   const T = (el: HTMLElement, key: string) => (bus ? el : tag(el, `${i}:${key}`)); // l'assignation MIDI vise les pistes, pas les bus
-  const act = stripActive(tr), D = defTrack();
+  const TS = (el: HTMLElement | null, key: string) => el && T(el, key);
+  const act = stripActive(tr), D = defTrack(), chain = tr.strip === 'chaine';
+  // Réglages de tranche : le champ de la piste, ou en mode chaîne le réglage de l'effet correspondant (absent : pas de curseur).
+  const SL = (f: StripField, label: string, min: number, max: number, step: number, fmt: (v: number) => string, set: (v: number) => number = v => v) => {
+    const v = stripGet(tr, f);
+    return v === undefined ? null : slider(label, min, max, step, v as number, x => { stripSet(tr, f, set(x)); }, fmt, '', false, D[f] as number);
+  };
+  const compOn = !!stripGet(tr, 'comp'), hasComp = stripGet(tr, 'comp') !== undefined;
+  const compTog = hasComp && h('button', {
+    class: `mini comp ${compOn ? 'on' : ''}`, title: t('mix.comp'), 'aria-pressed': String(compOn), data: { tog: 'comp' }, onclick: () => { stripSet(tr, 'comp', !compOn); commit(); },
+  }, t('mix.comp'));
+  const mark = chain && h('button', { class: 'mini chainmode', data: { role: 'chainmode' }, title: t('chain.modeTip'), onclick: () => showRack(tr.id) }, t('chain.mode'));
   return h('div', { class: 'strip' + (bus ? ' bus' : S.selTrack === tr.id ? ' sel' : ''), data: { id: tr.id }, style: `--c:${tr.color}`, onpointerdown: () => { if (!bus) select(tr.id, S.selTrack === tr.id ? S.selClip : ''); } },
-    bus ? h('div', { class: 'shead' }, h('span', { class: 'sname' }, icon('bus')), bname, preset,
+    bus ? h('div', { class: 'shead' }, h('span', { class: 'sname' }, icon('bus')), bname, mark, preset,
       h('button', { class: 'mini del', data: { act: 'busdel' }, title: t('bus.del'), 'aria-label': `${t('bus.del')} – ${tr.name}`, onclick: () => deleteBus(tr.id) }, '✕'))
-      : h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, typeIcon(tr.type), ' ' + tr.name), out, preset),
+      : h('div', { class: 'shead' }, h('div', { class: 'sname', title: tr.name }, typeIcon(tr.type), ' ' + tr.name), mark, out, preset),
     h('canvas', { class: 'eqc', width: 280, height: 46, data: { eq: tr.id }, role: 'img', 'aria-label': `${t('mix.eqCurve')} – ${tr.name}`, title: t('mix.eqCurve') }),
     h('div', { class: 'sbody' },
       h('div', { class: 'scol' },
         sect('eq', act.eq,
-          slider(t('mix.high'), -15, 15, 0.5, tr.eqHigh, v => tr.eqHigh = v, db, '', false, D.eqHigh),
-          slider(t('mix.mid'), -15, 15, 0.5, tr.eqMid, v => tr.eqMid = v, db, '', false, D.eqMid),
-          slider(t('mix.midF'), 200, 8000, 10, tr.eqMidF, v => tr.eqMidF = v, hz, '', false, D.eqMidF),
-          slider(t('mix.low'), -15, 15, 0.5, tr.eqLow, v => tr.eqLow = v, db, '', false, D.eqLow)),
+          SL('eqHigh', t('mix.high'), -15, 15, 0.5, db),
+          SL('eqMid', t('mix.mid'), -15, 15, 0.5, db),
+          SL('eqMidF', t('mix.midF'), 200, 8000, 10, hz),
+          SL('eqLow', t('mix.low'), -15, 15, 0.5, db)),
         sect('fx', act.fx,
-          T(slider(t('mix.filter'), -1, 1, 0.01, tr.filter, v => tr.filter = Math.abs(v) < 0.03 ? 0 : v, filterFmt, '', false, D.filter), 'filter'),
-          T(slider(t('mix.drive'), 0, 1, 0.01, tr.drive, v => tr.drive = v, pct, '', false, D.drive), 'drive'),
+          TS(SL('filter', t('mix.filter'), -1, 1, 0.01, filterFmt, v => Math.abs(v) < 0.03 ? 0 : v), 'filter'),
+          TS(SL('drive', t('mix.drive'), 0, 1, 0.01, pct), 'drive'),
           T(slider(t('mix.reverb'), 0, 1, 0.01, tr.rev, v => tr.rev = v, pct, '', false, D.rev), 'rev'),
           T(slider(t('mix.echo'), 0, 1, 0.01, tr.dly, v => tr.dly = v, pct, '', false, D.dly), 'dly'),
-          T(slider(t('mix.chorus'), 0, 1, 0.01, tr.chorus, v => tr.chorus = v, pct, '', false, D.chorus), 'chorus'),
-          T(slider(t('mix.trem'), 0, 1, 0.01, tr.trem, v => tr.trem = v, pct, '', false, D.trem), 'trem'),
-          T(slider(t('mix.crush'), 0, 1, 0.01, tr.crush, v => tr.crush = v, pct, '', false, D.crush), 'crush'),
+          TS(SL('chorus', t('mix.chorus'), 0, 1, 0.01, pct), 'chorus'),
+          TS(SL('trem', t('mix.trem'), 0, 1, 0.01, pct), 'trem'),
+          TS(SL('crush', t('mix.crush'), 0, 1, 0.01, pct), 'crush'),
           h('button', { class: 'mini rackb' + (tr.inserts.length ? ' has' : ''), data: { act: 'rack' }, title: t('fx.open'), onclick: () => showRack(tr.id) }, icon('fx', 15), ` ${t('fx.title')}${tr.inserts.length ? ` (${tr.inserts.length})` : ''}`)),
         !bus && sect('send', act.send, sends(tr)),
         sect('dyn', act.dyn,
-          tog('comp', t('mix.comp')),
-          tr.comp && slider(t('mix.compThr'), -60, 0, 1, tr.compThr, v => tr.compThr = v, v => v + ' dB', '', false, D.compThr),
-          tr.comp && slider(t('mix.compRatio'), 1, 20, 0.5, tr.compRatio, v => tr.compRatio = v, v => v + ':1', '', false, D.compRatio),
-          tr.comp && h('span', { class: 'gr', data: { gr: tr.id }, title: t('mix.grTip') }, ''),
+          compTog,
+          compOn && SL('compThr', t('mix.compThr'), -60, 0, 1, v => v + ' dB'),
+          compOn && SL('compRatio', t('mix.compRatio'), 1, 20, 0.5, v => v + ':1'),
+          compOn && h('span', { class: 'gr', data: { gr: tr.id }, title: t('mix.grTip') }, ''),
           T(slider(t('mix.duck'), 0, 1, 0.01, tr.duck, v => tr.duck = v, pct, '', false, D.duck), 'duck'),
           !bus && scSource(tr))),
       h('div', { class: 'fcol' },
