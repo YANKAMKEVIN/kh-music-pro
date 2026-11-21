@@ -3038,9 +3038,20 @@ test('BX07', 'Nouvelles banques', 'Les répétitions de basse et de percussions 
         else{tr.kit='percussion';c.drums=c.drums.map((r,i)=>r.map((_,s)=>i===1&&s%4===0?0.8:0));}
       });
       const a=await k.renderOffline(p,false);await k.engine.audition(k.makeSynth('r_fashionbass'),40);k.engine.stopAudition();
-      const b=await k.renderOffline(p,false);let d=0;for(let i=0;i<a.length;i++)d=Math.max(d,Math.abs(a.getChannelData(0)[i]-b.getChannelData(0)[i]));return d;
+      const b=await k.renderOffline(p,false);let d=0;for(let i=0;i<a.length;i++)d=Math.max(d,Math.abs(a.getChannelData(0)[i]-b.getChannelData(0)[i]));
+      // Écart entre les deux prises alternées de la note jouée : ce que la préécoute changerait si elle décalait les répétitions.
+      const t0=k.banks.sampleFor(mode==='bass'?'fashionbass':'percussion',mode==='bass'?40:1,0.8,0).s,t1=k.banks.sampleFor(mode==='bass'?'fashionbass':'percussion',mode==='bass'?40:1,0.8,1).s;
+      const x=t0.buf.getChannelData(0),y=t1.buf.getChannelData(0),i0=Math.round(t0.off*t0.buf.sampleRate),i1=Math.round(t1.off*t1.buf.sampleRate);let takes=0;
+      for(let i=0;i<22050&&i0+i<x.length&&i1+i<y.length;i++)takes=Math.max(takes,Math.abs(x[i0+i]*t0.gain-y[i1+i]*t1.gain));
+      return {d,takes};
     },mode);
-    expect(delta<1/32768,mode+': '+delta);
+    // Le rendu hors ligne de Chromium n'est pas identique au bit près d'une fois sur l'autre, même sans préécoute : l'ordre dans
+    // lequel il additionne les sons varie, et le compresseur et le limiteur amplifient ces arrondis jusqu'à 6e-5 environ (-85 dBFS,
+    // inaudible ; mesuré entre deux rendus successifs sans rien entre eux). Une préécoute qui décalerait les répétitions ferait jouer
+    // l'autre prise, dont l'écart se mesure en dixièmes. Seuil : 1e-3 (-60 dBFS), à plus de 15 fois ce bruit et au moins 100 fois
+    // sous l'écart entre prises, vérifié ci-dessous pour que le contrôle garde son pouvoir de détection.
+    expect(delta.takes>0.1,mode+' : les deux prises alternées sont trop proches pour que le contrôle ait un sens ('+delta.takes+')');
+    expect(delta.d<1e-3,mode+' : la préécoute a changé le rendu ('+delta.d+')');
   }
 });
 test('BX08', 'Nouvelles banques', 'Une banque de percussions incomplète est refusée puis se recharge après réessai',async()=>{
