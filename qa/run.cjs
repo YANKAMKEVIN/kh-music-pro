@@ -136,9 +136,15 @@ async function openPage(ready) {
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE ' + m.text()); });
   page.on('dialog', d => (d.type() === 'confirm' && refuseConfirm ? d.dismiss() : d.accept(dialogText)));
   await page.addInitScript(PAGE_HELPERS);
-  await page.goto(BASE); await page.waitForSelector('.clip');
+  await page.goto(BASE); await page.waitForSelector('.clip'); await settle(page);
   await closeWelcome(page);
 }
+/**
+ * Page qui vient de s'ouvrir : polices et instruments du projet arrivent encore et peuvent déplacer ce qui est à l'écran ou
+ * occuper la page. On attend qu'ils soient là (et deux images affichées) avant de mesurer une place ou de toucher l'écran :
+ * une mesure prise trop tôt envoyait parfois le doigt à côté de sa cible sur un serveur de GitHub chargé.
+ */
+async function settle(pg) { await pg.evaluate(async () => { await document.fonts.ready; await window.kh.engine.prepare(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }); }
 /** Premier lancement d'un profil neuf : l'accueil s'ouvre ; on le referme par « Commencer ». */
 async function closeWelcome(pg) { if (await pg.$('#welcome')) { await pg.click('#bWelGo'); await pg.waitForSelector('#welcome', { state: 'detached' }); } }
 let page, browser, dialogText, refuseConfirm = false, ignoreErr = null, errors = [];
@@ -1137,7 +1143,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-    await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
     const lay = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, top: document.getElementById('top').offsetHeight, topScroll: document.getElementById('top').scrollWidth, panel: document.getElementById('panel').clientHeight, arr: document.getElementById('arr').clientHeight, lane: document.querySelector('.lanes').getBoundingClientRect().left }));
     expect(lay.sw <= lay.iw + 1, `la page déborde en largeur (${lay.sw} > ${lay.iw})`); expect(lay.top <= 120 && lay.topScroll <= lay.iw + 1, `barre supérieure non compacte ou qui déborde (${lay.top} px, ${lay.topScroll} px de large)`);   // V18 : deux lignes sans défilement
     expect(lay.panel > 250 && lay.arr > 180 && lay.lane <= 160,   // V18 : colonne des pistes à 156 px pour des boutons M, S, A de 44 px
@@ -1158,7 +1164,7 @@ test('MB01', 'Téléphone', 'Écran de téléphone tactile : mise en page compac
 test('MB02', 'Téléphone', 'Au doigt : déplacer un clip et dessiner une courbe d\'automation', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
     const cdp = await ctx2.newCDPSession(pg);
     const swipe = async (x, y, dx, dy) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 5, y: y + dy * i / 5 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150); };
     await pg.evaluate(() => { const k = window.kh; k.S.project.tracks[1].clips[0].len = 16; k.S.project.tracks[1].autoShow = 'vol'; k.commit(); });
@@ -1189,7 +1195,7 @@ test('OK01', 'Clavier à l\'écran', 'Afficher le clavier, jouer une touche à l
 test('OK02', 'Clavier à l\'écran', 'Sur écran tactile : clavier affiché d\'office, accord à deux doigts', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
     await pg.tap('.head >> nth=1 >> .tname'); expect(await pg.$('.okb'), 'clavier absent sur écran tactile');
     const a = await (await pg.$('.wk[data-m="48"]')).boundingBox(), b = await (await pg.$('.wk[data-m="55"]')).boundingBox(), cdp = await ctx2.newCDPSession(pg);
     const pt = (r, id) => ({ x: r.x + r.width / 2, y: r.y + r.height - 12, id });
@@ -1495,7 +1501,7 @@ test('TR01', 'Visite guidée', 'La visite se lance depuis l\'aide, éclaire 8 zo
 test('TR02', 'Visite guidée', 'Sur téléphone, chaque bulle de la visite tient à l\'écran', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); if (await pg.$('#welcome')) await pg.tap('#bWelTour'); else await pg.evaluate(() => window.kh.startTour());
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); if (await pg.$('#welcome')) await pg.tap('#bWelTour'); else await pg.evaluate(() => window.kh.startTour());
     await pg.waitForSelector('.tour');
     for (let i = 1; i <= 8; i++) { await pg.waitForTimeout(260); const st = await tourState(pg); expect(st && st.n === `${i} / 8` && st.inView, `étape ${i} : ${JSON.stringify(st)}`); await pg.tap('[data-act=tournext]'); }
     expect(!(await pg.$('.tour')), 'visite non terminée');
@@ -2379,7 +2385,7 @@ test('BN05', 'Banque généraliste', 'Un nouveau son indisponible signale l’é
 test('BN06', 'Banque généraliste', 'Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg);
     await closeWelcome(pg);
     await pg.tap('.head >> nth=1');
     await pg.selectOption('[data-role=preset]', 'r_steelpan');
@@ -2624,7 +2630,7 @@ test('SB06', 'Navigateur de sons', 'La recherche bloque les raccourcis musicaux 
 test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg);
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
     await pg.tap('.head >> nth=1 >> .tname'); await pg.tap('[data-act=sound-browser]');
     await pg.fill('[data-role=sound-search]', 'orgue'); await pg.selectOption('[data-role=sound-family]', 'realKeys');
     await pg.tap(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
@@ -3076,7 +3082,7 @@ test('BX09', 'Nouvelles banques', 'Les percussions restent accessibles au doigt 
   const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const pg=await ctx.newPage();
   try {
-    await pg.goto(BASE);await pg.waitForSelector('.clip');await pg.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(d=>d.close());window.kh.setLang('fr');});
+    await pg.goto(BASE);await pg.waitForSelector('.clip'); await settle(pg);await pg.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(d=>d.close());window.kh.setLang('fr');});
     await pg.click('.head >> nth=0 >> .tname');await pg.selectOption('[data-role=kit]','percussion');await pg.evaluate(()=>window.kh.engine.prepare());await pg.click('[data-view=pads]');
     expect(await pg.locator('.pad').count()===16,'pads manquants');
     await pg.locator('.pad[data-pad="15"]').scrollIntoViewIfNeeded();await pg.locator('.pad[data-pad="15"]').tap();
@@ -3929,7 +3935,7 @@ test('TB04', 'Barre du haut', 'Le bouton Boucle affiche sa plage et la suit quan
 test('TB05', 'Barre du haut', 'Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); pg.on('dialog', d => d.accept('Titre au doigt')); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const pg = await ctx2.newPage(); pg.on('dialog', d => d.accept('Titre au doigt')); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg);
     await closeWelcome(pg);
     expect(await pg.$eval('#top', e => e.scrollWidth <= e.clientWidth + 1), 'la barre déborde sur téléphone');
     for (const id of ['bPlay', 'bStop', 'bRec', 'pos', 'bpm', 'bMetro', 'bLoop', 'bUndo']) {
@@ -4230,7 +4236,7 @@ test('TH07', 'Têtes de piste', 'Le menu ⋯ reste ouvert quand l’écran se re
 test('TH05', 'Têtes de piste', 'Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg);
     await closeWelcome(pg);
     const fit = await pg.$$eval('.head .tname', l => l.slice(0, 4).map(i => i.scrollWidth <= i.clientWidth + 1));
     expect(fit.every(Boolean), 'noms coupés sur téléphone : ' + JSON.stringify(fit));
@@ -4437,7 +4443,7 @@ test('CT11', 'Contrôles joués', 'Molette assignée à un réglage du mixeur : 
 test('CT12', 'Contrôles joués', 'Téléphone : molettes couchées au-dessus du clavier (touches assez larges), bend au doigt qui revient au centre', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
   try {
-    const pg = await ctx2.newPage(); await pg.addInitScript(PAGE_HELPERS); await pg.goto(BASE); await pg.waitForSelector('.clip');
+    const pg = await ctx2.newPage(); await pg.addInitScript(PAGE_HELPERS); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg);
     await closeWelcome(pg);
     await pg.evaluate(() => { const k = window.kh, tr = k.S.project.tracks[1]; k.S.selTrack = tr.id; k.S.selClip = ''; k.S.kbShow = true; k.S.tab = 'editor'; k.commit(); k.onMidi([0x90, 69, 90]); });
     await pg.waitForSelector('.wheel.flat[data-ctl=pb]');
@@ -4445,13 +4451,15 @@ test('CT12', 'Contrôles joués', 'Téléphone : molettes couchées au-dessus du
     expect(kw >= 26, 'touches trop étroites : ' + kw);
     expect(await pg.getAttribute('.wheel[data-ctl=pb]', 'aria-orientation') === 'horizontal', 'molette non couchée');
     const b = await pg.locator('.wheel[data-ctl=pb]').boundingBox(), cdp = await ctx2.newCDPSession(pg), y = b.y + b.height / 2;
+    expect(await pg.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('.wheel[data-ctl=pb]'), [b.x + b.width / 2, y]), 'le doigt ne tombe pas sur la molette');
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + b.width / 2, y }] });
     for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x + b.width / 2 + (b.width / 2 - 3) * i / 6, y }] });
-    await pg.waitForTimeout(150);
     const off = () => pg.evaluate(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl.bend.offset.value; });
-    const held = await off();
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(150);
-    const back = await off(); await pg.evaluate(() => window.kh.onMidi([0x80, 69, 0]));
+    // La hauteur suit le doigt en douceur (lissage du moteur) : on attend qu'elle y soit (3 s au plus) au lieu d'un délai fixe.
+    const settled = async (want, tol) => { let v = await off(); for (const end = Date.now() + 3000; Math.abs(v - want) > tol && Date.now() < end; v = await off()) await pg.waitForTimeout(30); return v; };
+    const held = await settled(200, 20);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const back = await settled(0, 1); await pg.evaluate(() => window.kh.onMidi([0x80, 69, 0]));
     near(held, 200, 20, 'bend au doigt'); near(back, 0, 1, 'retour au centre');
   } finally { await ctx2.close(); }
 });
@@ -5047,7 +5055,7 @@ test('UX02d', 'Téléphone', 'Pincer à deux doigts zoome l’arrangement ; un c
   const ctx2 = await browser.newContext({ viewport: { width: 820, height: 700 }, hasTouch: true, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
-    await pg.goto(BASE); await pg.waitForSelector('.clip');
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg);
     const cdp = await ctx2.newCDPSession(pg), l = await (await pg.$('.lane >> nth=0')).boundingBox(), y = l.y + 40;
     const before = await pg.evaluate(() => ({ px: window.kh.S.px, starts: window.kh.S.project.tracks[0].clips.map(c => c.start) }));
     const pts = (a, b) => [{ x: a, y, id: 1 }, { x: b, y: y + 4, id: 2 }];
@@ -5112,10 +5120,8 @@ test('UX03d', 'Téléphone', 'Appui long au doigt sur un clip : le menu s’ouvr
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
   try {
     const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
-    await pg.goto(BASE); await pg.waitForSelector('.clip');
-    // Page qui vient de s'ouvrir : polices et instruments arrivent encore et peuvent déplacer les pistes. On attend qu'ils soient
-    // là, puis l'endroit touché est relu avant chaque appui et vérifié : le doigt doit tomber sur le clip, pas à côté.
-    await pg.evaluate(async () => { await document.fonts.ready; await window.kh.engine.prepare(); });
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg);
+    // L'endroit touché est relu avant chaque appui et vérifié : le doigt doit tomber sur le clip, pas à côté.
     const cid = await pg.evaluate(() => window.kh.S.project.tracks[0].clips[0].id);
     const cdp = await ctx2.newCDPSession(pg); let x = 0, y = 0;
     const aim = async () => {
@@ -5529,7 +5535,7 @@ test('UX15a', 'Interface', 'Fenêtres et menus s’ouvrent en 140 ms (fondu, lé
 
 // ============ V18 : téléphone (audit D2 à D4) ============
 /** Page de téléphone tactile prête (aide fermée). */
-async function phonePage(ctx2) { const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await closeWelcome(pg); return pg; }
+async function phonePage(ctx2) { const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg); return pg; }
 const phoneCtx = () => browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
 test('PH01', 'Téléphone', 'Rétablir est visible au doigt sur téléphone : annuler puis rétablir une case du séquenceur', async () => {
   const ctx2 = await phoneCtx();
