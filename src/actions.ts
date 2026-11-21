@@ -327,6 +327,14 @@ export function removeInsert(trackId: string, id: string) {
   if (tr.autoShow?.startsWith(`ins:${id}:`)) tr.autoShow = 'vol';
   commit();
 }
+/** Déplace un effet à la place `to` de la chaîne (glisser-déposer). */
+export function moveInsertTo(trackId: string, id: string, to: number) {
+  const l = strip(trackId)?.inserts, i = l?.findIndex(x => x.id === id) ?? -1;
+  if (!l || i < 0) return;
+  const j = Math.max(0, Math.min(l.length - 1, to));
+  if (i === j) return;
+  const [x] = l.splice(i, 1); l.splice(j, 0, x); commit();
+}
 export function moveInsert(trackId: string, id: string, dir: -1 | 1) {
   const l = strip(trackId)?.inserts, i = l?.findIndex(x => x.id === id) ?? -1, j = i + dir;
   if (!l || i < 0 || j < 0 || j >= l.length) return;

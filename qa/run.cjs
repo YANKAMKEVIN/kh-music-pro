@@ -5916,6 +5916,36 @@ test('CE02', 'Chaînes d\'effets', 'Migration sans perte : courbes renommées ve
   expect(t.strip === 'fixe' && t.inserts.map(i => i.type).join() === 'delay,phaser' && Math.abs(t.filter - 0.2) < 1e-9 && t.comp && t.compThr === -40 && t.auto.filter?.length === 2 && t.autoShow === 'filter', 'retour à la tranche fixe : ' + JSON.stringify({ s: t.strip, f: t.filter, a: Object.keys(t.auto), sh: t.autoShow }));
   d = await ceDiff(); expect(Object.values(d).every(([x]) => x < 1e-6), 'après l’aller-retour, le son doit être le même : ' + JSON.stringify(d));
 });
+test('CE03', 'Chaînes d\'effets', 'Interface : ajouter un étage de tranche depuis le menu (un de chaque, rangé dans l’ordre du son, hors limite de huit), le retirer, réordonner à la souris et au clavier', async () => {
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.click('#fx [data-act=chainconv]'); await sleep(100);
+  const opts = await page.$$eval('#fx [data-role=stripfx] option', o => o.map(x => [x.value, x.disabled]));
+  expect(opts.map(o => o[0]).join() === 'filter,drive,lofi,chorus,trem,eq3,comp' && opts[0][1] && !opts[6][1], 'groupe des étages : ' + JSON.stringify(opts));
+  await page.selectOption('[data-role=fxadd]', 'delay'); await page.selectOption('[data-role=fxadd]', 'comp'); await page.selectOption('[data-role=fxadd]', 'eq3');
+  expect((await insertsOf(1)).map(i => i.type).join() === 'filter,eq3,comp,delay', 'étages rangés dans l’ordre du son, avant les autres effets : ' + (await insertsOf(1)).map(i => i.type));
+  expect(await page.$eval('#fx [data-role=stripfx] option[value=comp]', o => o.disabled), 'un étage présent doit être grisé');
+  // Huit effets ordinaires en plus des étages : la limite ne compte pas les étages.
+  for (let i = 0; i < 8; i++) await page.selectOption('[data-role=fxadd]', 'gain');
+  let l = await insertsOf(1); expect(l.length === 11 && l.filter(i => i.type === 'gain').length === 7 && (await page.textContent('#toast')).includes('Huit'), `limite de huit effets ordinaires : ${l.length}`);
+  for (let i = 0; i < 7; i++) await page.click('#fx .fxcard >> nth=-1 >> [data-act=fxdel]');
+  expect((await insertsOf(1)).map(i => i.type).join() === 'filter,eq3,comp,delay', 'retrait');
+  // Glisser-déposer : la poignée du compresseur déposée tout en haut.
+  await page.locator('#fx .fxlist').evaluate(e => { e.scrollTop = 0; }); await sleep(100);
+  const top = await page.locator('#fx .fxcard').nth(0).boundingBox(), g = await page.locator('#fx .fxcard').nth(2).locator('[data-act=fxgrip]').boundingBox(), cid = (await insertsOf(1))[2].id;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2); await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2, top.y + 4, { steps: 8 });
+  expect(await page.$eval('#fx .fxcard.drag', e => e.dataset.ins).catch(() => '') === cid, 'la carte du compresseur suit le pointeur'); await page.mouse.up(); await sleep(120);
+  expect((await insertsOf(1)).map(i => i.type).join() === 'comp,filter,eq3,delay', 'ordre après glisser-déposer : ' + (await insertsOf(1)).map(i => i.type));
+  // Au clavier : Alt + flèche sur la poignée, le focus reste sur la carte déplacée.
+  await page.focus('#fx .fxcard >> nth=0 >> [data-act=fxgrip]'); await page.keyboard.press('Alt+ArrowDown'); await sleep(80);
+  expect((await insertsOf(1)).map(i => i.type).join() === 'filter,comp,eq3,delay', 'Alt + ↓');
+  expect(await S(() => document.activeElement?.closest('.fxcard')?.dataset.ins) === (await insertsOf(1))[1].id, 'le focus doit suivre la carte');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await sleep(80);
+  expect((await insertsOf(1)).map(i => i.type).join() === 'comp,filter,eq3,delay', 'Annuler défait le déplacement');
+  // Chaque étage s'entend : le compresseur en tête, puis retiré.
+  const st = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; p.tracks[0].inserts.find(i => i.type === 'eq3').p.high = 12; const a = await window.qa.stats(p); p.tracks[0].inserts = p.tracks[0].inserts.filter(i => i.type !== 'eq3'); return [a.hf / a.rms, (await window.qa.stats(p)).hf / (await window.qa.stats(p)).rms]; });
+  expect(st[0] > st[1] * 1.15, 'l’égaliseur de la chaîne doit s’entendre : ' + st.map(v => v.toFixed(3)));
+});
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
