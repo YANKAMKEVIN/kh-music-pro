@@ -4316,15 +4316,18 @@ test('CT06', 'Contrôles joués', 'Molette à l’écran au doigt pendant un enr
   // Écran tactile déclaré : sans lui, Chromium sous Linux ne change pas les touchers en gestes du doigt (pointeurs).
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: b.y + b.height / 2 }] });
-  for (let i = 1; i <= 12; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: b.y + b.height / 2 - (b.height / 2 - 3) * i / 12 }] }); await sleep(60); }
-  await sleep(500);   // plusieurs redessins (écriture différée des points) pendant que le doigt reste posé
+  for (let i = 1; i <= 12; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: b.y + b.height / 2 - (b.height / 2 - 3) * i / 12 }] }); await sleep(25); }
+  // Doigt tenu pendant plusieurs redessins (écriture différée des points) et au-delà de la mesure où la prise a commencé :
+  // on attend que la lecture ait passé la fin de ce premier clip, quelle que soit la vitesse de la machine.
+  await page.waitForFunction(() => { const k = window.kh, c = k.S.project.tracks[1].clips[0]; return c && k.engine.currentStep() >= c.start + c.len + 4; }, null, { timeout: 15000 });
   const held = await S(() => { const k = window.kh; return k.engine.mix.tracks.get(k.S.project.tracks[1].id).ctl.bend.offset.value; });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach();
   await S(() => { window.kh.onMidi([0x80, 69, 0]); window.kh.engine.stop(); }); await sleep(400);
   near(held, 200, 20, 'bend tenu au doigt malgré les redessins');
-  const pb = ((await proj()).tracks[1].clips[0]?.ctl?.pb ?? []).map(p => p.v);
+  const pts = (await proj()).tracks[1].clips[0]?.ctl?.pb ?? [], pb = pts.map(p => p.v);
   expect(pb.length >= 3 && Math.max(...pb) > 0.9 && pb[pb.length - 1] === 0, 'geste au doigt non enregistré : ' + JSON.stringify(pb));
+  expect(pts[pts.length - 1].s >= await S(() => window.kh.bar()), 'le bend tenu au-delà de la première mesure doit retomber au relâchement, pas à la barre de mesure : ' + JSON.stringify(pts));
 });
 test('CT07', 'Contrôles joués', 'Ligne des contrôles : dessiner un bend à la souris, changer de contrôle, effacer, annuler', async () => {
   await page.click(await headSel(1)); await page.click(await clipSel(1, 0));
