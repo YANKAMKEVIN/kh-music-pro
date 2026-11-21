@@ -46,6 +46,7 @@ function wireMenus() {
   // Téléphone : la liste s'affiche sur toute la largeur, juste sous le bouton qui l'a ouverte.
   document.addEventListener('toggle', e => {
     const d = e.target as HTMLDetailsElement;
+    if (!d.open) d.classList?.remove('kept');   // rouvert plus tard par l'utilisateur : son déroulé habituel
     // Menu ⋯ d'une piste : liste posée à côté du bouton, au-dessus de la zone des pistes (qui défile et la couperait).
     if (d.open && d.classList?.contains('tmenu')) {
       const list = d.querySelector<HTMLElement>(':scope > .menu-list')!, r = d.querySelector('summary')!.getBoundingClientRect();

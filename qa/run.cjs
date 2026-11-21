@@ -749,11 +749,16 @@ test('X07', 'Robustesse', 'Projet vide : lecture, export et scission ne plantent
 });
 test('X08', 'Robustesse', 'Supprimer la piste en cours de lecture ou d\'enregistrement ne plante pas', async () => {
   await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(400);
-  // Menu ⋯ ouvert et posé (déroulé animé, UX15a) avant de jouer : la note jouée s'écrit 300 ms plus tard en redessinant
-  // l'écran, ce qui referme le menu ; la suppression doit tomber dans cet intervalle, pendant que l'écriture est en attente.
-  await reveal('.head >> nth=1 >> .del'); await page.$eval('.head >> nth=1 >> .tmenu .menu-list', l => Promise.all(l.getAnimations().map(a => a.finished)));
-  await S(() => window.kh.noteOn(60)); await page.click('.head >> nth=1 >> .del'); await sleep(300); await S(() => window.kh.noteOff(60)); await page.keyboard.press('Space'); await sleep(600);
+  // Menu ⋯ ouvert pendant la prise : la note jouée s'écrit 300 ms plus tard en redessinant l'écran. Depuis le 21/11/2026,
+  // le menu reste ouvert à ce redessin (TH07) ; la suppression tombe ensuite pendant qu'une autre écriture est en attente.
+  await reveal('.head >> nth=1 >> .del'); await page.$eval('.head >> nth=1 >> .tmenu', d => { d.__avant = true; });
+  await S(() => window.kh.noteOn(60)); await sleep(600);
+  const r = await page.$eval('.head >> nth=1 >> .tmenu', d => ({ redrawn: !d.__avant, open: d.open, notes: window.kh.S.project.tracks[1].clips.reduce((n, c) => n + (c.notes?.length ?? 0), 0) }));
+  expect(r.redrawn && r.open, `le menu ⋯ doit rester ouvert au redessin causé par la note : ${JSON.stringify(r)}`);
+  await S(() => window.kh.noteOn(62)); await page.click('.head >> nth=1 >> .del'); await sleep(300);
+  await S(() => { window.kh.noteOff(60); window.kh.noteOff(62); }); await page.keyboard.press('Space'); await sleep(600);
   near((await proj()).tracks.length, 4, 0, 'pistes');
+  expect(!(await page.$('details.tmenu[open]')), 'le choix « Supprimer » doit refermer le menu');
 });
 test('X09', 'Robustesse', 'Changer le tempo et le zoom pendant la lecture', async () => {
   await page.keyboard.press('Space'); await sleep(300); await page.fill('#bpm', '170'); await page.keyboard.press('Tab'); await page.click('#bZoomIn'); await page.click('#bZoomOut'); await sleep(500);
@@ -4157,6 +4162,39 @@ test('TH04', 'Têtes de piste', 'Faire défiler les pistes referme un menu ⋯ o
   await S(() => { window.kh.S.project.tracks[1].frozen = true; window.kh.commit(); });
   expect(await page.isVisible('.head >> nth=1 >> .tfrzbadge') && /gelée/.test(await page.getAttribute('.head >> nth=1 >> .tfrzbadge', 'aria-label')), 'repère ❄ absent');
   await S(() => { window.kh.S.project.tracks[1].frozen = false; window.kh.commit(); });
+});
+test('TH07', 'Têtes de piste', 'Le menu ⋯ reste ouvert quand l’écran se redessine (lecture, note jouée en prise) ; seuls un clic dehors, Échap ou un choix le referment', async () => {
+  const open = () => page.$eval('.head >> nth=1 >> details.tmenu', d => d.open);
+  await page.click('.head >> nth=1 >> .tmore'); await page.waitForSelector('.head >> nth=1 >> details.tmenu[open]');
+  const box = await page.locator('.head >> nth=1 >> .tmenu .menu-list').boundingBox();
+  // Redessins : un réglage (commit), puis la lecture et une note jouée pendant une prise.
+  await page.$eval('.head >> nth=1 >> details.tmenu', d => { d.__avant = true; });
+  const blur = () => page.evaluate(() => document.activeElement?.blur());   // Espace sur ⋯ le replierait : raccourcis lancés hors du bouton
+  await S(() => window.kh.commit()); await blur(); await page.keyboard.press('Space'); await sleep(400);
+  await S(() => window.kh.emit()); await sleep(200);
+  const r = await page.$eval('.head >> nth=1 >> details.tmenu', d => ({ redrawn: !d.__avant, open: d.open, anim: d.querySelector('.menu-list').getAnimations().length }));
+  expect(r.redrawn && r.open && r.anim === 0, `le menu doit rester ouvert, sans rejouer son déroulé : ${JSON.stringify(r)}`);
+  const box2 = await page.locator('.head >> nth=1 >> .tmenu .menu-list').boundingBox();
+  expect(Math.abs(box2.x - box.x) < 2 && Math.abs(box2.y - box.y) < 2, `le menu a bougé : ${JSON.stringify([box, box2])}`);
+  await page.keyboard.press('Space'); await sleep(200);
+  // Pendant une prise, chaque note jouée redessine l'écran.
+  await page.click(await headSel(1)); await page.click('.head >> nth=1 >> .tmore'); await blur(); await page.keyboard.press('r'); await sleep(400);
+  for (const n of [60, 64, 67]) { await S(n2 => window.kh.noteOn(n2), n); await sleep(150); await S(n2 => window.kh.noteOff(n2), n); }
+  await sleep(500); expect(await open(), 'une note jouée en prise ne doit pas refermer le menu');
+  await page.keyboard.press('Space'); await sleep(400);
+  expect(await open(), 'l’arrêt de la prise ne doit pas refermer le menu');
+  // Focus gardé sur ⋯ au redessin, puis Échap referme et rend le focus.
+  await page.focus('.head >> nth=1 >> .tmore'); await S(() => window.kh.emit());
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('tmore') && !!document.activeElement.closest('details.tmenu[open]')), 'le focus doit rester sur ⋯');
+  await page.keyboard.press('Escape');
+  expect(!(await open()) && await page.evaluate(() => document.activeElement?.classList.contains('tmore')), 'Échap doit refermer le menu');
+  // Clic dehors.
+  await page.click('.head >> nth=1 >> .tmore'); await S(() => window.kh.emit()); await page.mouse.click(900, 700);
+  expect(!(await open()), 'un clic dehors doit refermer le menu');
+  // Un choix, après un redessin : il agit et referme.
+  const n0 = (await proj()).tracks.length;
+  await page.click('.head >> nth=1 >> .tmore'); await S(() => window.kh.emit()); await page.click('.head >> nth=1 >> .tdup');
+  expect((await proj()).tracks.length === n0 + 1 && !(await page.$('details.tmenu[open]')), 'le choix doit agir et refermer le menu');
 });
 test('TH05', 'Têtes de piste', 'Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran', async () => {
   const ctx2 = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });

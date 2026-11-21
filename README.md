@@ -40,7 +40,7 @@ Une **barre d'arrangement**, juste au-dessus des pistes, réunit la grille, le z
 
 Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ».
 
-**Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom.
+**Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom. Le menu ⋯ reste ouvert pendant la lecture ou une prise (depuis le 21/11/2026) : il se referme par un clic ailleurs, Échap ou un choix.
 
 **Correctifs de l'audit de novembre 2026** (détail : `docs/correctifs-audit-2026-11.md`) : séquenceur au clavier avec les flèches, une prise sur plusieurs mesures donne un seul clip, tempo au centième (93,5), bandeau quand la sauvegarde devient impossible (appareil plein) avec « Enregistrer en fichier », lettres du clavier prises de la vraie disposition, accordeur plus stable sur une machine chargée, export des gros projets environ deux fois plus rapide (pistes rendues par groupes sur plusieurs cœurs).
 
@@ -176,7 +176,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 458 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 459 cas).
 Le plus simple, serveur compris :
 
 ```bash

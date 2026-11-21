@@ -748,6 +748,8 @@ dialog h2 .ico { color: var(--a1); }
 dialog[open] { animation: dlg-in .14s ease-out; }
 dialog[open]::backdrop { animation: veil-in .14s ease-out; }
 details.menu[open] > .menu-list, .menu-list.ctx { animation: menu-in .12s ease-out; transform-origin: top; }
+/* Menu ⋯ rouvert après un redessin : déjà affiché, il ne rejoue pas son déroulé. */
+details.tmenu.kept[open] > .menu-list { animation: none; }
 @keyframes dlg-in { from { opacity: 0; transform: scale(.97); } }
 @keyframes veil-in { from { opacity: 0; } }
 @keyframes menu-in { from { opacity: 0; transform: scaleY(.94); } }
