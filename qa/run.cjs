@@ -1839,8 +1839,9 @@ test('CP01', 'Mixeur', 'Compresseur réglable : seuil et taux agissent, la rédu
   for (const k of Object.keys(r)) expect(r[k].bad === 0 && r[k].peak <= 0.97, `${k} : signal invalide`);
 });
 test('AU08', 'Automation', 'Automatiser les envois de réverb et d\'écho et le chorus', async () => {
-  await autoOn(1, {}, 'vol'); near(await page.$$eval('[data-role=autoparam] option', e => e.length), 6, 0, 'paramètres automatisables');
+  await autoOn(1, {}, 'vol'); near(await page.$$eval('[data-role=autoparam] optgroup:first-of-type option', e => e.length), 6, 0, 'paramètres automatisables de la piste');   // suite : la tranche et l'instrument ont leurs propres groupes
   await page.selectOption('[data-role=autoparam]', 'rev'); const b = await box('.alane'); await page.mouse.click(b.x + 11 * 8, b.y + AY(1));
+  await until(() => S(() => !!window.kh.S.project.tracks[1].auto?.rev?.length), 'point de réverb non posé', 3000);
   near((await proj()).tracks[1].auto.rev[0].v, 1, 0.03, 'point de réverb');
   const r = await S(async () => { const mk = auto => window.qa.only(1, (p, t) => { t.clips[0].len = 16; t.rev = 0; t.dly = 0; t.auto = auto; }); return { dry: await window.qa.stats(mk(undefined)), rev: await window.qa.stats(mk({ rev: [{ s: 0, v: 0 }, { s: 16, v: 1 }] })), dly: await window.qa.stats(mk({ dly: [{ s: 0, v: 0.9 }] })), ch: await window.qa.stats(mk({ chorus: [{ s: 0, v: 1 }] })) }; });
   expect(r.rev.tail > r.dry.tail * 5 + 1e-5, 'la courbe de réverb ne s\'entend pas'); expect(r.dly.tail > r.dry.tail * 5 + 1e-5, 'la courbe d\'écho ne s\'entend pas'); expect(Math.abs(r.ch.rms / r.dry.rms - 1) > 0.05, 'la courbe de chorus ne s\'entend pas');
@@ -1899,7 +1900,9 @@ test('LQ01', 'Live', 'Calage du lancement : à la mesure, au temps ou immédiat 
   await S(() => { window.kh.S.project.bpm = 100; window.kh.commit(); }); await tab('live');
   await page.selectOption('[data-role=liveq]', '4'); expect((await proj()).liveQ === 4, 'calage non enregistré');
   await page.click('.lcell[data-clip] >> nth=0'); await sleep(900); const tid = await S(() => window.kh.S.project.tracks[1].id);
-  await page.click(`.lcell[data-track="${tid}"]`); await sleep(500);
+  await page.click(`.lcell[data-track="${tid}"]`);
+  // Au temps (4 pas = 0,6 s à 100 BPM) : on attend le départ plutôt qu'un délai fixe, trop court sur une machine chargée.
+  await until(() => page.evaluate(id => !window.kh.engine.liveQueued.has(id), tid), 'le clip ne part pas', 3000).catch(() => { });
   const a = await page.evaluate(id => { const x = window.kh.engine.liveActive.get(id); return x ? x.since : -1; }, tid);
   expect(a > 0 && a % 4 === 0, `au temps : départ au pas ${a}`); expect(a < 16, `le clip a attendu la mesure suivante (pas ${a}) au lieu du temps suivant`);
   await page.selectOption('[data-role=liveq]', '1'); const before = await S(() => Math.floor(window.kh.engine.currentStep())); const t3 = await S(() => window.kh.S.project.tracks[2].id);
@@ -4984,7 +4987,7 @@ test('UX03d', 'Téléphone', 'Appui long au doigt sur un clip : le menu s’ouvr
   try {
     const pg = await ctx2.newPage(); await pg.addInitScript(() => { try { localStorage.setItem('kh-welcome', '1'); } catch { } });
     await pg.goto(BASE); await pg.waitForSelector('.clip');
-    const cdp = await ctx2.newCDPSession(pg), b = await (await pg.$('.lane >> nth=0 >> .clip >> nth=0')).boundingBox(), x = b.x + 40, y = b.y + 40;
+    const cdp = await ctx2.newCDPSession(pg), b = await (await pg.$('.lane >> nth=0 >> .clip >> nth=0')).boundingBox(), x = b.x + Math.min(40, b.width / 3), y = b.y + 40;   // téléphone : quatre mesures visibles, clips plus étroits (loin de la poignée de droite)
     const hold = async ms => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await pg.waitForTimeout(ms); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(120); };
     await hold(150); expect(!(await pg.$('.menu-list.ctx')), 'un appui bref ne doit pas ouvrir le menu');
     await hold(800); expect(await pg.isVisible('.menu-list.ctx'), 'l’appui long n’ouvre pas le menu');
