@@ -5571,6 +5571,89 @@ test('SG05', 'Signature', '6/8 dans le fichier MIDI exporté, dans le fichier pr
   const p = await proj(); expect(p.sig === 3 && p.den === 4 && await S(() => window.kh.bar()) === 12 && await page.$eval('#sig', e => e.value) === '3', `ancien projet : ${p.sig}/${p.den}`);
 });
 
+// ============ Suite (21/11/2026) : clips enregistrés à la volée dans le Live ============
+/** Live à 240 BPM (une mesure = 1 s), prises d'une mesure ; renvoie l'identifiant de la piste d'instrument (piste 1). */
+async function liveRecSetup(len = '1') {
+  await S(() => { const p = window.kh.S.project; p.bpm = 240; p.metronome = false; window.kh.commit(); }); await tab('live');
+  await page.selectOption('[data-role=livelen]', len);
+  return S(() => window.kh.S.project.tracks[1].id);
+}
+const takeState = () => S(() => { const r = window.kh.engine.liveRec; return r ? { from: r.from, clipId: r.clipId } : null; });
+test('LR01', 'Live', 'Enregistrer un clip à la volée : ● sur une piste, la prise part à la mesure, les notes jouées s’y rangent, puis le clip tourne en boucle', async () => {
+  const tid = await liveRecSetup('1'), n0 = await S(() => window.kh.S.project.tracks[1].clips.length);
+  expect(await S(() => window.kh.S.project.liveLen) === 1, 'longueur de prise non enregistrée');
+  await page.click(`.lrec[data-rec="${tid}"]`);
+  expect(await S(() => window.kh.engine.playing && window.kh.engine.mode === 'live'), 'le Live doit démarrer');
+  await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  const st = await takeState();
+  await until(() => page.$(`.lrec[data-rec="${tid}"].on`), 'bouton non allumé pendant la prise', 3000);
+  expect(await page.$(`.lcell.recording[data-clip="${st.clipId}"]`), 'le clip qui se remplit n’est pas montré dans la grille');
+  // Une note jouée environ un quart de mesure après le départ (4 pas à 240 BPM).
+  await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 3.6), 'position', 3000);
+  await S(() => window.kh.noteOn(64, 0.9)); await sleep(200); await S(() => window.kh.noteOff(64));
+  await until(async () => !(await takeState()), 'la prise ne se termine pas', 4000); await sleep(150);
+  const r = await S(() => { const k = window.kh, tr = k.S.project.tracks[1], c = tr.clips[tr.clips.length - 1]; return { n: tr.clips.length, c, act: k.engine.liveActive.get(tr.id)?.clipId }; });
+  expect(r.n === n0 + 1 && r.c.len === 16 && r.c.patLen === 16, `clip créé : ${JSON.stringify([r.n, r.c.len])}`);
+  expect(r.c.notes.length === 1 && r.c.notes[0].p === 64 && Math.abs(r.c.notes[0].s - 4) <= 1 && r.c.notes[0].l >= 1, 'note enregistrée : ' + JSON.stringify(r.c.notes));
+  expect(r.act === r.c.id, 'le clip enregistré doit tourner aussitôt');
+  await until(() => page.$(`.lcell.playing[data-clip="${r.c.id}"]`), 'le clip enregistré n’est pas marqué en lecture', 3000);
+  await page.click('[data-act=stopall]'); await sleep(200);
+  await page.keyboard.press('Control+z'); expect(await S(() => window.kh.S.project.tracks[1].clips.length) === n0, 'Annuler doit retirer la prise');
+});
+test('LR02', 'Live', 'Batterie : les pads joués pendant la prise remplissent le motif ; le clip enregistré sonne en boucle et apparaît dans l’arrangement', async () => {
+  await liveRecSetup('2');
+  const did = await S(() => window.kh.S.project.tracks[0].id);
+  await page.click(`.lrec[data-rec="${did}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 0.5), 'position', 3000);
+  await S(() => window.kh.padHit(0, 1)); await sleep(500); await S(() => window.kh.padHit(1, 0.6));
+  await until(async () => !(await takeState()), 'la prise ne se termine pas', 5000);
+  const c = await S(() => { const tr = window.kh.S.project.tracks[0]; return tr.clips[tr.clips.length - 1]; });
+  expect(c.len === 32 && c.drums[0].filter(Boolean).length === 1 && c.drums[1].filter(Boolean).length === 1, 'motif enregistré : ' + JSON.stringify([c.len, c.drums[0].filter(Boolean), c.drums[1].filter(Boolean)]));
+  const k0 = c.drums[0].findIndex(Boolean), k1 = c.drums[1].findIndex(Boolean);
+  expect(k0 <= 2 && k1 >= 6 && k1 <= 12 && Math.abs(c.drums[1][k1] - 0.6) < 0.01, `places et nuance des coups : kick ${k0}, caisse ${k1}`);
+  const lv = await S(() => window.qa.level(1500)); expect(lv > 0.02, 'le clip enregistré doit sonner en boucle : ' + lv);
+  await page.click('[data-act=stopall]'); await tab('editor');
+  expect(await page.$(`.clip[data-id="${c.id}"]`), 'le clip enregistré doit être dans l’arrangement');
+});
+test('LR03', 'Live', 'Un second appui abandonne la prise (rien n’est gardé, la musique continue) ; Arrêter pendant une prise garde ce qui a été joué', async () => {
+  const tid = await liveRecSetup('4'), n0 = await S(() => window.kh.S.project.tracks[1].clips.length);
+  await page.click('.lcell[data-clip] >> nth=0'); await sleep(300);
+  await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await page.click(`.lrec[data-rec="${tid}"]`); await sleep(200);
+  expect(!(await takeState()) && await S(() => window.kh.S.project.tracks[1].clips.length) === n0, 'prise non abandonnée');
+  expect(await S(() => window.kh.engine.playing && window.kh.engine.liveActive.size > 0), 'la musique doit continuer');
+  expect(!(await page.$(`.lrec.on, .lrec.armed`)), 'bouton encore allumé');
+  // Arrêter tout pendant une prise : ce qui a été joué est gardé (et annulable).
+  await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await S(() => window.kh.noteOn(67)); await sleep(150); await S(() => window.kh.noteOff(67));
+  await page.click('[data-act=stopall]'); await sleep(200);
+  const tr = await S(() => window.kh.S.project.tracks[1]);
+  expect(tr.clips.length === n0 + 1 && tr.clips[tr.clips.length - 1].notes.length === 1, 'la prise arrêtée doit garder sa note');
+  // Une prise arrêtée sans rien jouer ne laisse pas de clip vide.
+  await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await page.click('[data-act=stopall]'); await sleep(200);
+  expect(await S(() => window.kh.S.project.tracks[1].clips.length) === n0 + 1, 'clip vide laissé par une prise arrêtée');
+});
+test('LR04', 'Live', 'Au clavier : ● se déclenche avec Entrée ; une piste audio n’a pas de bouton ; longueur gardée dans le fichier ; textes traduits', async () => {
+  const tid = await liveRecSetup('8');
+  const aid = await S(() => window.kh.S.project.tracks.find(t => t.type === 'audio')?.id);
+  if (aid) expect(!(await page.$(`.lrec[data-rec="${aid}"]`)), 'une piste audio ne doit pas proposer la prise à la volée');
+  await page.focus(`.lrec[data-rec="${tid}"]`); await page.keyboard.press('Enter');
+  await until(async () => (await takeState()) !== null, 'Entrée ne lance pas la prise', 3000);
+  expect(await S(() => window.kh.engine.liveRec.bars) === 8 && await S(() => window.kh.S.selTrack) === tid, 'longueur ou piste jouée');
+  expect(await page.getAttribute(`.lrec[data-rec="${tid}"]`, 'aria-pressed') === 'true', 'état lu par les lecteurs d’écran');
+  await page.click('[data-act=stopall]'); await sleep(150);
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'livelen.khm'); await dl.saveAs(f);
+  const saved = JSON.parse(fs.readFileSync(f, 'utf8')); expect(saved.project.liveLen === 8, 'longueur absente du fichier');
+  delete saved.project.liveLen; const g = path.join(TMP, 'old-live.khm'); fs.writeFileSync(g, JSON.stringify(saved));
+  await page.setInputFiles('#fProj', g); await sleep(400); expect(await S(() => window.kh.S.project.liveLen) === 2, 'valeur par défaut d’un ancien projet');
+  for (const [l, w, row] of [['en', 'Record', 'Record'], ['es', 'Grabar', 'Grabar']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await tab('live');
+    expect((await page.textContent('.lrec >> nth=0')).includes(w) && (await page.textContent('.lrecl')) === row, 'non traduit en ' + l);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

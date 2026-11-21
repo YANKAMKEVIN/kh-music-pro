@@ -754,3 +754,11 @@ details.menu[open] > .menu-list, .menu-list.ctx { animation: menu-in .12s ease-o
 @media (max-width: 760px) { #more[open] > .grp.out { animation: menu-in .12s ease-out; transform-origin: top; } }
 /* La règle générale « moins d'animations » ne touche pas le voile des fenêtres (pseudo-élément) : on le fige ici. */
 @media (prefers-reduced-motion: reduce) { dialog[open]::backdrop { animation: none; } }
+
+/* Suite (21/11/2026) : prise de clips à la volée dans le Live */
+.lrecl { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); }
+.lcell.lrec { border-style: dashed; border-left: 1px dashed var(--line); background: transparent; color: var(--dim); text-align: left; }
+.lcell.lrec .lrdot { color: var(--rec); }
+.lcell.lrec:hover, .lcell.lrec:focus-visible { border-color: var(--rec); color: #fff; }
+.lcell.lrec.armed { border-color: var(--rec); animation: blink .5s steps(2) infinite; }
+.lcell.lrec.on, .lcell.recording { background: var(--rec); border-color: var(--rec); color: #fff; box-shadow: 0 0 14px var(--rec); }

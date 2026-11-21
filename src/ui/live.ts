@@ -27,6 +27,12 @@ export function renderLive(): HTMLElement {
         : h('div', { class: 'lcell none' }));
     }
   }
+  // Prise à la volée (suite, 21/11/2026) : une ligne de boutons ● sous les clips, pour les pistes d'instrument et de batterie.
+  grid.append(h('div', { class: 'lcorner lrecl' }, t('live.recRow')));
+  for (const { tr } of cols) grid.append(tr.type === 'synth' || tr.type === 'drums'
+    ? h('button', { class: 'lcell lrec', style: `--c:${tr.color}`, data: { rec: tr.id }, title: t('live.recTip', tr.name, t(p.liveLen > 1 ? 'ed.bars' : 'ed.bar', p.liveLen)), 'aria-label': t('live.recTip', tr.name, t(p.liveLen > 1 ? 'ed.bars' : 'ed.bar', p.liveLen)), 'aria-pressed': 'false',
+      onclick: () => { S.selTrack = tr.id; engine.recordLive(tr.id, p.liveLen); } }, h('span', { class: 'lrdot', 'aria-hidden': 'true' }, '●'), ' ' + t('live.rec'))
+    : h('div', { class: 'lcell none' }));
   grid.append(h('button', { class: 'lscene stopall', data: { act: 'stopall' }, title: t('live.stopAll'), onclick: () => engine.stop() }, '■'));
   for (const { tr } of cols) grid.append(h('button', { class: 'lstop', data: { stop: tr.id }, title: t('live.stop', tr.name), 'aria-label': t('live.stop', tr.name), onclick: () => engine.launch(tr.id, null) }, '■'));
 
@@ -54,8 +60,10 @@ export function renderLive(): HTMLElement {
   };
   const lq = h('select', { 'aria-label': t('live.q'), title: t('live.qTip'), data: { role: 'liveq' } }, ...[[0, t('grid.bar')], [4, t('grid.beat')], [1, t('live.now')]].map(([v, l]) => h('option', { value: String(v), selected: p.liveQ === v }, String(l))));
   lq.onchange = () => { p.liveQ = +lq.value; commit(); };
+  const ll = h('select', { 'aria-label': t('live.recLen'), title: t('live.recLen'), data: { role: 'livelen' } }, ...[1, 2, 4, 8].map(n => h('option', { value: String(n), selected: p.liveLen === n }, t(n > 1 ? 'ed.bars' : 'ed.bar', n))));
+  ll.onchange = () => { p.liveLen = +ll.value; commit(); };
   const perf = h('div', { class: 'perf' },
-    h('h3', {}, t('live.perf')), h('label', { class: 'fld' }, t('live.q'), lq), filt,
+    h('h3', {}, t('live.perf')), h('label', { class: 'fld' }, t('live.q'), lq), h('label', { class: 'fld' }, t('live.recLen'), ll), filt,
     h('div', { class: 'fxgrid' }, fxBtn('echo'), fxBtn('reverb'), fxBtn('stut8'), fxBtn('stut16')),
     h('button', { class: 'pill', data: { act: 'filter0' }, onclick: () => { p.filter = 0; commit(); } }, t('live.filterReset')),
     h('button', { class: 'pill big', data: { act: 'tap' }, onclick: tapTempo }, `${t('top.tap')} · ${p.bpm} BPM`),
@@ -77,6 +85,14 @@ export function refreshLive() {
     if (!active) el.style.removeProperty('--p');
     if (!queued) el.querySelector('.lcount')!.textContent = '';
   });
+  // Prise à la volée : bouton en attente de la mesure, puis allumé pendant la prise ; le clip qui se remplit est marqué.
+  const r = engine.liveRec;
+  document.querySelectorAll<HTMLElement>('.lrec').forEach(b => {
+    const mine = r?.trackId === b.dataset.rec;
+    b.classList.toggle('armed', mine && r!.from === null); b.classList.toggle('on', mine && r!.from !== null);
+    b.setAttribute('aria-pressed', String(!!mine));
+  });
+  document.querySelectorAll<HTMLElement>('.lcell[data-clip]').forEach(el => el.classList.toggle('recording', !!r?.clipId && el.dataset.clip === r.clipId));
   // Scène en cours : tous les clips qui jouent sont sur sa ligne. Scène attendue : tous les clips en attente y sont.
   document.querySelectorAll<HTMLElement>('.lscene[data-scene]').forEach(b => {
     const i = b.dataset.scene!, on = rows.on.size === 1 && rows.on.has(i), next = rows.next.size === 1 && rows.next.has(i) && !on;

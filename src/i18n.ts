@@ -191,12 +191,16 @@ const D: Record<string, [string, string, string]> = {
   'live.scene': ['Scènes', 'Scenes', 'Escenas'],
   'live.launch': ['Lancer « {0} » à la prochaine mesure', 'Launch “{0}” on the next bar', 'Lanzar «{0}» en el próximo compás'],
   'live.launchScene': ['Lancer la scène {0}', 'Launch scene {0}', 'Lanzar la escena {0}'],
+  'live.recRow': ['Prise', 'Record', 'Grabar'],
+  'live.rec': ['Enregistrer', 'Record', 'Grabar'],
+  'live.recTip': ['Enregistrer un clip de {1} sur {0} : la prise part à la mesure suivante, puis le clip tourne en boucle (un second appui abandonne)', 'Record a {1} clip on {0}: recording starts on the next bar, then the clip loops (press again to cancel)', 'Grabar un clip de {1} en {0}: la toma empieza en el próximo compás y luego el clip se repite (pulse de nuevo para cancelar)'],
+  'live.recLen': ['Longueur d’une prise', 'Recording length', 'Duración de la toma'],
   'live.stop': ['Arrêter {0}', 'Stop {0}', 'Detener {0}'],
   'live.stopAll': ['Tout arrêter', 'Stop everything', 'Detener todo'],
   'live.perf': ['Performance', 'Performance', 'Interpretación'],
   'live.filter': ['Filtre général', 'Master filter', 'Filtro máster'],
   'live.filterReset': ['Filtre à zéro', 'Reset filter', 'Reiniciar filtro'],
-  'live.help': ['Cliquez sur un clip pour le lancer : il démarre sur la mesure suivante et tourne en boucle. Une scène lance toute une ligne. Jouez par-dessus avec les pads, le clavier ou un contrôleur MIDI.', 'Click a clip to launch it: it starts on the next bar and loops. A scene launches a whole row. Play on top with the pads, the keyboard or a MIDI controller.', 'Haz clic en un clip para lanzarlo: empieza en el siguiente compás y se repite. Una escena lanza toda una fila. Toca encima con los pads, el teclado o un controlador MIDI.'],
+  'live.help': ['Cliquez sur un clip pour le lancer : il démarre sur la mesure suivante et tourne en boucle. Une scène lance toute une ligne. Jouez par-dessus avec les pads, le clavier ou un contrôleur MIDI. ● Enregistrer : la prise part à la mesure suivante sur la piste et devient un clip qui tourne en boucle.', 'Click a clip to launch it: it starts on the next bar and loops. A scene launches a whole row. Play on top with the pads, the keyboard or a MIDI controller. ● Record: recording starts on the next bar and becomes a looping clip.', 'Haz clic en un clip para lanzarlo: empieza en el siguiente compás y se repite. Una escena lanza toda una fila. Toca encima con los pads, el teclado o un controlador MIDI. ● Grabar: la toma empieza en el próximo compás y se convierte en un clip que se repite.'],
 
   // Messages
   'toast.trackDeleted': ['Piste « {0} » supprimée', 'Track “{0}” deleted', 'Pista «{0}» eliminada'],
