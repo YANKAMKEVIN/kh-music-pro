@@ -1,3 +1,4 @@
+import { STRIP_MAP, StripField, stripSet } from './chain';
 import { engine } from './audio/engine';
 import { t } from './i18n';
 import { S, commit, emit, findTrack } from './store';
@@ -247,7 +248,12 @@ let ccTimer = 0;
 function applyCC(target: string, v: number) {
   const [who, prm] = target.split(':'), [lo, hi] = RANGES[prm] ?? [0, 1], val = Math.round((lo + (hi - lo) * v) * 100) / 100, p = S.project;
   if (who === 'm') { if (prm === 'master') p.master = val; else p.filter = Math.abs(val) < 0.04 ? 0 : val; }
-  else { const tr = p.tracks[+who]; if (!tr) return; (tr as unknown as Record<string, number>)[prm] = (prm === 'pan' || prm === 'filter') && Math.abs(val) < 0.04 ? 0 : val; }
+  else {
+    const tr = p.tracks[+who]; if (!tr) return;
+    const v = (prm === 'pan' || prm === 'filter') && Math.abs(val) < 0.04 ? 0 : val;
+    // Tranche en chaîne d'effets : un réglage de tranche pilote l'effet correspondant de la chaîne (rien s'il n'y en a pas).
+    if (prm in STRIP_MAP) stripSet(tr, prm as StripField, v); else (tr as unknown as Record<string, number>)[prm] = v;
+  }
   engine.sync();
   clearTimeout(ccTimer); ccTimer = window.setTimeout(emit, 120); // l'affichage suit, sans ralentir le geste
 }

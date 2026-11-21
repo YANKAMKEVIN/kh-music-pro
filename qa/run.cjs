@@ -5811,6 +5811,277 @@ test('LR04', 'Live', 'Au clavier : ● se déclenche avec Entrée ; une piste au
   await page.evaluate(() => window.kh.setLang('fr'));
 });
 
+// ============ Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ============
+/**
+ * Projet de mesure des chaînes : trois synthés (les sept étages réglés ; courbes de filtre, de chorus, de graves et de seuil
+ * avec un écho et un phaser ajoutés ; tranche neutre), une piste audio (son de synthèse calculé, sans hasard) sortie dans un bus
+ * réglé lui aussi. Ni réverb ni batterie : leur part de hasard empêcherait la comparaison à l'échantillon près.
+ */
+const CE_PROJECT = () => {
+  const k = window.kh, sr = 44100, buf = new AudioBuffer({ length: sr * 2, numberOfChannels: 1, sampleRate: sr }), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = 0.4 * Math.sin(2 * Math.PI * 220 * i / sr) + 0.2 * Math.sin(2 * Math.PI * 3300 * i / sr) * Math.sin(i / sr * 7);
+  k.buffers.set('ce-src', buf);
+  const p = k.demoProject(); p.loop = false; p.master = 0.25; p.countIn = false;
+  const bass = p.tracks[1], audio = JSON.parse(JSON.stringify(p.tracks[4]));
+  const mk = (id, f) => { const t = JSON.parse(JSON.stringify(bass)); t.id = id; t.name = id; t.rev = 0; t.dly = 0.25; t.vol = 0.5; f(t); return t; };
+  const bus = Object.assign(k.newBus(1), { id: 'cebus', eqLow: -3, eqHigh: 2, drive: 0.2, comp: true, compThr: -18 });
+  Object.assign(audio, { id: 'ceA', name: 'ceA', rev: 0, out: 'cebus', filter: 0.15, crush: 0.25, trem: 0.6, eqMid: 5, eqMidF: 2500, comp: true, compThr: -20, compRatio: 3, auto: { 'set:eqHigh': [{ s: 0, v: 0.1 }, { s: 60, v: 0.95 }] } });
+  audio.clips = [0, 16, 32, 48].map((s, j) => ({ id: 'ca' + j, name: 's', start: s, len: 16, offset: 0, bufferId: 'ce-src', gain: 0.8 }));
+  p.buses = [bus];
+  p.tracks = [
+    mk('ce1', t => Object.assign(t, { filter: -0.3, drive: 0.4, crush: 0.3, chorus: 0.4, trem: 0.5, eqLow: 3, eqMid: -2, eqMidF: 1500, eqHigh: 4, comp: true, compThr: -30, compRatio: 6 })),
+    mk('ce2', t => { Object.assign(t, { filter: 0.2, eqHigh: 2, comp: true, compThr: -40 }); t.inserts = [k.newInsert('delay'), k.newInsert('phaser')]; t.autoShow = 'filter';
+      t.auto = { filter: [{ s: 0, v: -0.8 }, { s: 40, v: 0.6 }], chorus: [{ s: 0, v: 0 }, { s: 60, v: 1 }], 'set:eqLow': [{ s: 0, v: 0.2 }, { s: 50, v: 0.9 }], 'set:compThr': [{ s: 0, v: 0.1 }, { s: 64, v: 0.8 }] }; }),
+    mk('ce3', () => { }), audio];
+  return p;
+};
+/** Rendus séparés de chaque piste (avec les bus) du projet courant : à l'échantillon près, un rendu seul ne dépend d'aucun ordre de somme. */
+const ceSolo = () => S(async () => {
+  const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), out = {};
+  k.renderOpts.parallel = false;
+  for (const t of p.tracks) { const b = await k.renderOffline({ ...JSON.parse(JSON.stringify(p)), tracks: [t] }, false); out[t.id] = [b.getChannelData(0).slice(), b.getChannelData(1).slice()]; }
+  window.__ceSolo = out; k.renderOpts.parallel = true; return Object.keys(out).length;
+});
+/** Écart maximal entre les rendus séparés gardés par ceSolo et ceux du projet courant ; et le niveau de crête. */
+const ceDiff = () => S(async () => {
+  const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), out = {};
+  k.renderOpts.parallel = false;
+  for (const t of p.tracks) {
+    const b = await k.renderOffline({ ...JSON.parse(JSON.stringify(p)), tracks: [t] }, false), ref = window.__ceSolo[t.id];
+    let d = 0, pk = 0; for (let c = 0; c < 2; c++) { const x = ref[c], y = b.getChannelData(c); if (x.length !== y.length) d = Infinity; for (let i = 0; i < x.length; i++) { d = Math.max(d, Math.abs(x[i] - y[i])); pk = Math.max(pk, Math.abs(x[i])); } }
+    out[t.id] = [d, pk];
+  }
+  k.renderOpts.parallel = true; return out;
+});
+async function ceOpenOld() {
+  // Ancien projet : un fichier sans le champ « strip » (enregistré avant les chaînes d'effets).
+  const data = await S(new Function(`const p = (${CE_PROJECT.toString()})(); for (const t of [...p.tracks, ...p.buses]) delete t.strip; return JSON.stringify({ format: 'kh-music-pro', version: 1, project: p, buffers: {} });`));
+  const f = path.join(TMP, 'avant-chaines.khm'); fs.writeFileSync(f, data); await page.setInputFiles('#fProj', f); await sleep(500);
+  await S(new Function(`(${CE_PROJECT.toString()})();`));   // le son de synthèse de la piste audio (le fichier n'en contient pas)
+}
+
+test('CE01', 'Chaînes d\'effets', 'Migration : un ancien projet s’ouvre en tranche fixe ; « Tout le projet » convertit pistes et bus en chaînes, et le rendu reste identique à l’échantillon près (piste par piste, courbes comprises)', async () => {
+  await ceOpenOld();
+  const modes = await S(() => [...window.kh.S.project.tracks, ...window.kh.S.project.buses].map(t => t.strip));
+  expect(modes.length === 5 && modes.every(m => m === 'fixe'), 'un ancien projet doit garder sa tranche fixe : ' + modes);
+  const whole0 = await S(async () => { const k = window.kh; k.renderOpts.parallel = false; const a = await k.renderOffline(k.S.project, false), b = await k.renderOffline(k.S.project, false); window.__ceWhole = a.getChannelData(0).slice(); let d = 0; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a.getChannelData(0)[i] - b.getChannelData(0)[i])); k.renderOpts.parallel = true; return d; });
+  await ceSolo();
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  expect(await page.$('#fx [data-mode=fixe]'), 'la fenêtre des effets doit indiquer la tranche fixe');
+  await page.click('#fx [data-act=chainall]'); await sleep(200);
+  expect((await page.textContent('#toast')).includes('5 tranches'), 'message de conversion : ' + await page.textContent('#toast'));
+  expect(await page.$('#fx [data-mode=chaine]'), 'la fenêtre doit passer en mode chaîne');
+  const p = await proj();
+  expect([...p.tracks, ...p.buses].every(t => t.strip === 'chaine'), 'toutes les tranches doivent être converties');
+  const types = Object.fromEntries([...p.tracks, ...p.buses].map(t => [t.id, t.inserts.map(i => i.type + (i.on ? '' : '-off')).join(',')]));
+  expect(types.ce1 === 'filter,drive,lofi,chorus,trem,eq3,comp' && types.ce2 === 'filter,chorus,eq3,comp,delay,phaser' && types.ce3 === 'filter' && types.ceA === 'filter,lofi,trem,eq3,comp' && types.cebus === 'filter,drive,eq3,comp', 'étages convertis : ' + JSON.stringify(types));
+  const c1 = p.tracks[0].inserts; expect(c1[0].p.v === -0.3 && c1[1].p.amt === 0.4 && c1[5].p.freq === 1500 && c1[5].p.high === 4 && c1[6].p.thr === -30 && c1[6].p.ratio === 6, 'réglages recopiés : ' + JSON.stringify(c1.map(i => i.p)));
+  expect(p.tracks[0].eqHigh === 0 && p.tracks[0].comp === false && p.tracks[0].drive === 0, 'les anciens réglages de tranche doivent revenir au neutre');
+  const diffs = await ceDiff();
+  for (const [id, [d, pk]] of Object.entries(diffs)) expect(d === 0 && pk > 0.01, `${id} : le rendu doit rester identique à l’échantillon près (écart ${d}, crête ${pk.toFixed(3)})`);
+  // Morceau entier : les pistes se somment dans un ordre que le navigateur ne garantit pas ; l'écart reste celui de deux rendus du même projet.
+  const whole = await S(async () => { const k = window.kh; k.renderOpts.parallel = false; const b = await k.renderOffline(k.S.project, false); k.renderOpts.parallel = true; let d = 0; const a = window.__ceWhole; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b.getChannelData(0)[i])); return d; });
+  console.log('        écarts :', JSON.stringify({ pistes: Object.fromEntries(Object.entries(diffs).map(([k, v]) => [k, v[0]])), morceau: whole.toExponential(1), 'deux rendus identiques': whole0.toExponential(1) }));
+  expect(whole < Math.max(1e-3, 4 * whole0), 'le morceau entier doit sonner pareil : écart ' + whole);
+});
+test('CE02', 'Chaînes d\'effets', 'Migration sans perte : courbes renommées vers les effets, Annuler revient à la tranche fixe, le fichier garde la chaîne ; retour à la tranche fixe identique, refusé si l’ordre a changé', async () => {
+  await ceOpenOld(); await ceSolo();
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.click('#fx [data-act=chainconv]'); await sleep(150);
+  let t = (await proj()).tracks[1];
+  const id = type => t.inserts.find(i => i.type === type).id;
+  const keys = Object.keys(t.auto).sort().join();
+  expect(keys === [`ins:${id('filter')}:v`, `ins:${id('chorus')}:mix`, `ins:${id('eq3')}:low`, `ins:${id('comp')}:thr`].sort().join(), 'courbes renommées : ' + keys);
+  const f = t.auto[`ins:${id('filter')}:v`]; expect(Math.abs(f[0].v - 0.1) < 1e-9 && Math.abs(f[1].v - 0.8) < 1e-9 && f[1].s === 40, 'valeurs de la courbe du filtre (−0,8 → 0,1 ; 0,6 → 0,8) : ' + JSON.stringify(f));
+  expect(t.autoShow === `ins:${id('filter')}:v`, 'la courbe affichée doit suivre : ' + t.autoShow);
+  expect((await proj()).tracks[0].strip === 'fixe', 'seule la piste choisie est convertie');
+  // Le fichier garde la chaîne et ses courbes ; rouvert, il sonne pareil.
+  await page.keyboard.press('Escape');
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const file = path.join(TMP, 'chaine.khm'); await dl.saveAs(file);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8')).project.tracks[1];
+  expect(saved.strip === 'chaine' && saved.inserts.length === 6 && Object.keys(saved.auto).length === 4, 'chaîne absente du fichier');
+  await page.keyboard.press('Control+z'); await sleep(150);
+  t = (await proj()).tracks[1];
+  expect(t.strip === 'fixe' && t.inserts.length === 2 && t.auto.filter?.length === 2 && t.eqHigh === 2 && t.comp, 'Annuler doit rendre la tranche fixe et ses courbes');
+  await page.setInputFiles('#fProj', file); await sleep(500); await S(new Function(`(${CE_PROJECT.toString()})();`));
+  let d = await ceDiff(); expect(Object.values(d).every(([x]) => x === 0), 'rouvert depuis le fichier, le projet doit sonner pareil : ' + JSON.stringify(d));
+  // Retour à la tranche fixe : même son ; il est refusé quand l'ordre des étages a changé.
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  expect(!(await page.$eval('#fx [data-act=chainback]', e => e.disabled)), 'le retour doit être possible');
+  await page.click('#fx .fxcard >> nth=0 >> [data-act=fxdown]');
+  expect(await page.$eval('#fx [data-act=chainback]', e => e.disabled) && await page.$('#fx [data-role=chainwhy]'), 'filtre déplacé après le chorus : le retour doit être refusé, avec la raison');
+  await page.click('#fx .fxcard >> nth=1 >> [data-act=fxup]');
+  await page.click('#fx [data-act=chainback]'); await sleep(150);
+  t = (await proj()).tracks[1];
+  expect(t.strip === 'fixe' && t.inserts.map(i => i.type).join() === 'delay,phaser' && Math.abs(t.filter - 0.2) < 1e-9 && t.comp && t.compThr === -40 && t.auto.filter?.length === 2 && t.autoShow === 'filter', 'retour à la tranche fixe : ' + JSON.stringify({ s: t.strip, f: t.filter, a: Object.keys(t.auto), sh: t.autoShow }));
+  d = await ceDiff(); expect(Object.values(d).every(([x]) => x < 1e-6), 'après l’aller-retour, le son doit être le même : ' + JSON.stringify(d));
+});
+test('CE03', 'Chaînes d\'effets', 'Interface : ajouter un étage de tranche depuis le menu (un de chaque, rangé dans l’ordre du son, hors limite de huit), le retirer, réordonner à la souris et au clavier', async () => {
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.click('#fx [data-act=chainconv]'); await sleep(100);
+  const opts = await page.$$eval('#fx [data-role=stripfx] option', o => o.map(x => [x.value, x.disabled]));
+  expect(opts.map(o => o[0]).join() === 'filter,drive,lofi,chorus,trem,eq3,comp' && opts[0][1] && !opts[6][1], 'groupe des étages : ' + JSON.stringify(opts));
+  await page.selectOption('[data-role=fxadd]', 'delay'); await page.selectOption('[data-role=fxadd]', 'comp'); await page.selectOption('[data-role=fxadd]', 'eq3');
+  expect((await insertsOf(1)).map(i => i.type).join() === 'filter,eq3,comp,delay', 'étages rangés dans l’ordre du son, avant les autres effets : ' + (await insertsOf(1)).map(i => i.type));
+  expect(await page.$eval('#fx [data-role=stripfx] option[value=comp]', o => o.disabled), 'un étage présent doit être grisé');
+  // Huit effets ordinaires en plus des étages : la limite ne compte pas les étages.
+  for (let i = 0; i < 8; i++) await page.selectOption('[data-role=fxadd]', 'gain');
+  let l = await insertsOf(1); expect(l.length === 11 && l.filter(i => i.type === 'gain').length === 7 && (await page.textContent('#toast')).includes('Huit'), `limite de huit effets ordinaires : ${l.length}`);
+  for (let i = 0; i < 7; i++) await page.click('#fx .fxcard >> nth=-1 >> [data-act=fxdel]');
+  expect((await insertsOf(1)).map(i => i.type).join() === 'filter,eq3,comp,delay', 'retrait');
+  // Glisser-déposer : la poignée du compresseur déposée tout en haut.
+  await page.locator('#fx .fxlist').evaluate(e => { e.scrollTop = 0; }); await sleep(100);
+  const top = await page.locator('#fx .fxcard').nth(0).boundingBox(), g = await page.locator('#fx .fxcard').nth(2).locator('[data-act=fxgrip]').boundingBox(), cid = (await insertsOf(1))[2].id;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2); await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2, top.y + 4, { steps: 8 });
+  expect(await page.$eval('#fx .fxcard.drag', e => e.dataset.ins).catch(() => '') === cid, 'la carte du compresseur suit le pointeur'); await page.mouse.up(); await sleep(120);
+  expect((await insertsOf(1)).map(i => i.type).join() === 'comp,filter,eq3,delay', 'ordre après glisser-déposer : ' + (await insertsOf(1)).map(i => i.type));
+  // Au clavier : Alt + flèche sur la poignée, le focus reste sur la carte déplacée.
+  await page.focus('#fx .fxcard >> nth=0 >> [data-act=fxgrip]'); await page.keyboard.press('Alt+ArrowDown'); await sleep(80);
+  expect((await insertsOf(1)).map(i => i.type).join() === 'filter,comp,eq3,delay', 'Alt + ↓');
+  expect(await S(() => document.activeElement?.closest('.fxcard')?.dataset.ins) === (await insertsOf(1))[1].id, 'le focus doit suivre la carte');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await sleep(80);
+  expect((await insertsOf(1)).map(i => i.type).join() === 'comp,filter,eq3,delay', 'Annuler défait le déplacement');
+  // Chaque étage s'entend : le compresseur en tête, puis retiré.
+  const st = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; p.tracks[0].inserts.find(i => i.type === 'eq3').p.high = 12; const a = await window.qa.stats(p); p.tracks[0].inserts = p.tracks[0].inserts.filter(i => i.type !== 'eq3'); return [a.hf / a.rms, (await window.qa.stats(p)).hf / (await window.qa.stats(p)).rms]; });
+  expect(st[0] > st[1] * 1.15, 'l’égaliseur de la chaîne doit s’entendre : ' + st.map(v => v.toFixed(3)));
+});
+test('CE04', 'Chaînes d\'effets', 'Mixeur d’une tranche en chaîne : les curseurs pilotent les effets de la chaîne, un étage absent n’a pas de curseur, le préréglage crée ce qui manque, la réduction du compresseur s’affiche', async () => {
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; t.eqHigh = 3; t.comp = true; k.commit(); });
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); await page.click('#fx [data-act=chainconv]'); await page.keyboard.press('Escape'); await sleep(100);
+  const s1 = '.strip >> nth=1';
+  expect(await page.$(`${s1} >> [data-role=chainmode]`), 'la tranche doit signaler le mode chaîne');
+  const labels = await page.$$eval('.strip >> nth=1', e => [...e[0].querySelectorAll('.scol .lb')].map(x => x.textContent));
+  expect(labels.includes('Aigus') && labels.includes('Filtre') && !labels.includes('Saturation') && !labels.includes('Lo-fi') && labels.includes('Seuil'), 'curseurs affichés : ' + labels.join(', '));
+  await setSlider(s1, 'Aigus', -6); await setSlider(s1, 'Filtre', -0.5); await setSlider(s1, 'Seuil', -36);
+  let t = (await proj()).tracks[1], by = ty => t.inserts.find(i => i.type === ty);
+  expect(by('eq3').p.high === -6 && by('filter').p.v === -0.5 && by('comp').p.thr === -36 && t.eqHigh === 0 && t.filter === 0, 'les curseurs doivent régler les effets : ' + JSON.stringify(t.inserts.map(i => i.p)));
+  // Interrupteur du compresseur = effet allumé ou éteint.
+  await page.click(`${s1} >> [data-tog=comp]`); t = (await proj()).tracks[1]; by = ty => t.inserts.find(i => i.type === ty);
+  expect(by('comp').on === false && !(await page.$$eval('.strip >> nth=1', e => [...e[0].querySelectorAll('.scol .lb')].some(x => x.textContent === 'Seuil'))), 'compresseur éteint depuis le mixeur');
+  await page.click(`${s1} >> [data-tog=comp]`);
+  // Préréglage « Lo-fi » : saturation, lo-fi, chorus créés à leur place ; réverb réglée comme avant.
+  await page.selectOption(`${s1} >> [data-role=mixpreset]`, 'lofi'); await sleep(100);
+  t = (await proj()).tracks[1];
+  expect(t.inserts.map(i => i.type).join() === 'filter,drive,lofi,chorus,eq3,comp' && t.inserts.find(i => i.type === 'lofi').p.amt === 0.35 && t.rev === 0.12 && t.inserts.find(i => i.type === 'eq3').p.high === -4, 'préréglage en mode chaîne : ' + JSON.stringify(t.inserts.map(i => [i.type, i.p])));
+  // Réduction du compresseur de la chaîne pendant la lecture.
+  await S(() => { const k = window.kh, c = k.S.project.tracks[1].inserts.find(i => i.type === 'comp'); c.p.thr = -50; c.p.ratio = 10; k.commit(); });
+  await page.keyboard.press('Space'); await sleep(1500);
+  const gr = await S(() => window.kh.engine.reduction(window.kh.S.project.tracks[1].id)); await page.keyboard.press('Space');
+  expect(gr < -1, 'réduction de gain lue sur le compresseur de la chaîne : ' + gr);
+  // Courbe d'égaliseur du mixeur : celle des filtres de la chaîne.
+  const eq = await S(() => { const c = window.kh.engine.mix.eqCurve(window.kh.S.project.tracks[1].id, new Float32Array([100, 12000])); return c && [...c]; });
+  expect(eq && eq[1] < eq[0] - 3, 'la courbe affichée doit suivre l’égaliseur et le filtre de la chaîne : ' + eq);
+});
+test('CE05', 'Chaînes d\'effets', 'Assignation MIDI : un bouton assigné au filtre pilote le filtre de la chaîne ; un étage absent ne bouge pas ; la tranche fixe ne bouge pas', async () => {
+  await S(() => { const k = window.kh; k.learn.map = { 21: '1:filter', 22: '1:drive' }; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
+  await S(() => { window.kh.onMidi([0xb0, 21, 0]); window.kh.onMidi([0xb0, 22, 127]); }); await sleep(200);
+  const t = (await proj()).tracks[1];
+  expect(t.inserts.find(i => i.type === 'filter').p.v === -1 && t.filter === 0, 'le bouton doit régler le filtre de la chaîne : ' + JSON.stringify(t.inserts.map(i => i.p)));
+  expect(!t.inserts.some(i => i.type === 'drive') && t.drive === 0, 'sans saturation dans la chaîne, rien ne doit changer');
+  const n = await S(() => { const k = window.kh, tr = k.S.project.tracks[1], node = k.engine.mix.tracks.get(tr.id).ins.get(tr.inserts[0].id); return node.bq[0].frequency.value; });
+  expect(n < 2000, 'le filtre de la chaîne doit se fermer à l’écoute : ' + n);
+});
+test('CE06', 'Chaînes d\'effets', 'Automation : le filtre de la chaîne se choisit dans le groupe de l’effet et se trace à la souris ; export plus brillant au fil de la courbe ; à l’écoute la courbe pilote le filtre, puis l’arrêt rend le réglage', async () => {
+  const { lane, tid } = await sawSetup();
+  await S(() => { const k = window.kh; k.S.project.tracks[1].synth.cutoff = 12000; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
+  const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.value)]));
+  const fid = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  expect(!opts.some(o => o[0].startsWith('Tranche')), 'pas de groupe Tranche pour une tranche en chaîne : ' + JSON.stringify(opts));
+  expect(!opts[0][1].includes('filter') && !opts[0][1].includes('chorus') && opts[0][1].includes('vol'), 'réglages de piste sans filtre ni chorus de tranche : ' + opts[0][1]);
+  const g = opts.find(o => o[0] === '1. Filtre'); expect(g && g[1].join() === `ins:${fid}:v`, 'groupe du filtre de la chaîne : ' + JSON.stringify(opts));
+  await page.selectOption('[data-role=autoparam]', `ins:${fid}:v`);
+  await autoPoint(lane, 0, 0.1); await autoPoint(lane, 63, 0.5);
+  const pts = await S(() => { const t = window.kh.S.project.tracks[1]; return t.auto[`ins:${t.inserts[0].id}:v`]; });
+  expect(pts?.length === 2 && Math.abs(pts[0].v - 0.1) < 0.03 && Math.abs(pts[1].v - 0.5) < 0.03, 'courbe tracée : ' + JSON.stringify(pts));
+  const b = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]])));
+  expect(b[1] > b[0] * 1.3 && b[2] > b[1] * 1.15, `la brillance doit monter avec la courbe : ${b.map(v => v.toFixed(3)).join(' → ')}`);
+  await page.keyboard.press('Space'); await sleep(1300);
+  const during = await page.evaluate(([id, fid]) => window.kh.engine.mix.tracks.get(id).ins.get(fid).bq[0].frequency.value, [tid, fid]);
+  await page.keyboard.press('Space'); await sleep(400);
+  const after = await page.evaluate(([id, fid]) => window.kh.engine.mix.tracks.get(id).ins.get(fid).bq[0].frequency.value, [tid, fid]);
+  expect(during < 5000, `pendant la lecture, la courbe ferme le filtre (${Math.round(during)} Hz)`);
+  expect(after > 15000, `à l’arrêt, le filtre revient à son réglage (ouvert, obtenu ${Math.round(after)} Hz)`);
+});
+test('CE07', 'Chaînes d\'effets', 'Automation de réglages qui ne l’étaient pas dans la tranche fixe : profondeur du trémolo (de rien à fond) et fréquence du médium ; saturation et lo-fi non proposés', async () => {
+  const { tid } = await sawSetup();
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; t.clips[0].notes = [{ p: 48, s: 0, l: 64, v: 0.8 }]; t.synth.cutoff = 6000; t.trem = 0.5; t.drive = 0.3; t.crush = 0.2; t.eqMid = 9; k.chain.stripToChain(t); k.commit(); });
+  const ins = await S(() => Object.fromEntries(window.kh.S.project.tracks[1].inserts.map(i => [i.type, i.id])));
+  const opts = await page.$$eval('[data-role=autoparam] option', o => o.map(x => x.value));
+  expect(opts.includes(`ins:${ins.trem}:depth`) && opts.includes(`ins:${ins.eq3}:freq`), 'profondeur du trémolo et fréquence du médium automatisables');
+  expect(!opts.includes(`ins:${ins.drive}:amt`) && !opts.includes(`ins:${ins.lofi}:amt`), 'saturation et lo-fi (courbes recalculées) ne sont pas automatisables');
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1], tr = t.inserts.find(i => i.type === 'trem'); t.auto[`ins:${tr.id}:depth`] = [{ s: 0, v: 0 }, { s: 8, v: 0 }, { s: 56, v: 1 }]; k.commit(); });
+  // Ondulation du volume : écart entre le plus fort et le plus faible des tranches de 40 ms, dans une fenêtre d'une seconde.
+  const wob = await S(async () => { const b = await window.kh.renderOffline(window.kh.S.project, false), d = b.getChannelData(0), sr = b.sampleRate, W = sr / 25;
+    const at = t0 => { const e = []; for (let s = Math.floor(t0 * sr); s < (t0 + 1) * sr; s += W) { let q = 0; for (let i = s; i < s + W; i++) q += d[i] * d[i]; e.push(Math.sqrt(q / W)); } return (Math.max(...e) - Math.min(...e)) / Math.max(...e); };
+    return [at(0.2), at(6.8)]; });
+  expect(wob[0] < 0.15 && wob[1] > 0.6, `le trémolo doit apparaître au fil de la courbe : ${wob.map(v => v.toFixed(2)).join(' → ')}`);
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1], e = t.inserts.find(i => i.type === 'eq3'); t.auto = { [`ins:${e.id}:freq`]: [{ s: 0, v: 0 }, { s: 63, v: 1 }] }; k.commit(); });
+  await page.keyboard.press('Space'); await sleep(1300);
+  const f1 = await page.evaluate(([id, e]) => window.kh.engine.mix.tracks.get(id).ins.get(e).bq[1].frequency.value, [tid, ins.eq3]); await sleep(1500);
+  const f2 = await page.evaluate(([id, e]) => window.kh.engine.mix.tracks.get(id).ins.get(e).bq[1].frequency.value, [tid, ins.eq3]);
+  await page.keyboard.press('Space');
+  expect(f1 < 600 && f2 > f1 * 1.5, `la fréquence du médium suit la courbe à l’écoute : ${Math.round(f1)} → ${Math.round(f2)} Hz`);
+});
+test('CE08', 'Chaînes d\'effets', 'Export identique à la lecture : à l’écoute, le filtre de la chaîne prend à chaque instant la valeur de la courbe que suit l’export ; export parallèle d’un gros projet en chaînes = rendu d’un seul tenant', async () => {
+  const { tid } = await sawSetup();
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; k.chain.stripToChain(t); t.auto[`ins:${t.inserts[0].id}:v`] = [{ s: 0, v: 0.1 }, { s: 63, v: 0.45 }]; k.commit(); });
+  const fid = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  await page.keyboard.press('Space'); await sleep(500);
+  const samples = [];
+  for (let i = 0; i < 12; i++) { samples.push(await page.evaluate(([id, fid]) => { const k = window.kh; return [k.engine.currentStep(), k.engine.mix.tracks.get(id).ins.get(fid).bq[0].frequency.value]; }, [tid, fid])); await sleep(250); }
+  await page.keyboard.press('Space');
+  // Valeur attendue : la courbe (0..1 sur −1..1), passée par la même conversion que l'export (filtre « DJ » : 20 kHz × 2^(8v) en passe-bas).
+  const bad = samples.filter(([s, f]) => { const v = -1 + 2 * (0.1 + (0.45 - 0.1) * Math.min(1, s / 63)), want = 20000 * Math.pow(2, v * 8); return Math.abs(Math.log2(f / want)) > 0.25; });
+  expect(samples.length === 12 && bad.length <= 1, 'à l’écoute, le filtre doit suivre la courbe de l’export : ' + JSON.stringify(bad.map(([s, f]) => [s.toFixed(1), Math.round(f)])));
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(), sy = p.tracks[1], sr = 44100;
+    const b = new AudioBuffer({ length: sr, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 330 * i / sr) * 0.5; k.buffers.set('ce08-sine', b);
+    p.loop = false; p.tracks = []; p.buses = [];
+    for (let i = 0; i < 14; i++) { const tr = JSON.parse(JSON.stringify(sy)); Object.assign(tr, { id: 'ce8-' + i, name: 'C' + i, rev: 0, dly: 0.2, vol: 0.3, filter: (i % 3 - 1) * 0.3, eqHigh: 3, comp: i % 2 === 0, trem: 0.3, chorus: 0.2, auto: { filter: [{ s: 0, v: -0.5 }, { s: 30, v: 0.4 }] } });
+      if (i % 2) { tr.type = 'audio'; delete tr.synth; tr.clips = [0, 16, 32].map((st, j) => ({ id: `c8${i}-${j}`, name: 's', start: st + i % 4, len: 8, offset: 0, bufferId: 'ce08-sine', gain: 0.6 })); }
+      else tr.clips = [{ id: 'n8' + i, name: 'n', start: 0, len: 48, offset: 0, patLen: 16, notes: [{ p: 48 + i, s: 0, l: 3, v: 0.7 }, { p: 55 + i, s: 8, l: 2, v: 0.5 }] }];
+      k.chain.stripToChain(tr); p.tracks.push(tr); }
+    const groups = k.renderGroups(p, 8);
+    k.renderOpts.parallel = false; const one = await k.renderOffline(p);
+    k.renderOpts.parallel = true; const par = await k.renderOffline(p);
+    let diff = 0, peak = 0; for (let c = 0; c < 2; c++) { const x = one.getChannelData(c), y = par.getChannelData(c); for (let i = 0; i < x.length; i++) { diff = Math.max(diff, Math.abs(x[i] - y[i])); peak = Math.max(peak, Math.abs(x[i])); } }
+    return { groups: groups && groups.length, parts: k.lastRender.parts, diff, peak, cores: navigator.hardwareConcurrency };
+  });
+  expect(r.peak > 0.05, 'rendu vide');
+  if (r.cores >= 3) expect(r.parts >= 2, 'pas de rendu parallèle : ' + JSON.stringify(r));
+  expect(r.diff < 1e-3, 'le rendu parallèle diffère : écart maximal ' + r.diff);
+});
+test('CE09', 'Chaînes d\'effets', 'Gel d’une piste en chaîne d’effets : le son gelé est exactement celui de la même piste gelée en tranche fixe (chaîne et courbes comprises) ; dégeler rend la chaîne', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; Object.assign(tr, { eqLow: 2, eqHigh: -2, drive: 0.2, chorus: 0.3, comp: true }); tr.auto = { filter: [{ s: 0, v: -0.7 }, { s: 32, v: 0.3 }] }; k.commit(); });
+  const frozenBuf = () => S(() => { const t = window.kh.S.project.tracks[2], b = window.kh.buffers.get(t.clips[0].bufferId); window.__ceFrz = window.__ceFrz || []; window.__ceFrz.push(b.getChannelData(0).slice()); return [t.frozenFrom === window.kh.S.project.tracks[1].id, b.length]; });
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const a = await frozenBuf();
+  await clickIn(await freezeBtn(1)); await sleep(150);
+  await S(() => { const k = window.kh; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const b = await frozenBuf();
+  const d = await S(() => { const [x, y] = window.__ceFrz; let m = 0, pk = 0; for (let i = 0; i < x.length; i++) { m = Math.max(m, Math.abs(x[i] - y[i])); pk = Math.max(pk, Math.abs(x[i])); } return [m, pk]; });
+  expect(a[0] && b[0] && a[1] === b[1] && d[1] > 0.05 && d[0] === 0, `le gel d’une tranche en chaîne doit donner le même son qu’en tranche fixe : écart ${d[0]}, crête ${d[1]}`);
+  await clickIn(await freezeBtn(1)); await sleep(150);
+  expect(await S(() => !window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks[1].strip === 'chaine' && window.kh.S.project.tracks[1].inserts.length === 5), 'dégel : la piste revient avec sa chaîne');
+});
+test('CE10', 'Chaînes d\'effets', 'Textes traduits (fenêtre des effets, mixeur, noms des étages) ; au clavier, la conversion s’atteint et s’actionne avec Entrée', async () => {
+  await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
+  await page.focus('#fx [data-act=chainconv]'); await page.keyboard.press('Enter'); await sleep(150);
+  expect(await S(() => window.kh.S.project.tracks[1].strip) === 'chaine', 'Entrée doit convertir la tranche');
+  expect(await S(() => document.activeElement && document.getElementById('fx').contains(document.activeElement)), 'le focus doit rester dans la fenêtre');
+  for (const [l, back, name, mode] of [['en', 'Back to the fixed strip', 'Filter', 'Chain'], ['es', 'Volver al canal fijo', 'Filtro', 'Cadena']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await sleep(100);
+    if (!(await S(() => document.getElementById('fx').open))) { await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]'); }
+    expect((await page.textContent('#fx [data-act=chainback]')).includes(back) && (await page.textContent('#fx .fxcard strong')).includes(name), `fenêtre des effets non traduite en ${l}`);
+    expect(await page.$eval('#fx [data-role=stripfx]', g => g.label) === (l === 'en' ? 'Channel strip stages (one of each)' : 'Etapas del canal (una de cada)'), `groupe des étages non traduit en ${l}`);
+    await page.keyboard.press('Escape'); await tab('mixer');
+    expect((await page.textContent('.strip >> nth=1 >> [data-role=chainmode]')).includes(mode), `badge du mixeur non traduit en ${l}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

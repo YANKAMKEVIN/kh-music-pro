@@ -59,7 +59,7 @@ Principes à respecter :
 - Instruments enregistrés : une seule prise par note (les nuances sont imitées par un filtre, voir section 9), sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
 - Tempo : depuis la V17, un clip audio peut suivre le tempo (réglage « Suit le tempo », désactivé par défaut) ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
 - Signature : une seule pour tout le morceau, de 2/4 à 7/4, ou 5/8, 6/8, 7/8, 9/8, 12/8 depuis la section 18. Pas de changement de signature en cours de morceau ; pas de regroupement libre des croches (7/8 compté en croches, pas en 2+2+3).
-- Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
+- Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus. Depuis la section 19, une tranche peut être convertie en chaîne seule : ses sept étages deviennent des effets (un de chaque au plus, hors de la limite de huit).
 - Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac ; depuis la section 18, l'égaliseur et le seuil du compresseur de la tranche, le filtre et la résonance de l'instrument (lus au départ de chaque note). Restent non automatisables : saturation, lo-fi, trémolo, taux du compresseur, fréquence du médium, enveloppe et oscillateurs de l'instrument, instruments du Mac.
 - Installateurs non signés ; pas de mise à jour automatique.
 - Projets stockés dans le navigateur de chaque appareil, avec des versions (V17) ; le fichier `.khm` reste la seule sauvegarde hors de l'appareil. Version bureau Mac : vrais fichiers sur le disque (V17).
@@ -857,7 +857,7 @@ Aucune branche n'est supprimée.
 - QA : LR01-LR04 (souris, clavier, position des notes, batterie et nuance, boucle audible, arrangement, abandon, arrêt, fichier, ancien projet, traductions).
 - Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub), pitch bend et molette pendant la prise, arpégiateur (ses notes ne sont pas rangées).
 
-### Chaînes d'effets qui remplacent la tranche fixe : plan (non réalisé)
+### Chaînes d'effets qui remplacent la tranche fixe : plan (réalisé depuis, voir section 19)
 
 Verdict : **pas compatible sans une migration** de l'architecture actuelle, donc non fait dans cette suite. La tranche fixe (filtre, saturation, lo-fi, chorus, trémolo, égaliseur, compresseur) est câblée une fois pour toutes dans `makeTrack` (`graph.ts`) ; ses réglages sont des champs de la piste lus par le mixeur, l'assignation MIDI (`RANGES` dans `input.ts`), l'automation (`filter`, `chorus`, `set:eq*`, `set:compThr`), les modèles de mixage et les cas d'empreinte sonore. La chaîne d'effets est une liste dynamique (`syncInserts`) branchée entre `insIn` et `insOut`, après le compresseur. Les deux se rejoignent bien, mais remplacer l'une par l'autre touche tout ce qui lit ces champs.
 
@@ -884,3 +884,52 @@ Plan proposé, en une ou deux sessions :
 ### Vérifications de la suite
 
 - `npx tsc --noEmit` et `npm run build` sur Linux ; QA des cas touchés en local (navigateur Chromium de Playwright), puis campagne complète sur la branche poussée (GitHub Actions). Rien n'a été écouté ni essayé sur Mac, Windows, téléphone ou matériel réel.
+
+## 19. Chaînes d'effets qui remplacent la tranche fixe (branche `claude/chaines-effets`, 21/11/2026)
+
+Réalisation du plan de la section 18, partie de `main` à `760a364` (QA 459/459). Pas de fusion ni de changement de version (0.19.1).
+
+### Ce que voit le musicien
+
+- Fenêtre **Effets** d'une piste ou d'un bus : en tranche fixe, deux boutons, **⛓ Convertir la tranche en effets** et **Tout le projet** (pistes et bus). Le filtre, la saturation, le lo-fi, le chorus, le trémolo, l'égaliseur et le compresseur deviennent des effets en tête de chaîne, dans l'ordre du son, avec leurs réglages et leurs courbes ; le son ne change pas. Une seule entrée d'annulation.
+- En mode chaîne : la liste se modifie librement. Nouveau groupe « Étages de tranche (un de chaque) » dans le menu d'ajout ; un étage ajouté se range à sa place dans l'ordre du son, avant les effets ordinaires (on peut ensuite le déplacer). Les étages ne comptent pas dans la limite de huit effets. Déplacement par ▲ ▼ (comme avant), en faisant glisser la poignée ⠿ (souris ou doigt), ou au clavier avec Alt + ↑ / ↓ sur la poignée (le focus suit la carte).
+- **Revenir à la tranche fixe** : possible tant que les étages restent en tête, dans l'ordre du son, allumés (le compresseur peut être éteint) et sans courbe que la tranche fixe ne sait pas jouer (trémolo, fréquence du médium, taux). Sinon le bouton est grisé et la raison s'affiche. Un étage retiré revient à sa valeur neutre ; si c'est le filtre, le filtre au repos de la tranche fixe revient (il coupe l'extrême aigu en pente douce, voir plus bas).
+- **Mixeur** d'une tranche en chaîne (choix par défaut sur la décision laissée à Kevin, voir « À valider ») : badge **⛓ Chaîne** (ouvre la fenêtre Effets) ; les curseurs d'égaliseur, filtre, saturation, chorus, trémolo, lo-fi et compresseur règlent le premier effet de ce type dans la chaîne ; un étage absent n'a pas de curseur. L'interrupteur du compresseur allume ou éteint l'effet. La courbe d'égaliseur affichée suit les filtres et égaliseurs allumés de la chaîne, la réduction de gain suit le compresseur de la chaîne. Les préréglages de mixage règlent les effets et créent ceux qui manquent.
+- **Assignation MIDI** : un bouton assigné au filtre, à la saturation, au chorus, au trémolo ou au lo-fi d'une piste en chaîne règle l'effet correspondant (rien s'il n'y en a pas).
+- **Automation** : chaque réglage des étages se trace dans le groupe de son effet (« 1. Filtre », « 6. Égaliseur 3 bandes »…), y compris deux réglages qui ne l'étaient pas dans la tranche fixe : la profondeur du trémolo et la fréquence du médium. Saturation et lo-fi restent non automatisables (courbe recalculée, comme dans la tranche fixe). En mode chaîne, le groupe « Tranche » et les courbes de filtre et de chorus de la piste disparaissent de la liste.
+- Les anciens projets s'ouvrent en tranche fixe, à l'identique : rien n'est converti sans le demander.
+
+### Comment c'est fait
+
+- Format : nouveau champ `Track.strip` (`'fixe' | 'chaine'`), mis à `'fixe'` par `migrate` pour les pistes et les bus. Sept nouveaux types d'effet dans `FX` (`types.ts`) : `filter` (v, −1 à 1), `drive` (amt), `lofi` (amt), `chorus` (mix), `trem` (depth), `eq3` (low, mid, freq, high), `comp` (thr, ratio). `STRIP_FX`, `isStripFx`, `fxCount` (limite de huit sans les étages).
+- `src/chain.ts` (nouveau) : `stripToChain`, `canRevert`, `chainToStrip`, `stripGet`, `stripSet`, `addStripFx`. Conversion : le filtre est toujours repris (dans la tranche fixe, il est toujours traversé, même au repos) ; les autres étages seulement s'ils changent le son ou ont une courbe ; un compresseur éteint mais réglé ou automatisé devient un effet éteint. Courbes renommées : `filter` → `ins:<filtre>:v` (valeur (v + 1) / 2), `chorus` → `ins:<chorus>:mix`, `set:eqLow|eqMid|eqHigh` → `ins:<eq3>:low|mid|high`, `set:compThr` → `ins:<comp>:thr` ; `autoShow` suit. Les champs de tranche reviennent au neutre.
+- `graph.ts` : `buildStripFx` reprend exactement les nœuds, réglages et branchements de `makeTrack`/`sync` (mêmes valeurs de départ, même contournement de l'égaliseur à plat, mêmes branches de chorus et de trémolo débranchées au neutre, gain de compensation du compresseur). `InsNode.set` reçoit les réglages automatisés (résonance du filtre balayé, branches allumées). En mode chaîne, `sync` débranche l'entrée de la tranche fixe et la branche droit sur la chaîne. `eqCurve` et `reduction` (déplacée de `engine.ts` dans `Mix`) lisent la chaîne.
+- Écoute et export : même graphe (`Mix`), donc rien de spécifique pour l'export, le gel ni l'export parallèle ; c'est vérifié par les cas CE08 et CE09.
+
+### Vérification de l'identité du rendu (migration)
+
+- CE01 : un projet de mesure (trois synthés : les sept étages réglés ; courbes de filtre, chorus, graves et seuil avec écho et phaser ; tranche neutre ; une piste audio de son calculé sortie dans un bus réglé) est enregistré sans le champ `strip`, rouvert (migration), rendu piste par piste (avec le bus), converti par « Tout le projet », puis rendu de nouveau : **écart nul, à l'échantillon près, pour chaque piste**. Le morceau entier est comparé aussi : l'écart reste celui de deux rendus du même projet (environ 1 à 2 × 10⁻⁴), car le navigateur ne garantit pas l'ordre dans lequel il additionne plusieurs pistes.
+- Pourquoi pas de batterie ni de réverb dans ce projet : les sons de bruit de la batterie et la réponse de la réverb sont tirés au hasard, et le calcul de la réverb du navigateur n'est pas reproductible d'un rendu à l'autre ; ils empêchent toute comparaison à l'échantillon près (même sans conversion). Leur code n'est pas touché par la conversion.
+- CE02 : fichier enregistré puis rouvert (écart nul) ; Annuler ; retour à la tranche fixe (écart < 10⁻⁶, dû à l'aller-retour de la courbe de filtre en virgule flottante). CE09 : le gel d'une piste en chaîne donne exactement le même son que le gel de la même piste en tranche fixe.
+
+### QA ajoutée
+
+CE01-CE10 (migration et identité, sans perte et retour, ajout/retrait/déplacement à la souris et au clavier, mixeur, MIDI, automation du filtre de la chaîne, automation du trémolo et de la fréquence du médium, export identique à la lecture et export parallèle, gel, traductions et clavier).
+
+### Constat en passant (non corrigé)
+
+- Le gel d'une piste rend son son à travers le volume général et le limiteur du général, puis la piste gelée repasse par eux : un morceau gelé sonne environ 0,9 dB plus bas avec le général à 90 % (FZ01 tolère 1 dB), davantage sur une piste forte qui touche le limiteur. Correction possible : rendre le gel sans la chaîne du général (`renderPart(…, stem = true)`, général à 100 %). Hors du sujet des chaînes, donc laissé tel quel.
+
+### À valider par Kevin
+
+- **Décision d'interface (section 18, étape 4)** : choix par défaut appliqué, les sections du mixeur pilotent les effets de la chaîne et cachent les curseurs des étages absents. L'autre possibilité était de les retirer du mixeur en mode chaîne.
+- Valeurs par défaut d'un étage ajouté à la main : saturation et lo-fi à 30 %, chorus et trémolo à 50 %, filtre au repos, égaliseur à plat (médium à 1 kHz), compresseur à −24 dB et 4:1 (les valeurs de la tranche).
+- Les nouvelles pistes restent en tranche fixe ; la conversion est toujours demandée.
+
+### Pour Kevin : à écouter
+
+- Un vrai morceau converti par « Tout le projet » : il doit sonner pareil (vérifié par mesure, jamais à l'oreille), y compris la batterie et la réverb, non comparables par mesure.
+- Une conversion **pendant la lecture** : les nouveaux effets partent de leurs valeurs de départ et rejoignent leurs réglages en 15 ms environ ; un petit souffle ou clic est possible à ce moment-là.
+- Le glisser-déposer des effets au doigt sur un vrai téléphone ou une tablette.
+- Le trémolo automatisé de rien à fond, et la fréquence du médium balayée, sur un vrai son.
+

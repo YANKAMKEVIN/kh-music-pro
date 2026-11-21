@@ -1,21 +1,25 @@
 import { icon } from './icons';
-import { addAu, addInsert, addWam, moveInsert, removeInsert, saveWamStates } from '../actions';
+import { addAu, addInsert, addWam, convertAllStrips, convertStrip, moveInsert, moveInsertTo, removeInsert, revertStrip, saveWamStates } from '../actions';
+import { canRevert } from '../chain';
 import { AuInstance, AuParam, auBridge, auFromPos, auList, auLog, auName, auToPos } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { engine } from '../audio/engine';
 import { autoKeysOf } from '../audio/graph';
 import { t } from '../i18n';
 import { S, commit } from '../store';
-import { FX, Insert, Track } from '../types';
+import { FX, Insert, STRIP_FX, Track, isStripFx } from '../types';
 import { h, slider, toast } from './dom';
 
 const dlg = () => document.getElementById('fx') as HTMLDialogElement;
 let current = '';
 const find = (): Track | undefined => [...S.project.tracks, ...S.project.buses].find(x => x.id === current);
 
+const dB = (v: number) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
 const fmt = (type: string, key: string, v: number) =>
-  key === 'mix' || key === 'depth' || key === 'fb' ? Math.round(v * 100) + ' %'
-    : key === 'gain' ? (v > 0 ? '+' : '') + v.toFixed(1) + ' dB'
+  key === 'mix' || key === 'depth' || key === 'fb' || key === 'amt' ? Math.round(v * 100) + ' %'
+    : key === 'gain' || key === 'low' || key === 'mid' || key === 'high' ? dB(v)
+      : key === 'v' ? (Math.abs(v) < 0.02 ? '—' : (v < 0 ? 'LP ' : 'HP ') + Math.round(Math.abs(v) * 100))
+        : key === 'thr' ? Math.round(v) + ' dB' : key === 'ratio' ? v + ':1'
       : key === 'freq' ? (v >= 1000 ? (v / 1000).toFixed(1) + ' kHz' : Math.round(v) + ' Hz')
         : key === 'rate' ? v.toFixed(2) + ' Hz' : key === 'size' ? v.toFixed(1) + ' s' : type === 'delay' && key === 'time' ? v + '/16' : v.toFixed(1);
 
@@ -117,6 +121,10 @@ export function openAuWindow(tr: Track, ins: Insert, inst: AuInstance) {
 
 function card(tr: Track, ins: Insert, i: number) {
   const name = ins.type === 'wam' ? (ins.name || t('fx.wam')) : ins.type === 'au' ? '🍎 ' + (ins.name || t('au.plugin')) : t('fxn.' + ins.type);
+  // Poignée : on fait glisser la carte à sa nouvelle place (à la souris ou au doigt) ; au clavier, ▲ ▼ ou Alt + flèches sur la poignée.
+  const grip = h('button', { class: 'mini fxgrip', data: { act: 'fxgrip' }, title: t('fx.drag'), 'aria-label': `${t('fx.drag')} – ${name}` }, '⠿');
+  grip.onkeydown = e => { if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); refocus = ins.id; moveInsert(tr.id, ins.id, e.key === 'ArrowUp' ? -1 : 1); } };
+  grip.onpointerdown = e => dragCard(e, tr, ins);
   const btn = (act: string, label: string, tip: string, fn: () => void, off = false) => h('button', { class: 'mini', data: { act }, title: tip, 'aria-label': `${tip} – ${name}`, disabled: off, onclick: fn }, label);
   const body = h('div', { class: 'fxbody' }, ...(FX[ins.type] ?? []).map(([k, min, max, step, def]) => slider(t('fxp.' + k), min, max, step, ins.p[k], v => { ins.p[k] = v; }, v => fmt(ins.type, k, v), '', false, def)));
   if (ins.type === 'wam') {
@@ -130,18 +138,64 @@ function card(tr: Track, ins: Insert, i: number) {
   return h('div', { class: 'fxcard' + (ins.on ? '' : ' off'), data: { ins: ins.id } },
     h('div', { class: 'fxhead' },
       h('button', { class: 'mini' + (ins.on ? ' on solo' : ''), data: { act: 'fxon' }, 'aria-pressed': String(ins.on), title: t('fx.on'), 'aria-label': `${t('fx.on')} – ${name}`, onclick: () => { ins.on = !ins.on; commit(); } }, ins.on ? 'ON' : 'OFF'),
-      h('strong', {}, `${i + 1}. ${name}`),
+      grip, h('strong', {}, `${i + 1}. ${name}`),
       btn('fxup', '▲', t('fx.up'), () => moveInsert(tr.id, ins.id, -1), i === 0), btn('fxdown', '▼', t('fx.down'), () => moveInsert(tr.id, ins.id, 1), i === tr.inserts.length - 1),
       btn('fxdel', '✕', t('fx.del'), () => removeInsert(tr.id, ins.id))),
     body);
 }
 
+/** Carte à remettre sous le focus après un déplacement au clavier (la fenêtre est redessinée). */
+let refocus = '';
+/** Glisser-déposer d'une carte : la place visée est celle du milieu de carte le plus proche du pointeur. */
+function dragCard(e: PointerEvent, tr: Track, ins: Insert) {
+  const card = (e.currentTarget as HTMLElement).closest<HTMLElement>('.fxcard'), list = card?.parentElement;
+  if (!card || !list) return;
+  e.preventDefault();
+  const y0 = e.clientY; let target = tr.inserts.indexOf(ins), moved = false;
+  card.classList.add('drag');
+  const move = (ev: PointerEvent) => {
+    const dy = ev.clientY - y0; if (Math.abs(dy) > 4) moved = true;
+    card.style.transform = `translateY(${dy}px)`;
+    const mids = [...list.children].filter(c => c !== card).map(c => { const b = c.getBoundingClientRect(); return b.top + b.height / 2; });
+    target = mids.filter(m => m < ev.clientY).length;
+    list.querySelectorAll('.fxcard').forEach(c => c.classList.remove('dropb', 'dropa'));
+    const others = [...list.children].filter(c => c !== card);
+    if (others[target]) others[target].classList.add('dropb'); else others[others.length - 1]?.classList.add('dropa');
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+    card.classList.remove('drag'); card.style.transform = '';
+    list.querySelectorAll('.fxcard').forEach(c => c.classList.remove('dropb', 'dropa'));
+    if (moved) moveInsertTo(tr.id, ins.id, target);
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+}
+
+/** Mode de la tranche (fixe ou chaîne) et passage de l'un à l'autre. */
+function modeBar(tr: Track) {
+  if (tr.strip !== 'chaine') return h('div', { class: 'fxmode', data: { mode: 'fixe' } },
+    h('p', { class: 'tip' }, t('fx.help')),
+    h('div', { class: 'srow' },
+      h('button', { class: 'pill', data: { act: 'chainconv' }, title: t('chain.convTip'), onclick: () => convertStrip(tr.id) }, '⛓ ' + t('chain.conv')),
+      h('button', { class: 'pill', data: { act: 'chainall' }, title: t('chain.allTip'), onclick: convertAllStrips }, t('chain.all'))));
+  const ok = canRevert(tr);
+  return h('div', { class: 'fxmode', data: { mode: 'chaine' } },
+    h('p', { class: 'tip' }, t('fx.helpChain')),
+    h('div', { class: 'srow' },
+      h('button', { class: 'pill', data: { act: 'chainback' }, disabled: !ok, title: t(ok ? 'chain.backTip' : 'chain.cantRevert'), onclick: () => revertStrip(tr.id) }, '↩ ' + t('chain.back')),
+      !ok && h('span', { class: 'tip', data: { role: 'chainwhy' } }, t('chain.cantRevert'))));
+}
+
 function render() {
   const tr = find(), d = dlg();
   if (!tr) { if (d.open) d.close(); return; }
+  // Le contenu est recréé : après une conversion (ou un retour), le focus va sur la commande qui la remplace.
+  const was = d.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.act : undefined;
   const macs = auList();
   const add = h('select', { 'aria-label': t('fx.add'), data: { role: 'fxadd' } }, h('option', { value: '' }, '＋ ' + t('fx.add') + '…'),
-    ...Object.keys(FX).filter(k => k !== 'wam').map(k => h('option', { value: k }, t('fxn.' + k))),
+    ...Object.keys(FX).filter(k => k !== 'wam' && !isStripFx(k)).map(k => h('option', { value: k }, t('fxn.' + k))),
+    // Étages de tranche : un de chaque au plus (ceux déjà présents sont grisés).
+    h('optgroup', { label: t('fx.stripGroup'), data: { role: 'stripfx' } }, ...STRIP_FX.map(k => h('option', { value: k, disabled: tr.inserts.some(i => i.type === k) }, t('fxn.' + k)))),
     h('optgroup', { label: t('fx.wam') }, h('option', { value: 'wam:wam/kh-tape/index.js' }, 'KH Tape Echo'), h('option', { value: 'wam:?' }, t('wam.url'))),
     // Plugins Audio Unit installés sur le Mac (version bureau macOS seulement).
     ...macs.length ? [h('optgroup', { label: '🍎 ' + t('au.group'), data: { role: 'aulist' } }, ...macs.map(d => h('option', { value: `au:${d.type}:${d.subtype}:${d.manufacturer}` }, auName(d.name))))] : []);
@@ -152,9 +206,15 @@ function render() {
   };
   d.replaceChildren(
     h('h2', {}, icon('fx', 22), `${t('fx.title')} — ${tr.name}`),
-    h('p', { class: 'tip' }, t('fx.help')),
+    modeBar(tr),
     tr.inserts.length ? h('div', { class: 'fxlist' }, ...tr.inserts.map((ins, i) => card(tr, ins, i))) : h('p', { class: 'tip', data: { empty: '1' } }, t('fx.none')),
     h('div', { class: 'fxfoot' }, add, h('form', { method: 'dialog' }, h('button', { class: 'pill accent' }, t('lib.close')))));
+  const swap: Record<string, string> = { chainconv: 'chainback', chainall: 'chainback', chainback: 'chainconv' };
+  if (was && swap[was] && !refocus) {
+    const q = (act: string) => d.querySelector<HTMLElement>(`[data-act=${act}]:not(:disabled)`);
+    (q(was) ?? q(swap[was]) ?? d.querySelector<HTMLElement>('[data-role=fxadd]'))?.focus();
+  }
+  if (refocus) { d.querySelector<HTMLElement>(`.fxcard[data-ins="${refocus}"] [data-act=fxgrip]`)?.focus(); refocus = ''; }
 }
 
 /** Ouvre la chaîne d'effets d'une tranche (piste ou bus). */
