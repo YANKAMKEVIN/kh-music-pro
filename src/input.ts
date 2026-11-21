@@ -1,11 +1,11 @@
 import { engine } from './audio/engine';
 import { t } from './i18n';
-import { S, emit, findTrack } from './store';
+import { S, commit, emit, findTrack } from './store';
 import { BAR, CTL_REST, Clip, CtlKind, GRIDS, NPADS, Note, Track, chordOf, newPatternClip, snapTo, stepDur } from './types';
 
 /** Décalage d'octave du clavier d'ordinateur. */
 export const kb = { octave: 0, chord: 1, arp: 'off' as 'off' | 'up' | 'down' | 'updown' | 'random', arpRate: 2, repeat: 0 };
-interface Held { track: Track; keys: number[]; notes: Note[]; clip?: Clip; start: number; arp?: boolean }
+interface Held { track: Track; keys: number[]; notes: Note[]; clip?: Clip; start: number; arp?: boolean; live?: boolean }
 const held = new Map<number, Held>();
 // CC64 : maintien tout-ou-rien, indépendant par canal MIDI. Les durées
 // enregistrées vont jusqu'au relâchement de la pédale, donc l'export les conserve.
@@ -15,6 +15,37 @@ const pedalNotes = new Map<number, Set<number>>();
 /** Clip créé par la prise en cours sur chaque piste (`run` : instant de départ du transport, propre à chaque prise). */
 const takes = new Map<string, { id: string; run: number }>();
 const isRec = (tr: Track) => engine.recording === 'midi' && engine.recTrack === tr.id && engine.playing;
+
+// ---------- Mode Live : clips enregistrés à la volée (suite, 21/11/2026) ----------
+/** Clip de la prise à la volée en cours sur la piste, et position de ce qu'on joue maintenant. */
+function liveSpot(tr: Track): { clip: Clip; local: number } | null {
+  const at = engine.liveRecPos(tr.id), clip = at && tr.clips.find(c => c.id === at.clipId);
+  return at && clip ? { clip, local: at.local } : null;
+}
+const hasContent = (c: Clip) => !!(c.notes?.length || c.drums?.some(r => r.some(Boolean)));
+/**
+ * Départ : un clip vide de la longueur choisie est ajouté après le dernier clip de la piste (il prend la ligne suivante
+ * de la grille du Live). Fin : le projet est enregistré dans l'historique (Annuler retire la prise). Abandon : le clip
+ * disparaît. Arrêt pendant la prise : on garde ce qui a été joué.
+ */
+engine.onLiveRec = (phase, r) => {
+  const tr = findTrack(r.trackId);
+  if (!tr || (tr.type !== 'synth' && tr.type !== 'drums')) return null;
+  if (phase === 'start') {
+    const start = Math.ceil(Math.max(0, ...tr.clips.map(c => c.start + c.len)) / BAR) * BAR;
+    const clip = newPatternClip(tr.type, start, t('clip.take'));
+    clip.len = clip.patLen = r.bars * BAR;
+    if (clip.drums) clip.drums = clip.drums.map(() => new Array(clip.patLen!).fill(0));
+    tr.clips.push(clip); S.selClip = clip.id; emit();
+    return clip.id;
+  }
+  const clip = tr.clips.find(c => c.id === r.clipId);
+  if (!clip) return null;
+  for (const h of held.values()) if (h.clip === clip) { for (const n of h.notes) n.l = Math.max(n.l, clip.patLen! - n.s); h.clip = undefined; }   // notes encore tenues : jusqu'à la fin du clip (le son continue jusqu'au relâchement)
+  if (phase === 'cancel' || (phase === 'stop' && !hasContent(clip))) { tr.clips.splice(tr.clips.indexOf(clip), 1); emit(); return null; }
+  commit();
+  return clip.id;
+};
 
 /** Trouve (ou crée) le clip sous la tête de lecture et renvoie la position locale à écrire. */
 function recSpot(tr: Track, at?: number): { clip: Clip; local: number } {
@@ -71,6 +102,7 @@ export function padHit(row: number, vel = 1, track?: Track) {
   engine.pad(tr, row, vel);
   // La frappe est rangée dans la case la plus proche, selon la résolution du motif.
   if (isRec(tr)) { const { clip, local } = recSpot(tr, engine.currentStep()); const v = Math.round(Math.max(0.01, Math.min(1, vel)) * 100) / 100; later(() => { clip.drums![row][cellOf(clip, local)] = v; }); }
+  else { const ls = liveSpot(tr); if (ls) ls.clip.drums![row][cellOf(ls.clip, ls.local)] = Math.round(Math.max(0.01, Math.min(1, vel)) * 100) / 100; }   // prise à la volée du Live : le clip ne joue pas encore, écriture immédiate
   if (kb.repeat) { rolls.set(row, tr); ensureClock(); }
 }
 export function padRelease(row: number) { rolls.delete(row); }
@@ -133,6 +165,13 @@ export function noteOn(midi: number, vel = 0.8) {
     const g = GRIDS[S.grid] ?? 1, { clip, local } = recSpot(tr, snapTo(engine.currentStep(), g));
     h.notes = keys.map(k => ({ p: k, s: Math.min(snapTo(local, g), clip.patLen! - g), l: g, v: Math.round(vel * 100) / 100 })); h.clip = clip;
     later(() => { clip.notes!.push(...h.notes); });
+  } else {
+    const ls = liveSpot(tr);
+    if (ls) {
+      const g = GRIDS[S.grid] ?? 1, s0 = Math.min(snapTo(ls.local, g), ls.clip.patLen! - g);
+      h.notes = keys.map(k => ({ p: k, s: Math.max(0, s0), l: g, v: Math.round(vel * 100) / 100 })); h.clip = ls.clip; h.live = true;
+      ls.clip.notes!.push(...h.notes); emit();
+    }
   }
   held.set(midi, h);
 }
@@ -145,7 +184,7 @@ export function noteOff(midi: number) {
   for (const k of h.keys) engine.noteOff(h.track, k);
   if (h.clip) {
     let d = engine.currentStep() - h.start;
-    if (d < 0) d += S.project.loopLen * BAR;
+    if (d < 0) d += h.live ? 0 : S.project.loopLen * BAR;
     const g = GRIDS[S.grid] ?? 1;
     for (const n of h.notes) n.l = Math.max(g, Math.min(snapTo(d, g), h.clip.patLen! - n.s));
   }

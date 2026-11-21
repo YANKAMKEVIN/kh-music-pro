@@ -1,6 +1,7 @@
 /* Vérifie l'application macOS empaquetée (celle de l'installateur), pas la version de développement :
  * le module natif rangé dans l'application se charge, la page reste isolée, un plugin du Mac traite le son,
- * et le réglage « moteur audio natif » s'active (ou, sans carte son, échoue proprement en rendant la main au navigateur).
+ * et le moteur audio natif s'allume tout seul au premier lancement (activé par défaut sur Mac depuis le 21/11/2026 ; sans carte
+ * son, il échoue proprement en rendant la main au navigateur), puis se désactive à la demande.
  * Usage : npx electron-builder --mac dmg --arm64, puis node qa/packaged-mac.cjs [chemin de KH Music Pro.app] [--strict]
  *   --strict : le moteur natif doit démarrer (sur un vrai Mac ; les machines de GitHub n'ont pas forcément de carte son). */
 const { _electron: electron } = require('playwright');
@@ -23,7 +24,8 @@ const exe = path.join(appDir, 'Contents', 'MacOS', 'KH Music Pro');
     if (await win.$eval('#help', d => d.open)) await win.click('#help form button.accent');
     const r = await win.evaluate(async () => {
       const k = window.kh, br = k.auBridge(), sr = 48000;
-      const res = { bridge: !!br, require: typeof window.require, process: typeof window.process, n: br ? br.list().filter(d => d.type === 'aufx').length : 0, native: !!k.engine.native, saved: localStorage.getItem('kh-native') };
+      const start = await k.nativeStartup();
+      const res = { bridge: !!br, require: typeof window.require, process: typeof window.process, n: br ? br.list().filter(d => d.type === 'aufx').length : 0, start, native: !!k.engine.native, startBack: k.engine.out === k.engine.ctx.destination, saved: localStorage.getItem('kh-native') };
       if (!br) return res;
       const goertzel = (d, f) => { const w = 2 * Math.PI * f / sr, cw = 2 * Math.cos(w); let s1 = 0, s2 = 0; for (const x of d) { const s = x + cw * s1 - s2; s2 = s1; s1 = s; } return 20 * Math.log10(Math.sqrt(s1 * s1 + s2 * s2 - cw * s1 * s2) * 2 / d.length); };
       const c = new OfflineAudioContext(2, sr, sr), au = await k.createAu(c, 'aufx:lpas:appl', { 0: 1000 }), g = c.createGain();
@@ -31,7 +33,7 @@ const exe = path.join(appDir, 'Contents', 'MacOS', 'KH Music Pro');
       g.connect(au.audioNode).connect(c.destination);
       const d = (await c.startRendering()).getChannelData(0).subarray(4800); au.audioNode.destroy();
       res.lp200 = goertzel(d, 200); res.lp8k = goertzel(d, 8000);
-      res.on = await k.setNativeEngine(true, true); res.out = k.engine.native ? k.engine.native.info.output : '';
+      res.on = k.engine.native ? true : await k.setNativeEngine(true, true); res.out = k.engine.native ? k.engine.native.info.output : '';
       res.toast = document.querySelector('#toast')?.textContent ?? '';
       res.back = k.engine.out === k.engine.ctx.destination;
       res.off = await k.setNativeEngine(false, true); res.backAfter = !k.engine.native && k.engine.out === k.engine.ctx.destination;
@@ -46,7 +48,7 @@ const exe = path.join(appDir, 'Contents', 'MacOS', 'KH Music Pro');
     console.log(JSON.stringify(r));
     check(r.bridge && r.n > 0, `pont natif chargé depuis l'application : ${r.n} plugins du Mac`);
     check(r.require === 'undefined' && r.process === 'undefined', 'la page reste isolée (ni require ni process)');
-    check(!r.native && r.saved === null, 'moteur natif désactivé au premier lancement');
+    check(r.saved === null && (r.start && r.native || !STRICT && !r.start && !r.native && r.startBack), r.native ? 'moteur natif allumé par défaut au premier lancement' : 'premier lancement sans carte son : repli sur le navigateur');
     check(Math.abs(r.lp200 + 12) < 1 && r.lp8k < -40, `AULowpass 1 kHz : 200 Hz ${r.lp200?.toFixed(1)} dBFS, 8 kHz ${r.lp8k?.toFixed(1)} dBFS`);
     if (r.on) check(true, `moteur natif activé : le son passe par « ${r.out} »`);
     else check(!STRICT && r.back && /n'a pas pu démarrer/.test(r.toast), `moteur natif non démarré (pas de carte son ?) : message « ${r.toast} », son rendu au navigateur`);

@@ -9,7 +9,7 @@ app.on('open-file', (e, p) => { e.preventDefault(); files.openFromSystem(p); });
 
 // Module natif (macOS) : plugins Audio Unit du Mac et carte son par Core Audio (V14b). Dans l'installateur, il est rangé
 // hors de l'archive de l'application (Resources/native) ; en développement, c'est le résultat de la construction.
-// KH_NATIVE=0 fait comme s'il était absent. S'il est là, la page peut s'en servir (plugins du Mac, réglage « moteur audio natif »)
+// KH_NATIVE=0 fait comme s'il était absent. S'il est là, la page peut s'en servir (plugins du Mac, moteur audio natif activé par défaut)
 // par un pont limité : l'isolation de contexte reste active et la page n'a jamais accès à Node (voir native-preload.cjs).
 const MODULE = process.platform === 'darwin' && process.env.KH_NATIVE !== '0'
   ? [path.join(process.resourcesPath || '', 'native', 'kh_au_bridge.node'), path.join(__dirname, '..', 'native', 'kh-au-bridge', 'build', 'Release', 'kh_au_bridge.node')].find(f => fs.existsSync(f))

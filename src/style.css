@@ -368,21 +368,22 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
 
 /* Téléphone : barre supérieure sur une ligne défilante, en-têtes de piste compacts */
 @media (max-width: 760px) {
-  :root { --headw: 128px; }
+  :root { --headw: 156px; }
   /* Téléphone (V18) : ligne 1 = ☰, transport, compteur ; ligne 2 = projet, métronome, boucle, prise */
   #top { padding: 8px 10px; gap: 8px; backdrop-filter: none; background: #0a0e1e; justify-content: space-between; }
-  .brand, .dtime, #bTap, #sig, #bRedo { display: none !important; }
+  .brand, .dtime, #bTap, #sig { display: none !important; }
   #more { order: -1; margin-left: 0; }
   #more > summary { display: flex; width: 40px; justify-content: center; font-size: 18px; }
   #more > .grp.out { position: fixed; left: 8px; right: 8px; z-index: 30; flex-wrap: wrap; padding: 10px; border-radius: 12px; background: rgba(15, 21, 44, .98); border: 1px solid var(--line); box-shadow: 0 12px 40px rgba(0, 0, 0, .6); }
-  .grp.proj { order: 3; } .grp.play { order: 4; margin-left: auto; gap: 6px; } #bRename { display: block; }
+  .grp.proj { order: 3; gap: 5px; } .grp.play { order: 4; margin-left: auto; gap: 5px; } #bRename { display: block; }
+  #top { row-gap: 6px; } .grp.play #bLoop .lrange { display: none; }
   .grp.proj .pname { display: none; } .grp.proj #menu > summary { border-radius: 10px; }
   .menu-list { position: fixed; left: 8px; right: 8px; min-width: 0 !important; }
   #menu .menu-list, #mTake .menu-list { left: 8px; right: 8px; }
   #abar { padding: 4px 10px; gap: 6px; }
-  .tbtn { width: 40px; height: 40px; } .tbtn.play { width: 48px; height: 48px; }
+  .tbtn { width: 44px; height: 44px; } .tbtn.play { width: 50px; height: 50px; }
   .display { gap: 10px; padding: 4px 8px; } .display span, .display input { min-width: 52px; width: 52px; font-size: 15px; }
-  .head { padding: 6px 2px 6px 10px; } .head .tvol, .head .ticon { display: none; } .head .tname { padding: 0 2px; font-size: 12.5px; letter-spacing: -.01em; } .tmenu > summary.tmore { min-width: 26px; }
+  .head { padding: 5px 2px 5px 10px; } .head .tvol, .head .ticon { display: none; } .head .tname { padding: 0 2px; height: 44px; font-size: 12.5px; letter-spacing: -.01em; }
   .corner .add span { display: none; }
   .ahead .albl { display: none; }
   main { grid-template-rows: 1fr 54vh; }
@@ -397,6 +398,22 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
   .ebar .tip, .synth .tip { display: none; }
   .escroll { padding: 8px 10px; }
   .pact { display: none; } /* au doigt, les réglages d'un pad passent par la liste à côté des pads */
+  /* V18 (audit D4) : au doigt, au moins 44 px pour tout ce qu'on touche */
+  :root { --th: 104px; }
+  .pill, .icon, select, #top summary, #abar .pill, #abar .icon, #abar select, .ebar button, .ebar select, .seg, .head .mini, .tmenu > summary.tmore, .corner .add, #tabs button { min-height: 44px; min-width: 44px; }
+  .head .hrow { gap: 5px; } .head .mini { min-width: 44px; }
+  .corner, .ruler { height: 52px; } .corner { align-items: center; } .corner .add { padding: 0 6px; }
+  .menu-list button, .menu-list .pill { min-height: 44px; }
+  /* V18 (audit D3) : séquenceur par pages de 8 pas, glissées au doigt ; cases de 44 px de haut */
+  .grp.play #bMetro, .grp.play #bLoop { min-width: 44px; }
+  .mini-in input, .cname-in, .pname { height: 44px; }
+  .dgrid { --lw: 60px; }
+  .ed-grid.dgrid { scroll-snap-type: x mandatory; }
+  .escroll:has(> .dgrid), .escroll .dgrid { scroll-snap-type: x mandatory; }
+  .dlabel { width: var(--lw); min-width: var(--lw); height: 44px; gap: 4px; padding: 0 4px; }
+  .dlabel span { overflow: hidden; text-overflow: ellipsis; }
+  .dgrid .cell { width: 34px; min-width: 34px; height: 44px; margin: 2px 1px; }   /* 8 pas visibles : 8 × 36 px + étiquettes sur 375 px */
+  .dgrid .cell.page { scroll-snap-align: start; scroll-margin-left: calc(var(--lw) + 14px); }   /* étiquette collante + marge + bord de la zone */
 }
 
 /* ================= V5 ================= */
@@ -472,7 +489,7 @@ dialog form { gap: 8px; }
 
 /* ================= V9 ================= */
 .dgrid .cell { width: var(--cw, 30px); }
-.pr-grid { background-size: calc(var(--sw) * 16) 100%, calc(var(--sw) * 4) 100%, var(--gw, var(--sw)) 100%, 100% var(--rh); }
+.pr-grid { background-size: calc(var(--sw) * var(--bs, 16)) 100%, calc(var(--sw) * var(--bt, 4)) 100%, var(--gw, var(--sw)) 100%, 100% var(--rh); }
 
 /* ================= V10 ================= */
 .tip.real { color: var(--a1); }
@@ -731,9 +748,19 @@ dialog h2 .ico { color: var(--a1); }
 dialog[open] { animation: dlg-in .14s ease-out; }
 dialog[open]::backdrop { animation: veil-in .14s ease-out; }
 details.menu[open] > .menu-list, .menu-list.ctx { animation: menu-in .12s ease-out; transform-origin: top; }
+/* Menu ⋯ rouvert après un redessin : déjà affiché, il ne rejoue pas son déroulé. */
+details.tmenu.kept[open] > .menu-list { animation: none; }
 @keyframes dlg-in { from { opacity: 0; transform: scale(.97); } }
 @keyframes veil-in { from { opacity: 0; } }
 @keyframes menu-in { from { opacity: 0; transform: scaleY(.94); } }
 @media (max-width: 760px) { #more[open] > .grp.out { animation: menu-in .12s ease-out; transform-origin: top; } }
 /* La règle générale « moins d'animations » ne touche pas le voile des fenêtres (pseudo-élément) : on le fige ici. */
 @media (prefers-reduced-motion: reduce) { dialog[open]::backdrop { animation: none; } }
+
+/* Suite (21/11/2026) : prise de clips à la volée dans le Live */
+.lrecl { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); }
+.lcell.lrec { border-style: dashed; border-left: 1px dashed var(--line); background: transparent; color: var(--dim); text-align: left; }
+.lcell.lrec .lrdot { color: var(--rec); }
+.lcell.lrec:hover, .lcell.lrec:focus-visible { border-color: var(--rec); color: #fff; }
+.lcell.lrec.armed { border-color: var(--rec); animation: blink .5s steps(2) infinite; }
+.lcell.lrec.on, .lcell.recording { background: var(--rec); border-color: var(--rec); color: #fff; box-shadow: 0 0 14px var(--rec); }

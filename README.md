@@ -22,7 +22,7 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
   - Une molette déjà assignée à un réglage du mixeur garde son assignation.
 - **Exporter une partie seulement** et **WAV 24 bits / 48 kHz** : menu ▾ à côté d'Exporter, « Options d'export… ». Tout le morceau, la zone de boucle, ou de la mesure X à la mesure Y ; avec ou sans la fin du son (2,5 s de réverb et de relâchement). WAV en 16 bits (CD, streaming) ou 24 bits (studio, mastering), à 44,1 ou 48 kHz. Le MP3 et les pistes séparées suivent la même partie et la même fréquence ; le nom du fichier indique les mesures (« _m2-3 »). Le passage exporté sonne exactement comme dans le morceau (les notes tenues depuis avant y sont). Le MIDI exporte toujours tout.
 - **Comping** : un clip enregistré en boucle (plusieurs prises) montre une ligne par prise dans l'éditeur. Glisser sur une prise la garde sur ce passage, à la souris ou au doigt ; au clavier, flèches puis Entrée. Les jonctions entre prises ont un fondu très court, sans clic. Le bouton « Prise N » reprend une prise sur tout le clip.
-- **Fondus enchaînés** entre deux clips audio qui se touchent : réglage « Fondu enchaîné » du clip de droite. Le clip de gauche continue en s'effaçant pendant que celui de droite monte (à puissance constante, sans creux de volume) ; un X le montre dans l'arrangement.
+- **Fondus enchaînés** entre deux clips audio qui se touchent : réglage « Fondu enchaîné » du clip de droite. Le clip de gauche continue en s'effaçant pendant que celui de droite monte (à puissance constante, sans creux de volume) ; un X le montre dans l'arrangement. Cela vaut aussi pour les clips qui suivent le tempo.
 - **Vrai sidechain** : dans le mixeur, sous le réglage « Sidechain », la source peut être le kick du séquenceur (comme avant) ou n'importe quelle autre piste — un kick importé en audio, une voix qui fait baisser la musique. La source est prise avant son volume : même coupée, elle fait pomper (« kick fantôme »).
 - **Envois libres** : « ＋ Envoi » sur une piste du mixeur ; autant d'envois que voulu, chacun vers le bus choisi (un bus est créé s'il n'y en a pas), avec son niveau, pris avant (Pré) ou après (Post) le volume de la piste.
 - **Quantification fine** : menu ▾ à côté de 🧲 dans le piano roll. Force (100 % sur la grille, 50 % à mi-chemin), swing appliqué aux notes (66 % ≈ ternaire), humanisation (petits décalages et forces au hasard), légato (chaque note jusqu'à la suivante). Sur les notes sélectionnées, ou toutes.
@@ -40,9 +40,11 @@ Une **barre d'arrangement**, juste au-dessus des pistes, réunit la grille, le z
 
 Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ».
 
-**Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom.
+**Têtes de piste** : le nom de chaque piste s'affiche en entier. M, S, A et le volume restent visibles ; monter, descendre, dupliquer, geler et supprimer sont dans le menu **⋯** de la piste (aussi au doigt sur téléphone, où ces actions n'étaient pas accessibles). Une piste gelée montre ❄ à côté de son nom. Le menu ⋯ reste ouvert pendant la lecture ou une prise (depuis le 21/11/2026) : il se referme par un clic ailleurs, Échap ou un choix.
 
 **Correctifs de l'audit de novembre 2026** (détail : `docs/correctifs-audit-2026-11.md`) : séquenceur au clavier avec les flèches, une prise sur plusieurs mesures donne un seul clip, tempo au centième (93,5), bandeau quand la sauvegarde devient impossible (appareil plein) avec « Enregistrer en fichier », lettres du clavier prises de la vraie disposition, accordeur plus stable sur une machine chargée, export des gros projets environ deux fois plus rapide (pistes rendues par groupes sur plusieurs cœurs).
+
+**Téléphone** : Rétablir est sur la deuxième ligne ; le morceau s'ouvre avec quatre mesures visibles ; le séquenceur montre 8 pas à la fois en grandes cases, un glissé du doigt passe aux 8 suivants ; tout ce qu'on touche fait au moins 44 px.
 
 Les menus s'ouvrent d'un clic ou d'un toucher et se referment d'un clic ailleurs ou avec Échap (le focus revient au bouton). Les raccourcis clavier ne changent pas.
 
@@ -88,7 +90,7 @@ Vérifications musicales finales : à écouter par le propriétaire avec son Yam
 ## Fonctions (v0.17)
 
 - **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
-- **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**) ; depuis la v0.17, aussi n'importe quel réglage des effets de la piste, plugins du Mac compris.
+- **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**) ; depuis la v0.17, aussi n'importe quel réglage des effets de la piste, plugins du Mac compris. Depuis la suite du 21/11/2026 : l'égaliseur (graves, médiums, aigus) et le seuil du compresseur de la tranche, et, pour un instrument de l'application, le filtre et la résonance (lus au départ de chaque note).
 - **Batterie** : 16 sons, 3 kits, séquenceur à pas avec swing et notes douces, **16 pads** jouables (souris, clavier, MIDI) acceptant vos propres samples.
 - **Instruments** : 24 sons (claviers, basses dont 808 et acid, leads, cuivres, flûte, nappes, cordes pincées, cloches) sur quatre moteurs (soustractif, FM, corde pincée, **sampler**).
 - **Piano roll** : vélocité par note, transposition, **gamme** (surlignage et aimantation), **accords à un doigt**.
@@ -99,9 +101,9 @@ Vérifications musicales finales : à écouter par le propriétaire avec son Yam
 - **Chaîne d'effets** par tranche : écho, réverb, phaser, auto-pan, bande d'égaliseur, gain, à ajouter, ordonner et couper librement (jusqu'à huit).
 - **Plugins web** (Web Audio Modules) dans la chaîne d'effets, avec leur propre interface ; un plugin d'exemple est fourni. Un plugin venu d'un autre site demande un accord explicite.
 - **Plugins du Mac** (version bureau macOS) : les effets Audio Unit installés sur le Mac s'ajoutent à la chaîne d'effets, avec leurs réglages (fréquences sur une échelle logarithmique, listes de choix, interrupteurs) et leurs préréglages d'usine ; on les entend à l'écoute comme à l'export, et leur latence est compensée.
-- **Réglages audio** : choix de la sortie, latence affichée, décalage d'enregistrement réglable ou mesuré. Sur Mac, dans la version bureau : **moteur audio natif** (son par Core Audio, environ 74 ms aller-retour au lieu de 110 sur les haut-parleurs du Mac), désactivé par défaut. Avec une carte son externe (Focusrite…), le moteur natif a la carte pour lui seul : plus de craquements dus au navigateur (v0.19.1).
-- **Tempo et mesure** : changements de tempo en cours de morceau (posés dans la règle, suivis à la lecture, à l'export et dans le MIDI), signature rythmique de 2/4 à 7/4.
-- **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9.
+- **Réglages audio** : choix de la sortie, latence affichée, décalage d'enregistrement réglable ou mesuré. Sur Mac, dans la version bureau : **moteur audio natif** (son par Core Audio, environ 74 ms aller-retour au lieu de 110 sur les haut-parleurs du Mac), **activé par défaut** depuis le 21/11/2026 quand le module natif est présent. Pour le couper : l'interrupteur des Réglages audio (choix retenu) ou `KH_NATIVE=0` au lancement ; s'il ne démarre pas, le son repasse tout seul par le navigateur. Site web, Windows et Linux : inchangés. Avec une carte son externe (Focusrite…), le moteur natif a la carte pour lui seul : plus de craquements dus au navigateur (v0.19.1).
+- **Tempo et mesure** : changements de tempo en cours de morceau (posés dans la règle, suivis à la lecture, à l'export et dans le MIDI), signature rythmique de 2/4 à 7/4, et depuis la suite du 21/11/2026 en croches : 6/8, 9/8 et 12/8 (temps d'une noire pointée : métronome, décompte, compteur, lignes de temps), 5/8 et 7/8 (temps d'une croche). La signature part dans le fichier MIDI.
+- **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9. Depuis la suite du 21/11/2026 : **clips enregistrés à la volée** (ligne « Prise » sous les clips : ● sur une piste d'instrument ou de batterie, la prise part à la mesure suivante, dure 1, 2 (par défaut), 4 ou 8 mesures, puis le clip tourne en boucle ; un second appui abandonne, Annuler la retire).
 - **Mixage avancé** : bus pour regrouper des pistes, bande médium à fréquence réglable avec courbe d'égaliseur visible, compresseur réglable (seuil, taux, réduction affichée), automation des envois de réverb et d'écho et du chorus.
 - **Prises multiples** : enregistrement audio en boucle (une prise par tour), choix de la prise, montage par scission ; **punch** sur la zone de boucle ; **correction de justesse** vers la gamme du projet.
 - **Banque généraliste** : 29 instruments échantillonnés, classés en huit familles (claviers et orgues, guitares, basses, cordes, cuivres, bois, percussions mélodiques, voix et ambiances), et une batterie acoustique. Seuls les sons utilisés sont chargés, depuis les fichiers embarqués. Les sons de synthèse et le sampler restent disponibles.
@@ -174,7 +176,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 353 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 459 cas).
 Le plus simple, serveur compris :
 
 ```bash

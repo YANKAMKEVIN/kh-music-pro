@@ -8,7 +8,7 @@ import { noteOf } from '../audio/pitch';
 import { hasKey, lang, t } from '../i18n';
 import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
 import { S, commit, emit, findClip, findTrack, revert } from '../store';
-import { BAR, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
+import { BAR, BEAT, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
 import { drawAudio, drawFades, drawWave, wheelFactor, zoomAt } from './arr';
 import { icon, typeIcon } from './icons';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
@@ -159,7 +159,7 @@ function drumEditor(tr: Track, c: Clip | null) {
   const res = resOf(c), cw = res > 1 ? 20 : 30;
   const grid = h('div', { class: 'dgrid ed-grid', style: `--cw:${cw}px` });
   // Regroupement visuel par temps : le pas d'une case vaut 1/res double-croche.
-  const beat = (s: number) => Math.floor(s / res / 4 + 1e-6), isBar = (s: number) => s > 0 && Math.abs(s / res / BAR - Math.round(s / res / BAR)) < 1e-6;
+  const beat = (s: number) => Math.floor(s / res / BEAT + 1e-6), isBar = (s: number) => s > 0 && Math.abs(s / res / BAR - Math.round(s / res / BAR)) < 1e-6;
   // Une seule case atteignable par Tab (la dernière visitée) ; les flèches passent d'une case à l'autre.
   const rows = c.drums!.length, cols = c.drums![0]?.length ?? 0;
   gridPos = { r: clamp(gridPos.r, 0, rows - 1), s: clamp(gridPos.s, 0, cols - 1) };
@@ -168,7 +168,7 @@ function drumEditor(tr: Track, c: Clip | null) {
     const line = h('div', { class: 'drow' },
       h('button', { class: 'dlabel', title: t('drum.listen', padName(tr, r)), onclick: () => engine.pad(tr, r) }, h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', {}, padName(tr, r))));
     row.forEach((v, s) => line.append(h('button', {
-      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}`,
+      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}${s % 8 === 0 ? ' page' : ''}`,   // page : arrêt du glissé par 8 pas sur téléphone
       data: { r: String(r), s: String(s) }, 'aria-label': `${padName(tr, r)} ${s + 1}`, 'aria-pressed': String(!!v),
       tabindex: r === gridPos.r && s === gridPos.s ? '0' : '-1',
     })));
@@ -502,7 +502,7 @@ function pianoRoll(tr: Track, c: Clip) {
   if (selOwner !== c.id) { selNotes.clear(); selOwner = c.id; }
   const refreshSel = () => grid.querySelectorAll<HTMLElement>('.note').forEach(el => el.classList.toggle('sel', selNotes.has(c.notes![+el.dataset.i!])));
   const keys = h('div', { class: 'keys' });
-  const grid = h('div', { class: 'pr-grid ed-grid', style: `width:${W}px;height:${rows * RH}px;--sw:${SW}px;--rh:${RH}px;--gw:${G * SW}px` });
+  const grid = h('div', { class: 'pr-grid ed-grid', style: `width:${W}px;height:${rows * RH}px;--sw:${SW}px;--rh:${RH}px;--gw:${G * SW}px;--bs:${BAR};--bt:${BEAT}` });   // lignes de mesure et de temps selon la signature
   for (let p = PMAX; p >= PMIN; p--) {
     keys.append(h('button', {
       class: 'key' + (isBlack(p) ? ' black' : '') + (p % 12 === 0 ? ' c' : '') + (scaled && (p - P.key) % 12 === 0 ? ' root' : ''), tabIndex: -1, 'aria-label': noteName(p), data: { p: String(p) },

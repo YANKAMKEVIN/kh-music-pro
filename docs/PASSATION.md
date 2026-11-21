@@ -58,9 +58,9 @@ Principes à respecter :
 
 - Instruments enregistrés : une seule prise par note (les nuances sont imitées par un filtre, voir section 9), sources d’environ 3 secondes. Le réglage Notes longues prolonge les instruments compatibles par une boucle fondue ; les sons percussifs gardent leur décroissance naturelle.
 - Tempo : depuis la V17, un clip audio peut suivre le tempo (réglage « Suit le tempo », désactivé par défaut) ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
-- Signature : une seule pour tout le morceau, de 2/4 à 7/4.
+- Signature : une seule pour tout le morceau, de 2/4 à 7/4, ou 5/8, 6/8, 7/8, 9/8, 12/8 depuis la section 18. Pas de changement de signature en cours de morceau ; pas de regroupement libre des croches (7/8 compté en croches, pas en 2+2+3).
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
-- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac. Les réglages de l'instrument ne sont pas automatisables.
+- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac ; depuis la section 18, l'égaliseur et le seuil du compresseur de la tranche, le filtre et la résonance de l'instrument (lus au départ de chaque note). Restent non automatisables : saturation, lo-fi, trémolo, taux du compresseur, fréquence du médium, enveloppe et oscillateurs de l'instrument, instruments du Mac.
 - Installateurs non signés ; pas de mise à jour automatique.
 - Projets stockés dans le navigateur de chaque appareil, avec des versions (V17) ; le fichier `.khm` reste la seule sauvegarde hors de l'appareil. Version bureau Mac : vrais fichiers sur le disque (V17).
 - Performance (V17, mesurée) : le moteur audio du navigateur calcule sur un seul cœur ; un projet de 40 pistes et 120 effets le dépasse. Le gel de piste est la parade.
@@ -392,7 +392,7 @@ Non vérifié : le vrai débranchement et le vrai branchement d'écouteurs (le r
 Le prototype ne s'activait qu'avec `KH_NATIVE=1`. Il est maintenant dans l'application, pour le propriétaire comme pour un utilisateur de l'installateur macOS.
 
 Ce que voit l'utilisateur (version bureau sur Mac, module natif présent ; ailleurs, rien ne change) :
-- **🔧 Réglages audio → « ⚡ Moteur audio natif »** : interrupteur (rôle `switch`, clavier et doigt), **désactivé par défaut**, choix retenu sur l'appareil (`localStorage` `kh-native`). La bascule se fait sans redémarrer : `engine.useNative()` / `engine.stopNative()` (nouveau), l'entrée ouverte est rouverte sur le nouveau chemin. La ligne de latence indique le chemin (« chemin natif » ou « navigateur »). En cas d'échec : message dans les réglages (`role=alert`) et à l'écran, et retour automatique au navigateur sur la sortie choisie. Code : `src/ui/native.ts`, `src/ui/audio.ts`.
+- **🔧 Réglages audio → « ⚡ Moteur audio natif »** : interrupteur (rôle `switch`, clavier et doigt), **désactivé par défaut** (activé par défaut depuis la décision de Kevin du 21/11/2026, section 18), choix retenu sur l'appareil (`localStorage` `kh-native`). La bascule se fait sans redémarrer : `engine.useNative()` / `engine.stopNative()` (nouveau), l'entrée ouverte est rouverte sur le nouveau chemin. La ligne de latence indique le chemin (« chemin natif » ou « navigateur »). En cas d'échec : message dans les réglages (`role=alert`) et à l'écran, et retour automatique au navigateur sur la sortie choisie. Code : `src/ui/native.ts`, `src/ui/audio.ts`.
 - **Chaîne d'effets → groupe « 🍎 Plugins du Mac »** : les Audio Units d'effet installés (`list`, type `aufx`), triés, nom court (« Apple: AUDelay » → « Delay »). Une fois ajouté, un curseur par réglage, lu dans le plugin (nouvelle fonction native `params` : adresse, nom, bornes, valeur par défaut et actuelle, unité Core Audio), affiché avec son unité (Hz, dB, %, s…), bouton « Réglages d'origine ». Les réglages sont enregistrés dans le projet (`p`, par adresse), annulables, et appliqués au plugin en direct (`AuInstance.apply`) comme à l'export. Les plugins du Mac marchent **même avec le moteur natif désactivé** : ils n'ont besoin que du module. Projet ouvert ailleurs (site, Windows) : mention « Plugin du Mac indisponible ici », le son passe tel quel, sans message d'erreur. Fenêtres graphiques des plugins : non reprises (curseurs génériques seulement).
 
 Sécurité de la fenêtre (solution publiable) :
@@ -439,7 +439,7 @@ Reste possible : fenêtres graphiques des plugins (vue Cocoa dans une fenêtre n
 ### À valider par Kevin
 
 1. **Écouter un plugin du Mac** : version bureau, 🧩 d'une piste → « 🍎 Plugins du Mac » → « MatrixReverb », préréglage « Large Hall », puis « Lowpass » en bougeant « Cutoff Frequency ». Le son change-t-il comme attendu, sans craquement ?
-2. **Moteur audio natif** : 🔧 Réglages audio → « ⚡ Moteur audio natif » : l'activer, jouer, enregistrer une prise, brancher puis débrancher les EarPods, le désactiver. Désactivé par défaut : faut-il l'activer par défaut sur Mac ?
+2. **Moteur audio natif** : 🔧 Réglages audio → « ⚡ Moteur audio natif » : l'activer, jouer, enregistrer une prise, brancher puis débrancher les EarPods, le désactiver. Désactivé par défaut : faut-il l'activer par défaut sur Mac ? **Oui** (Kevin, 21/11/2026 ; fait, section 18).
 3. ~~Installateur~~ : fait, v0.16.0 installée depuis la release (15/11/2026).
 4. ~~Numéro de version~~ : 0.16.0, validé par le propriétaire.
 5. ~~Fusion dans `main`~~ : faite le 15/11/2026 (PR #2).
@@ -458,8 +458,8 @@ Profiter de la machine réelle pour lever la section 3 : écouter la démo et le
 
 - **Faites** : V1 à V13, V14a (chaînes d'effets, latence, plugins web), puis **0.16.0** (15/11/2026) = V14b + V15 à V15.2.
 - **En cours** : V14b (ci-dessus), étapes 0 à 5 faites les 12 et 13/11/2026 sur la branche `v14b-prototype-natif`, puis une séance d'écoute : craquements sur un Mac en usage normal. Recherche de la cause (13-14/11) : non reproduits sous charge artificielle ; le navigateur décroche aux mêmes épisodes. Seconde séance avec le témoin (14/11, à l'arrêt) : hoquets du Mac communs aux deux chemins, plus des rafales propres au natif (réserve de 8 ms trop juste). Réserve passée à 16 ms (75 ms d'aller-retour, 0 manque en 60 s) ; troisième séance : prise réussie, quatre défauts du mode natif trouvés et corrigés (suivi des écouteurs, micro des EarPods, débranchement, micro capté en permanence). Écouteurs vérifiés par le propriétaire (coupure courte) ; micro des EarPods ouvert, prise à écouter. **15/11 : intégré à l'interface de la version bureau** (réglage « moteur audio natif », plugins du Mac dans la chaîne d'effets, pont isolé, module dans l'installateur macOS) : **en ligne dans la version 0.16.0**, à écouter.
-- **En attente** : la phase de QA humaine du propriétaire (écoute, vrai matériel) ; décisions : batterie à plusieurs nuances (Virtuosity Drums, CC0) et moteur natif activé ou non par défaut sur Mac.
-- **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe, automation de tout paramètre, clips audio qui suivent le tempo, enregistrement de clips à la volée en mode Live, 6/8, installateurs signés, travail à plusieurs.
+- **En attente** : la phase de QA humaine du propriétaire (écoute, vrai matériel) ; décisions de Kevin du 21/11/2026 appliquées (section 18) : moteur natif activé par défaut sur Mac ; batterie à plusieurs nuances (Virtuosity Drums) déjà présente comme kit Studio.
+- **Idées non engagées** : chaînes d'effets remplaçant la tranche fixe (plan en section 18), installateurs signés, travail à plusieurs. Première tranche faite en section 18 (branche `claude/suite`) : automation de la tranche et de l'instrument, 6/8 et signatures composées, clips enregistrés à la volée en mode Live ; les clips audio qui suivent le tempo existaient depuis la V17.
 
 ## 7. Extension généraliste V15 (branche v15-banque-generaliste)
 
@@ -498,7 +498,7 @@ Travail fait sans le propriétaire, sur sa consigne de nuit : tout ce qui se vé
 2. **Les notes longues** sur cordes, orgue d'église, violon, chœur : garder une touche 10 s ; plus de pulsation ni de « hoquet » à chaque tour ?
 3. **Les nuances** au clavier MIDI (ou en baissant la force des notes dans le piano roll) sur piano, guitare nylon, cuivres : jouer doucement doit sonner feutré, pas étouffé. Trop ? Pas assez ? Le réglage « Nuances » va de 0 à 100 % (70 % par défaut).
 4. **Les registres** : une gamme du grave à l'aigu sur piano, flûte, vibraphone : plus de note qui ressort ou disparaît ?
-5. **Décision** : télécharger les nuances réelles de la batterie Virtuosity Drums (CC0, quelques mégaoctets) pour une batterie qui change vraiment de timbre selon la force ?
+5. **Décision** : télécharger les nuances réelles de la batterie Virtuosity Drums (CC0, quelques mégaoctets) pour une batterie qui change vraiment de timbre selon la force ? **Oui** : fait en V17.1 (kit Studio, section 14), confirmé par Kevin le 21/11/2026 (section 18).
 6. ~~Fusion~~ : faite avec la V14b, version 0.16.0 en ligne (15/11/2026).
 
 
@@ -704,8 +704,9 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 
 - **Correctifs de l'audit** (session d'audit, branche `v18-correctifs`, fusionnée dans `v18` en avance rapide à `0007113` avec l'accord du propriétaire) : D5 séquenceur au clavier (une seule case dans l'ordre de Tab, flèches, Début, Fin), D6 prise d'un seul tenant, D7 tempo au centième, D8 bandeau de sauvegarde impossible avec « Enregistrer en fichier », D9 vraie disposition du clavier, D10 accordeur confirmé sur 3 mesures sur 5, D11 export des projets de 12 pistes ou plus rendu par groupes en parallèle (42 s → 22,9 s pour le gros projet de 40 pistes). Cas AD01-AD08, en fin de `qa/run.cjs`. Détail, mesures et non-vérifié : `docs/correctifs-audit-2026-11.md`. Campagne 353/353 (session d'audit).
 
+- **Téléphone, défauts D2 à D4 de l'audit** (branche `v19-telephone`, partie de `v19` à `06d3aa6`, 19/11/2026) : Rétablir de nouveau visible (la plage de la boucle est masquée sur le bouton pour lui faire place, la bulle la garde) ; le morceau s'ouvre avec quatre mesures visibles (zoom de départ calculé dans `main.ts`) ; séquenceur par pages de 8 pas entiers, cases de 34 × 44 px, glissé arrêté pile sur les pas 9, 17… (`scroll-snap`, classe `page` tous les 8 pas dans `editor.ts`) ; tout ce qu'on touche fait au moins 44 px (pistes hautes de 104 px, colonne des pistes à 156 px, M/S/A, ⋯, ajout de pistes, menus, barre d'arrangement, éditeur, onglets). Exceptions assumées : les cases du séquenceur font 34 px de large (8 pas sur 375 px), le champ du tempo est petit mais tout le compteur autour le rend touchable. QA PH01-PH04 ; MB01 (colonne des pistes ≤ 160 px) et MB02 (glissé calculé d'après le zoom, couloir d'automation amené à l'écran) adaptés. L'accordeur repart de zéro à chaque ouverture (avant, l'aiguille glissait depuis la note de sa dernière utilisation ; AD06 échouait dans la campagne complète). Campagne complète 404/404. **Repris sur `claude/suite` le 21/11/2026** (la branche n'avait jamais été fusionnée) : adapté à UX15 (accueil du premier lancement, menus qui s'ouvrent en douceur ; l'accordeur remis à zéro y était déjà).
+
 ### Reste à faire (suite de la V18)
-- Défauts D2 à D4 de l'audit (`docs/audit-2026-11.md`, branche `audit-2026-11`) : bouton Rétablir absent sur téléphone ; le morceau n'affiche qu'une mesure et demie, le séquenceur 6 pas sur 16 ; cibles de moins de 32 px au doigt. D5 à D11 sont corrigés par une autre session sur `v18-correctifs`.
 - Ajout de pistes : toujours dans le coin des pistes (la maquette les plaçait dans la barre d'arrangement).
 
 ### Non vérifié
@@ -714,7 +715,7 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 
 ## 17. V19 — les manques prioritaires de l'audit (version 0.19.0, branche `v19`, 18/11/2026)
 
-Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.md`, branche `audit-2026-11`), un chantier à la fois. Branche `v19` partie de `v18` à `59bb5e4`. Pas de fusion dans `main` sans l'accord de Kevin.
+Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.md`), un chantier à la fois. Branche `v19` partie de `v18` à `59bb5e4`. Pas de fusion dans `main` sans l'accord de Kevin.
 
 ### Ce qui a été fait
 
@@ -795,6 +796,7 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
   - Bilan : 3 surcharges en 80 min au lieu d'environ 9 par heure, et la plupart des tenues sans aucun manque. Les surcharges ne disparaissent pas tout à fait (384 : origine non trouvée). **Réserve gardée à 768** ; 512 a tenu 20 min sans manque, à confirmer par une tenue d'une heure avant d'en faire le réglage des cartes externes. Pas vérifié à l'oreille.
 - Moteur natif : nouvelle option `inFirst` (première voie d'entrée captée, `io.mm` par la carte des voies de Core Audio) ; elle permettra aussi d'enregistrer les entrées 3-4 de la Scarlett (Yamaha). Pas encore de réglage dans l'interface.
 - `au-host rt` prend désormais la voie voulue par la carte des voies de Core Audio (AVAudioEngine ne donne qu'une voie d'entrée).
+- **Premier vrai enregistrement du piano (19/11/2026, version installée 0.19.1)** : DGX-670, prise PHONES/OUTPUT → câble en Y (jack stéréo 6,35 → 2 jacks mono) → entrées 1 et 2 de la Scarlett, INST éteint. Niveaux mesurés après réglage des gains : crêtes de −14 à −6 dBFS, rien au-dessus. Montage de Kevin : sortie du système (haut-parleurs du Mac), entrée Scarlett sur la piste audio, « Écoute » allumée (pas de casque), moteur natif éteint. Constaté par Kevin : vumètre et écoute OK, retard d'écoute non ressenti, son net, notes calées sur le métronome à la réécoute. Punch sur les mesures 6-7 d'une prise de 8 mesures : zone bien remplacée (constaté par Kevin). Craquements occasionnels attribués par Kevin à son ordinateur (déjà vus hors de KH), pas étudiés. Pas encore de câble USB du piano : MIDI et son par USB non essayés. Moteur natif avec entrée Scarlett et sortie Mac (deux cartes différentes) jamais essayé.
 
 ### Méthode de QA apprise
 
@@ -807,6 +809,78 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 - **Un vrai micro** pour le comping : les prises de test sont des sons de synthèse.
 - **Windows** et **un vrai téléphone**.
 - Mode Live : un clip à comping y joue la prise principale sur toute sa durée ; les fondus enchaînés ne s'y appliquent pas.
-- Fondu enchaîné sur un clip qui suit le tempo (« Suit le tempo ») : la montée du clip de droite s'applique, mais le clip de gauche ne se prolonge pas.
+- ~~Fondu enchaîné sur un clip qui suit le tempo : le clip de gauche ne se prolonge pas.~~ Corrigé en section 18 (CF05).
 - Instruments du Mac : seuls ceux d'Apple ont été essayés (aucun instrument tiers installé) ; un plugin lourd (Kontakt) recharge ses sons à chaque export (plusieurs secondes, beaucoup de mémoire) ; un AUv3 seul n'est pas ouvert (AUv2 seulement) ; pas d'aftertouch polyphonique par note (ramené à la pression de canal) ; la première note jouée pendant le chargement de l'instrument est perdue. La vraie fenêtre d'un instrument n'a pas été ouverte par l'essai automatique (elle s'afficherait sur l'écran) : c'est le même code que pour les effets, vérifié en V17. Module natif construit ici pour la puce Apple seulement (`KH_ARCHS=arm64`) ; la construction universelle se fait sur GitHub.
 - Compensation de latence des plugins du Mac sur un envoi qui va vers un bus où la piste ne sort pas : non calée (cas rare).
+
+## 18. Suite des éléments restants (branche `claude/suite`, 21/11/2026)
+
+Demande de Kevin : « mets en place tous ces éléments qui restent à faire ». Branche `claude/suite`, partie de `main` à `8345170` (QA 439/439). Un commit par élément ; pas de fusion ni de changement de version.
+
+### Tri des branches non fusionnées
+
+| Branche | Commit | Sur `main` ? | Suite donnée |
+|---|---|---|---|
+| `v19` | `9608859` docs : premier vrai enregistrement du DGX-670 par la Scarlett | Non | Repris dans la section 17 (Focusrite de Kevin), avec la précision du commit suivant. |
+| `v19` | `ae52403` docs : punch vérifié avec le vrai piano | Non | Repris (même ligne). |
+| `v19-telephone` | `5a9f9b8` téléphone, défauts D2 à D4 de l'audit | Non (seule la remise à zéro de l'accordeur y était, refaite par `claude/fix-qa`) | Repris, adapté à UX15 (PH01-PH04). |
+| `v19-telephone` | `7e5fe95` fusion de `v19` dans la branche | Oui (son contenu vient de `v19`, déjà dans `main`) | Rien à reprendre. |
+| `audit-2026-11` | `d613296` état des lieux (`docs/audit-2026-11.md`) | Non, alors que la passation et `docs/correctifs-audit-2026-11.md` y renvoient | Repris tel quel. |
+| `audit-2026-11` | `e8e5541` suite donnée aux défauts | Non | Repris (fin du même fichier). |
+
+Aucune branche n'est supprimée.
+
+### Automation de la tranche et de l'instrument (idée de la feuille de route « automation de tout paramètre »)
+
+- Existait déjà : six réglages de piste, tous les réglages des effets ajoutés et des plugins du Mac (V17).
+- Ajouté : clés `set:<champ>` (`SET_AUTO` dans `types.ts`, courbe de 0 à 1 sur la plage du réglage, comme les effets) : graves, médiums, aigus, seuil du compresseur (par rampes ; le gain de compensation suit le seuil comme au mixeur), filtre et résonance de l'instrument (`synthAt`, lus au départ de chaque note : une note tenue garde son timbre, choix assumé car chaque voix a son propre filtre). Groupes « Tranche » et « Instrument » dans la liste des réglages de la courbe ; pas de groupe Instrument pour la batterie ni pour un instrument du Mac. En mode Live, comme les autres courbes, rien n'est appliqué.
+- QA : AZ01-AZ04 (souris, export, écoute puis retour au réglage fixe, fichier, traductions) ; AX01 et AX04 adaptés aux nouveaux groupes.
+- Suite possible : saturation et lo-fi (courbes de distorsion, il faudrait les recalculer ou les mélanger), enveloppe de l'instrument, filtre suivi en continu sur les notes tenues (un filtre commun à la piste).
+
+### Clips audio qui suivent le tempo (idée de la feuille de route)
+
+- **Déjà fait** depuis la V17 (section 13, étape 5 : « Suit le tempo », WP01-WP07) ; l'idée était restée dans la liste des idées non engagées.
+- Ajouté : la dernière limite connue de cette fonction est levée. Un clip qui suit le tempo se prolonge maintenant pendant le fondu enchaîné avec le clip suivant, lu dans sa version étirée au tempo de sa fin (`graph.ts`, `fireClip`). QA CF05 (deux clips à 96 BPM d'origine joués à 120).
+- Restent : le mode Live joue au tempo de départ (pas de changement de tempo en Live), écho et trémolo calés sur le tempo de départ.
+
+### Mesures en 6/8 et signatures composées (idée de la feuille de route « 6/8 »)
+
+- Nouveau champ `Project.den` (4 ou 8 ; `migrate` met 4). `BAR` = numérateur × 16 / dénominateur ; nouveau `BEAT` (`types.ts`, `setBar(pas, temps)`) : noire (4 pas) en x/4, noire pointée (6 pas) en 6/8, 9/8, 12/8, croche (2 pas) en 5/8 et 7/8.
+- `BEAT` sert au métronome, au décompte (un clic par temps : 2 en 6/8 ; corrige au passage le décompte de 4 clics en 3/4, qui en fait maintenant 3), au compteur mesure.temps.double-croche, au témoin du temps, aux lignes de temps de l'arrangement et du piano roll (qui ignorait jusqu'ici la signature : lignes de mesure toutes les 16 pas même en 3/4), aux cases alternées du séquenceur, au calage « au temps » du mode Live.
+- Menu de la signature : valeurs « 2 » à « 7 » inchangées pour x/4 (anciens tests et anciens projets), « 5/8 » à « 12/8 » pour les croches. Export MIDI : évènement de signature (FF 58), y compris en x/4 ; pas lu à l'import.
+- QA : SG02-SG05 (souris, règle, compteur, séquenceur, métronome et décompte épiés, 12/8 à 5/8, boucle d'une mesure de 7/8 à l'écoute, MIDI, fichier projet, ancien projet).
+
+### Clips enregistrés à la volée en mode Live (idée de la feuille de route)
+
+- N'existait pas : le Live ne faisait que lancer des clips existants.
+- Ajouté : ligne « Prise » sous la grille du Live, un bouton ● par piste d'instrument ou de batterie (`live.ts`). La prise attend la mesure suivante (bouton qui clignote), coupe le clip de la piste, crée un clip vide de la longueur choisie (« Longueur d'une prise » dans le panneau de jeu : 1, 2, 4 ou 8 mesures, `Project.liveLen`, **2 par défaut**, validé par Kevin le 21/11/2026) placé après le dernier clip de la piste (il prend donc la ligne suivante de la grille et apparaît dans l'arrangement), y range les notes (calées sur la grille du piano roll) et les coups de pad joués au clavier, au MIDI ou à l'écran, puis le lance en boucle dès sa fin (`engine.recordLive`, `liveRec`, `liveRecPos` ; `input.ts`, `engine.onLiveRec`). Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps. Une note encore tenue à la fin va jusqu'au bout du clip et continue de sonner jusqu'au relâchement. Second appui : prise abandonnée. Arrêter pendant la prise : on garde ce qui a été joué (rien si rien n'a été joué). La fin de la prise est une entrée de l'historique (Annuler la retire).
+- QA : LR01-LR04 (souris, clavier, position des notes, batterie et nuance, boucle audible, arrangement, abandon, arrêt, fichier, ancien projet, traductions).
+- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub), pitch bend et molette pendant la prise, arpégiateur (ses notes ne sont pas rangées).
+
+### Chaînes d'effets qui remplacent la tranche fixe : plan (non réalisé)
+
+Verdict : **pas compatible sans une migration** de l'architecture actuelle, donc non fait dans cette suite. La tranche fixe (filtre, saturation, lo-fi, chorus, trémolo, égaliseur, compresseur) est câblée une fois pour toutes dans `makeTrack` (`graph.ts`) ; ses réglages sont des champs de la piste lus par le mixeur, l'assignation MIDI (`RANGES` dans `input.ts`), l'automation (`filter`, `chorus`, `set:eq*`, `set:compThr`), les modèles de mixage et les cas d'empreinte sonore. La chaîne d'effets est une liste dynamique (`syncInserts`) branchée entre `insIn` et `insOut`, après le compresseur. Les deux se rejoignent bien, mais remplacer l'une par l'autre touche tout ce qui lit ces champs.
+
+Plan proposé, en une ou deux sessions :
+1. Nouveaux types d'effet `filter`, `drive`, `lofi`, `chorus`, `trem`, `eq3`, `comp` dans `FX` et `buildInsert`, en reprenant le code de `makeTrack` (`djFreqs`, `driveCurve`, `crushCurve`, gain de compensation). Rien ne change pour les projets existants.
+2. Champ de piste `strip: 'fixe' | 'chaine'` (`migrate` : `'fixe'`). En `'chaine'`, `sync` branche `input` directement sur `insIn` (comme le débranchement des branches au neutre de la V17) ; la limite de huit effets ne compte pas ces sept-là.
+3. Action « Convertir la tranche en effets » (annulable) : les valeurs fixes deviennent des effets en tête de chaîne, dans l'ordre actuel du son, et les courbes `filter`, `chorus`, `set:*` sont renommées en `ins:<effet>:<réglage>`. Retour possible tant que l'ordre n'a pas changé.
+4. Mixeur : en mode chaîne, les sections égaliseur / compresseur / couleur montent les réglages de l'effet correspondant (ou disparaissent : **décision d'interface pour Kevin**) ; assignations MIDI redirigées vers l'effet.
+5. QA : rendu identique avant et après conversion (comparaison échantillon par échantillon, comme AD07), courbes conservées, annuler, fichier, assignation MIDI, gel, export par groupes.
+
+### Non faits, décisions et vérifications pour Kevin
+
+- **Non faits** : installateurs signés (il faut les certificats de Kevin : Apple Developer ID et notarisation, certificat de signature Windows ; à brancher ensuite dans `desktop.yml` par les secrets du dépôt) ; travail à plusieurs (il faut un serveur et des comptes : aucun backend dans ce projet, qui garde les morceaux dans l'appareil et le fichier `.khm`).
+- **Décisions de Kevin** : toutes tranchées le 21/11/2026, voir ci-dessous.
+- **Pour Kevin** : écoute (filtre et égaliseur automatisés, fondu enchaîné d'un clip qui suit le tempo, métronome et décompte en 6/8), vrai matériel (clavier MIDI pendant une prise à la volée du Live), vrai téléphone (cibles de 44 px, séquenceur par pages de 8 pas, Rétablir), accordeur avec un instrument ; sur le Mac (décisions du 21/11/2026) : premier lancement de la version bureau avec le moteur natif allumé tout seul (son, prise, EarPods branchés puis débranchés, puis « Désactivé » retenu au lancement suivant), menu ⋯ ouvert pendant une prise au clavier MIDI, kit Studio joué doucement puis fort.
+
+### Décisions de Kevin du 21/11/2026, appliquées sur `claude/suite`
+
+1. **Moteur audio natif activé par défaut sur Mac.** Version bureau macOS avec le module natif : au lancement, `initNative` (`src/ui/native.ts`) allume le moteur natif sauf si l'utilisateur l'a désactivé dans 🔧 Réglages audio (choix retenu : `localStorage` `kh-native` = `0`). Rien n'est retenu tant que l'utilisateur n'a pas touché au réglage. Pour le couper : l'interrupteur « ⚡ Moteur audio natif » (retenu), ou `KH_NATIVE=0` au lancement (module ignoré, comme avant). Repli automatique : module absent ou qui ne charge pas (le préchargement n'expose alors pas `window.khNative`) → chemin navigateur ; carte son refusée au démarrage → retour au navigateur sur la sortie choisie, sans message d'erreur à l'écran (allumage automatique), la raison restant affichée dans les Réglages audio. Site web, Windows et Linux : inchangés (le module n'est chargé que sur macOS, `electron/main.cjs`). Aide du réglage complétée en trois langues. QA : NAT07 (allumage par défaut, choix « Désactivé » retenu, échec au lancement, version web) ; NAT02 renommé (il part d'un moteur arrêté) ; `qa/packaged-mac.cjs` attend désormais le moteur natif allumé au premier lancement (ou, sans `--strict`, le repli sur le navigateur faute de carte son).
+2. **Batterie à plusieurs nuances « Virtuosity Drums »** : **déjà faite** depuis la V17.1 (section 14, commit `f0e705e`, 16/11/2026), la mention « non tranchée » de cette section était en retard. C'est le kit **Studio** des pistes Batterie (banque `studio_drums`), intégré comme les autres instruments SFZ : données audio seules téléchargées depuis la source officielle `sfzinstruments/virtuosity_drums`, révision figée `9f04cf9a734527edfbb0a4eee1f674e45bbf71bc`, converties en MP3 mono 128 kbit/s par `tools/build-expressive-banks.py`, empreintes dans `public/banks/expressive-provenance.json`, chargement à la demande par `banks.ts`. Sélection : 16 pads, 115 frappes ; 4 couches de vélocité pour 11 pads, 3 pour 4 pads, une seule pour le pad 13 (rangée 12, déjà exclue des nuances par EX04) ; jusqu'à 3 variantes alternées. Licence CC0 1.0 (`studio_drums/SOURCE-LICENSE`, `public/banks/CREDITS.txt`, README). Poids : 5,4 Mo (5 416 374 octets) déjà dans le dépôt ; **rien d'ajouté** par cette décision. QA ajoutée : VD01 (le kit se charge depuis le menu Kit ; sur la grosse caisse et la caisse claire, une frappe douce et une frappe forte jouent deux enregistrements différents, repérés au moment où le son démarre, et la forte sonne plus fort), en plus d'EX01-EX10.
+3. **Le menu ⋯ d'une piste reste ouvert au redessin.** Avant, tout redessin de l'arrangement (une note jouée pendant une prise, la lecture, un réglage) recréait les têtes de piste et refermait le menu. Désormais `renderArr` (`src/ui/arr.ts`, `keepTrackMenu`) rouvre le menu ⋯ de la même piste dans la nouvelle tête, à la même place, sans rejouer son déroulé (classe `kept`, `style.css`), avec le focus sur ⋯ ou sur la même action. Il se referme sur un clic dehors, Échap, un choix, ou un défilement des pistes qui l'éloignerait de son bouton (comportement de TH04 gardé). Piste supprimée entre-temps : rien à rouvrir. QA : TH07 (réglage, lecture, notes jouées en prise, arrêt, focus, Échap, clic dehors, choix) ; X08 adapté : il vérifiait la suppression pendant l'écriture d'une note en contournant la fermeture ; il vérifie maintenant que le menu reste ouvert après le redessin causé par la note, puis supprime la piste pendant l'écriture d'une autre note.
+4. **Prise à la volée en Live : 2 mesures par défaut.** Valeur actuelle confirmée par Kevin : **validée**, rien ne change dans le code (`Project.liveLen`, `migrate` met 2 ; LR01-LR04).
+
+### Vérifications de la suite
+
+- `npx tsc --noEmit` et `npm run build` sur Linux ; QA des cas touchés en local (navigateur Chromium de Playwright), puis campagne complète sur la branche poussée (GitHub Actions). Rien n'a été écouté ni essayé sur Mac, Windows, téléphone ou matériel réel.

@@ -6,7 +6,7 @@ import { AuInstance, AuInstrument, auBridge, auFromNorm, createAu, createAuInstr
 const isPlugin = (i: Insert) => (i.type === 'wam' || i.type === 'au') && !!i.url;
 const createPlugin = (ctx: BaseAudioContext, i: Insert, state?: unknown) =>
   i.type === 'au' ? createAu(ctx, i.url!, i.p) : createWam(ctx, i.url!, state);
-import { AT_CENTS, AT_GAIN, COMP_XFADE, CTL_KINDS, CTL_REST, Clip, CtlKind, FX, Insert, KITS, MOD_CENTS, Project, Pt, SynthParams, Track, autoAt, ctlAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, stepDur as sd, timeOf } from '../types';
+import { AT_CENTS, AT_GAIN, COMP_XFADE, CTL_KINDS, CTL_REST, Clip, CtlKind, FX, Insert, KITS, MOD_CENTS, Project, Pt, SynthParams, Track, autoAt, ctlAt, bpmAt, durAt, fxAutomatable, fxFromNorm, parseInsKey, setFromNorm, setKey, synthAt, stepDur as sd, timeOf } from '../types';
 import { stretchBuffer } from './stretch';
 
 export interface TrackNodes {
@@ -73,6 +73,11 @@ export class Mix {
   fxEcho?: GainNode; fxRev?: GainNode; fxDelay?: DelayNode; stutter?: AudioWorkletNode; private out: AudioNode;
   /** Vrai pendant la lecture de l'arrangement : les paramètres automatisés ne sont plus pilotés par `sync`. */
   autoOn = false;
+  /**
+   * Piste dont les contrôles joués (pitch bend, molette, aftertouch) sont en train d'être enregistrés : le geste en direct prime,
+   * le clip enregistré ne rejoue pas ses contrôles (ni leur retour au repos en fin de clip) par-dessus pendant la prise.
+   */
+  liveCtl = '';
   active = new Set<AudioScheduledSourceNode>();
   /** Repetitions are isolated per render and track; preview cannot alter export. */
   sampleTurns = new Map<string, number>();
@@ -365,10 +370,13 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
         if (n.outId !== undefined) n.pan.disconnect(n.outId ? this.tracks.get(n.outId)?.input ?? this.master : this.master);
         n.pan.connect(outId ? this.tracks.get(outId)!.input : this.master); n.outId = outId;
       }
-      this.set(n.mid.frequency, t.eqMidF); this.set(n.comp.threshold, t.compThr); this.set(n.comp.ratio, t.compRatio);
-      this.set(n.makeup.gain, Math.pow(10, -t.compThr * (1 - 1 / t.compRatio) * 0.2 / 20));
-      this.set(n.low.gain, t.eqLow); this.set(n.mid.gain, t.eqMid); this.set(n.high.gain, t.eqHigh);
+      this.set(n.mid.frequency, t.eqMidF); if (!(this.autoOn && t.auto?.[setKey('compThr')]?.length)) this.set(n.comp.threshold, t.compThr); this.set(n.comp.ratio, t.compRatio);
+      if (!(this.autoOn && t.auto?.[setKey('compThr')]?.length)) this.set(n.makeup.gain, Math.pow(10, -t.compThr * (1 - 1 / t.compRatio) * 0.2 / 20));
       const au = this.autoOn ? t.auto : undefined;
+      // Égaliseur et seuil automatisés (suite) : pendant la lecture, leur courbe les pilote (applyAuto).
+      if (!au?.[setKey('eqLow')]?.length) this.set(n.low.gain, t.eqLow);
+      if (!au?.[setKey('eqMid')]?.length) this.set(n.mid.gain, t.eqMid);
+      if (!au?.[setKey('eqHigh')]?.length) this.set(n.high.gain, t.eqHigh);
       if (!au?.filter?.length) { const [lp, hp] = djFreqs(t.filter); this.set(n.lp.frequency, lp); this.set(n.hp.frequency, hp); }
       const swept = !!t.auto?.filter?.length;
       this.set(n.lp.Q, swept || t.filter < 0 ? SWEEP_Q : REST_Q); this.set(n.hp.Q, swept || t.filter > 0 ? SWEEP_Q : REST_Q);
@@ -386,7 +394,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       }
       const tremOn = t.trem > 0;
       if (n.tremOn !== tremOn) { if (tremOn) n.tremLfo.connect(n.tremDepth); else if (n.tremOn !== undefined) n.tremLfo.disconnect(); n.tremOn = tremOn; }
-      const eqOn = !!(t.eqLow || t.eqMid || t.eqHigh), sig = `${eqOn}|${t.comp}`;
+      const eqOn = !!(t.eqLow || t.eqMid || t.eqHigh) || ['eqLow', 'eqMid', 'eqHigh'].some(k => t.auto?.[setKey(k)]?.length), sig = `${eqOn}|${t.comp}`;
       if (n.eqSig !== sig) {
         const dest = t.comp ? n.comp : n.insIn;
         n.trem.disconnect(); n.high.disconnect();
@@ -459,6 +467,11 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       ramp(n.auto.gain, a.vol, v => v); ramp(n.pan.pan, a.pan, v => v);
       ramp(n.lp.frequency, a.filter, v => djFreqs(v)[0]); ramp(n.hp.frequency, a.filter, v => djFreqs(v)[1]);
       ramp(n.revSend.gain, a.rev, v => v); ramp(n.dlySend.gain, a.dly, v => v); ramp(n.chWet.gain, a.chorus, v => v * 0.8);
+      // Tranche fixe (suite) : égaliseur et seuil du compresseur.
+      ramp(n.low.gain, a[setKey('eqLow')], v => setFromNorm('eqLow', v)); ramp(n.mid.gain, a[setKey('eqMid')], v => setFromNorm('eqMid', v));
+      ramp(n.high.gain, a[setKey('eqHigh')], v => setFromNorm('eqHigh', v)); ramp(n.comp.threshold, a[setKey('compThr')], v => setFromNorm('compThr', v));
+      // Le gain de compensation suit le seuil, comme quand on tourne le bouton du mixeur.
+      ramp(n.makeup.gain, a[setKey('compThr')], v => Math.pow(10, -setFromNorm('compThr', v) * (1 - 1 / tr.compRatio) * 0.2 / 20));
       // Réglages des effets (V17) : effets intégrés par rampes sur leurs paramètres audio, plugins du Mac à l'instant du pas.
       for (const ins of tr.inserts ?? []) {
         const keys = autoKeysOf(tr, ins.id), node = n.ins.get(ins.id);
@@ -493,7 +506,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     this.autoOn = false;
     const now = this.ctx.currentTime;
     for (const n of this.tracks.values()) {
-      for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain]) prm.cancelScheduledValues(now);
+      for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain, n.low.gain, n.mid.gain, n.high.gain, n.comp.threshold, n.makeup.gain]) prm.cancelScheduledValues(now);
       n.auto.gain.setTargetAtTime(1, now, 0.015); n.duck.gain.setTargetAtTime(1, now, 0.015);
       this.ctlRest(n, now, true);
     }
@@ -943,13 +956,17 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
     }
     // Fondus enchaînés (V19) : montée au début du morceau, et, à sa fin, quelques instants de plus en s'effaçant.
     const pc = c as Piece, reachesEnd = endRel >= c.len - 1e-9;
+    // Son encore disponible après la fin du clip, en secondes jouées. Un clip qui suit le tempo (suite, 21/11/2026)
+    // se prolonge lui aussi, dans la version étirée au tempo de sa fin.
+    const endBpm = warp ? (abs === undefined ? p.bpm : bpmAt(p, abs + remain - 1e-6)) : 0;
+    const left = warp ? (buf.duration - (c.offset + endRel * 15 / c.srcBpm!)) * c.srcBpm! / endBpm : buf.duration - off - remainSec;
     let out: AudioNode = g, extra = 0;
-    if ((pc.xIn && elapsedSec < pc.xIn) || (pc.xOut && reachesEnd && !warp)) {
+    if ((pc.xIn && elapsedSec < pc.xIn) || (pc.xOut && reachesEnd)) {
       const xg = mix.ctx.createGain(); g.connect(xg); out = xg;
       let busyUntil = t;
       if (pc.xIn && elapsedSec < pc.xIn) { const d = pc.xIn - elapsedSec; xg.gain.setValueCurveAtTime(eqPower(true, elapsedSec / pc.xIn), t, d); busyUntil = t + d; }
-      if (pc.xOut && reachesEnd && !warp) {
-        extra = Math.max(0, Math.min(pc.xOut, buf.duration - off - remainSec));
+      if (pc.xOut && reachesEnd) {
+        extra = Math.max(0, Math.min(pc.xOut, left));
         if (extra > 0.001 && t + remainSec >= busyUntil) xg.gain.setValueCurveAtTime(eqPower(false, 0), t + remainSec, extra); else extra = 0;
       }
     }
@@ -975,7 +992,7 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       if (so < buf.duration) {
         const first = i === 0, last = i === segs.length - 1, s2 = first ? src : mix.reg(mix.ctx.createBufferSource()), sg = mix.ctx.createGain();
         s2.buffer = sb;
-        const a = first ? tt : tt - X, b = last ? tt + d : tt + d + X;
+        const a = first ? tt : tt - X, b = last ? tt + d + extra : tt + d + X;   // extra : prolongé pendant le fondu enchaîné
         if (!first) { sg.gain.setValueAtTime(0, a); sg.gain.linearRampToValueAtTime(1, a + 2 * X); }
         if (!last) { sg.gain.setValueAtTime(1, b - 2 * X); sg.gain.linearRampToValueAtTime(0, b); }
         s2.connect(sg).connect(g);
@@ -993,11 +1010,13 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
     c.drums!.forEach((row, r) => { for (let i = i0; i < i1 && i < row.length; i++) if (row[i]) hitPad(mix, buffers, tr, n.input, r, t + (i / res - local) * dur, row[i]); });
   } else if (tr.synth) {
     // Une note démarre dans ce pas, éventuellement avec un décalage (triolet, triple-croche, placement libre).
+    // Coupure et résonance automatisées (suite) : lues au départ de la note, dans l'arrangement seulement.
+    const sp = mix.autoOn && abs !== undefined ? synthAt(tr, abs) : tr.synth;
     for (const nt of c.notes!) {
       const f = nt.s - local;
-      if (f >= 0 && f < 1) playNote(mix, n.input, tr.synth, nt.p, t + f * dur, Math.max(0.02, Math.min(nt.l, remain - f) * dur * 0.98), nt.v, buffers);
+      if (f >= 0 && f < 1) playNote(mix, n.input, sp, nt.p, t + f * dur, Math.max(0.02, Math.min(nt.l, remain - f) * dur * 0.98), nt.v, buffers);
     }
-    if (c.ctl) mix.schedCtl(n, c, local, t, dur, remain, startAudio);
+    if (c.ctl && mix.liveCtl !== tr.id) mix.schedCtl(n, c, local, t, dur, remain, startAudio);
   }
 }
 

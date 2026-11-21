@@ -2,7 +2,7 @@ import { addTrack, audioFiles, copyClip, deleteClip, deleteTrack, duplicateClip,
 import { engine } from '../audio/engine';
 import { t } from '../i18n';
 import { S, buffers, commit, emit, findTrack, revert, select } from '../store';
-import { AutoParam, BAR, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, srcStep } from '../types';
+import { AutoParam, BAR, BEAT, Clip, FX, Pt, Track, TrackType, autoMeta, compSlice, contentEnd, fxAutomatable, fxToNorm, insKey, newPatternClip, parseInsKey, parseSetKey, setKey, setToNorm, srcStep } from '../types';
 import { auToNorm, auName } from '../audio/au';
 import { liveWams, wamKey } from '../audio/wam';
 import { clamp, followDrag, h, popMenu, resettable } from './dom';
@@ -161,12 +161,25 @@ function insParams(tr: Track): { key: string; fx: string; label: string; cur: nu
   return out;
 }
 
+/**
+ * Tranche fixe et instrument (suite, 21/11/2026) : égaliseur et seuil du compresseur ; coupure et résonance du filtre
+ * pour un instrument joué par l'application (pas un instrument du Mac, qui a ses propres réglages).
+ */
+function setParams(tr: Track): { key: string; fx: string; label: string; cur: number }[] {
+  const strip = t('auto.strip'), out = (['eqLow', 'eqMid', 'eqHigh', 'compThr'] as const).map(k => ({
+    key: setKey(k), fx: strip, label: k === 'compThr' ? t('mix.compThr') : t(k === 'eqLow' ? 'mix.low' : k === 'eqMid' ? 'mix.mid' : 'mix.high'), cur: setToNorm(k, tr[k]),
+  }));
+  const sp = tr.type === 'synth' ? tr.synth : undefined;
+  if (sp && sp.engine !== 'au') for (const k of ['cutoff', 'reso'] as const) out.push({ key: setKey(k), fx: t('auto.inst'), label: t('syn.' + k), cur: setToNorm(k, sp[k]) });
+  return out;
+}
+
 function ahead(tr: Track) {
-  const prm = tr.autoShow ?? 'vol', extra = insParams(tr), groups = new Map<string, typeof extra>();
+  const prm = tr.autoShow ?? 'vol', extra = [...setParams(tr), ...insParams(tr)], groups = new Map<string, typeof extra>();
   for (const e of extra) groups.set(e.fx, [...(groups.get(e.fx) ?? []), e]);
   const dot = (k: string) => (tr.auto?.[k]?.length ? ' •' : '');
   // Un réglage d'effet dont l'effet a disparu (ou un plugin du Mac pas encore chargé) reste affiché tel quel.
-  const orphan = parseInsKey(prm) && !extra.some(e => e.key === prm);
+  const orphan = (parseInsKey(prm) || parseSetKey(prm)) && !extra.some(e => e.key === prm);
   const sel = h('select', { 'aria-label': `${t('auto.param')} – ${tr.name}`, title: t('auto.param'), data: { role: 'autoparam' } },
     h('optgroup', { label: t('auto.track') }, ...PARAMS.map(k => h('option', { value: k, selected: prm === k }, t('auto.' + k) + dot(k)))),
     ...[...groups].map(([fx, l]) => h('optgroup', { label: fx }, ...l.map(e => h('option', { value: e.key, selected: prm === e.key }, e.label + dot(e.key))))),
@@ -179,7 +192,7 @@ function ahead(tr: Track) {
 function alane(tr: Track, total: number) {
   const prm = tr.autoShow || 'vol', px = S.px, W = total * px;
   // Valeur de départ d'une courbe vide : le réglage actuel (effet), ou la valeur par défaut (piste).
-  const def = insParams(tr).find(e => e.key === prm)?.cur ?? autoMeta(prm).def;
+  const def = [...setParams(tr), ...insParams(tr)].find(e => e.key === prm)?.cur ?? autoMeta(prm).def;
   const el = h('div', { class: 'alane', data: { auto: tr.id }, style: `--c:${tr.color}` });
   const svg = document.createElementNS(NS, 'svg'), line = document.createElementNS(NS, 'polyline');
   svg.setAttribute('width', String(W)); svg.setAttribute('height', String(AH)); svg.append(line); el.append(svg);
@@ -347,11 +360,35 @@ function laneDown(e: PointerEvent, tr: Track) {
   stop = followDrag(e, mv, up, () => { clearTimeout(hold); revert(); if (target !== tr) emit(); });
 }
 
+/**
+ * Menu ⋯ ouvert pendant un redessin (note jouée en enregistrement, lecture, réglage…) : rouvert dans la nouvelle tête de la même
+ * piste, à la même place et sans animation, focus compris (décision de Kevin du 21/11/2026). Il ne se referme que sur un clic
+ * dehors, Échap, un choix, ou un défilement qui l'éloignerait de son bouton.
+ */
+function keepTrackMenu(root: HTMLElement): () => void {
+  const old = root.querySelector<HTMLDetailsElement>('.head details.tmenu[open]');
+  const id = old?.closest<HTMLElement>('.head')?.dataset.id;
+  if (!old || !id) return () => { };
+  const list = old.querySelector<HTMLElement>(':scope > .menu-list')!, a = document.activeElement;
+  const focus = a && old.contains(a) ? (a.tagName === 'SUMMARY' ? -1 : [...list.querySelectorAll('button')].indexOf(a as HTMLButtonElement)) : null;
+  const pos = { left: list.style.left, top: list.style.top, y: old.dataset.y };
+  return () => {
+    const d = [...root.querySelectorAll<HTMLElement>('.head')].find(e => e.dataset.id === id)?.querySelector<HTMLDetailsElement>('details.tmenu');
+    if (!d) return;
+    const l = d.querySelector<HTMLElement>(':scope > .menu-list')!;
+    d.classList.add('kept'); l.style.left = pos.left; l.style.top = pos.top; if (pos.y !== undefined) d.dataset.y = pos.y;
+    d.open = true;
+    if (focus === -1) d.querySelector<HTMLElement>('summary')!.focus({ preventScroll: true });
+    else if (focus !== null && focus >= 0) l.querySelectorAll<HTMLElement>('button')[focus]?.focus({ preventScroll: true });
+  };
+}
+
 export function renderArr() {
   const root = document.getElementById('arr')!, p = S.project, px = S.px;
+  const reopen = keepTrackMenu(root);
   const total = Math.max(contentEnd(p) + BAR * 8, BAR * 48);
   const heads = h('div', { class: 'heads' });
-  const lanes = h('div', { class: 'lanes', style: `width:${total * px}px;--bar:${BAR * px}px;--beat:${4 * px}px` });
+  const lanes = h('div', { class: 'lanes', style: `width:${total * px}px;--bar:${BAR * px}px;--beat:${BEAT * px}px` });
 
   heads.append(h('div', { class: 'corner' }, addBtn('drums'), addBtn('synth'), addBtn('audio')));
 
@@ -390,6 +427,7 @@ export function renderArr() {
   lanes.append(h('div', { id: 'recz' }), h('div', { id: 'ph' }));
 
   root.replaceChildren(h('div', { class: 'arr-inner' }, heads, lanes));
+  reopen();
 }
 
 // ---------- Prise en cours : piste enregistrée et zone déjà captée ----------

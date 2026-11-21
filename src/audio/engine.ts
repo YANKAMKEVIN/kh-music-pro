@@ -4,7 +4,7 @@ import { detectPitch } from './pitch';
 import { Mix, Voice, hitPad, playNote, scheduleLive, scheduleStep, setLiveInstOf, swingT, warmWarp } from './graph';
 import { S, buffers } from '../store';
 import { IoOptions, NativeIO, nativeName } from './native-io';
-import { BAR, CtlKind, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
+import { BAR, BEAT, CtlKind, liveQuant, Project, SynthParams, Track, contentEnd, durAt, stepDur, timeOf } from '../types';
 
 const LOOKAHEAD = 0.12;
 const WORKLET = `class KhRec extends AudioWorkletProcessor{process(i){const c=i[0];if(c&&c[0])this.port.postMessage({f:currentFrame,ch:c.map(x=>x.slice())});return true}}registerProcessor('kh-rec',KhRec)`;
@@ -25,6 +25,12 @@ class Engine {
   /** Mode Live : clip actif et clip en attente par piste. */
   liveActive = new Map<string, { clipId: string; since: number }>();
   liveQueued = new Map<string, string | null>();
+  /**
+   * Mode Live (suite, 21/11/2026) : prise d'un clip à la volée sur une piste. `from` = pas de départ (null tant qu'elle attend
+   * la mesure), `clipId` = clip vide créé au départ (onLiveRec), rempli par le jeu, puis lancé en boucle à la fin de la prise.
+   */
+  liveRec: { trackId: string; bars: number; from: number | null; clipId: string | null } | null = null;
+  onLiveRec: (phase: 'start' | 'end' | 'cancel' | 'stop', r: { trackId: string; bars: number; from: number | null; clipId: string | null }) => string | null = () => null;
   onLive: () => void = () => { };
   onRecEnd: (kind: 'audio' | 'midi') => void = () => { };
   onStop: () => void = () => { };
@@ -122,7 +128,7 @@ class Engine {
     this.t0 = this.nextTime = this.ctx.currentTime + 0.06 + preroll;
     this.pre = preroll;
     this.seg = true; this.marks = [];
-    if (preroll > 0) { const beat = preroll / 4; for (let i = 0; i < 4; i++) this.click(this.t0 - preroll + i * beat, i === 0); }
+    if (preroll > 0) { const n = Math.max(1, Math.round(BAR / BEAT)), beat = preroll / n; for (let i = 0; i < n; i++) this.click(this.t0 - preroll + i * beat, i === 0); }   // un clic par temps de la mesure (3 en 3/4, 2 en 6/8)
     this.timer = window.setInterval(() => this.tick(), 25);
     this.tick();
   }
@@ -130,6 +136,7 @@ class Engine {
   async play(preroll = 0) {
     if (this.playing) return;
     this.mode = 'arr'; this.playFrom = this.pos; this.nextStep = Math.floor(this.pos);
+    this.mix.liveCtl = this.recording === 'midi' ? this.recTrack : '';
     await this.start(preroll);
   }
 
@@ -142,7 +149,8 @@ class Engine {
     if (!this.playing) { this.pos = 0; return; }
     this.playing = false; clearInterval(this.timer);
     this.mix.stopAll(); this.voices.clear(); this.mix.clearAuto(S.project);
-    if (this.mode === 'live') { this.liveActive.clear(); this.liveQueued.clear(); this.liveSrc.clear(); this.mode = 'arr'; this.onLive(); }
+    this.mix.liveCtl = '';
+    if (this.mode === 'live') { const r = this.liveRec; this.liveRec = null; if (r?.clipId) this.onLiveRec('stop', r); this.liveActive.clear(); this.liveQueued.clear(); this.liveSrc.clear(); this.mode = 'arr'; this.onLive(); }
     else this.pos = this.playFrom;
     const kind = this.recording;
     if (kind) { this.recording = false; if (kind === 'audio') this.finishCapture(); this.onRecEnd(kind); }
@@ -170,7 +178,22 @@ class Engine {
     if (this.mode === 'live') {
       while (this.nextTime < this.ctx.currentTime + LOOKAHEAD) {
         const s = this.nextStep, t = this.nextTime;
-        if (s % (p.liveQ || BAR) === 0 && this.liveQueued.size) {
+        // Prise à la volée : elle part sur une mesure (la piste se tait), et à sa fin le clip enregistré tourne en boucle.
+        const r = this.liveRec;
+        if (r && r.from === null && s % BAR === 0) {
+          for (const src of this.liveSrc.get(r.trackId) ?? []) { try { src.stop(t); } catch { /* fini */ } }
+          this.liveSrc.delete(r.trackId); this.liveActive.delete(r.trackId); this.liveQueued.delete(r.trackId);
+          r.from = s; r.clipId = this.onLiveRec('start', r);
+          if (!r.clipId) this.liveRec = null;
+          setTimeout(() => this.onLive(), Math.max(0, (t - this.ctx.currentTime) * 1000));
+        } else if (r && r.from !== null && r.clipId && s >= r.from + r.bars * BAR) {
+          const id = r.clipId, from = r.from + r.bars * BAR;
+          this.liveRec = null; this.liveQueued.delete(r.trackId);
+          this.liveActive.set(r.trackId, { clipId: id, since: from });
+          // Les dernières notes jouées arrivent encore pendant l'avance de programmation : le projet est enregistré à l'heure de la fin.
+          setTimeout(() => { this.onLiveRec('end', r); this.onLive(); }, Math.max(0, (t - this.ctx.currentTime) * 1000) + 30);
+        }
+        if (s % liveQuant(p.liveQ) === 0 && this.liveQueued.size) {
           for (const [tid, cid] of this.liveQueued) {
             for (const src of this.liveSrc.get(tid) ?? []) { try { src.stop(t); } catch { /* fini */ } }
             this.liveSrc.delete(tid);
@@ -182,7 +205,7 @@ class Engine {
         scheduleLive(this.mix, p, buffers, s, swingT(p, s, t), this.liveActive, (tid, src) => {
           const l = this.liveSrc.get(tid) ?? []; l.push(src); this.liveSrc.set(tid, l.slice(-4));
         });
-        if (p.metronome && s % 4 === 0) this.click(t, s % BAR === 0);
+        if (p.metronome && s % BEAT === 0) this.click(t, s % BAR === 0);
         this.marks.push({ t, s }); this.nextStep++; this.nextTime += dur;
       }
       return;
@@ -202,7 +225,7 @@ class Engine {
       const limit = looping && this.nextStep < le ? le : null;
       this.mix.applyAuto(p, this.nextStep, this.nextTime); this.onStep(this.nextStep, this.nextTime);
       scheduleStep(this.mix, p, buffers, this.nextStep, swingT(p, this.nextStep, this.nextTime), this.seg, limit);
-      if (p.metronome && this.nextStep % 4 === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
+      if (p.metronome && this.nextStep % BEAT === 0) this.click(this.nextTime, this.nextStep % BAR === 0);
       this.marks.push({ t: this.nextTime, s: this.nextStep });
       this.nextTime += durAt(p, this.nextStep); this.nextStep++; this.seg = false; // le tempo peut changer d'un pas à l'autre
     }
@@ -226,6 +249,24 @@ class Engine {
       await this.start(0);
     } else this.liveQueued.set(trackId, clipId);
     this.onLive();
+  }
+
+  /** Mode Live : enregistre un clip de `bars` mesures sur la piste, à partir de la prochaine mesure ; un second appel abandonne la prise. */
+  async recordLive(trackId: string, bars: number) {
+    if (this.playing && this.mode === 'arr') this.stop();
+    const cur = this.liveRec;
+    if (cur) { this.liveRec = null; if (cur.clipId) this.onLiveRec('cancel', cur); if (cur.trackId === trackId) { this.onLive(); return; } }
+    this.liveRec = { trackId, bars: Math.max(1, Math.round(bars)), from: null, clipId: null };
+    if (!this.playing) { this.mode = 'live'; this.nextStep = 0; await this.start(0); }
+    this.onLive();
+  }
+  /** Position (en pas, dans le clip) d'une note jouée maintenant sur la piste, si une prise à la volée y est en cours. */
+  liveRecPos(trackId: string): { clipId: string; local: number } | null {
+    const r = this.liveRec;
+    if (!r || r.trackId !== trackId || r.from === null || !r.clipId || !this.playing || this.mode !== 'live') return null;
+    const local = this.currentStep() - r.from;
+    // Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps (on joue souvent un peu en avance).
+    return local >= -1 && local < r.bars * BAR ? { clipId: r.clipId, local: Math.max(0, local) } : null;
   }
 
   async launchScene(i: number) {
