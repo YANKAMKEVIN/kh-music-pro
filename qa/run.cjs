@@ -5987,6 +5987,49 @@ test('CE07', 'Chaînes d\'effets', 'Automation de réglages qui ne l’étaient 
   await page.keyboard.press('Space');
   expect(f1 < 600 && f2 > f1 * 1.5, `la fréquence du médium suit la courbe à l’écoute : ${Math.round(f1)} → ${Math.round(f2)} Hz`);
 });
+test('CE08', 'Chaînes d\'effets', 'Export identique à la lecture : à l’écoute, le filtre de la chaîne prend à chaque instant la valeur de la courbe que suit l’export ; export parallèle d’un gros projet en chaînes = rendu d’un seul tenant', async () => {
+  const { tid } = await sawSetup();
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; k.chain.stripToChain(t); t.auto[`ins:${t.inserts[0].id}:v`] = [{ s: 0, v: 0.1 }, { s: 63, v: 0.45 }]; k.commit(); });
+  const fid = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  await page.keyboard.press('Space'); await sleep(500);
+  const samples = [];
+  for (let i = 0; i < 12; i++) { samples.push(await page.evaluate(([id, fid]) => { const k = window.kh; return [k.engine.currentStep(), k.engine.mix.tracks.get(id).ins.get(fid).bq[0].frequency.value]; }, [tid, fid])); await sleep(250); }
+  await page.keyboard.press('Space');
+  // Valeur attendue : la courbe (0..1 sur −1..1), passée par la même conversion que l'export (filtre « DJ » : 20 kHz × 2^(8v) en passe-bas).
+  const bad = samples.filter(([s, f]) => { const v = -1 + 2 * (0.1 + (0.45 - 0.1) * Math.min(1, s / 63)), want = 20000 * Math.pow(2, v * 8); return Math.abs(Math.log2(f / want)) > 0.25; });
+  expect(samples.length === 12 && bad.length <= 1, 'à l’écoute, le filtre doit suivre la courbe de l’export : ' + JSON.stringify(bad.map(([s, f]) => [s.toFixed(1), Math.round(f)])));
+  const r = await S(async () => {
+    const k = window.kh, p = k.demoProject(), sy = p.tracks[1], sr = 44100;
+    const b = new AudioBuffer({ length: sr, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * 330 * i / sr) * 0.5; k.buffers.set('ce08-sine', b);
+    p.loop = false; p.tracks = []; p.buses = [];
+    for (let i = 0; i < 14; i++) { const tr = JSON.parse(JSON.stringify(sy)); Object.assign(tr, { id: 'ce8-' + i, name: 'C' + i, rev: 0, dly: 0.2, vol: 0.3, filter: (i % 3 - 1) * 0.3, eqHigh: 3, comp: i % 2 === 0, trem: 0.3, chorus: 0.2, auto: { filter: [{ s: 0, v: -0.5 }, { s: 30, v: 0.4 }] } });
+      if (i % 2) { tr.type = 'audio'; delete tr.synth; tr.clips = [0, 16, 32].map((st, j) => ({ id: `c8${i}-${j}`, name: 's', start: st + i % 4, len: 8, offset: 0, bufferId: 'ce08-sine', gain: 0.6 })); }
+      else tr.clips = [{ id: 'n8' + i, name: 'n', start: 0, len: 48, offset: 0, patLen: 16, notes: [{ p: 48 + i, s: 0, l: 3, v: 0.7 }, { p: 55 + i, s: 8, l: 2, v: 0.5 }] }];
+      k.chain.stripToChain(tr); p.tracks.push(tr); }
+    const groups = k.renderGroups(p, 8);
+    k.renderOpts.parallel = false; const one = await k.renderOffline(p);
+    k.renderOpts.parallel = true; const par = await k.renderOffline(p);
+    let diff = 0, peak = 0; for (let c = 0; c < 2; c++) { const x = one.getChannelData(c), y = par.getChannelData(c); for (let i = 0; i < x.length; i++) { diff = Math.max(diff, Math.abs(x[i] - y[i])); peak = Math.max(peak, Math.abs(x[i])); } }
+    return { groups: groups && groups.length, parts: k.lastRender.parts, diff, peak, cores: navigator.hardwareConcurrency };
+  });
+  expect(r.peak > 0.05, 'rendu vide');
+  if (r.cores >= 3) expect(r.parts >= 2, 'pas de rendu parallèle : ' + JSON.stringify(r));
+  expect(r.diff < 1e-3, 'le rendu parallèle diffère : écart maximal ' + r.diff);
+});
+test('CE09', 'Chaînes d\'effets', 'Gel d’une piste en chaîne d’effets : le son gelé est exactement celui de la même piste gelée en tranche fixe (chaîne et courbes comprises) ; dégeler rend la chaîne', async () => {
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; Object.assign(tr, { eqLow: 2, eqHigh: -2, drive: 0.2, chorus: 0.3, comp: true }); tr.auto = { filter: [{ s: 0, v: -0.7 }, { s: 32, v: 0.3 }] }; k.commit(); });
+  const frozenBuf = () => S(() => { const t = window.kh.S.project.tracks[2], b = window.kh.buffers.get(t.clips[0].bufferId); window.__ceFrz = window.__ceFrz || []; window.__ceFrz.push(b.getChannelData(0).slice()); return [t.frozenFrom === window.kh.S.project.tracks[1].id, b.length]; });
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const a = await frozenBuf();
+  await clickIn(await freezeBtn(1)); await sleep(150);
+  await S(() => { const k = window.kh; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const b = await frozenBuf();
+  const d = await S(() => { const [x, y] = window.__ceFrz; let m = 0, pk = 0; for (let i = 0; i < x.length; i++) { m = Math.max(m, Math.abs(x[i] - y[i])); pk = Math.max(pk, Math.abs(x[i])); } return [m, pk]; });
+  expect(a[0] && b[0] && a[1] === b[1] && d[1] > 0.05 && d[0] === 0, `le gel d’une tranche en chaîne doit donner le même son qu’en tranche fixe : écart ${d[0]}, crête ${d[1]}`);
+  await clickIn(await freezeBtn(1)); await sleep(150);
+  expect(await S(() => !window.kh.S.project.tracks[1].frozen && window.kh.S.project.tracks[1].strip === 'chaine' && window.kh.S.project.tracks[1].inserts.length === 5), 'dégel : la piste revient avec sa chaîne');
+});
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
