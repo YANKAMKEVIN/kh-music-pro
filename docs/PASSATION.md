@@ -60,7 +60,7 @@ Principes à respecter :
 - Tempo : depuis la V17, un clip audio peut suivre le tempo (réglage « Suit le tempo », désactivé par défaut) ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
 - Signature : une seule pour tout le morceau, de 2/4 à 7/4.
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus.
-- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac. Les réglages de l'instrument ne sont pas automatisables.
+- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac ; depuis la section 18, l'égaliseur et le seuil du compresseur de la tranche, le filtre et la résonance de l'instrument (lus au départ de chaque note). Restent non automatisables : saturation, lo-fi, trémolo, taux du compresseur, fréquence du médium, enveloppe et oscillateurs de l'instrument, instruments du Mac.
 - Installateurs non signés ; pas de mise à jour automatique.
 - Projets stockés dans le navigateur de chaque appareil, avec des versions (V17) ; le fichier `.khm` reste la seule sauvegarde hors de l'appareil. Version bureau Mac : vrais fichiers sur le disque (V17).
 - Performance (V17, mesurée) : le moteur audio du navigateur calcule sur un seul cœur ; un projet de 40 pistes et 120 effets le dépasse. Le gel de piste est la parade.
@@ -829,3 +829,10 @@ Demande de Kevin : « mets en place tous ces éléments qui restent à faire ».
 | `audit-2026-11` | `e8e5541` suite donnée aux défauts | Non | Repris (fin du même fichier). |
 
 Aucune branche n'est supprimée.
+
+### Automation de la tranche et de l'instrument (idée de la feuille de route « automation de tout paramètre »)
+
+- Existait déjà : six réglages de piste, tous les réglages des effets ajoutés et des plugins du Mac (V17).
+- Ajouté : clés `set:<champ>` (`SET_AUTO` dans `types.ts`, courbe de 0 à 1 sur la plage du réglage, comme les effets) : graves, médiums, aigus, seuil du compresseur (par rampes ; le gain de compensation suit le seuil comme au mixeur), filtre et résonance de l'instrument (`synthAt`, lus au départ de chaque note : une note tenue garde son timbre, choix assumé car chaque voix a son propre filtre). Groupes « Tranche » et « Instrument » dans la liste des réglages de la courbe ; pas de groupe Instrument pour la batterie ni pour un instrument du Mac. En mode Live, comme les autres courbes, rien n'est appliqué.
+- QA : AZ01-AZ04 (souris, export, écoute puis retour au réglage fixe, fichier, traductions) ; AX01 et AX04 adaptés aux nouveaux groupes.
+- Suite possible : saturation et lo-fi (courbes de distorsion, il faudrait les recalculer ou les mélanger), enveloppe de l'instrument, filtre suivi en continu sur les notes tenues (un filtre commun à la piste).

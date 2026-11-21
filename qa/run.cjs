@@ -3537,7 +3537,8 @@ async function autoPoint(lane, s, frac) { const b = await box(lane), px = await 
 test('AX01', 'Automation', 'Automatiser le réglage d’un effet : le choisir dans la liste, tracer la courbe à la souris ; l’export suit la courbe', async () => {
   const { key, lane } = await gainAutoSetup();
   const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.textContent)]));
-  expect(opts.length === 2 && opts[1][0] === '1. Gain' && opts[1][1].join() === 'Gain', `réglages proposés : ${JSON.stringify(opts)}`);
+  const g = opts.find(o => o[0] === '1. Gain');   // suite (21/11/2026) : la tranche et l'instrument ont aussi leurs groupes
+  expect(opts[0][0] === 'Piste' && g && g[1].join() === 'Gain', `réglages proposés : ${JSON.stringify(opts)}`);
   await page.selectOption('[data-role=autoparam]', key);
   await autoPoint(lane, 0, 0.1); await autoPoint(lane, 63, 0.9);
   const pts = await page.evaluate(k => window.kh.S.project.tracks[1].auto[k], key);
@@ -3578,7 +3579,7 @@ test('AX04', 'Automation', 'Plugin du Mac : ses réglages apparaissent dans la l
   await page.keyboard.press('Escape'); await tab('editor');
   const tid = await S(() => window.kh.S.project.tracks[1].id), ins = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
   await page.click(`.head[data-id="${tid}"] .autob`);
-  const labels = await page.$$eval('[data-role=autoparam] optgroup:nth-of-type(2) option', o => o.map(x => x.textContent));
+  const labels = await page.$$eval('[data-role=autoparam] optgroup:last-of-type option', o => o.map(x => x.textContent));   // après Piste, Tranche et Instrument
   expect(labels.join() === 'Cutoff Frequency,Resonance,Filter Type,Bypass', `réglages du plugin proposés : ${labels.join()}`);
   await page.selectOption('[data-role=autoparam]', `ins:${ins}:0`);
   const lane = `.alane[data-auto="${tid}"]`; await autoPoint(lane, 0, 0); await autoPoint(lane, 32, 1);
@@ -5429,6 +5430,81 @@ test('PH04', 'Téléphone', 'Au doigt, tout ce qu’on touche fait au moins 44 p
     expect(await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'la page déborde en largeur');
     const heads = await pg.$$eval('.head .tname', l => l.slice(0, 4).map(i => i.scrollWidth <= i.clientWidth + 1)); expect(heads.every(Boolean), 'noms de pistes coupés');
   } finally { await ctx2.close(); }
+});
+
+// ============ Suite (21/11/2026) : automation de la tranche et de l'instrument ============
+/** Piste 1 seule, synthé en dents de scie sans enveloppe de filtre, une note courte tous les 4 pas pendant 64 pas. */
+async function sawSetup() {
+  await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[1]; p.tracks.forEach((t, i) => { t.mute = i !== 1; }); p.loop = false; p.bpm = 120;
+    Object.assign(tr.synth = k.makeSynth('lead'), { engine: 'sub', wave: 'sawtooth', mix2: 0, cutoff: 1500, reso: 0.5, envAmt: 0, a: 0.003, d: 0.1, s: 0.9, r: 0.05 }); tr.rev = 0; tr.dly = 0; tr.inserts = []; tr.auto = {};
+    tr.clips = [{ id: 'scie', name: 'Scie', start: 0, len: 64, offset: 0, patLen: 64, notes: Array.from({ length: 16 }, (_, i) => ({ p: 48, s: i * 4, l: 3, v: 0.8 })) }]; k.S.selTrack = tr.id; k.commit(); });
+  const tid = await S(() => window.kh.S.project.tracks[1].id);
+  await tab('editor'); await page.click(`.head[data-id="${tid}"] .autob`);
+  return { tid, lane: `.alane[data-auto="${tid}"]` };
+}
+/** Brillance d'une fenêtre : énergie des différences d'un échantillon à l'autre rapportée au niveau. */
+const bright = w => w.map(x => x.hf / (x.l + 1e-9));
+test('AZ01', 'Automation', 'Filtre de l’instrument automatisé : choisi dans le groupe Instrument, tracé à la souris ; les notes s’ouvrent au fil de la courbe à l’export', async () => {
+  const { lane } = await sawSetup();
+  const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.value)]));
+  const strip = opts.find(o => o[0].startsWith('Tranche')), inst = opts.find(o => o[0].startsWith('Instrument'));
+  expect(strip && strip[1].join() === 'set:eqLow,set:eqMid,set:eqHigh,set:compThr', 'groupe Tranche : ' + JSON.stringify(opts));
+  expect(inst && inst[1].join() === 'set:cutoff,set:reso', 'groupe Instrument : ' + JSON.stringify(opts));
+  await page.selectOption('[data-role=autoparam]', 'set:cutoff');
+  // Sans point, la courbe part de la valeur actuelle du réglage (1 500 Hz).
+  const y0 = await page.$eval(`${lane} polyline`, e => +e.getAttribute('points').split(' ')[0].split(',')[1]);
+  near(y0, 8 + (1 - Math.log(1500 / 80) / Math.log(12000 / 80)) * 48, 1, 'hauteur de départ de la courbe (1 500 Hz)');
+  await autoPoint(lane, 0, 0); await autoPoint(lane, 63, 1);
+  const pts = await S(() => window.kh.S.project.tracks[1].auto['set:cutoff']);
+  expect(pts?.length === 2 && pts[0].v < 0.05 && pts[1].v > 0.95, 'courbe tracée : ' + JSON.stringify(pts));
+  const b = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]])));
+  expect(b[1] > b[0] * 1.6 && b[2] > b[1] * 1.3, `la brillance doit monter avec la courbe : ${b.map(v => v.toFixed(3)).join(' → ')}`);
+});
+test('AZ02', 'Automation', 'Une note garde le filtre de son départ ; à l’arrêt, une note jouée à la main reprend le réglage fixe', async () => {
+  await sawSetup();
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.clips[0].notes = [{ p: 48, s: 0, l: 30, v: 0.8 }]; tr.auto = { 'set:cutoff': [{ s: 0, v: 0 }, { s: 1, v: 1 }] }; k.commit(); });
+  const held = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.3, 0.6], [2.5, 2.8]])));
+  expect(Math.abs(held[1] / held[0] - 1) < 0.15, `la note tenue ne doit pas changer de timbre en route : ${held.map(v => v.toFixed(3)).join(' / ')}`);
+  const sp = await S(() => { const tr = window.kh.S.project.tracks[1]; return [tr.synth.cutoff, tr.auto['set:cutoff'].length]; });
+  expect(sp[0] === 1500 && sp[1] === 2, 'le réglage fixe et la courbe restent dans le projet : ' + sp);
+  // À l'écoute, la lecture suit la courbe et l'arrêt rend la main au réglage fixe.
+  await page.keyboard.press('Space'); await sleep(900); await page.keyboard.press('Space'); await sleep(200);
+  expect(await S(() => window.kh.S.project.tracks[1].synth.cutoff) === 1500, 'la lecture ne doit pas modifier le réglage de l’instrument');
+});
+test('AZ03', 'Automation', 'Aigus de l’égaliseur automatisés de −15 à +15 dB : export plus brillant à la fin ; à l’arrêt, l’égaliseur revient à son réglage', async () => {
+  const { lane, tid } = await sawSetup();
+  await S(() => { const k = window.kh; k.S.project.tracks[1].synth.cutoff = 12000; k.commit(); });   // filtre de l'instrument ouvert : des aigus à régler
+  await page.selectOption('[data-role=autoparam]', 'set:eqHigh'); await autoPoint(lane, 0, 0); await autoPoint(lane, 63, 1);
+  const b = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.05, 0.4], [7.55, 7.9]])));
+  expect(b[1] > b[0] * 2, `aigus automatisés : ${b.map(v => v.toFixed(3)).join(' → ')}`);
+  await page.keyboard.press('Space'); await sleep(1200);
+  const during = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).high.gain.value, tid);
+  await page.keyboard.press('Space'); await sleep(400);
+  const after = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).high.gain.value, tid);
+  expect(during < -5, `pendant la lecture, la courbe pilote les aigus (${during.toFixed(1)} dB)`);
+  expect(Math.abs(after) < 0.5, `à l’arrêt, les aigus reviennent au réglage du mixeur (0 dB, obtenu ${after.toFixed(1)})`);
+});
+test('AZ04', 'Automation', 'Seuil du compresseur automatisé ; la courbe voyage dans le fichier projet ; batterie sans groupe Instrument ; textes traduits', async () => {
+  const { lane } = await sawSetup();
+  await page.selectOption('[data-role=autoparam]', 'set:compThr'); await autoPoint(lane, 8, 0.5);
+  const [dl] = await Promise.all([page.waitForEvent('download'), menu('bSave')]); const f = path.join(TMP, 'auto-set.khm'); await dl.saveAs(f);
+  const saved = JSON.parse(fs.readFileSync(f, 'utf8')).project.tracks[1];
+  expect(saved.auto?.['set:compThr']?.length === 1 && saved.autoShow === 'set:compThr', 'courbe absente du fichier');
+  // Compresseur allumé, seuil de -60 à 0 dB : le son est plus fort quand le seuil remonte.
+  // Compresseur allumé, seuil de -60 à 0 dB (gain de compensation compris) : le début sonne comme le seuil fixe à -60 dB, la fin comme à 0 dB.
+  const w = await S(async () => { const k = window.kh, mk = (thr, auto) => { const p = JSON.parse(JSON.stringify(k.S.project)), tr = p.tracks[1]; tr.comp = true; tr.compThr = thr; tr.auto = auto; return window.qa.wins(p, [[0.05, 0.4], [7.55, 7.9]]); };
+    return { auto: await mk(-24, { 'set:compThr': [{ s: 0, v: 0 }, { s: 1, v: 0 }, { s: 62, v: 1 }] }), lo: await mk(-60, {}), hi: await mk(0, {}) }; });
+  expect(Math.abs(w.auto[0].l / w.lo[0].l - 1) < 0.15 && Math.abs(w.auto[1].l / w.hi[1].l - 1) < 0.15 && Math.abs(w.lo[0].l / w.hi[1].l - 1) > 0.3,
+    `seuil automatisé : ${w.auto.map(x => x.l.toFixed(4)).join(' → ')} ; fixe à -60 dB ${w.lo[0].l.toFixed(4)}, à 0 dB ${w.hi[1].l.toFixed(4)}`);
+  const did = await S(() => window.kh.S.project.tracks[0].id); await page.click(`.head[data-id="${did}"] .autob`);
+  const dg = await page.$$eval('.ahead', a => [...a[0].querySelectorAll('optgroup')].map(x => x.label));   // la batterie est la première piste
+  expect(dg.some(l => l.startsWith('Tranche')) && !dg.some(l => l.startsWith('Instrument')), 'groupes de la batterie : ' + dg.join(' | '));
+  for (const [l, a, b] of [['en', 'Channel strip', 'Instrument (at'], ['es', 'Canal', 'Instrumento']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    const labels = await page.$$eval('.ahead optgroup', g => g.map(x => x.label));
+    expect(labels.some(x => x.startsWith(a)) && labels.some(x => x.startsWith(b)), `groupes non traduits en ${l} : ${labels.join(' | ')}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
 });
 
 (async () => {

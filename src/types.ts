@@ -139,6 +139,36 @@ export function fxToNorm(type: string, k: string, x: number): number {
   const [, min, max] = d;
   return Math.min(1, Math.max(0, isLogRange(min, max) ? Math.log(x / min) / Math.log(max / min) : (x - min) / (max - min)));
 }
+/**
+ * Automation de la tranche fixe et de l'instrument (suite, 21/11/2026) : clé `set:<champ de la piste ou de l'instrument>`,
+ * courbe de 0 à 1 sur la plage du réglage, comme pour les effets. Égaliseur et seuil du compresseur par rampes ;
+ * coupure et résonance du filtre de l'instrument lues au départ de chaque note (une note tenue garde sa valeur).
+ */
+export const SET_AUTO: Record<string, { min: number; max: number; synth?: boolean }> = {
+  eqLow: { min: -15, max: 15 }, eqMid: { min: -15, max: 15 }, eqHigh: { min: -15, max: 15 }, compThr: { min: -60, max: 0 },
+  cutoff: { min: 80, max: 12000, synth: true }, reso: { min: 0, max: 18, synth: true },
+};
+export const setKey = (k: string) => `set:${k}`;
+export const parseSetKey = (key: string): string | null => { const m = /^set:(.+)$/.exec(key); return m && SET_AUTO[m[1]] ? m[1] : null; };
+export function setFromNorm(k: string, v: number): number {
+  const d = SET_AUTO[k]; if (!d) return v;
+  return isLogRange(d.min, d.max) ? d.min * Math.pow(d.max / d.min, v) : d.min + v * (d.max - d.min);
+}
+export function setToNorm(k: string, x: number): number {
+  const d = SET_AUTO[k]; if (!d) return 0;
+  return Math.min(1, Math.max(0, isLogRange(d.min, d.max) ? Math.log(x / d.min) / Math.log(d.max / d.min) : (x - d.min) / (d.max - d.min)));
+}
+/** Réglages de la piste automatisés par une courbe non vide (champs de SET_AUTO). */
+export const setAutoKeys = (tr: Track): string[] => Object.keys(SET_AUTO).filter(k => tr.auto?.[setKey(k)]?.length);
+/** Réglages de l'instrument au pas `s` : ceux de la piste, avec la coupure et la résonance prises sur leur courbe. */
+export function synthAt(tr: Track, s: number): SynthParams {
+  const sp = tr.synth!; let out = sp;
+  for (const k of ['cutoff', 'reso'] as const) {
+    const pts = tr.auto?.[setKey(k)];
+    if (pts?.length) { if (out === sp) out = { ...sp }; out[k] = setFromNorm(k, autoAt(pts, s)); }
+  }
+  return out;
+}
 /** Bornes d'une courbe : minimum et valeur par défaut (réglages de la piste) ; 0 à 1 pour un réglage d'effet. */
 export const autoMeta = (k: string): { min: number; def: number } => AUTO[k as AutoParam] ?? { min: 0, def: 0.5 };
 
