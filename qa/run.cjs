@@ -1403,7 +1403,19 @@ test('ML01', 'Assignation MIDI', 'Relier un bouton de contrôleur à un réglage
 
 // ============ V6 : MP3, clips, spectre ============
 test('MP01', 'Export', 'Exporter en MP3 : fichier valide, de la bonne durée, relisible et audible', async () => {
-  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), menu('bMp3')]); const f = path.join(TMP, 'demo.mp3'); await dl.saveAs(f);
+  // Juste après le rechargement de ML01 : les instruments du projet rouvert se chargent encore. On attend qu'ils soient prêts, puis
+  // on suit l'export par ce qu'il montre (barre d'avancement, messages) au lieu d'attendre le fichier deux minutes à l'aveugle :
+  // un export qui ne démarre pas, échoue ou ne finit pas est signalé tout de suite, avec ses messages.
+  await S(() => window.kh.engine.prepare());
+  await S(() => { window.__toasts = []; const t = document.getElementById('toast'); new MutationObserver(() => window.__toasts.push(t.firstChild?.textContent ?? '')).observe(t, { childList: true }); });
+  const job = () => S(() => ({ busy: window.kh.exportJob.busy, toasts: window.__toasts }));
+  const got = page.waitForEvent('download', { timeout: 120000 }); got.catch(() => { });
+  await menu('bMp3');
+  await until(async () => (await job()).busy || (await job()).toasts.length > 0, 'l’export MP3 ne démarre pas au clic', 5000);
+  const idle = until(async () => !(await job()).busy, 'l’export MP3 ne finit pas', 120000).then(() => Promise.race([got, sleep(3000).then(() => null)]));
+  const dl = await Promise.race([got, idle]);
+  expect(dl, `pas de fichier MP3 ; messages : ${JSON.stringify((await job()).toasts)}`);
+  const f = path.join(TMP, 'demo.mp3'); await dl.saveAs(f);
   const b = fs.readFileSync(f); expect(dl.suggestedFilename() === 'Demo.mp3', `nom ${dl.suggestedFilename()}`);
   expect(b[0] === 0xff && (b[1] & 0xe0) === 0xe0, `en-tête MP3 invalide (${b[0].toString(16)} ${b[1].toString(16)})`); near(b.length / 1000, 18.5 * 192 / 8, 30, 'taille (192 kbit/s)');
   const r = await page.evaluate(async bytes => { const a = await window.kh.engine.ctx.decodeAudioData(new Uint8Array(bytes).buffer), d = a.getChannelData(0); let e = 0, pk = 0; for (const v of d) e += v * v; for (let ch = 0; ch < a.numberOfChannels; ch++) for (const v of a.getChannelData(ch)) pk = Math.max(pk, Math.abs(v)); return { dur: a.duration, ch: a.numberOfChannels, rms: Math.sqrt(e / d.length), pk }; }, [...b]);
@@ -5793,6 +5805,7 @@ test('LR04', 'Live', 'Au clavier : ● se déclenche avec Entrée ; une piste au
     catch (e) { err = String(e.message || e).split('\n')[0]; }
     const errs = errors.slice(e0).filter(e => !(ignoreErr && ignoreErr.test(e))); ignoreErr = null;
     if (!err && errs.length) err = 'erreur console : ' + errs[0];
+    else if (err && errs.length) err += ' (console : ' + errs.slice(0, 3).join(' | ').slice(0, 400) + ')';   // pour comprendre un échec de GitHub sans le rejouer
     results.push({ ...c, ok: !err, err, ms: Date.now() - t0 });
     console.log(`${err ? 'ÉCHEC' : 'ok   '} ${c.id.padEnd(8)} ${c.title}${err ? '\n        → ' + err : ''}`);
     if (err) { try { await page.keyboard.press('Escape'); await page.setViewportSize({ width: 1500, height: 900 }); } catch { /* ignore */ } }
