@@ -951,13 +951,17 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
     }
     // Fondus enchaînés (V19) : montée au début du morceau, et, à sa fin, quelques instants de plus en s'effaçant.
     const pc = c as Piece, reachesEnd = endRel >= c.len - 1e-9;
+    // Son encore disponible après la fin du clip, en secondes jouées. Un clip qui suit le tempo (suite, 21/11/2026)
+    // se prolonge lui aussi, dans la version étirée au tempo de sa fin.
+    const endBpm = warp ? (abs === undefined ? p.bpm : bpmAt(p, abs + remain - 1e-6)) : 0;
+    const left = warp ? (buf.duration - (c.offset + endRel * 15 / c.srcBpm!)) * c.srcBpm! / endBpm : buf.duration - off - remainSec;
     let out: AudioNode = g, extra = 0;
-    if ((pc.xIn && elapsedSec < pc.xIn) || (pc.xOut && reachesEnd && !warp)) {
+    if ((pc.xIn && elapsedSec < pc.xIn) || (pc.xOut && reachesEnd)) {
       const xg = mix.ctx.createGain(); g.connect(xg); out = xg;
       let busyUntil = t;
       if (pc.xIn && elapsedSec < pc.xIn) { const d = pc.xIn - elapsedSec; xg.gain.setValueCurveAtTime(eqPower(true, elapsedSec / pc.xIn), t, d); busyUntil = t + d; }
-      if (pc.xOut && reachesEnd && !warp) {
-        extra = Math.max(0, Math.min(pc.xOut, buf.duration - off - remainSec));
+      if (pc.xOut && reachesEnd) {
+        extra = Math.max(0, Math.min(pc.xOut, left));
         if (extra > 0.001 && t + remainSec >= busyUntil) xg.gain.setValueCurveAtTime(eqPower(false, 0), t + remainSec, extra); else extra = 0;
       }
     }
@@ -983,7 +987,7 @@ function fireClip(mix: Mix, p: Project, buffers: Buffers, tr: Track, n: TrackNod
       if (so < buf.duration) {
         const first = i === 0, last = i === segs.length - 1, s2 = first ? src : mix.reg(mix.ctx.createBufferSource()), sg = mix.ctx.createGain();
         s2.buffer = sb;
-        const a = first ? tt : tt - X, b = last ? tt + d : tt + d + X;
+        const a = first ? tt : tt - X, b = last ? tt + d + extra : tt + d + X;   // extra : prolongé pendant le fondu enchaîné
         if (!first) { sg.gain.setValueAtTime(0, a); sg.gain.linearRampToValueAtTime(1, a + 2 * X); }
         if (!last) { sg.gain.setValueAtTime(1, b - 2 * X); sg.gain.linearRampToValueAtTime(0, b); }
         s2.connect(sg).connect(g);

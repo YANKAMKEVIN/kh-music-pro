@@ -809,7 +809,7 @@ Demande : combler la priorité 1 de la partie 3 de l'audit (`docs/audit-2026-11.
 - **Un vrai micro** pour le comping : les prises de test sont des sons de synthèse.
 - **Windows** et **un vrai téléphone**.
 - Mode Live : un clip à comping y joue la prise principale sur toute sa durée ; les fondus enchaînés ne s'y appliquent pas.
-- Fondu enchaîné sur un clip qui suit le tempo (« Suit le tempo ») : la montée du clip de droite s'applique, mais le clip de gauche ne se prolonge pas.
+- ~~Fondu enchaîné sur un clip qui suit le tempo : le clip de gauche ne se prolonge pas.~~ Corrigé en section 18 (CF05).
 - Instruments du Mac : seuls ceux d'Apple ont été essayés (aucun instrument tiers installé) ; un plugin lourd (Kontakt) recharge ses sons à chaque export (plusieurs secondes, beaucoup de mémoire) ; un AUv3 seul n'est pas ouvert (AUv2 seulement) ; pas d'aftertouch polyphonique par note (ramené à la pression de canal) ; la première note jouée pendant le chargement de l'instrument est perdue. La vraie fenêtre d'un instrument n'a pas été ouverte par l'essai automatique (elle s'afficherait sur l'écran) : c'est le même code que pour les effets, vérifié en V17. Module natif construit ici pour la puce Apple seulement (`KH_ARCHS=arm64`) ; la construction universelle se fait sur GitHub.
 - Compensation de latence des plugins du Mac sur un envoi qui va vers un bus où la piste ne sort pas : non calée (cas rare).
 
@@ -836,3 +836,9 @@ Aucune branche n'est supprimée.
 - Ajouté : clés `set:<champ>` (`SET_AUTO` dans `types.ts`, courbe de 0 à 1 sur la plage du réglage, comme les effets) : graves, médiums, aigus, seuil du compresseur (par rampes ; le gain de compensation suit le seuil comme au mixeur), filtre et résonance de l'instrument (`synthAt`, lus au départ de chaque note : une note tenue garde son timbre, choix assumé car chaque voix a son propre filtre). Groupes « Tranche » et « Instrument » dans la liste des réglages de la courbe ; pas de groupe Instrument pour la batterie ni pour un instrument du Mac. En mode Live, comme les autres courbes, rien n'est appliqué.
 - QA : AZ01-AZ04 (souris, export, écoute puis retour au réglage fixe, fichier, traductions) ; AX01 et AX04 adaptés aux nouveaux groupes.
 - Suite possible : saturation et lo-fi (courbes de distorsion, il faudrait les recalculer ou les mélanger), enveloppe de l'instrument, filtre suivi en continu sur les notes tenues (un filtre commun à la piste).
+
+### Clips audio qui suivent le tempo (idée de la feuille de route)
+
+- **Déjà fait** depuis la V17 (section 13, étape 5 : « Suit le tempo », WP01-WP07) ; l'idée était restée dans la liste des idées non engagées.
+- Ajouté : la dernière limite connue de cette fonction est levée. Un clip qui suit le tempo se prolonge maintenant pendant le fondu enchaîné avec le clip suivant, lu dans sa version étirée au tempo de sa fin (`graph.ts`, `fireClip`). QA CF05 (deux clips à 96 BPM d'origine joués à 120).
+- Restent : le mode Live joue au tempo de départ (pas de changement de tempo en Live), écho et trémolo calés sur le tempo de départ.

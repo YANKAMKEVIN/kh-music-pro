@@ -5507,6 +5507,18 @@ test('AZ04', 'Automation', 'Seuil du compresseur automatisé ; la courbe voyage 
   await page.evaluate(() => window.kh.setLang('fr'));
 });
 
+// ============ Suite (21/11/2026) : fondu enchaîné sur un clip qui suit le tempo ============
+test('CF05', 'Fondus enchaînés', 'Clips qui suivent le tempo (joués plus vite que leur tempo d’origine) : le premier continue en s’effaçant pendant le fondu enchaîné', async () => {
+  await twoClips();
+  await S(() => { const k = window.kh, cl = k.S.project.tracks.find(t => t.type === 'audio').clips; for (const c of cl) { c.warp = true; c.srcBpm = 96; } k.commit(); });
+  const before = await toneIn(330, 2.02, 2.1);
+  await S(() => { const k = window.kh; k.S.project.tracks.find(t => t.type === 'audio').clips[1].xfade = 2; k.commit(); });
+  const a1 = await toneIn(330, 2.02, 2.1), b1 = await toneIn(440, 2.02, 2.1), a2 = await toneIn(330, 2.3, 2.4), b2 = await toneIn(440, 2.3, 2.4);
+  expect(before < 0.02, 'sans fondu, le premier clip doit s’arrêter net : ' + before);
+  expect(a1 > 0.15 && b1 > 0.08, `pendant le fondu, les deux sons se mêlent : ${a1.toFixed(3)} / ${b1.toFixed(3)}`);
+  expect(a2 < 0.02 && b2 > 0.3, `après le fondu, seul le second reste : ${a2.toFixed(3)} / ${b2.toFixed(3)}`);
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
