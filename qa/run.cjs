@@ -5946,6 +5946,47 @@ test('CE03', 'Chaînes d\'effets', 'Interface : ajouter un étage de tranche dep
   const st = await S(async () => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; p.tracks[0].inserts.find(i => i.type === 'eq3').p.high = 12; const a = await window.qa.stats(p); p.tracks[0].inserts = p.tracks[0].inserts.filter(i => i.type !== 'eq3'); return [a.hf / a.rms, (await window.qa.stats(p)).hf / (await window.qa.stats(p)).rms]; });
   expect(st[0] > st[1] * 1.15, 'l’égaliseur de la chaîne doit s’entendre : ' + st.map(v => v.toFixed(3)));
 });
+test('CE06', 'Chaînes d\'effets', 'Automation : le filtre de la chaîne se choisit dans le groupe de l’effet et se trace à la souris ; export plus brillant au fil de la courbe ; à l’écoute la courbe pilote le filtre, puis l’arrêt rend le réglage', async () => {
+  const { lane, tid } = await sawSetup();
+  await S(() => { const k = window.kh; k.S.project.tracks[1].synth.cutoff = 12000; k.chain.stripToChain(k.S.project.tracks[1]); k.commit(); });
+  const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.value)]));
+  const fid = await S(() => window.kh.S.project.tracks[1].inserts[0].id);
+  expect(!opts.some(o => o[0].startsWith('Tranche')), 'pas de groupe Tranche pour une tranche en chaîne : ' + JSON.stringify(opts));
+  expect(!opts[0][1].includes('filter') && !opts[0][1].includes('chorus') && opts[0][1].includes('vol'), 'réglages de piste sans filtre ni chorus de tranche : ' + opts[0][1]);
+  const g = opts.find(o => o[0] === '1. Filtre'); expect(g && g[1].join() === `ins:${fid}:v`, 'groupe du filtre de la chaîne : ' + JSON.stringify(opts));
+  await page.selectOption('[data-role=autoparam]', `ins:${fid}:v`);
+  await autoPoint(lane, 0, 0.1); await autoPoint(lane, 63, 0.5);
+  const pts = await S(() => { const t = window.kh.S.project.tracks[1]; return t.auto[`ins:${t.inserts[0].id}:v`]; });
+  expect(pts?.length === 2 && Math.abs(pts[0].v - 0.1) < 0.03 && Math.abs(pts[1].v - 0.5) < 0.03, 'courbe tracée : ' + JSON.stringify(pts));
+  const b = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]])));
+  expect(b[1] > b[0] * 1.3 && b[2] > b[1] * 1.15, `la brillance doit monter avec la courbe : ${b.map(v => v.toFixed(3)).join(' → ')}`);
+  await page.keyboard.press('Space'); await sleep(1300);
+  const during = await page.evaluate(([id, fid]) => window.kh.engine.mix.tracks.get(id).ins.get(fid).bq[0].frequency.value, [tid, fid]);
+  await page.keyboard.press('Space'); await sleep(400);
+  const after = await page.evaluate(([id, fid]) => window.kh.engine.mix.tracks.get(id).ins.get(fid).bq[0].frequency.value, [tid, fid]);
+  expect(during < 5000, `pendant la lecture, la courbe ferme le filtre (${Math.round(during)} Hz)`);
+  expect(after > 15000, `à l’arrêt, le filtre revient à son réglage (ouvert, obtenu ${Math.round(after)} Hz)`);
+});
+test('CE07', 'Chaînes d\'effets', 'Automation de réglages qui ne l’étaient pas dans la tranche fixe : profondeur du trémolo (de rien à fond) et fréquence du médium ; saturation et lo-fi non proposés', async () => {
+  const { tid } = await sawSetup();
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1]; t.clips[0].notes = [{ p: 48, s: 0, l: 64, v: 0.8 }]; t.synth.cutoff = 6000; t.trem = 0.5; t.drive = 0.3; t.crush = 0.2; t.eqMid = 9; k.chain.stripToChain(t); k.commit(); });
+  const ins = await S(() => Object.fromEntries(window.kh.S.project.tracks[1].inserts.map(i => [i.type, i.id])));
+  const opts = await page.$$eval('[data-role=autoparam] option', o => o.map(x => x.value));
+  expect(opts.includes(`ins:${ins.trem}:depth`) && opts.includes(`ins:${ins.eq3}:freq`), 'profondeur du trémolo et fréquence du médium automatisables');
+  expect(!opts.includes(`ins:${ins.drive}:amt`) && !opts.includes(`ins:${ins.lofi}:amt`), 'saturation et lo-fi (courbes recalculées) ne sont pas automatisables');
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1], tr = t.inserts.find(i => i.type === 'trem'); t.auto[`ins:${tr.id}:depth`] = [{ s: 0, v: 0 }, { s: 8, v: 0 }, { s: 56, v: 1 }]; k.commit(); });
+  // Ondulation du volume : écart entre le plus fort et le plus faible des tranches de 40 ms, dans une fenêtre d'une seconde.
+  const wob = await S(async () => { const b = await window.kh.renderOffline(window.kh.S.project, false), d = b.getChannelData(0), sr = b.sampleRate, W = sr / 25;
+    const at = t0 => { const e = []; for (let s = Math.floor(t0 * sr); s < (t0 + 1) * sr; s += W) { let q = 0; for (let i = s; i < s + W; i++) q += d[i] * d[i]; e.push(Math.sqrt(q / W)); } return (Math.max(...e) - Math.min(...e)) / Math.max(...e); };
+    return [at(0.2), at(6.8)]; });
+  expect(wob[0] < 0.15 && wob[1] > 0.6, `le trémolo doit apparaître au fil de la courbe : ${wob.map(v => v.toFixed(2)).join(' → ')}`);
+  await S(() => { const k = window.kh, t = k.S.project.tracks[1], e = t.inserts.find(i => i.type === 'eq3'); t.auto = { [`ins:${e.id}:freq`]: [{ s: 0, v: 0 }, { s: 63, v: 1 }] }; k.commit(); });
+  await page.keyboard.press('Space'); await sleep(1300);
+  const f1 = await page.evaluate(([id, e]) => window.kh.engine.mix.tracks.get(id).ins.get(e).bq[1].frequency.value, [tid, ins.eq3]); await sleep(1500);
+  const f2 = await page.evaluate(([id, e]) => window.kh.engine.mix.tracks.get(id).ins.get(e).bq[1].frequency.value, [tid, ins.eq3]);
+  await page.keyboard.press('Space');
+  expect(f1 < 600 && f2 > f1 * 1.5, `la fréquence du médium suit la courbe à l’écoute : ${Math.round(f1)} → ${Math.round(f2)} Hz`);
+});
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
