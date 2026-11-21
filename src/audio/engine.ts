@@ -263,7 +263,8 @@ class Engine {
     const r = this.liveRec;
     if (!r || r.trackId !== trackId || r.from === null || !r.clipId || !this.playing || this.mode !== 'live') return null;
     const local = this.currentStep() - r.from;
-    return local >= -0.5 && local < r.bars * BAR ? { clipId: r.clipId, local: Math.max(0, local) } : null;
+    // Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps (on joue souvent un peu en avance).
+    return local >= -1 && local < r.bars * BAR ? { clipId: r.clipId, local: Math.max(0, local) } : null;
   }
 
   async launchScene(i: number) {

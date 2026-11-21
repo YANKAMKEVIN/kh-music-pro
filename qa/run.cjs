@@ -2588,6 +2588,7 @@ test('SB07', 'Navigateur de sons', 'Sur téléphone et en paysage, les filtres e
     await pg.tap(soundRow('r_drawbar') + ' [data-act=sound-favorite]');
     const fit = async () => pg.$eval('#sounds', d => { const r = d.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && d.scrollWidth <= d.clientWidth + 1; });
     expect(await fit(), 'fenêtre hors écran sur téléphone');
+    await pg.waitForTimeout(250);   // UX15 : la fenêtre s'ouvre en douceur (agrandissement), on mesure une fois posée
     const targets = await pg.$$eval('.sound-icon', es => es.map(e => { const r = e.getBoundingClientRect(); return r.width >= 44 && r.height >= 44; })); expect(targets.every(Boolean), 'cibles tactiles trop petites');
     await pg.screenshot({ path: path.join(__dirname, 'shots/v15.1-sounds-phone.png') });
     await pg.setViewportSize({ width: 844, height: 390 }); expect(await fit(), 'fenêtre hors écran en paysage');
@@ -5628,6 +5629,7 @@ test('LR03', 'Live', 'Un second appui abandonne la prise (rien n’est gardé, l
   expect(!(await page.$(`.lrec.on, .lrec.armed`)), 'bouton encore allumé');
   // Arrêter tout pendant une prise : ce qui a été joué est gardé (et annulable).
   await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await until(() => S(() => window.kh.engine.currentStep() >= window.kh.engine.liveRec.from + 0.5), 'la prise n’a pas commencé à l’écoute', 3000);
   await S(() => window.kh.noteOn(67)); await sleep(150); await S(() => window.kh.noteOff(67));
   await page.click('[data-act=stopall]'); await sleep(200);
   const tr = await S(() => window.kh.S.project.tracks[1]);
