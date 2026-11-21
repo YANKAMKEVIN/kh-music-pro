@@ -2038,7 +2038,7 @@ test('NAT01', 'Moteur natif', 'Sans module natif (site web, Windows, Linux) : ni
   await page.keyboard.press('Escape'); await tab('mixer'); await page.click('.strip >> nth=1 >> [data-act=rack]');
   expect(!(await page.$('[data-role=aulist]')), 'pas de groupe « Plugins du Mac » sans module natif');
 });
-test('NAT02', 'Moteur natif', 'Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu', async () => {
+test('NAT02', 'Moteur natif', 'Avec le module, moteur arrêté : réglage désactivé, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu', async () => {
   await S(() => { window.qa.fakeNative(); });
   await clickIn('#bAudio'); await page.waitForSelector(natSw);
   const b0 = await page.$eval(natSw, b => ({ role: b.getAttribute('role'), on: b.getAttribute('aria-checked'), txt: b.textContent, state: document.querySelector('[data-role=natstate]').textContent, help: document.querySelector('[data-role=native]').textContent }));
@@ -2112,6 +2112,31 @@ test('NAT06', 'Moteur natif', 'Horloge de Web Audio : sur une carte son externe,
     ['Mac sans haut-parleurs intégrés', 'sc', 'Scarlett'],
     ['Scarlett débranchée : le natif revient au système', '', '']];
   expect(JSON.stringify(r) === JSON.stringify(want), `horloges choisies :\n${JSON.stringify(r)}\nattendu :\n${JSON.stringify(want)}`);
+});
+test('NAT07', 'Moteur natif', 'Activé par défaut sur Mac (décision du 21/11/2026) : allumé au lancement sans choix retenu, « Désactivé » est retenu, un échec au lancement rend la main au navigateur sans message d\'erreur', async () => {
+  // Premier lancement : aucun choix retenu, le moteur natif s'allume tout seul, sans rien retenir.
+  const a = await S(async () => { window.qa.fakeNative(); const on = await window.kh.initNative(); const e = window.kh.engine; return { on, native: !!e.native, out: e.out === e.native?.sink, saved: localStorage.getItem('kh-native') }; });
+  expect(a.on && a.native && a.out && a.saved === null, `allumage par défaut : ${JSON.stringify(a)}`);
+  await clickIn('#bAudio'); await page.waitForSelector(natSw);
+  expect(await page.getAttribute(natSw, 'aria-checked') === 'true' && (await page.textContent('[data-role=latinfo]')).includes('chemin natif'), 'le réglage doit montrer le moteur natif actif');
+  expect((await page.textContent('[data-role=native]')).includes('Activé par défaut'), 'l\'aide doit dire que le moteur est activé par défaut');
+  // Le couper à l'écran : retenu, il ne se rallume plus au lancement suivant.
+  await page.click(natSw); await waitSw('false'); await page.keyboard.press('Escape');
+  const b = await S(async () => { const on = await window.kh.initNative(); return { on, native: !!window.kh.engine.native, saved: localStorage.getItem('kh-native') }; });
+  expect(!b.on && !b.native && b.saved === '0', `désactivé puis relancé : ${JSON.stringify(b)}`);
+  // Module présent mais carte son refusée au lancement : repli silencieux sur le navigateur, raison dans les réglages.
+  const c = await S(async () => {
+    localStorage.removeItem('kh-native'); window.qa.fakeNative({ failStart: true }); document.querySelector('#toast').textContent = '';
+    const on = await window.kh.initNative(); const e = window.kh.engine;
+    return { on, native: !!e.native, out: e.out === e.ctx.destination, saved: localStorage.getItem('kh-native'), toast: document.querySelector('#toast').textContent };
+  });
+  expect(!c.on && !c.native && c.out && c.saved === null && !c.toast.includes('carte son refusée'), `échec au lancement : ${JSON.stringify(c)}`);
+  await clickIn('#bAudio'); await page.waitForSelector('[data-role=naterr]');
+  expect((await page.textContent('[data-role=naterr]')).includes('carte son refusée'), 'la raison de l\'échec doit rester lisible dans les réglages');
+  await page.keyboard.press('Escape');
+  // Version web (aucun module) : rien ne s'allume.
+  const d = await S(async () => { delete window.khNative; localStorage.removeItem('kh-native'); const on = await window.kh.initNative(); return { on, native: !!window.kh.engine.native }; });
+  expect(!d.on && !d.native, `sans module : ${JSON.stringify(d)}`);
 });
 test('MAC01', 'Plugins du Mac', 'Les plugins d\'effet du Mac sont proposés dans la chaîne d\'effets, triés ; en ajouter un affiche ses réglages', async () => {
   await S(() => { window.qa.fakeNative(); });

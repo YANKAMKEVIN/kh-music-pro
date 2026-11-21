@@ -101,7 +101,7 @@ Vérifications musicales finales : à écouter par le propriétaire avec son Yam
 - **Chaîne d'effets** par tranche : écho, réverb, phaser, auto-pan, bande d'égaliseur, gain, à ajouter, ordonner et couper librement (jusqu'à huit).
 - **Plugins web** (Web Audio Modules) dans la chaîne d'effets, avec leur propre interface ; un plugin d'exemple est fourni. Un plugin venu d'un autre site demande un accord explicite.
 - **Plugins du Mac** (version bureau macOS) : les effets Audio Unit installés sur le Mac s'ajoutent à la chaîne d'effets, avec leurs réglages (fréquences sur une échelle logarithmique, listes de choix, interrupteurs) et leurs préréglages d'usine ; on les entend à l'écoute comme à l'export, et leur latence est compensée.
-- **Réglages audio** : choix de la sortie, latence affichée, décalage d'enregistrement réglable ou mesuré. Sur Mac, dans la version bureau : **moteur audio natif** (son par Core Audio, environ 74 ms aller-retour au lieu de 110 sur les haut-parleurs du Mac), désactivé par défaut. Avec une carte son externe (Focusrite…), le moteur natif a la carte pour lui seul : plus de craquements dus au navigateur (v0.19.1).
+- **Réglages audio** : choix de la sortie, latence affichée, décalage d'enregistrement réglable ou mesuré. Sur Mac, dans la version bureau : **moteur audio natif** (son par Core Audio, environ 74 ms aller-retour au lieu de 110 sur les haut-parleurs du Mac), **activé par défaut** depuis le 21/11/2026 quand le module natif est présent. Pour le couper : l'interrupteur des Réglages audio (choix retenu) ou `KH_NATIVE=0` au lancement ; s'il ne démarre pas, le son repasse tout seul par le navigateur. Site web, Windows et Linux : inchangés. Avec une carte son externe (Focusrite…), le moteur natif a la carte pour lui seul : plus de craquements dus au navigateur (v0.19.1).
 - **Tempo et mesure** : changements de tempo en cours de morceau (posés dans la règle, suivis à la lecture, à l'export et dans le MIDI), signature rythmique de 2/4 à 7/4, et depuis la suite du 21/11/2026 en croches : 6/8, 9/8 et 12/8 (temps d'une noire pointée : métronome, décompte, compteur, lignes de temps), 5/8 et 7/8 (temps d'une croche). La signature part dans le fichier MIDI.
 - **Mode Live** : calage du lancement à la mesure, au temps ou immédiat ; scènes lancées aux touches 1 à 9. Depuis la suite du 21/11/2026 : **clips enregistrés à la volée** (ligne « Prise » sous les clips : ● sur une piste d'instrument ou de batterie, la prise part à la mesure suivante, dure 1, 2, 4 ou 8 mesures, puis le clip tourne en boucle ; un second appui abandonne, Annuler la retire).
 - **Mixage avancé** : bus pour regrouper des pistes, bande médium à fréquence réglable avec courbe d'égaliseur visible, compresseur réglable (seuil, taux, réduction affichée), automation des envois de réverb et d'écho et du chorus.
@@ -176,7 +176,7 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 
 ## QA
 
-Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 456 cas).
+Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 457 cas).
 Le plus simple, serveur compris :
 
 ```bash

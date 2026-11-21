@@ -32,7 +32,7 @@ if (m) {
     return r;
   };
   contextBridge.exposeInMainWorld('khNative', {
-    /** KH_NATIVE=1 : les scripts de vérification démarrent le moteur natif sans passer par le réglage. */
+    /** KH_NATIVE=1 : les scripts de vérification démarrent le moteur natif même s'il a été désactivé dans le réglage. */
     forced: process.env.KH_NATIVE === '1',
     forget: key => { sabs.delete(String(key)); },
     list: () => m.list(),
