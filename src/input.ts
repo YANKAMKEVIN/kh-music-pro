@@ -225,20 +225,23 @@ export function ctlIn(k: CtlKind, value: number) {
   if (!tr || tr.type !== 'synth' || !Number.isFinite(value)) return;
   const v = Math.round(Math.max(k === 'pb' ? -1 : 0, Math.min(1, value)) * 1000) / 1000;
   engine.ctl(tr, k, v);
-  if (!isRec(tr)) return;
-  const { clip, local } = recSpot(tr, engine.currentStep()), s = Math.round(local * 1000) / 1000, last = ctlRec.get(k);
+  // Prise à la volée du Live : le clip ne joue pas encore, la courbe s'écrit tout de suite.
+  const live = isRec(tr) ? null : liveSpot(tr);
+  if (!isRec(tr) && !live) return;
+  const { clip, local } = live ?? recSpot(tr, engine.currentStep()), s = Math.round(local * 1000) / 1000, last = ctlRec.get(k);
   const same = last && last.clip === clip.id;
   // Courbe allégée : au plus un point par 1/32 de pas, sauf pour le retour au repos (une molette relâchée doit revenir à zéro exactement).
   if (same && last.v === v) return;
   if (same && s >= last.s && s - last.s < 1 / 32 && v !== CTL_REST[k]) return;
   const from = same && s > last.s && s - last.s < 4 ? last.s : s - 1e-6;
   ctlRec.set(k, { clip: clip.id, s, v });
-  later(() => {
+  const write = () => {
     const ctl = clip.ctl ??= {};
     // En repassant sur une zone déjà jouée (boucle), le nouveau geste remplace l'ancien.
     const pts = (ctl[k] ?? []).filter(p => !(p.s > from && p.s <= s));
     pts.push({ s, v }); pts.sort((a, b) => a.s - b.s); ctl[k] = pts;
-  });
+  };
+  if (live) { write(); emit(); } else later(write);
 }
 const bendOf = (lsb: number, msb: number) => { const x = ((msb << 7) | lsb) - 8192; return x / (x < 0 ? 8192 : 8191); };
 

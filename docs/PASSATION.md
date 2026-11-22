@@ -855,7 +855,7 @@ Aucune branche n'est supprimée.
 - N'existait pas : le Live ne faisait que lancer des clips existants.
 - Ajouté : ligne « Prise » sous la grille du Live, un bouton ● par piste d'instrument ou de batterie (`live.ts`). La prise attend la mesure suivante (bouton qui clignote), coupe le clip de la piste, crée un clip vide de la longueur choisie (« Longueur d'une prise » dans le panneau de jeu : 1, 2, 4 ou 8 mesures, `Project.liveLen`, **2 par défaut**, validé par Kevin le 21/11/2026) placé après le dernier clip de la piste (il prend donc la ligne suivante de la grille et apparaît dans l'arrangement), y range les notes (calées sur la grille du piano roll) et les coups de pad joués au clavier, au MIDI ou à l'écran, puis le lance en boucle dès sa fin (`engine.recordLive`, `liveRec`, `liveRecPos` ; `input.ts`, `engine.onLiveRec`). Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps. Une note encore tenue à la fin va jusqu'au bout du clip et continue de sonner jusqu'au relâchement. Second appui : prise abandonnée. Arrêter pendant la prise : on garde ce qui a été joué (rien si rien n'a été joué). La fin de la prise est une entrée de l'historique (Annuler la retire).
 - QA : LR01-LR04 (souris, clavier, position des notes, batterie et nuance, boucle audible, arrangement, abandon, arrêt, fichier, ancien projet, traductions).
-- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub), pitch bend et molette pendant la prise. ~~Arpégiateur (ses notes ne sont pas rangées).~~ Fait en section 20 (LR05).
+- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub). ~~Pitch bend et molette pendant la prise.~~ ~~Arpégiateur (ses notes ne sont pas rangées).~~ Faits en section 20 (LR05, LR06).
 
 ### Chaînes d'effets qui remplacent la tranche fixe : plan (réalisé depuis, voir section 19)
 
@@ -949,4 +949,10 @@ Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire san
 - Désormais (`input.ts`, `liveSpotAt`) : chaque note de l'arpège est rangée à l'instant où elle sonne, calée sur la grille du piano roll (ou sur le pas de l'arpège s'il est plus fin), longue d'un pas d'arpège, à la nuance de la touche ; chaque coup répété va dans la case la plus proche du motif, à la nuance des coups répétés (0,85). Comme pour les notes jouées, rien n'est rangé avant la double-croche qui précède le départ ni après la fin de la prise.
 - L'arpège du Live garde son horloge libre (il n'est pas calé sur la mesure du Live, comme avant) : ses notes sont donc aimantées sur la grille au rangement.
 - QA : LR05 (arpège montant à la noire sur deux touches : 3 à 5 notes alternées, une par noire, nuance gardée ; pad tenu avec répétition à la croche : coups rangés). LR05 échoue sans le correctif (aucune note rangée).
+
+### Pitch bend, molette et pression pendant une prise à la volée du Live
+
+- Avant : ces gestes (clavier MIDI ou molettes à l'écran) jouaient pendant une prise à la volée mais n'étaient écrits que dans un enregistrement de l'arrangement.
+- Désormais (`ctlIn`, `input.ts`) : ils sont écrits dans le clip de la prise, avec les mêmes règles que l'enregistrement (courbe allégée, retour au repos exact, un nouveau geste remplace l'ancien sur la même zone). Le clip ne jouant pas encore pendant la prise, l'écriture est immédiate. Le clip enregistré rejoue ensuite sa courbe en boucle, comme tout clip du Live.
+- QA : LR06 (note, montée du bend, molette à 90, retour du bend au centre : courbes gardées et dans le clip). LR06 échoue sans le correctif (courbe vide).
 

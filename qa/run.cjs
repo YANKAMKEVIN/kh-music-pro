@@ -5859,6 +5859,28 @@ test('LR05', 'Live', 'Arpégiateur et répétition de notes pendant une prise à
   await page.click('[data-act=stopall]');
 });
 
+test('LR06', 'Live', 'Pitch bend et molette joués pendant une prise à la volée : la courbe est gardée dans le clip, retour au centre compris', async () => {
+  const tid = await liveRecSetup('2');
+  await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 1), 'position', 3000);
+  await S(async () => {
+    const k = window.kh, w = ms => new Promise(r => setTimeout(r, ms));
+    k.onMidi([0x90, 69, 100]); await w(150);
+    for (let i = 1; i <= 8; i++) { const x = Math.round(8192 + 8191 * i / 8); k.onMidi([0xe0, x & 0x7f, x >> 7]); await w(20); }
+    k.onMidi([0xb0, 1, 90]); await w(300);
+    for (let i = 7; i >= 0; i--) { const x = Math.round(8192 + 8191 * i / 8); k.onMidi([0xe0, x & 0x7f, x >> 7]); await w(20); }
+    await w(100); k.onMidi([0x80, 69, 0]);
+  });
+  await until(async () => !(await takeState()), 'la prise ne se termine pas', 5000); await sleep(150);
+  const c = await S(() => { const tr = window.kh.S.project.tracks[1]; return tr.clips[tr.clips.length - 1]; });
+  const pb = c.ctl?.pb ?? [], mod = c.ctl?.mod ?? [];
+  expect(c.notes.length === 1 && c.notes[0].p === 69, 'note de la prise : ' + JSON.stringify(c.notes));
+  expect(pb.length >= 4 && Math.max(...pb.map(p => p.v)) > 0.99 && pb[pb.length - 1].v === 0, 'courbe de bend : ' + JSON.stringify(pb));
+  expect(pb.every((p, i) => p.s >= 0 && p.s < 32 && (!i || p.s >= pb[i - 1].s)), 'points de bend hors du clip ou désordonnés');
+  expect(mod.length >= 1 && Math.abs(mod[mod.length - 1].v - 90 / 127) < 0.01, 'molette de modulation : ' + JSON.stringify(mod));
+  await page.click('[data-act=stopall]');
+});
+
 // ============ Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ============
 /**
  * Projet de mesure des chaînes : trois synthés (les sept étages réglés ; courbes de filtre, de chorus, de graves et de seuil
