@@ -707,7 +707,7 @@ Demande du propriétaire : refonte ciblée de l'interface, en commençant par la
 - **Téléphone, défauts D2 à D4 de l'audit** (branche `v19-telephone`, partie de `v19` à `06d3aa6`, 19/11/2026) : Rétablir de nouveau visible (la plage de la boucle est masquée sur le bouton pour lui faire place, la bulle la garde) ; le morceau s'ouvre avec quatre mesures visibles (zoom de départ calculé dans `main.ts`) ; séquenceur par pages de 8 pas entiers, cases de 34 × 44 px, glissé arrêté pile sur les pas 9, 17… (`scroll-snap`, classe `page` tous les 8 pas dans `editor.ts`) ; tout ce qu'on touche fait au moins 44 px (pistes hautes de 104 px, colonne des pistes à 156 px, M/S/A, ⋯, ajout de pistes, menus, barre d'arrangement, éditeur, onglets). Exceptions assumées : les cases du séquenceur font 34 px de large (8 pas sur 375 px), le champ du tempo est petit mais tout le compteur autour le rend touchable. QA PH01-PH04 ; MB01 (colonne des pistes ≤ 160 px) et MB02 (glissé calculé d'après le zoom, couloir d'automation amené à l'écran) adaptés. L'accordeur repart de zéro à chaque ouverture (avant, l'aiguille glissait depuis la note de sa dernière utilisation ; AD06 échouait dans la campagne complète). Campagne complète 404/404. **Repris sur `claude/suite` le 21/11/2026** (la branche n'avait jamais été fusionnée) : adapté à UX15 (accueil du premier lancement, menus qui s'ouvrent en douceur ; l'accordeur remis à zéro y était déjà).
 
 ### Reste à faire (suite de la V18)
-- Ajout de pistes : toujours dans le coin des pistes (la maquette les plaçait dans la barre d'arrangement).
+- ~~Ajout de pistes : toujours dans le coin des pistes (la maquette les plaçait dans la barre d'arrangement).~~ Fait le 22/11/2026 (section 21, TB08).
 
 ### Non vérifié
 - Un vrai téléphone et un vrai lecteur d'écran (testé dans un navigateur qui simule le tactile).
@@ -975,4 +975,15 @@ Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire san
 - Avant : l'export MIDI écrivait la signature (section 18) mais l'import l'ignorait ; un fichier en 6/8 arrivait dans un projet en 4/4.
 - Désormais (`importMidi`, `files.ts`) : la signature du début du fichier (FF 58 au premier instant ; les changements en cours de morceau restent ignorés, faute de signatures multiples) est lue si l'application la connaît (2/4 à 7/4, 5/8, 6/8, 7/8, 9/8, 12/8). Comme le tempo, elle n'est reprise que par un projet vide (`importMidiFile`) ; les clips importés se comptent alors dans ses mesures. Un projet déjà commencé garde sa signature. Une seule entrée d'annulation pour l'import.
 - QA : SG06 (projet commencé en 4/4 inchangé ; projet vide passé en 6/8 avec le menu à jour, clip de 24 pas, Annuler ; 12/8 et 7/4 lus ; 11/8 ignoré).
+
+## 21. Décisions de Kevin du 22/11/2026 (branche `claude/decisions-6`)
+
+Branche partie de `main` à `9a70e01` (suite 3 fusionnée). Pas de fusion ni de changement de version (0.19.1).
+
+### Bouton d'ajout de pistes dans la barre d'arrangement (fait)
+
+- Décision : l'ajout de pistes va dans la barre d'arrangement, comme sur la maquette validée de la V18 (section 16). La maquette elle-même n'est pas dans le dépôt : la passation disait seulement qu'elle plaçait l'ajout de pistes dans la barre d'arrangement, sans le laisser dans le coin des pistes. Il a donc été **retiré du coin des pistes**, qui affiche désormais « Pistes » (en trois langues) au-dessus des têtes.
+- Même action qu'avant : les trois mêmes boutons ＋ Batterie, ＋ Instrument, ＋ Audio (mêmes icônes, mêmes bulles, même `data-add`, `addBtn` de `arr.ts` réutilisé par `top.ts`), regroupés au début de la barre d'arrangement (groupe nommé « Ajouter une piste » pour les lecteurs d'écran), séparés de la grille par un trait. Sur téléphone, seuls le ＋ et l'icône restent visibles (comme avant dans le coin), cibles de 44 px ; la barre défile de côté si besoin.
+- La visite guidée éclaire ces boutons à l'étape « Pistes » (texte inchangé : « Ajoutez ici… »).
+- QA : TB08 (ordre de la barre, trois types, groupe nommé, coin sans bouton, ajout d'un instrument par le nouveau bouton, Annuler, ajout d'une batterie au doigt sur téléphone, pas de débordement) ; UX13a adapté (icônes des boutons d'ajout cherchées dans la barre d'arrangement). A01, N-fr/en/es, PH04 et TR01 utilisaient des sélecteurs qui suivent les boutons (inchangés).
 

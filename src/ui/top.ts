@@ -10,6 +10,7 @@ import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
 import { icon } from './icons';
 import { SIGS } from '../types';
+import { addBtn } from './arr';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -157,9 +158,10 @@ export function buildTop(onLang: () => void) {
       take),
     more);
 
-  // Barre d'arrangement (V18), juste au-dessus des pistes : grille, zoom, tempo, repères, notes.
+  // Barre d'arrangement (V18), juste au-dessus des pistes : ajout de pistes (comme la maquette), grille, zoom, tempo, repères, notes.
   $('abar').setAttribute('aria-label', t('abar.label'));
   $('abar').replaceChildren(
+    h('div', { class: 'grp addtr', role: 'group', 'aria-label': t('abar.addTracks') }, addBtn('drums'), addBtn('synth'), addBtn('audio')),
     h('label', { class: 'mini-in', title: t('top.gridTip') }, t('top.grid'), snap),
     b('bZoomOut', 'icon', '−', t('top.zoomOut'), () => zoom(1 / 1.3)), b('bZoomIn', 'icon', '＋', t('top.zoomIn'), () => zoom(1.3)),
     b('bTempoAdd', 'pill', '♩＋', t('tempo.add'), addTempo),

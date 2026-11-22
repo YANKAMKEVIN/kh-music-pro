@@ -83,6 +83,8 @@ small { color: var(--dim); font-size: 10px; letter-spacing: .08em; text-transfor
 #abar::-webkit-scrollbar { display: none; }
 #abar > * { flex: none; }
 #abar .pill, #abar .icon, #abar select { height: 32px; }
+#abar .addtr { gap: 4px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--line); }
+#abar .add { flex: none; height: 32px; padding: 0 8px; font-size: 12px; }
 @media (max-width: 1500px) { .bname { display: none; } }
 select option { background: #121831; }
 .danger:hover { border-color: var(--rec) !important; color: var(--rec); }
@@ -94,7 +96,8 @@ main { display: grid; grid-template-rows: 1fr clamp(300px, 46vh, 470px); min-hei
 .arr-inner { display: flex; min-width: max-content; min-height: 100%; }
 .heads { position: sticky; left: 0; z-index: 6; width: var(--headw); flex: none; background: rgba(9, 13, 28, .96); border-right: 1px solid var(--line); }
 .corner, .ruler { height: 36px; position: sticky; top: 0; z-index: 5; background: rgba(12, 17, 36, .97); border-bottom: 1px solid var(--line); }
-.corner { display: flex; gap: 4px; padding: 4px 6px; z-index: 7; }
+.corner { display: flex; align-items: center; gap: 4px; padding: 4px 10px; z-index: 7; }
+.corner .clbl { color: var(--dim); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; font-weight: 700; }
 .add { flex: 1 1 auto; border-radius: 8px; border: 1px dashed rgba(255, 255, 255, .22); background: transparent; font-size: 10.5px; padding: 0 3px; white-space: nowrap; overflow: hidden; }
 .add span { margin-left: 3px; color: var(--dim); }
 .add:hover { border-color: var(--a1); background: rgba(34, 211, 238, .1); }
@@ -384,7 +387,7 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
   .tbtn { width: 44px; height: 44px; } .tbtn.play { width: 50px; height: 50px; }
   .display { gap: 10px; padding: 4px 8px; } .display span, .display input { min-width: 52px; width: 52px; font-size: 15px; }
   .head { padding: 5px 2px 5px 10px; } .head .tvol, .head .ticon { display: none; } .head .tname { padding: 0 2px; height: 44px; font-size: 12.5px; letter-spacing: -.01em; }
-  .corner .add span { display: none; }
+  #abar .add span { display: none; }
   .ahead .albl { display: none; }
   main { grid-template-rows: 1fr 54vh; }
   #tabs button { padding: 0 14px; }
@@ -400,9 +403,9 @@ dialog form { display: flex; justify-content: flex-end; margin-top: 14px; }
   .pact { display: none; } /* au doigt, les réglages d'un pad passent par la liste à côté des pads */
   /* V18 (audit D4) : au doigt, au moins 44 px pour tout ce qu'on touche */
   :root { --th: 104px; }
-  .pill, .icon, select, #top summary, #abar .pill, #abar .icon, #abar select, .ebar button, .ebar select, .seg, .head .mini, .tmenu > summary.tmore, .corner .add, #tabs button { min-height: 44px; min-width: 44px; }
+  .pill, .icon, select, #top summary, #abar .pill, #abar .icon, #abar select, .ebar button, .ebar select, .seg, .head .mini, .tmenu > summary.tmore, #abar .add, #tabs button { min-height: 44px; min-width: 44px; }
   .head .hrow { gap: 5px; } .head .mini { min-width: 44px; }
-  .corner, .ruler { height: 52px; } .corner { align-items: center; } .corner .add { padding: 0 6px; }
+  .corner, .ruler { height: 52px; } .corner { align-items: center; } #abar .add { padding: 0 6px; }
   .menu-list button, .menu-list .pill { min-height: 44px; }
   /* V18 (audit D3) : séquenceur par pages de 8 pas, glissées au doigt ; cases de 44 px de haut */
   .grp.play #bMetro, .grp.play #bLoop { min-width: 44px; }

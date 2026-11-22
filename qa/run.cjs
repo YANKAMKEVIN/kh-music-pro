@@ -3992,6 +3992,31 @@ test('TB07', 'Barre du haut', 'Nouveaux menus et bulles traduits en anglais et e
 
 
 // ============ Correctifs de l'audit de novembre 2026 (docs/audit-2026-11.md) ============
+test('TB08', 'Barre du haut', 'Ajout de pistes dans la barre d’arrangement (maquette V18) : les trois boutons y sont, devant la grille, et ajoutent la piste choisie ; le coin des pistes n’en a plus ; au doigt aussi', async () => {
+  const order = await page.$$eval('#abar > *', els => els.map(e => e.matches('.addtr') ? 'add' : e.querySelector('#snap') ? 'snap' : e.id || e.tagName));
+  expect(order[0] === 'add' && order[1] === 'snap', 'les boutons d’ajout doivent ouvrir la barre d’arrangement : ' + order.join(','));
+  expect((await page.$$eval('#abar .addtr .add', l => l.map(e => e.dataset.add).join())) === 'drums,synth,audio', 'les trois types de piste');
+  expect(await page.getAttribute('#abar .addtr', 'role') === 'group' && !!(await page.getAttribute('#abar .addtr', 'aria-label')), 'groupe sans nom accessible');
+  expect(!(await page.$('.corner .add')) && !(await page.$('.corner button')), 'le coin des pistes ne doit plus avoir de bouton d’ajout');
+  expect((await page.textContent('.corner')).trim() === 'Pistes', 'le coin des pistes affiche « Pistes »');
+  expect((await page.getAttribute('#abar [data-add=synth]', 'title')).includes('Instrument'), 'bulle du bouton');
+  const n = (await proj()).tracks.length;
+  await page.click('#abar [data-add=synth]');
+  await until(async () => (await proj()).tracks.length === n + 1, 'le bouton de la barre d’arrangement n’ajoute pas de piste', 3000);
+  const p = await proj(); expect(p.tracks[p.tracks.length - 1].type === 'synth', 'type de la piste ajoutée : ' + p.tracks[p.tracks.length - 1].type);
+  expect(await page.$$eval('.head', l => l.length) === n + 1, 'la nouvelle piste n’apparaît pas dans les têtes');
+  await page.keyboard.press('Control+z'); await until(async () => (await proj()).tracks.length === n, 'Annuler doit retirer la piste ajoutée', 3000);
+  const ctx2 = await phoneCtx();
+  try {
+    const pg = await phonePage(ctx2);
+    const m = await pg.evaluate(() => document.querySelectorAll('#abar .add').length); expect(m === 3, 'au doigt, boutons d’ajout absents : ' + m);
+    const k = await pg.evaluate(() => window.kh.S.project.tracks.length);
+    await pg.tap('#abar [data-add=drums]'); await pg.waitForTimeout(200);
+    const after = await pg.evaluate(() => window.kh.S.project.tracks.map(t => t.type));
+    expect(after.length === k + 1 && after[after.length - 1] === 'drums', 'au doigt, la batterie n’est pas ajoutée');
+    expect(await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'la page déborde en largeur');
+  } finally { await ctx2.close(); }
+});
 test('AD01', 'Correctifs audit', 'Séquenceur au clavier : une seule case atteinte par Tab, les flèches, Début et Fin passent d’une case à l’autre, Entrée allume, le focus survit au redessin', async () => {
   const cells = await page.$$eval('.dgrid .cell', els => ({ n: els.length, tab: els.filter(e => e.tabIndex === 0).length }));
   expect(cells.n === 256 && cells.tab === 1, `cases atteignables par Tab : ${cells.tab} sur ${cells.n}`);
@@ -5489,7 +5514,7 @@ test('UX13a', 'Interface', 'Icônes dessinées : les types de piste ont le même
   expect(head.map(x => x.ico).join() === 'drums,synth,synth,synth,audio', 'icônes des têtes de piste : ' + JSON.stringify(head.map(x => x.ico)));
   expect(head.every(x => x.txt === '' && x.hidden === 'true' && x.stroke === 'currentColor' && x.title), 'icône mal faite : ' + JSON.stringify(head[0]));
   expect(new Set(head.map(x => x.color)).size >= 3, 'les icônes doivent prendre la couleur de leur piste : ' + head.map(x => x.color));
-  expect((await page.$$eval('.corner .add svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,audio', 'boutons d’ajout de piste');
+  expect((await page.$$eval('#abar .add svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,audio', 'boutons d’ajout de piste');
   expect(await page.$eval('.ebar strong svg.ico', e => e.dataset.ico) === 'drums' && !emoji.test(await page.textContent('.ebar strong')), 'titre de l’éditeur');
   await tab('mixer');
   expect((await page.$$eval('.mixer > .strip[data-id] .sname svg.ico', l => l.map(e => e.dataset.ico).join())) === 'drums,synth,synth,synth,audio', 'noms des tranches');

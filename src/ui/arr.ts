@@ -93,7 +93,8 @@ export function drawFades(g: CanvasRenderingContext2D, c: Clip, w: number, hgt: 
 // ---------- Rendu ----------
 const TRACK_H = 84;
 
-function addBtn(type: TrackType) {
+/** Bouton d'ajout d'une piste d'un type : rangés dans la barre d'arrangement (V18, maquette ; décision de Kevin du 22/11). */
+export function addBtn(type: TrackType) {
   return h('button', { class: 'add', data: { add: type }, title: t('track.add', t('type.' + type)), onclick: () => addTrack(type) }, '＋ ', typeIcon(type, 16), h('span', {}, t('type.' + type)));
 }
 
@@ -407,7 +408,7 @@ export function renderArr() {
   const heads = h('div', { class: 'heads' });
   const lanes = h('div', { class: 'lanes', style: `width:${total * px}px;--bar:${BAR * px}px;--beat:${BEAT * px}px` });
 
-  heads.append(h('div', { class: 'corner' }, addBtn('drums'), addBtn('synth'), addBtn('audio')));
+  heads.append(h('div', { class: 'corner' }, h('span', { class: 'clbl' }, t('arr.tracks'))));
 
   const ruler = h('div', { class: 'ruler', title: t('hint.ruler') });
   const every = BAR * px >= 44 ? 1 : BAR * px >= 22 ? 2 : 4;
