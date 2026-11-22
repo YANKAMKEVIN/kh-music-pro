@@ -918,7 +918,7 @@ CE01-CE10 (migration et identité, sans perte et retour, ajout/retrait/déplacem
 
 ### Constat en passant (non corrigé)
 
-- Le gel d'une piste rend son son à travers le volume général et le limiteur du général, puis la piste gelée repasse par eux : un morceau gelé sonne environ 0,9 dB plus bas avec le général à 90 % (FZ01 tolère 1 dB), davantage sur une piste forte qui touche le limiteur. Correction possible : rendre le gel sans la chaîne du général (`renderPart(…, stem = true)`, général à 100 %). Hors du sujet des chaînes, donc laissé tel quel.
+- ~~Le gel d'une piste rend son son à travers le volume général et le limiteur du général, puis la piste gelée repasse par eux : un morceau gelé sonne environ 0,9 dB plus bas avec le général à 90 % (FZ01 tolère 1 dB), davantage sur une piste forte qui touche le limiteur.~~ Corrigé en section 20 (FZ06).
 
 ### À valider par Kevin
 
@@ -932,4 +932,14 @@ CE01-CE10 (migration et identité, sans perte et retour, ajout/retrait/déplacem
 - Une conversion **pendant la lecture** : les nouveaux effets partent de leurs valeurs de départ et rejoignent leurs réglages en 15 ms environ ; un petit souffle ou clic est possible à ce moment-là.
 - Le glisser-déposer des effets au doigt sur un vrai téléphone ou une tablette.
 - Le trémolo automatisé de rien à fond, et la fréquence du médium balayée, sur un vrai son.
+
+## 20. Suite 3 (branche `claude/suite-3`, 22/11/2026)
+
+Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire sans lui. Branche `claude/suite-3`, partie de `main` à `43ed207`. Un commit par élément ; pas de fusion ni de changement de version (0.19.1).
+
+### Gel d'une piste au bon niveau
+
+- Défaut constaté en section 19 : le rendu du gel passait par le volume général, son filtre, son égaliseur, sa largeur et son limiteur, puis la piste gelée y repassait. Un morceau gelé sonnait donc plus bas (0,9 dB avec le général à 90 %, bien plus avec un général bas ou un égaliseur du général poussé).
+- Corrigé : le rendu du gel s'arrête avant le général (`renderOffline(…, { stem: true })`, général à 100 %, comme les rendus par groupes de l'export parallèle). Changer ensuite le général change la piste gelée comme l'originale.
+- QA : FZ06 (général à 50 %, égaliseur, filtre et largeur du général réglés : écart sous 0,3 dB avant et après le gel ; puis général changé : gelé et dégelé sonnent pareil). FZ06 échoue sans le correctif (0,73 dB sur le morceau de démonstration).
 

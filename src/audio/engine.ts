@@ -649,8 +649,9 @@ export function renderGroups(p: Project, cores = navigator.hardwareConcurrency |
 /** Rendu parallèle des gros projets (désactivable pour la QA et les comparaisons). */
 export const renderOpts = { parallel: true };
 
-/** Plage d'un export (V19) : du pas `from` au pas `to`, queue de son de 2,5 s après la fin ou non, fréquence d'échantillonnage. */
-export interface RenderRange { from?: number; to?: number; tail?: boolean; rate?: number }
+/** Plage d'un export (V19) : du pas `from` au pas `to`, queue de son de 2,5 s après la fin ou non, fréquence d'échantillonnage.
+ *  `stem` : le son sort avant le général (ni son volume, ni sa chaîne, ni son limiteur), pour le gel d'une piste qui y repassera. */
+export interface RenderRange { from?: number; to?: number; tail?: boolean; rate?: number; stem?: boolean }
 export async function renderOffline(p: Project, normalize = true, range: RenderRange = {}): Promise<AudioBuffer> {
   const full = contentEnd(p), from = Math.max(0, range.from ?? 0), end = Math.max(from, range.to ?? full);
   if (!full || end <= from) throw new Error('empty');
@@ -659,10 +660,11 @@ export async function renderOffline(p: Project, normalize = true, range: RenderR
   // Une plage qui finit avant la fin du morceau coupe les notes et les sons à sa fin (comme la fin d'une boucle) ; il ne reste
   // après que les queues (relâchement, réverb, écho). Tout ce qui précède la plage est rendu, puis retiré : le début sonne
   // exactement comme dans le morceau (notes tenues, réverb en cours).
-  const sr = range.rate ?? 44100, limit = end < full ? end : null, groups = renderOpts.parallel ? renderGroups(p) : null;
+  const sr = range.rate ?? 44100, limit = end < full ? end : null, groups = renderOpts.parallel && !range.stem ? renderGroups(p) : null;
   let out: AudioBuffer, pdc = 0;
   if (!groups) {
-    const r = await renderPart(p, end, false, sr, limit);
+    // Sortie avant le général : volume à 1 et sortie prise au volume, avant sa chaîne (filtre, égaliseur, largeur, limiteur).
+    const r = range.stem ? await renderPart({ ...p, master: 1 }, end, true, sr, limit) : await renderPart(p, end, false, sr, limit);
     out = r.out; pdc = r.pdc; lastRender.wamFailed = r.wamFailed;
   } else {
     // Gros projet (V18) : chaque groupe dans son propre rendu, en même temps, puis la somme passe une fois par la chaîne du général.

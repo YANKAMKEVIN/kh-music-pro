@@ -52,7 +52,9 @@ export async function freezeTrack(id: string) {
   Object.assign(copy, { vol: 1, pan: 0, rev: 0, dly: 0, out: '', duck: 0, mute: false, solo: false, sends: [] }); delete copy.sc;
   for (const k of ['vol', 'pan', 'rev', 'dly'] as const) if (copy.auto?.[k]) { moved[k] = copy.auto[k]; delete copy.auto[k]; }
   let buf: AudioBuffer;
-  try { buf = await renderOffline({ ...p, tracks: [copy], loop: false }, false); }
+  // Le rendu s'arrête aussi avant le général : la piste gelée repasse ensuite par son volume, sa chaîne et son limiteur,
+  // qui ne s'appliquent donc qu'une fois (avant, un morceau gelé sonnait plus bas, 0,9 dB avec le général à 90 %).
+  try { buf = await renderOffline({ ...p, tracks: [copy], loop: false }, false, { stem: true }); }
   catch { return toast(t('frz.fail'), 'error'); }
   if (!S.project.tracks.includes(tr)) return;            // piste supprimée pendant le rendu
   const bid = uid(); addBuffer(bid, buf);

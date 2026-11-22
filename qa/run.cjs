@@ -3754,6 +3754,22 @@ test('FZ05', 'Gel de piste', 'Bouton de gel traduit (anglais, espagnol), absent 
   }
 });
 
+test('FZ06', 'Gel de piste', 'Le général (volume, égaliseur, filtre, largeur) ne s’applique qu’une fois à une piste gelée : même niveau qu’avant le gel', async () => {
+  // Général à 50 %, graves et aigus du général poussés, filtre du général fermé à moitié, largeur réduite : avant le correctif,
+  // la piste gelée passait deux fois par tout cela (environ 6 dB plus bas pour le seul volume).
+  await S(() => { const k = window.kh, p = k.S.project; p.master = 0.5; p.mLow = 6; p.mHigh = 4; p.filter = -0.4; p.width = 0.5; p.tracks[1].vol = 0.9; k.commit(); });
+  const before = await levels();
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const d = lvDiff(before, await levels());
+  expect(d < 0.3, `le morceau gelé doit garder son niveau (écart max ${d.toFixed(2)} dB par demi-seconde)`);
+  // Le rendu du gel s'arrête avant le général : changer ensuite le général change la piste gelée comme l'originale.
+  await S(() => { const k = window.kh; k.S.project.master = 1; k.S.project.mLow = 0; k.commit(); });
+  const frozen = await levels();
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => !window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const d2 = lvDiff(frozen, await levels());
+  expect(d2 < 0.3, `après un changement du général, gelé et dégelé doivent sonner pareil (écart ${d2.toFixed(2)} dB)`);
+});
+
 // ============ Performance des gros projets (V17) ============
 /** Projet de 40 pistes (12 batteries, 20 instruments dont 8 enregistrés, 8 audio), chacune avec 3 effets (dont 10 réverbs), 8 mesures. */
 const bigPerf = {};
