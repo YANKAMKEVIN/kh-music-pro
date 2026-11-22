@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-401 cas réussis sur 401.
+403 cas réussis sur 403.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -48,6 +48,8 @@
 | R03 | Enregistrement | Le clip enregistré épouse la zone de boucle | OK |
 | R04 | Enregistrement | Décompte : une mesure avant le départ | OK |
 | R05 | Enregistrement | Enregistrer le micro : un clip audio apparaît, avec du signal | OK |
+| R09 | Enregistrement | Enregistrer au-delà de la 48e mesure : la règle s'allonge pendant la prise, le clip arrive à la bonne place | OK |
+| R10 | Enregistrement | Enregistrer des notes au-delà de la 48e mesure : la règle suit la tête de lecture | OK |
 | R06 | Enregistrement | Micro avec décompte : la prise est calée sur le premier temps | OK |
 | U01 | Audio | Importer un fichier audio : le clip a la bonne durée | OK |
 | U02 | Audio | Régler le gain d'un clip audio puis le scinder | OK |

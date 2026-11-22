@@ -87,7 +87,7 @@ Vérifications musicales finales : à écouter par le propriétaire avec son Yam
 
 ## Fonctions (v0.17)
 
-- **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables.
+- **Arrangement** multipiste : clips déplaçables, redimensionnables, duplication, scission, boucle, grille magnétique, zoom ; pistes duplicables et réordonnables. Pendant un enregistrement long, la règle et ses numéros de mesure s'allongent au fur et à mesure (avant la v0.19.2, ils s'arrêtaient à la 48e mesure).
 - **Automation** : courbes de volume, de pan et de filtre par piste, dessinées dans l'arrangement (bouton **A**) ; depuis la v0.17, aussi n'importe quel réglage des effets de la piste, plugins du Mac compris.
 - **Batterie** : 16 sons, 3 kits, séquenceur à pas avec swing et notes douces, **16 pads** jouables (souris, clavier, MIDI) acceptant vos propres samples.
 - **Instruments** : 24 sons (claviers, basses dont 808 et acid, leads, cuivres, flûte, nappes, cordes pincées, cloches) sur quatre moteurs (soustractif, FM, corde pincée, **sampler**).

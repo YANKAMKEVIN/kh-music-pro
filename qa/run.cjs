@@ -498,6 +498,31 @@ test('R05', 'Enregistrement', 'Enregistrer le micro : un clip audio apparaît, a
   expect(r.off >= 0 && r.off < 0.6 && r.start === 0, `calage ${r.off}s`);
   expect((await page.textContent('#toast')).includes('Prise'), 'pas de confirmation');
 });
+// Règle au-delà de 48 mesures (signalé par le propriétaire) : l'arrangement s'allonge pendant la lecture et l'enregistrement.
+const rulerState = () => S(() => {
+  const k = window.kh, r = document.querySelector('#arr .ruler'), lanes = document.querySelector('#arr .lanes'), nums = [...r.querySelectorAll(':scope > span')].map(e => +e.textContent);
+  return { step: k.engine.currentStep(), bar: k.bar(), px: k.S.px, last: Math.max(...nums), width: lanes.getBoundingClientRect().width, rec: k.engine.recording, playing: k.engine.playing };
+});
+test('R09', 'Enregistrement', 'Enregistrer au-delà de la 48e mesure : la règle s\'allonge pendant la prise, le clip arrive à la bonne place', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 240; p.countIn = false; p.loop = false; p.punch = false; p.tempos = []; k.commit(); k.engine.seek(45 * k.bar()); });
+  await page.click(await headSel(4)); await page.keyboard.press('r'); await sleep(5000);
+  const a = await rulerState(); const at = Math.floor(a.step / a.bar) + 1;
+  expect(a.rec === 'audio' && at >= 49, `enregistrement non parti ou trop court (mesure ${at}, ${a.rec})`);
+  expect(a.last >= at + 3, `pendant la prise, la règle s'arrête à ${a.last} (tête mesure ${at})`);
+  await page.keyboard.press('r'); await sleep(900);
+  const c = (await proj()).tracks[4].clips.at(-1); expect(c && c.start === 45 * 16, `clip absent ou mal placé (${c && c.start})`);
+  const b = await rulerState(); expect(b.last >= Math.ceil((c.start + c.len) / 16) + 7, `après la prise, la règle ne couvre pas la fin du clip (${b.last})`);
+});
+test('R10', 'Enregistrement', 'Enregistrer des notes au-delà de la 48e mesure : la règle suit la tête de lecture', async () => {
+  await S(() => { const k = window.kh, p = k.S.project; p.bpm = 240; p.countIn = false; p.loop = false; p.tempos = []; k.commit(); k.engine.seek(46 * k.bar()); });
+  await page.click(await headSel(1)); await page.keyboard.press('r'); await sleep(4500);
+  const a = await rulerState(); const at = Math.floor(a.step / a.bar) + 1;
+  expect(a.rec === 'midi' && at >= 49, `enregistrement non parti ou trop court (mesure ${at}, ${a.rec})`);
+  expect(a.last >= at + 3, `la règle s'arrête à ${a.last} (tête mesure ${at})`);
+  expect(a.width >= (a.step + 3 * a.bar) * a.px, 'l\'arrangement se termine avant la tête de lecture');
+  await page.keyboard.press('r'); await sleep(300); await S(() => window.kh.engine.seek(0)); await sleep(300);
+  const b = await rulerState(); expect(b.last <= 56, `revenu au début sans nouvelle prise, la règle reste allongée (${b.last} mesures)`);
+});
 test('R06', 'Enregistrement', 'Micro avec décompte : la prise est calée sur le premier temps', async () => {
   await S(() => { const p = window.kh.S.project; p.bpm = 120; p.countIn = true; window.kh.commit(); });
   await page.click(await headSel(4)); await page.keyboard.press('r'); await sleep(3600); await page.keyboard.press('r'); await sleep(900);
