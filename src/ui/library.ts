@@ -5,9 +5,9 @@ import { ProjInfo, S, emit, deleteProject, duplicateProject, library, libraryInf
 import { TEMPLATES, Template, templateProject } from '../types';
 import { ask, confirmBox, h, toast } from './dom';
 import { startTour } from './tour';
-import { icon } from './icons';
+import { IconName, icon } from './icons';
 
-const ICONS: Record<Template, string> = { empty: '📄', trap: '🔥', house: '🪩', lofi: '☕', demo: '✨' };
+const ICONS: Record<Template, IconName> = { empty: 'doc', trap: 'flame', house: 'disco', lofi: 'cup', demo: 'sparkle' };
 const dlg = () => document.getElementById('lib') as HTMLDialogElement;
 const halt = () => { engine.stop(); engine.stop(); allNotesOff(); };
 
@@ -21,7 +21,7 @@ export function createFromTemplate(tpl: Template, replace = false) {
 /** Les modèles en cartes (Vide, Trap, House, Lo-fi, Démo) : dans la fenêtre des projets et à l'accueil. */
 function tplCards(pick: (k: Template) => void) {
   return h('div', { class: 'tpls' }, ...TEMPLATES.map(k => h('button', { class: 'tpl', data: { tpl: k }, onclick: () => pick(k) },
-    h('span', { class: 'tico' }, ICONS[k]), h('strong', {}, t('tpl.' + k)), h('small', {}, t('tpl.' + k + '.d')))));
+    h('span', { class: 'tico' }, icon(ICONS[k], 26)), h('strong', {}, t('tpl.' + k)), h('small', {}, t('tpl.' + k + '.d')))));
 }
 
 /**

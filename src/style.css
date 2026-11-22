@@ -747,6 +747,10 @@ dialog.welcome .pill { min-height: 44px; padding: 0 18px; }
 .pill .ico, .mini .ico { vertical-align: -3px; }
 #bNotes { display: inline-grid; place-items: center; }
 dialog h2 .ico { color: var(--a1); }
+/* Suite UX15 (22/11/2026) : modèles, pads, réglages, quantification */
+.tico { display: inline-flex; color: var(--a1); }
+.pact button { display: inline-grid; place-items: center; }
+.pact .ico, .menu-list .ico { vertical-align: -3px; }
 
 /* ================= UX : ouverture des fenêtres et des menus ================= */
 dialog[open] { animation: dlg-in .14s ease-out; }

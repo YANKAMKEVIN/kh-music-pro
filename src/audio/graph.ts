@@ -458,9 +458,11 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
         if (n.outId !== undefined) n.pan.disconnect(n.outId ? this.tracks.get(n.outId)?.input ?? this.master : this.master);
         n.pan.connect(outId ? this.tracks.get(outId)!.input : this.master); n.outId = outId;
       }
-      this.set(n.mid.frequency, t.eqMidF); if (!(this.autoOn && t.auto?.[setKey('compThr')]?.length)) this.set(n.comp.threshold, t.compThr); this.set(n.comp.ratio, t.compRatio);
-      if (!(this.autoOn && t.auto?.[setKey('compThr')]?.length)) this.set(n.makeup.gain, Math.pow(10, -t.compThr * (1 - 1 / t.compRatio) * 0.2 / 20));
       const au = this.autoOn ? t.auto : undefined;
+      if (!au?.[setKey('eqMidF')]?.length) this.set(n.mid.frequency, t.eqMidF);
+      if (!au?.[setKey('compThr')]?.length) this.set(n.comp.threshold, t.compThr);
+      if (!au?.[setKey('compRatio')]?.length) this.set(n.comp.ratio, t.compRatio);
+      if (!au?.[setKey('compThr')]?.length && !au?.[setKey('compRatio')]?.length) this.set(n.makeup.gain, Math.pow(10, -t.compThr * (1 - 1 / t.compRatio) * 0.2 / 20));
       // Égaliseur et seuil automatisés (suite) : pendant la lecture, leur courbe les pilote (applyAuto).
       if (!au?.[setKey('eqLow')]?.length) this.set(n.low.gain, t.eqLow);
       if (!au?.[setKey('eqMid')]?.length) this.set(n.mid.gain, t.eqMid);
@@ -565,8 +567,14 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
       // Tranche fixe (suite) : égaliseur et seuil du compresseur.
       ramp(n.low.gain, a[setKey('eqLow')], v => setFromNorm('eqLow', v)); ramp(n.mid.gain, a[setKey('eqMid')], v => setFromNorm('eqMid', v));
       ramp(n.high.gain, a[setKey('eqHigh')], v => setFromNorm('eqHigh', v)); ramp(n.comp.threshold, a[setKey('compThr')], v => setFromNorm('compThr', v));
-      // Le gain de compensation suit le seuil, comme quand on tourne le bouton du mixeur.
-      ramp(n.makeup.gain, a[setKey('compThr')], v => Math.pow(10, -setFromNorm('compThr', v) * (1 - 1 / tr.compRatio) * 0.2 / 20));
+      // Suite 3 : fréquence du médium et taux du compresseur.
+      ramp(n.mid.frequency, a[setKey('eqMidF')], v => setFromNorm('eqMidF', v)); ramp(n.comp.ratio, a[setKey('compRatio')], v => setFromNorm('compRatio', v));
+      // Le gain de compensation suit le seuil et le taux (courbe ou réglage fixe), comme quand on tourne les boutons du mixeur.
+      const thrPts = a[setKey('compThr')], ratPts = a[setKey('compRatio')];
+      if (thrPts?.length || ratPts?.length) {
+        const mk = (q: number) => { const thr = thrPts?.length ? setFromNorm('compThr', autoAt(thrPts, q)) : tr.compThr, rat = ratPts?.length ? setFromNorm('compRatio', autoAt(ratPts, q)) : tr.compRatio; return Math.pow(10, -thr * (1 - 1 / rat) * 0.2 / 20); };
+        n.makeup.gain.setValueAtTime(mk(s), t); n.makeup.gain.linearRampToValueAtTime(mk(s + 1), t + d);
+      }
       // Réglages des effets (V17) : effets intégrés par rampes sur leurs paramètres audio, plugins du Mac à l'instant du pas.
       for (const ins of tr.inserts ?? []) {
         const keys = autoKeysOf(tr, ins.id), node = n.ins.get(ins.id);
@@ -601,7 +609,7 @@ process(i,o){const a=i[0],out=o[0],N=out[0].length;for(let k=0;k<N;k++){if(this.
     this.autoOn = false;
     const now = this.ctx.currentTime;
     for (const n of this.tracks.values()) {
-      for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain, n.low.gain, n.mid.gain, n.high.gain, n.comp.threshold, n.makeup.gain]) prm.cancelScheduledValues(now);
+      for (const prm of [n.auto.gain, n.duck.gain, n.pan.pan, n.lp.frequency, n.hp.frequency, n.revSend.gain, n.dlySend.gain, n.chWet.gain, n.low.gain, n.mid.gain, n.mid.frequency, n.high.gain, n.comp.threshold, n.comp.ratio, n.makeup.gain]) prm.cancelScheduledValues(now);
       n.auto.gain.setTargetAtTime(1, now, 0.015); n.duck.gain.setTargetAtTime(1, now, 0.015);
       this.ctlRest(n, now, true);
     }

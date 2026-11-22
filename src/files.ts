@@ -1,4 +1,4 @@
-import { BAR, CTL_KINDS, CTL_REST, Clip, CtlKind, GM_DRUMS, Note, Project, Pt, Track, emptyDrums, newTrack, uid } from './types';
+import { BAR, CTL_KINDS, CTL_REST, Clip, CtlKind, GM_DRUMS, Note, Project, Pt, SIGS, Track, barSteps, emptyDrums, newTrack, uid } from './types';
 
 // ---------- Archive ZIP (sans compression) ----------
 const CRC = (() => {
@@ -120,8 +120,12 @@ export function exportMidi(p: Project): Uint8Array {
   return new Uint8Array([...chunk('MThd', [0, 1, tracks.length >> 8, tracks.length & 255, PPQ >> 8, PPQ & 255]), ...tracks.flat()]);
 }
 
-/** Lit un fichier MIDI : renvoie le tempo et une piste par couple piste/canal contenant des notes. */
-export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s: number; bpm: number }[]; tracks: Track[] } {
+/**
+ * Lit un fichier MIDI : renvoie le tempo, la signature du début (si l'application la connaît : 2/4 à 7/4, 5/8, 6/8, 7/8,
+ * 9/8, 12/8) et une piste par couple piste/canal contenant des notes. `useSig` : la signature du fichier sera reprise par le
+ * projet (projet vide) ; la longueur des clips se compte alors dans ses mesures, sinon dans celles du projet.
+ */
+export function importMidi(buf: ArrayBuffer, useSig = false): { bpm: number | null; tempos: { s: number; bpm: number }[]; sig: { sig: number; den: 4 | 8 } | null; tracks: Track[] } {
   const d = new DataView(buf), u = new Uint8Array(buf);
   const tag = (o: number) => String.fromCharCode(...u.subarray(o, o + 4));
   if (tag(0) !== 'MThd') throw new Error('invalid');
@@ -129,7 +133,7 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
   if (div & 0x8000) throw new Error('invalid');
   // Positions gardées au 1/24 de pas : triolets et triples-croches survivent à l'import.
   const toStep = (tick: number) => Math.round(tick / (div / 4) * 24) / 24;
-  let o = 8 + d.getUint32(4), bpm: number | null = null;
+  let o = 8 + d.getUint32(4), bpm: number | null = null, sig: { sig: number; den: 4 | 8 } | null = null, sigSeen = false;
   const tempos: { s: number; bpm: number }[] = [];
   const out: Track[] = [];
   while (o + 8 <= u.length) {
@@ -151,6 +155,12 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
           if (bpm === null) bpm = v;
         }
         if (type === 0x03) name = new TextDecoder().decode(u.subarray(o, o + l));
+        // Signature (FF 58 : numérateur, puissance de 2 du dénominateur) : seule celle du début compte (pas de changement en cours de morceau).
+        if (type === 0x58 && l >= 2 && tick === 0 && !sigSeen) {
+          sigSeen = true;
+          const n = u[o], dd = 2 ** u[o + 1], known = SIGS.find(([a, b]) => a === n && b === dd);
+          if (known) sig = { sig: known[0], den: known[1] };
+        }
         o += l; continue;
       }
       if (st === 0xf0 || st === 0xf7) { o += rv(); continue; }
@@ -171,10 +181,11 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
       }
     }
     o = end;
+    const bar = useSig && sig ? barSteps(sig.sig, sig.den) : BAR;
     for (const [chn, list] of notes) {
       const drums = chn === 9, tr = newTrack(drums ? 'drums' : 'synth', out.length + 1, 'keys');
       if (name) tr.name = name.slice(0, 40);
-      const len = Math.max(BAR, Math.ceil((Math.max(...list.map(n => n.s + n.l)) - 0.01) / BAR) * BAR);
+      const len = Math.max(bar, Math.ceil((Math.max(...list.map(n => n.s + n.l)) - 0.01) / bar) * bar);
       const clip: Clip = { id: uid(), name: tr.name, start: 0, len, offset: 0, patLen: len };
       if (drums) {
         clip.drums = emptyDrums(len);
@@ -189,5 +200,5 @@ export function importMidi(buf: ArrayBuffer): { bpm: number | null; tempos: { s:
     }
   }
   if (!out.length) throw new Error('empty');
-  return { bpm: bpm && bpm >= 40 && bpm <= 240 ? bpm : null, tempos: tempos.filter(m => m.s > 0).sort((a, b) => a.s - b.s), tracks: out };
+  return { bpm: bpm && bpm >= 40 && bpm <= 240 ? bpm : null, tempos: tempos.filter(m => m.s > 0).sort((a, b) => a.s - b.s), sig, tracks: out };
 }

@@ -60,7 +60,7 @@ Principes à respecter :
 - Tempo : depuis la V17, un clip audio peut suivre le tempo (réglage « Suit le tempo », désactivé par défaut) ; le mode Live et les effets calés (écho, trémolo) restent au tempo de départ.
 - Signature : une seule pour tout le morceau, de 2/4 à 7/4, ou 5/8, 6/8, 7/8, 9/8, 12/8 depuis la section 18. Pas de changement de signature en cours de morceau ; pas de regroupement libre des croches (7/8 compté en croches, pas en 2+2+3).
 - Chaîne d'effets : elle s'ajoute après la tranche fixe (filtre, saturation, égaliseur, compresseur) ; huit effets au plus. Depuis la section 19, une tranche peut être convertie en chaîne seule : ses sept étages deviennent des effets (un de chaque au plus, hors de la limite de huit).
-- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac ; depuis la section 18, l'égaliseur et le seuil du compresseur de la tranche, le filtre et la résonance de l'instrument (lus au départ de chaque note). Restent non automatisables : saturation, lo-fi, trémolo, taux du compresseur, fréquence du médium, enveloppe et oscillateurs de l'instrument, instruments du Mac.
+- Automation : six réglages de piste (volume, pan, filtre, réverb, écho, chorus) et, depuis la V17, les réglages des effets de la piste (sauf la taille de la réverb d'effet) et des plugins du Mac ; depuis la section 18, l'égaliseur et le seuil du compresseur de la tranche, le filtre et la résonance de l'instrument (lus au départ de chaque note). Depuis la section 20, aussi la fréquence du médium et le taux du compresseur. Restent non automatisables dans la tranche fixe : saturation, lo-fi, trémolo (automatisable une fois la tranche convertie en chaîne), enveloppe et oscillateurs de l'instrument, instruments du Mac.
 - Installateurs non signés ; pas de mise à jour automatique.
 - Projets stockés dans le navigateur de chaque appareil, avec des versions (V17) ; le fichier `.khm` reste la seule sauvegarde hors de l'appareil. Version bureau Mac : vrais fichiers sur le disque (V17).
 - Performance (V17, mesurée) : le moteur audio du navigateur calcule sur un seul cœur ; un projet de 40 pistes et 120 effets le dépasse. Le gel de piste est la parade.
@@ -847,7 +847,7 @@ Aucune branche n'est supprimée.
 
 - Nouveau champ `Project.den` (4 ou 8 ; `migrate` met 4). `BAR` = numérateur × 16 / dénominateur ; nouveau `BEAT` (`types.ts`, `setBar(pas, temps)`) : noire (4 pas) en x/4, noire pointée (6 pas) en 6/8, 9/8, 12/8, croche (2 pas) en 5/8 et 7/8.
 - `BEAT` sert au métronome, au décompte (un clic par temps : 2 en 6/8 ; corrige au passage le décompte de 4 clics en 3/4, qui en fait maintenant 3), au compteur mesure.temps.double-croche, au témoin du temps, aux lignes de temps de l'arrangement et du piano roll (qui ignorait jusqu'ici la signature : lignes de mesure toutes les 16 pas même en 3/4), aux cases alternées du séquenceur, au calage « au temps » du mode Live.
-- Menu de la signature : valeurs « 2 » à « 7 » inchangées pour x/4 (anciens tests et anciens projets), « 5/8 » à « 12/8 » pour les croches. Export MIDI : évènement de signature (FF 58), y compris en x/4 ; pas lu à l'import.
+- Menu de la signature : valeurs « 2 » à « 7 » inchangées pour x/4 (anciens tests et anciens projets), « 5/8 » à « 12/8 » pour les croches. Export MIDI : évènement de signature (FF 58), y compris en x/4 ; lu à l'import depuis la section 20.
 - QA : SG02-SG05 (souris, règle, compteur, séquenceur, métronome et décompte épiés, 12/8 à 5/8, boucle d'une mesure de 7/8 à l'écoute, MIDI, fichier projet, ancien projet).
 
 ### Clips enregistrés à la volée en mode Live (idée de la feuille de route)
@@ -855,7 +855,7 @@ Aucune branche n'est supprimée.
 - N'existait pas : le Live ne faisait que lancer des clips existants.
 - Ajouté : ligne « Prise » sous la grille du Live, un bouton ● par piste d'instrument ou de batterie (`live.ts`). La prise attend la mesure suivante (bouton qui clignote), coupe le clip de la piste, crée un clip vide de la longueur choisie (« Longueur d'une prise » dans le panneau de jeu : 1, 2, 4 ou 8 mesures, `Project.liveLen`, **2 par défaut**, validé par Kevin le 21/11/2026) placé après le dernier clip de la piste (il prend donc la ligne suivante de la grille et apparaît dans l'arrangement), y range les notes (calées sur la grille du piano roll) et les coups de pad joués au clavier, au MIDI ou à l'écran, puis le lance en boucle dès sa fin (`engine.recordLive`, `liveRec`, `liveRecPos` ; `input.ts`, `engine.onLiveRec`). Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps. Une note encore tenue à la fin va jusqu'au bout du clip et continue de sonner jusqu'au relâchement. Second appui : prise abandonnée. Arrêter pendant la prise : on garde ce qui a été joué (rien si rien n'a été joué). La fin de la prise est une entrée de l'historique (Annuler la retire).
 - QA : LR01-LR04 (souris, clavier, position des notes, batterie et nuance, boucle audible, arrangement, abandon, arrêt, fichier, ancien projet, traductions).
-- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub), pitch bend et molette pendant la prise, arpégiateur (ses notes ne sont pas rangées).
+- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub). ~~Pitch bend et molette pendant la prise.~~ ~~Arpégiateur (ses notes ne sont pas rangées).~~ Faits en section 20 (LR05, LR06).
 
 ### Chaînes d'effets qui remplacent la tranche fixe : plan (réalisé depuis, voir section 19)
 
@@ -893,7 +893,7 @@ Réalisation du plan de la section 18, partie de `main` à `760a364` (QA 459/459
 
 - Fenêtre **Effets** d'une piste ou d'un bus : en tranche fixe, deux boutons, **⛓ Convertir la tranche en effets** et **Tout le projet** (pistes et bus). Le filtre, la saturation, le lo-fi, le chorus, le trémolo, l'égaliseur et le compresseur deviennent des effets en tête de chaîne, dans l'ordre du son, avec leurs réglages et leurs courbes ; le son ne change pas. Une seule entrée d'annulation.
 - En mode chaîne : la liste se modifie librement. Nouveau groupe « Étages de tranche (un de chaque) » dans le menu d'ajout ; un étage ajouté se range à sa place dans l'ordre du son, avant les effets ordinaires (on peut ensuite le déplacer). Les étages ne comptent pas dans la limite de huit effets. Déplacement par ▲ ▼ (comme avant), en faisant glisser la poignée ⠿ (souris ou doigt), ou au clavier avec Alt + ↑ / ↓ sur la poignée (le focus suit la carte).
-- **Revenir à la tranche fixe** : possible tant que les étages restent en tête, dans l'ordre du son, allumés (le compresseur peut être éteint) et sans courbe que la tranche fixe ne sait pas jouer (trémolo, fréquence du médium, taux). Sinon le bouton est grisé et la raison s'affiche. Un étage retiré revient à sa valeur neutre ; si c'est le filtre, le filtre au repos de la tranche fixe revient (il coupe l'extrême aigu en pente douce, voir plus bas).
+- **Revenir à la tranche fixe** : possible tant que les étages restent en tête, dans l'ordre du son, allumés (le compresseur peut être éteint) et sans courbe que la tranche fixe ne sait pas jouer (trémolo ; la fréquence du médium et le taux le peuvent depuis la section 20). Sinon le bouton est grisé et la raison s'affiche. Un étage retiré revient à sa valeur neutre ; si c'est le filtre, le filtre au repos de la tranche fixe revient (il coupe l'extrême aigu en pente douce, voir plus bas).
 - **Mixeur** d'une tranche en chaîne (choix par défaut sur la décision laissée à Kevin, voir « À valider ») : badge **⛓ Chaîne** (ouvre la fenêtre Effets) ; les curseurs d'égaliseur, filtre, saturation, chorus, trémolo, lo-fi et compresseur règlent le premier effet de ce type dans la chaîne ; un étage absent n'a pas de curseur. L'interrupteur du compresseur allume ou éteint l'effet. La courbe d'égaliseur affichée suit les filtres et égaliseurs allumés de la chaîne, la réduction de gain suit le compresseur de la chaîne. Les préréglages de mixage règlent les effets et créent ceux qui manquent.
 - **Assignation MIDI** : un bouton assigné au filtre, à la saturation, au chorus, au trémolo ou au lo-fi d'une piste en chaîne règle l'effet correspondant (rien s'il n'y en a pas).
 - **Automation** : chaque réglage des étages se trace dans le groupe de son effet (« 1. Filtre », « 6. Égaliseur 3 bandes »…), y compris deux réglages qui ne l'étaient pas dans la tranche fixe : la profondeur du trémolo et la fréquence du médium. Saturation et lo-fi restent non automatisables (courbe recalculée, comme dans la tranche fixe). En mode chaîne, le groupe « Tranche » et les courbes de filtre et de chorus de la piste disparaissent de la liste.
@@ -918,7 +918,7 @@ CE01-CE10 (migration et identité, sans perte et retour, ajout/retrait/déplacem
 
 ### Constat en passant (non corrigé)
 
-- Le gel d'une piste rend son son à travers le volume général et le limiteur du général, puis la piste gelée repasse par eux : un morceau gelé sonne environ 0,9 dB plus bas avec le général à 90 % (FZ01 tolère 1 dB), davantage sur une piste forte qui touche le limiteur. Correction possible : rendre le gel sans la chaîne du général (`renderPart(…, stem = true)`, général à 100 %). Hors du sujet des chaînes, donc laissé tel quel.
+- ~~Le gel d'une piste rend son son à travers le volume général et le limiteur du général, puis la piste gelée repasse par eux : un morceau gelé sonne environ 0,9 dB plus bas avec le général à 90 % (FZ01 tolère 1 dB), davantage sur une piste forte qui touche le limiteur.~~ Corrigé en section 20 (FZ06).
 
 ### À valider par Kevin
 
@@ -932,4 +932,47 @@ CE01-CE10 (migration et identité, sans perte et retour, ajout/retrait/déplacem
 - Une conversion **pendant la lecture** : les nouveaux effets partent de leurs valeurs de départ et rejoignent leurs réglages en 15 ms environ ; un petit souffle ou clic est possible à ce moment-là.
 - Le glisser-déposer des effets au doigt sur un vrai téléphone ou une tablette.
 - Le trémolo automatisé de rien à fond, et la fréquence du médium balayée, sur un vrai son.
+
+## 20. Suite 3 (branche `claude/suite-3`, 22/11/2026)
+
+Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire sans lui. Branche `claude/suite-3`, partie de `main` à `43ed207`. Un commit par élément ; pas de fusion ni de changement de version (0.19.1).
+
+### Gel d'une piste au bon niveau
+
+- Défaut constaté en section 19 : le rendu du gel passait par le volume général, son filtre, son égaliseur, sa largeur et son limiteur, puis la piste gelée y repassait. Un morceau gelé sonnait donc plus bas (0,9 dB avec le général à 90 %, bien plus avec un général bas ou un égaliseur du général poussé).
+- Corrigé : le rendu du gel s'arrête avant le général (`renderOffline(…, { stem: true })`, général à 100 %, comme les rendus par groupes de l'export parallèle). Changer ensuite le général change la piste gelée comme l'originale.
+- QA : FZ06 (général à 50 %, égaliseur, filtre et largeur du général réglés : écart sous 0,3 dB avant et après le gel ; puis général changé : gelé et dégelé sonnent pareil). FZ06 échoue sans le correctif (0,73 dB sur le morceau de démonstration).
+
+### Arpégiateur et répétition de notes pendant une prise à la volée du Live
+
+- Avant : pendant une prise à la volée (section 18), les notes égrenées par l'arpégiateur et les coups répétés d'un pad tenu (répétition de notes) sonnaient mais n'étaient pas rangés dans le clip ; seules les touches et les frappes elles-mêmes l'étaient.
+- Désormais (`input.ts`, `liveSpotAt`) : chaque note de l'arpège est rangée à l'instant où elle sonne, calée sur la grille du piano roll (ou sur le pas de l'arpège s'il est plus fin), longue d'un pas d'arpège, à la nuance de la touche ; chaque coup répété va dans la case la plus proche du motif, à la nuance des coups répétés (0,85). Comme pour les notes jouées, rien n'est rangé avant la double-croche qui précède le départ ni après la fin de la prise.
+- L'arpège du Live garde son horloge libre (il n'est pas calé sur la mesure du Live, comme avant) : ses notes sont donc aimantées sur la grille au rangement.
+- QA : LR05 (arpège montant à la noire sur deux touches : 3 à 5 notes alternées, une par noire, nuance gardée ; pad tenu avec répétition à la croche : coups rangés). LR05 échoue sans le correctif (aucune note rangée).
+
+### Pitch bend, molette et pression pendant une prise à la volée du Live
+
+- Avant : ces gestes (clavier MIDI ou molettes à l'écran) jouaient pendant une prise à la volée mais n'étaient écrits que dans un enregistrement de l'arrangement.
+- Désormais (`ctlIn`, `input.ts`) : ils sont écrits dans le clip de la prise, avec les mêmes règles que l'enregistrement (courbe allégée, retour au repos exact, un nouveau geste remplace l'ancien sur la même zone). Le clip ne jouant pas encore pendant la prise, l'écriture est immédiate. Le clip enregistré rejoue ensuite sa courbe en boucle, comme tout clip du Live.
+- QA : LR06 (note, montée du bend, molette à 90, retour du bend au centre : courbes gardées et dans le clip). LR06 échoue sans le correctif (courbe vide).
+
+### Icônes dessinées : deuxième tranche (suite de l'amélioration UX15 n° 13)
+
+- La première tranche (branche `claude/ux15`) avait dessiné les types de piste et les boutons les plus visibles ; restaient en emojis l'éditeur (accordeur, quantification, pads), les réglages et les modèles.
+- Dessinés maintenant (`src/ui/icons.ts`, même trait, couleur du texte) : réglages et chargement d'un pad (roue dentée, dossier), quantification et humanisation (aimant, dé), ouverture du micro et écoute de l'entrée audio, où se trouve l'accordeur (micro, casque), bouton des réglages, connexion MIDI, réglages audio et options d'export (roue dentée, prise MIDI, clé), mesure de latence (règle), modèles de la fenêtre des projets (page, flamme, boule à facettes, tasse, étincelles).
+- Les noms accessibles ne changent pas (les boutons à symbole seul gardent leur `aria-label`).
+- Restent des emojis ou symboles, hors du périmètre de la tranche : flocon du gel, ⚡ du moteur natif et du sidechain, 🍎 des plugins du Mac, 🎻 des instruments enregistrés, 🎹 du clavier à l'écran, 🎚 des réglages de l'instrument, 🪟 des fenêtres de plugin, ✂ 🔪 ⇄ 📈 de l'éditeur audio, 🧭 de la visite guidée, ★ des favoris. Les symboles typographiques (▶, ↶, ⚑, ♩, ✕) restent : ils ont le même dessin partout.
+- QA : UX13b (pads, quantification, entrée audio, réglages, fenêtre audio, modèles : icônes attendues, aucun emoji, noms accessibles).
+
+### Automation de la fréquence du médium et du taux du compresseur dans la tranche fixe
+
+- Avant : ces deux réglages ne s'automatisaient qu'une fois la tranche convertie en chaîne d'effets (section 19), et une courbe sur l'un d'eux empêchait le retour à la tranche fixe.
+- Désormais : clés `set:eqMidF` (200 Hz à 8 kHz) et `set:compRatio` (1:1 à 20:1), mêmes plages logarithmiques que les réglages de l'effet de la chaîne, donc courbe reprise telle quelle par la conversion dans les deux sens (`CURVES`, `chain.ts`). Dans la liste des réglages de la courbe, groupe « Tranche » : graves, médiums, fréquence du médium, aigus, seuil, taux. Le gain de compensation du compresseur suit le seuil et le taux (courbe ou réglage fixe), comme au mixeur. À l'arrêt, les deux réglages reviennent à la valeur du mixeur. Le retour à la tranche fixe n'est plus refusé pour ces deux courbes (texte de la raison mis à jour en trois langues) ; il l'est toujours pour une courbe de trémolo.
+- QA : AZ05 (fréquence tracée à la souris, export plus brillant à la fin, valeur suivie à l'écoute puis rendue au mixeur ; taux de 1:1 à 20:1 comparé aux taux fixes ; conversion en chaîne sans changement de son, courbes passées aux effets, retour sans perte ; libellés traduits) ; AZ01 adapté (six réglages dans le groupe Tranche).
+
+### Signature lue à l'import d'un fichier MIDI
+
+- Avant : l'export MIDI écrivait la signature (section 18) mais l'import l'ignorait ; un fichier en 6/8 arrivait dans un projet en 4/4.
+- Désormais (`importMidi`, `files.ts`) : la signature du début du fichier (FF 58 au premier instant ; les changements en cours de morceau restent ignorés, faute de signatures multiples) est lue si l'application la connaît (2/4 à 7/4, 5/8, 6/8, 7/8, 9/8, 12/8). Comme le tempo, elle n'est reprise que par un projet vide (`importMidiFile`) ; les clips importés se comptent alors dans ses mesures. Un projet déjà commencé garde sa signature. Une seule entrée d'annulation pour l'import.
+- QA : SG06 (projet commencé en 4/4 inchangé ; projet vide passé en 6/8 avec le menu à jour, clip de 24 pas, Annuler ; 12/8 et 7/4 lus ; 11/8 ignoré).
 

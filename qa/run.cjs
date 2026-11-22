@@ -3754,6 +3754,22 @@ test('FZ05', 'Gel de piste', 'Bouton de gel traduit (anglais, espagnol), absent 
   }
 });
 
+test('FZ06', 'Gel de piste', 'Le général (volume, égaliseur, filtre, largeur) ne s’applique qu’une fois à une piste gelée : même niveau qu’avant le gel', async () => {
+  // Général à 50 %, graves et aigus du général poussés, filtre du général fermé à moitié, largeur réduite : avant le correctif,
+  // la piste gelée passait deux fois par tout cela (environ 6 dB plus bas pour le seul volume).
+  await S(() => { const k = window.kh, p = k.S.project; p.master = 0.5; p.mLow = 6; p.mHigh = 4; p.filter = -0.4; p.width = 0.5; p.tracks[1].vol = 0.9; k.commit(); });
+  const before = await levels();
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const d = lvDiff(before, await levels());
+  expect(d < 0.3, `le morceau gelé doit garder son niveau (écart max ${d.toFixed(2)} dB par demi-seconde)`);
+  // Le rendu du gel s'arrête avant le général : changer ensuite le général change la piste gelée comme l'originale.
+  await S(() => { const k = window.kh; k.S.project.master = 1; k.S.project.mLow = 0; k.commit(); });
+  const frozen = await levels();
+  await clickIn(await freezeBtn(1)); await page.waitForFunction(() => !window.kh.S.project.tracks[1].frozen, null, { timeout: 30000 });
+  const d2 = lvDiff(frozen, await levels());
+  expect(d2 < 0.3, `après un changement du général, gelé et dégelé doivent sonner pareil (écart ${d2.toFixed(2)} dB)`);
+});
+
 // ============ Performance des gros projets (V17) ============
 /** Projet de 40 pistes (12 batteries, 20 instruments dont 8 enregistrés, 8 audio), chacune avec 3 effets (dont 10 réverbs), 8 mesures. */
 const bigPerf = {};
@@ -5484,6 +5500,40 @@ test('UX13a', 'Interface', 'Icônes dessinées : les types de piste ont le même
   expect(await page.$('#bNotes svg.ico') && (await page.getAttribute('#bNotes', 'aria-label')), 'bouton des notes : icône et nom accessible');
 });
 
+test('UX13b', 'Interface', 'Icônes dessinées (suite) : pads, quantification, entrée audio, réglages, modèles et réglages audio sans emoji, noms accessibles gardés', async () => {
+  const emoji = /[\u{1F300}-\u{1FAFF}\u{2699}\u{2615}\u{2728}]/u;
+  const ico = sel => page.$eval(sel, e => [...e.querySelectorAll('svg.ico')].map(x => x.dataset.ico).join());
+  // Pads de la batterie : réglages et chargement d'un son.
+  await page.click(await clipSel(0, 0)); await page.click('[data-view=pads]');
+  expect(await ico('.pad[data-pad="0"] [data-act=padfx]') === 'gear' && await ico('.pad[data-pad="0"] [data-act=padload]') === 'folder', 'icônes des pads');
+  expect(await page.getAttribute('.pad[data-pad="0"] [data-act=padfx]', 'aria-label') && await page.getAttribute('.pad[data-pad="0"] [data-act=padload]', 'aria-label'), 'les petits boutons des pads doivent garder un nom');
+  await page.click('.pad[data-pad="0"] [data-act=padfx]');
+  expect(await ico('.padfx strong') === 'gear' && await ico('[data-act=padfxload]') === 'folder', 'panneau de réglages du pad');
+  expect(!emoji.test(await page.textContent('.pads')) && !emoji.test(await page.textContent('.padfx')), 'emoji restant autour des pads');
+  // Quantification (piano roll).
+  await page.click(await clipSel(1, 0));
+  expect(await ico('[data-act=quantize]') === 'magnet' && (await page.textContent('[data-act=quantize]')).includes('Quantifier'), 'bouton de quantification');
+  await page.click('[data-act=qmenu]');
+  expect(await ico('.qmenu [data-act=apply]') === 'magnet' && await ico('.qmenu [data-act=humanize]') === 'dice', 'menu de quantification');
+  expect(!emoji.test(await page.textContent('.qmenu')), 'emoji restant dans le menu de quantification');
+  await page.keyboard.press('Escape');
+  // Entrée audio (piste audio) : micro et écoute.
+  await page.click(await headSel(4));
+  expect(await ico('[data-act=inopen]') === 'audio' && await ico('[data-act=inmon]') === 'headphones', 'entrée audio');
+  expect(!emoji.test(await page.textContent('.inbar')), 'emoji restant dans l’entrée audio');
+  // Réglages : bouton ⚙ dessiné, nom accessible gardé ; MIDI, réglages audio, options d'export.
+  expect(await ico('#mSettings > summary') === 'gear' && /MIDI/.test(await page.getAttribute('#mSettings > summary', 'aria-label')), 'bouton des réglages');
+  expect(await ico('#bMidi') === 'midi' && await ico('#bAudio') === 'wrench' && await ico('#bExpOpts') === 'gear', 'éléments des menus');
+  await clickIn('#bAudio'); expect(await ico('#audio h2') === 'wrench' && await ico('[data-act=latmeasure]') === 'ruler', 'fenêtre des réglages audio');
+  expect(!emoji.test((await page.textContent('#audio')).replace('⚡', '')), 'emoji restant dans les réglages audio');
+  await page.keyboard.press('Escape'); await sleep(150);
+  // Modèles de la fenêtre des projets.
+  await menu('bNew');
+  expect((await page.$$eval('#lib .tpl .tico svg.ico', l => l.map(e => e.dataset.ico).join())) === 'doc,flame,disco,cup,sparkle', 'icônes des modèles');
+  expect(!emoji.test(await page.textContent('#lib .tpls')), 'emoji restant dans les modèles');
+  await page.keyboard.press('Escape');
+});
+
 test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant le script, puis disparaît ; icônes PNG 192 et 512, version maskable et icône iPhone', async () => {
   const html = await (await page.request.get(BASE)).text();
   expect(/<div id="boot"[^>]*><span>KH<\/span><\/div>/.test(html) && html.indexOf('id="boot"') < html.indexOf('/src/main.ts'), 'le logo d’attente doit être dans la page, avant le script');
@@ -5604,7 +5654,7 @@ test('AZ01', 'Automation', 'Filtre de l’instrument automatisé : choisi dans l
   const { lane } = await sawSetup();
   const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.value)]));
   const strip = opts.find(o => o[0].startsWith('Tranche')), inst = opts.find(o => o[0].startsWith('Instrument'));
-  expect(strip && strip[1].join() === 'set:eqLow,set:eqMid,set:eqHigh,set:compThr', 'groupe Tranche : ' + JSON.stringify(opts));
+  expect(strip && strip[1].join() === 'set:eqLow,set:eqMid,set:eqMidF,set:eqHigh,set:compThr,set:compRatio', 'groupe Tranche : ' + JSON.stringify(opts));
   expect(inst && inst[1].join() === 'set:cutoff,set:reso', 'groupe Instrument : ' + JSON.stringify(opts));
   await page.selectOption('[data-role=autoparam]', 'set:cutoff');
   // Sans point, la courbe part de la valeur actuelle du réglage (1 500 Hz).
@@ -5727,6 +5777,72 @@ test('SG05', 'Signature', '6/8 dans le fichier MIDI exporté, dans le fichier pr
   const p = await proj(); expect(p.sig === 3 && p.den === 4 && await S(() => window.kh.bar()) === 12 && await page.$eval('#sig', e => e.value) === '3', `ancien projet : ${p.sig}/${p.den}`);
 });
 
+test('SG06', 'Signature', 'Import MIDI : un projet vide prend la signature du fichier (6/8, 12/8, 7/4) ; un projet déjà commencé garde la sienne ; signature inconnue ignorée', async () => {
+  // Fichier en 6/8 : une note de 20 pas sur la piste d'instrument.
+  const bytes = await S(() => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.sig = 6; p.den = 8; p.tracks = [p.tracks[1]]; p.tracks[0].clips = [{ id: 'm', name: 'm', start: 0, len: 24, offset: 0, patLen: 24, notes: [{ p: 60, s: 0, l: 20, v: 0.8 }] }]; return Array.from(k.exportMidi(p)); });
+  const f = path.join(TMP, 'six-huit.mid'); fs.writeFileSync(f, Buffer.from(bytes));
+  // Projet déjà commencé (4/4) : signature gardée, clip compté en mesures de 16 pas.
+  await page.setInputFiles('#fMidi', f); await sleep(300);
+  let r = await S(() => { const p = window.kh.S.project, c = p.tracks[p.tracks.length - 1].clips[0]; return { sig: p.sig, den: p.den, len: c.len }; });
+  expect(r.sig === 4 && r.den === 4 && r.len === 32, 'projet commencé : ' + JSON.stringify(r));
+  // Projet vide : il passe en 6/8, le clip se compte en mesures de 12 pas.
+  await S(() => { const k = window.kh; k.S.project.tracks.forEach(t => { t.clips = []; }); k.commit(); });
+  await page.setInputFiles('#fMidi', f); await sleep(300);
+  r = await S(() => { const p = window.kh.S.project, c = p.tracks[p.tracks.length - 1].clips[0]; return { sig: p.sig, den: p.den, len: c.len, bar: window.kh.bar() }; });
+  expect(r.sig === 6 && r.den === 8 && r.bar === 12 && r.len === 24, 'projet vide : ' + JSON.stringify(r));
+  expect(await page.$eval('#sig', e => e.value) === '6/8', 'le menu de la signature doit suivre');
+  await page.keyboard.press('Control+z'); expect(await S(() => window.kh.S.project.den) === 4, 'Annuler doit rendre la signature d’avant');
+  // Autres signatures lues directement ; une signature que l'application ne connaît pas (11/8) est ignorée.
+  const sigs = await S(() => { const k = window.kh, mk = (sig, den) => { const p = JSON.parse(JSON.stringify(k.S.project)); p.sig = sig; p.den = den; p.tracks = [p.tracks[1]]; p.tracks[0].clips = [{ id: 'm', name: 'm', start: 0, len: 16, offset: 0, patLen: 16, notes: [{ p: 60, s: 0, l: 4, v: 0.8 }] }]; return k.exportMidi(p); };
+    const odd = mk(4, 4), i = odd.findIndex((b, j) => b === 0xff && odd[j + 1] === 0x58); odd[i + 3] = 11; odd[i + 4] = 3;
+    return [k.importMidi(mk(12, 8).buffer, true).sig, k.importMidi(mk(7, 4).buffer, true).sig, k.importMidi(odd.buffer, true).sig]; });
+  expect(JSON.stringify(sigs) === JSON.stringify([{ sig: 12, den: 8 }, { sig: 7, den: 4 }, null]), 'signatures lues : ' + JSON.stringify(sigs));
+});
+
+test('AZ05', 'Automation', 'Fréquence du médium et taux du compresseur automatisés dans la tranche fixe : à l’écoute, à l’export, à l’arrêt ; conversion en chaîne et retour sans perte', async () => {
+  const { lane, tid } = await sawSetup();
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.synth.cutoff = 12000; tr.eqMid = 12; k.commit(); });
+  await page.selectOption('[data-role=autoparam]', 'set:eqMidF'); await autoPoint(lane, 0, 0); await autoPoint(lane, 63, 1);
+  expect(await S(() => window.kh.S.project.tracks[1].auto['set:eqMidF']?.length) === 2, 'courbe de fréquence non tracée');
+  // Médium poussé de 12 dB qui monte de 200 Hz à 8 kHz : le son s'éclaircit au fil de la courbe.
+  const b = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.05, 0.4], [7.55, 7.9]])));
+  expect(b[1] > b[0] * 1.3, `fréquence du médium automatisée : ${b.map(v => v.toFixed(3)).join(' → ')}`);
+  await page.keyboard.press('Space'); await sleep(1200);
+  const f1 = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).mid.frequency.value, tid); await sleep(1500);
+  const f2 = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).mid.frequency.value, tid);
+  await page.keyboard.press('Space'); await sleep(400);
+  const f3 = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).mid.frequency.value, tid);
+  expect(f1 < 600 && f2 > f1 * 1.5, `à l’écoute, la fréquence suit la courbe : ${Math.round(f1)} → ${Math.round(f2)} Hz`);
+  expect(Math.abs(f3 - 1000) < 20, `à l’arrêt, la fréquence revient au réglage du mixeur (1 000 Hz, obtenu ${Math.round(f3)})`);
+  // Taux du compresseur de 1:1 à 20:1, seuil à -40 dB : le début sonne comme le taux fixe à 1:1, la fin comme à 20:1.
+  const w = await S(async () => { const k = window.kh, mk = (ratio, auto) => { const p = JSON.parse(JSON.stringify(k.S.project)), tr = p.tracks[1]; tr.eqMid = 0; tr.comp = true; tr.compThr = -40; tr.compRatio = ratio; tr.auto = auto; return window.qa.wins(p, [[0.05, 0.4], [7.55, 7.9]]); };
+    return { auto: await mk(4, { 'set:compRatio': [{ s: 0, v: 0 }, { s: 1, v: 0 }, { s: 62, v: 1 }] }), lo: await mk(1, {}), hi: await mk(20, {}) }; });
+  expect(Math.abs(w.auto[0].l / w.lo[0].l - 1) < 0.15 && Math.abs(w.auto[1].l / w.hi[1].l - 1) < 0.15 && Math.abs(w.lo[0].l / w.hi[1].l - 1) > 0.2,
+    `taux automatisé : ${w.auto.map(x => x.l.toFixed(4)).join(' → ')} ; fixe à 1:1 ${w.lo[0].l.toFixed(4)}, à 20:1 ${w.hi[1].l.toFixed(4)}`);
+  // Conversion en chaîne : les deux courbes passent aux effets, le son ne change pas ; retour à la tranche fixe permis et sans perte.
+  const r = await S(async () => {
+    const k = window.kh, tr = k.S.project.tracks[1];
+    tr.comp = true; tr.compThr = -30; tr.auto['set:compRatio'] = [{ s: 0, v: 0.1 }, { s: 63, v: 0.9 }]; k.commit();
+    const before = JSON.stringify(tr.auto), w0 = await window.qa.wins(k.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]]);
+    k.chain.stripToChain(tr); k.commit();
+    const eq = tr.inserts.find(i => i.type === 'eq3'), cp = tr.inserts.find(i => i.type === 'comp');
+    const moved = !!(eq && cp && tr.auto[`ins:${eq.id}:freq`]?.length === 2 && tr.auto[`ins:${cp.id}:ratio`]?.length === 2 && !tr.auto['set:eqMidF'] && !tr.auto['set:compRatio']);
+    const w1 = await window.qa.wins(k.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]]);
+    const can = k.chain.canRevert(tr), back = k.chain.chainToStrip(tr); k.commit();
+    return { moved, can, back, same: JSON.stringify(tr.auto) === before, strip: tr.strip, w0: w0.map(x => x.l), w1: w1.map(x => x.l) };
+  });
+  expect(r.moved, 'les courbes doivent passer aux effets de la chaîne');
+  expect(r.w0.every((x, i) => Math.abs(r.w1[i] / x - 1) < 0.01), `la conversion ne doit pas changer le son : ${r.w0.map(v => v.toFixed(4))} / ${r.w1.map(v => v.toFixed(4))}`);
+  expect(r.can && r.back && r.same && r.strip === 'fixe', 'retour à la tranche fixe : ' + JSON.stringify([r.can, r.back, r.same, r.strip]));
+  // Libellés traduits.
+  for (const [l, a, c] of [['en', 'Mid freq.', 'Ratio'], ['es', 'Frec. med.', 'Ratio']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    const labels = await page.$$eval('.ahead option', o => o.map(x => x.textContent.replace(/\s*•$/, '')));   // « • » : réglage qui a une courbe
+    expect(labels.includes(a) && labels.includes(c), `libellés en ${l} : ${labels.join(' | ')}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
 // ============ Suite (21/11/2026) : clips enregistrés à la volée dans le Live ============
 /** Live à 240 BPM (une mesure = 1 s), prises d'une mesure ; renvoie l'identifiant de la piste d'instrument (piste 1). */
 async function liveRecSetup(len = '1') {
@@ -5809,6 +5925,60 @@ test('LR04', 'Live', 'Au clavier : ● se déclenche avec Entrée ; une piste au
     expect((await page.textContent('.lrec >> nth=0')).includes(w) && (await page.textContent('.lrecl')) === row, 'non traduit en ' + l);
   }
   await page.evaluate(() => window.kh.setLang('fr'));
+});
+
+test('LR05', 'Live', 'Arpégiateur et répétition de notes pendant une prise à la volée : les notes égrenées et les coups répétés sont rangés dans le clip', async () => {
+  const tid = await liveRecSetup('1');
+  await S(() => { window.kh.kb.arp = 'up'; window.kh.kb.arpRate = 4; });
+  try {
+    await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+    await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 0.3), 'position', 3000);
+    await S(() => { window.kh.noteOn(60, 0.7); window.kh.noteOn(64, 0.7); });
+    await until(() => S(() => { const r = window.kh.engine.liveRec; return !r || window.kh.engine.currentStep() - r.from >= 13; }), 'position de fin', 3000);
+    await S(() => { window.kh.noteOff(60); window.kh.noteOff(64); });
+    await until(async () => !(await takeState()), 'la prise ne se termine pas', 4000); await sleep(150);
+    const c = await S(() => { const tr = window.kh.S.project.tracks[1]; return tr.clips[tr.clips.length - 1]; });
+    const ns = [...c.notes].sort((a, b) => a.s - b.s);
+    expect(ns.length >= 3 && ns.length <= 5, 'notes égrenées rangées : ' + JSON.stringify(ns));
+    expect(ns.every(n => (n.p === 60 || n.p === 64) && n.s >= 0 && n.s + n.l <= 16 && Math.abs(n.s - Math.round(n.s)) < 1e-6 && Math.abs(n.v - 0.7) < 0.01), 'hauteurs, places ou nuances : ' + JSON.stringify(ns));
+    expect(ns.every((n, i) => !i || (n.p !== ns[i - 1].p && n.s - ns[i - 1].s >= 3)), 'les notes doivent alterner en montant, une par noire : ' + JSON.stringify(ns));
+    await page.click('[data-act=stopall]'); await sleep(200);
+    // Batterie : un pad tenu avec la répétition de notes à la croche.
+    await S(() => { window.kh.kb.arp = 'off'; window.kh.kb.repeat = 2; });
+    const did = await S(() => window.kh.S.project.tracks[0].id);
+    await page.click(`.lrec[data-rec="${did}"]`); await until(async () => (await takeState())?.from != null, 'la prise de batterie ne part pas');
+    await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 0.3), 'position', 3000);
+    await S(() => window.kh.padHit(0, 1));
+    await until(() => S(() => { const r = window.kh.engine.liveRec; return !r || window.kh.engine.currentStep() - r.from >= 9; }), 'position de fin', 3000);
+    await S(() => window.kh.noteOff(36));
+    await until(async () => !(await takeState()), 'la prise de batterie ne se termine pas', 4000);
+    const d = await S(() => { const tr = window.kh.S.project.tracks[0]; return tr.clips[tr.clips.length - 1].drums[0]; });
+    const hits = d.map((v, i) => v ? i : -1).filter(i => i >= 0);
+    expect(hits.length >= 3 && hits.every(i => i <= 11), 'coups répétés rangés : ' + JSON.stringify(hits));
+  } finally { await S(() => { window.kh.kb.arp = 'off'; window.kh.kb.repeat = 0; window.kh.kb.arpRate = 2; }); }
+  await page.click('[data-act=stopall]');
+});
+
+test('LR06', 'Live', 'Pitch bend et molette joués pendant une prise à la volée : la courbe est gardée dans le clip, retour au centre compris', async () => {
+  const tid = await liveRecSetup('2');
+  await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+  await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 1), 'position', 3000);
+  await S(async () => {
+    const k = window.kh, w = ms => new Promise(r => setTimeout(r, ms));
+    k.onMidi([0x90, 69, 100]); await w(150);
+    for (let i = 1; i <= 8; i++) { const x = Math.round(8192 + 8191 * i / 8); k.onMidi([0xe0, x & 0x7f, x >> 7]); await w(20); }
+    k.onMidi([0xb0, 1, 90]); await w(300);
+    for (let i = 7; i >= 0; i--) { const x = Math.round(8192 + 8191 * i / 8); k.onMidi([0xe0, x & 0x7f, x >> 7]); await w(20); }
+    await w(100); k.onMidi([0x80, 69, 0]);
+  });
+  await until(async () => !(await takeState()), 'la prise ne se termine pas', 5000); await sleep(150);
+  const c = await S(() => { const tr = window.kh.S.project.tracks[1]; return tr.clips[tr.clips.length - 1]; });
+  const pb = c.ctl?.pb ?? [], mod = c.ctl?.mod ?? [];
+  expect(c.notes.length === 1 && c.notes[0].p === 69, 'note de la prise : ' + JSON.stringify(c.notes));
+  expect(pb.length >= 4 && Math.max(...pb.map(p => p.v)) > 0.99 && pb[pb.length - 1].v === 0, 'courbe de bend : ' + JSON.stringify(pb));
+  expect(pb.every((p, i) => p.s >= 0 && p.s < 32 && (!i || p.s >= pb[i - 1].s)), 'points de bend hors du clip ou désordonnés');
+  expect(mod.length >= 1 && Math.abs(mod[mod.length - 1].v - 90 / 127) < 0.01, 'molette de modulation : ' + JSON.stringify(mod));
+  await page.click('[data-act=stopall]');
 });
 
 // ============ Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ============
