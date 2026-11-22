@@ -23,6 +23,12 @@ function liveSpot(tr: Track): { clip: Clip; local: number } | null {
   const at = engine.liveRecPos(tr.id), clip = at && tr.clips.find(c => c.id === at.clipId);
   return at && clip ? { clip, local: at.local } : null;
 }
+/** Même chose pour un son programmé à l'instant `t` (arpégiateur, répétition de notes : leur horloge joue un peu en avance). */
+function liveSpotAt(tr: Track, t: number): { clip: Clip; local: number } | null {
+  const ls = liveSpot(tr); if (!ls) return null;
+  const local = ls.local + Math.max(0, t - engine.ctx.currentTime) / stepDur(S.project.bpm);
+  return local < ls.clip.patLen! ? { clip: ls.clip, local } : null;
+}
 const hasContent = (c: Clip) => !!(c.notes?.length || c.drums?.some(r => r.some(Boolean)));
 /**
  * Départ : un clip vide de la longueur choisie est ajouté après le dernier clip de la piste (il prend la ligne suivante
@@ -92,7 +98,14 @@ function rollFree() {
   if (!rolls.size || !kb.repeat || engine.grid()) { rollT = 0; return; }
   const now = engine.ctx.currentTime, d = kb.repeat * stepDur(S.project.bpm);
   if (rollT < now) rollT = now + d;
-  while (rollT < now + 0.1) { for (const [row, tr] of rolls) engine.padAt(tr, row, rollT, 0.85); rollT += d; }
+  while (rollT < now + 0.1) {
+    for (const [row, tr] of rolls) {
+      engine.padAt(tr, row, rollT, 0.85);
+      const ls = liveSpotAt(tr, rollT);   // prise à la volée du Live : les coups répétés sont rangés comme les autres
+      if (ls) ls.clip.drums![row][cellOf(ls.clip, ls.local)] = 0.85;
+    }
+    rollT += d;
+  }
 }
 
 const cellOf = (clip: Clip, local: number) => { const n = clip.drums![0].length; return Math.round(local * (clip.res ?? 1)) % n; };
@@ -138,7 +151,19 @@ function arpFree() {
   if (!tr || !arp.keys.length || engine.grid()) { arp.nextT = 0; return; }
   const now = engine.ctx.currentTime, d = kb.arpRate * stepDur(S.project.bpm);
   if (arp.nextT < now) arp.nextT = now + 0.01;
-  while (arp.nextT < now + 0.1) { engine.playAt(tr, arpPick(), arp.nextT, d * 0.8, arp.vel); arp.nextT += d; }
+  while (arp.nextT < now + 0.1) {
+    const m = arpPick();
+    engine.playAt(tr, m, arp.nextT, d * 0.8, arp.vel);
+    // Prise à la volée du Live : chaque note égrenée est rangée dans le clip, calée sur la grille du piano roll
+    // (ou sur le pas de l'arpégiateur s'il est plus fin), d'une durée d'un pas d'arpège.
+    const ls = liveSpotAt(tr, arp.nextT);
+    if (ls) {
+      const g = Math.min(GRIDS[S.grid] ?? 1, kb.arpRate), at = Math.min(snapTo(ls.local, g), ls.clip.patLen! - g);
+      if (!ls.clip.notes!.some(n => n.p === m && Math.abs(n.s - at) < 1e-6)) ls.clip.notes!.push({ p: m, s: Math.max(0, at), l: Math.max(g, Math.min(kb.arpRate, ls.clip.patLen! - at)), v: Math.round(arp.vel * 100) / 100 });
+      emit();
+    }
+    arp.nextT += d;
+  }
 }
 function arpAdd(tr: Track, keys: number[], vel: number) {
   if (!arp.keys.length) { arp.idx = 0; arp.nextT = 0; }

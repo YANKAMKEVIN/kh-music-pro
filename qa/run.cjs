@@ -5827,6 +5827,38 @@ test('LR04', 'Live', 'Au clavier : ● se déclenche avec Entrée ; une piste au
   await page.evaluate(() => window.kh.setLang('fr'));
 });
 
+test('LR05', 'Live', 'Arpégiateur et répétition de notes pendant une prise à la volée : les notes égrenées et les coups répétés sont rangés dans le clip', async () => {
+  const tid = await liveRecSetup('1');
+  await S(() => { window.kh.kb.arp = 'up'; window.kh.kb.arpRate = 4; });
+  try {
+    await page.click(`.lrec[data-rec="${tid}"]`); await until(async () => (await takeState())?.from != null, 'la prise ne part pas');
+    await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 0.3), 'position', 3000);
+    await S(() => { window.kh.noteOn(60, 0.7); window.kh.noteOn(64, 0.7); });
+    await until(() => S(() => { const r = window.kh.engine.liveRec; return !r || window.kh.engine.currentStep() - r.from >= 13; }), 'position de fin', 3000);
+    await S(() => { window.kh.noteOff(60); window.kh.noteOff(64); });
+    await until(async () => !(await takeState()), 'la prise ne se termine pas', 4000); await sleep(150);
+    const c = await S(() => { const tr = window.kh.S.project.tracks[1]; return tr.clips[tr.clips.length - 1]; });
+    const ns = [...c.notes].sort((a, b) => a.s - b.s);
+    expect(ns.length >= 3 && ns.length <= 5, 'notes égrenées rangées : ' + JSON.stringify(ns));
+    expect(ns.every(n => (n.p === 60 || n.p === 64) && n.s >= 0 && n.s + n.l <= 16 && Math.abs(n.s - Math.round(n.s)) < 1e-6 && Math.abs(n.v - 0.7) < 0.01), 'hauteurs, places ou nuances : ' + JSON.stringify(ns));
+    expect(ns.every((n, i) => !i || (n.p !== ns[i - 1].p && n.s - ns[i - 1].s >= 3)), 'les notes doivent alterner en montant, une par noire : ' + JSON.stringify(ns));
+    await page.click('[data-act=stopall]'); await sleep(200);
+    // Batterie : un pad tenu avec la répétition de notes à la croche.
+    await S(() => { window.kh.kb.arp = 'off'; window.kh.kb.repeat = 2; });
+    const did = await S(() => window.kh.S.project.tracks[0].id);
+    await page.click(`.lrec[data-rec="${did}"]`); await until(async () => (await takeState())?.from != null, 'la prise de batterie ne part pas');
+    await until(() => S(() => window.kh.engine.currentStep() - window.kh.engine.liveRec.from >= 0.3), 'position', 3000);
+    await S(() => window.kh.padHit(0, 1));
+    await until(() => S(() => { const r = window.kh.engine.liveRec; return !r || window.kh.engine.currentStep() - r.from >= 9; }), 'position de fin', 3000);
+    await S(() => window.kh.noteOff(36));
+    await until(async () => !(await takeState()), 'la prise de batterie ne se termine pas', 4000);
+    const d = await S(() => { const tr = window.kh.S.project.tracks[0]; return tr.clips[tr.clips.length - 1].drums[0]; });
+    const hits = d.map((v, i) => v ? i : -1).filter(i => i >= 0);
+    expect(hits.length >= 3 && hits.every(i => i <= 11), 'coups répétés rangés : ' + JSON.stringify(hits));
+  } finally { await S(() => { window.kh.kb.arp = 'off'; window.kh.kb.repeat = 0; window.kh.kb.arpRate = 2; }); }
+  await page.click('[data-act=stopall]');
+});
+
 // ============ Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ============
 /**
  * Projet de mesure des chaînes : trois synthés (les sept étages réglés ; courbes de filtre, de chorus, de graves et de seuil

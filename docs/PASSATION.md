@@ -855,7 +855,7 @@ Aucune branche n'est supprimée.
 - N'existait pas : le Live ne faisait que lancer des clips existants.
 - Ajouté : ligne « Prise » sous la grille du Live, un bouton ● par piste d'instrument ou de batterie (`live.ts`). La prise attend la mesure suivante (bouton qui clignote), coupe le clip de la piste, crée un clip vide de la longueur choisie (« Longueur d'une prise » dans le panneau de jeu : 1, 2, 4 ou 8 mesures, `Project.liveLen`, **2 par défaut**, validé par Kevin le 21/11/2026) placé après le dernier clip de la piste (il prend donc la ligne suivante de la grille et apparaît dans l'arrangement), y range les notes (calées sur la grille du piano roll) et les coups de pad joués au clavier, au MIDI ou à l'écran, puis le lance en boucle dès sa fin (`engine.recordLive`, `liveRec`, `liveRecPos` ; `input.ts`, `engine.onLiveRec`). Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps. Une note encore tenue à la fin va jusqu'au bout du clip et continue de sonner jusqu'au relâchement. Second appui : prise abandonnée. Arrêter pendant la prise : on garde ce qui a été joué (rien si rien n'a été joué). La fin de la prise est une entrée de l'historique (Annuler la retire).
 - QA : LR01-LR04 (souris, clavier, position des notes, batterie et nuance, boucle audible, arrangement, abandon, arrêt, fichier, ancien projet, traductions).
-- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub), pitch bend et molette pendant la prise, arpégiateur (ses notes ne sont pas rangées).
+- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub), pitch bend et molette pendant la prise. ~~Arpégiateur (ses notes ne sont pas rangées).~~ Fait en section 20 (LR05).
 
 ### Chaînes d'effets qui remplacent la tranche fixe : plan (réalisé depuis, voir section 19)
 
@@ -942,4 +942,11 @@ Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire san
 - Défaut constaté en section 19 : le rendu du gel passait par le volume général, son filtre, son égaliseur, sa largeur et son limiteur, puis la piste gelée y repassait. Un morceau gelé sonnait donc plus bas (0,9 dB avec le général à 90 %, bien plus avec un général bas ou un égaliseur du général poussé).
 - Corrigé : le rendu du gel s'arrête avant le général (`renderOffline(…, { stem: true })`, général à 100 %, comme les rendus par groupes de l'export parallèle). Changer ensuite le général change la piste gelée comme l'originale.
 - QA : FZ06 (général à 50 %, égaliseur, filtre et largeur du général réglés : écart sous 0,3 dB avant et après le gel ; puis général changé : gelé et dégelé sonnent pareil). FZ06 échoue sans le correctif (0,73 dB sur le morceau de démonstration).
+
+### Arpégiateur et répétition de notes pendant une prise à la volée du Live
+
+- Avant : pendant une prise à la volée (section 18), les notes égrenées par l'arpégiateur et les coups répétés d'un pad tenu (répétition de notes) sonnaient mais n'étaient pas rangés dans le clip ; seules les touches et les frappes elles-mêmes l'étaient.
+- Désormais (`input.ts`, `liveSpotAt`) : chaque note de l'arpège est rangée à l'instant où elle sonne, calée sur la grille du piano roll (ou sur le pas de l'arpège s'il est plus fin), longue d'un pas d'arpège, à la nuance de la touche ; chaque coup répété va dans la case la plus proche du motif, à la nuance des coups répétés (0,85). Comme pour les notes jouées, rien n'est rangé avant la double-croche qui précède le départ ni après la fin de la prise.
+- L'arpège du Live garde son horloge libre (il n'est pas calé sur la mesure du Live, comme avant) : ses notes sont donc aimantées sur la grille au rangement.
+- QA : LR05 (arpège montant à la noire sur deux touches : 3 à 5 notes alternées, une par noire, nuance gardée ; pad tenu avec répétition à la croche : coups rangés). LR05 échoue sans le correctif (aucune note rangée).
 
