@@ -855,7 +855,7 @@ Aucune branche n'est supprimée.
 - N'existait pas : le Live ne faisait que lancer des clips existants.
 - Ajouté : ligne « Prise » sous la grille du Live, un bouton ● par piste d'instrument ou de batterie (`live.ts`). La prise attend la mesure suivante (bouton qui clignote), coupe le clip de la piste, crée un clip vide de la longueur choisie (« Longueur d'une prise » dans le panneau de jeu : 1, 2, 4 ou 8 mesures, `Project.liveLen`, **2 par défaut**, validé par Kevin le 21/11/2026) placé après le dernier clip de la piste (il prend donc la ligne suivante de la grille et apparaît dans l'arrangement), y range les notes (calées sur la grille du piano roll) et les coups de pad joués au clavier, au MIDI ou à l'écran, puis le lance en boucle dès sa fin (`engine.recordLive`, `liveRec`, `liveRecPos` ; `input.ts`, `engine.onLiveRec`). Une note jouée jusqu'à une double-croche avant le départ compte pour le premier temps. Une note encore tenue à la fin va jusqu'au bout du clip et continue de sonner jusqu'au relâchement. Second appui : prise abandonnée. Arrêter pendant la prise : on garde ce qui a été joué (rien si rien n'a été joué). La fin de la prise est une entrée de l'historique (Annuler la retire).
 - QA : LR01-LR04 (souris, clavier, position des notes, batterie et nuance, boucle audible, arrangement, abandon, arrêt, fichier, ancien projet, traductions).
-- Restent : prise audio (micro) à la volée, longueur libre (arrêter la prise d'un second appui pour en fixer la longueur), enregistrement par-dessus un clip qui tourne (overdub). ~~Pitch bend et molette pendant la prise.~~ ~~Arpégiateur (ses notes ne sont pas rangées).~~ Faits en section 20 (LR05, LR06).
+- Restent : prise audio (micro) à la volée, ~~longueur libre (arrêter la prise d'un second appui pour en fixer la longueur)~~ (décision de Kevin du 22/11/2026 : le second appui abandonne, section 21), enregistrement par-dessus un clip qui tourne (overdub). ~~Pitch bend et molette pendant la prise.~~ ~~Arpégiateur (ses notes ne sont pas rangées).~~ Faits en section 20 (LR05, LR06).
 
 ### Chaînes d'effets qui remplacent la tranche fixe : plan (réalisé depuis, voir section 19)
 
@@ -987,3 +987,8 @@ Branche partie de `main` à `9a70e01` (suite 3 fusionnée). Pas de fusion ni de 
 - La visite guidée éclaire ces boutons à l'étape « Pistes » (texte inchangé : « Ajoutez ici… »).
 - QA : TB08 (ordre de la barre, trois types, groupe nommé, coin sans bouton, ajout d'un instrument par le nouveau bouton, Annuler, ajout d'une batterie au doigt sur téléphone, pas de débordement) ; UX13a adapté (icônes des boutons d'ajout cherchées dans la barre d'arrangement). A01, N-fr/en/es, PH04 et TR01 utilisaient des sélecteurs qui suivent les boutons (inchangés).
 
+### Décisions confirmées, rien à changer dans le code
+
+- **Second appui sur une prise à la volée du Live = abandon** (comportement actuel, section 18) : pas de longueur libre.
+- **L'arpégiateur du Live garde son horloge libre** (section 20) : ses notes restent aimantées sur la grille au rangement.
+- **Les 13 icônes dessinées de la deuxième tranche sont gardées** (section 20).
