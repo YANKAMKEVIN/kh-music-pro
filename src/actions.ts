@@ -733,8 +733,10 @@ export function exportMidiFile() {
 
 export async function importMidiFile(f: File) {
   try {
-    const r = importMidi(await f.arrayBuffer()), p = S.project;
-    if (r.bpm && !contentEnd(p)) { p.bpm = r.bpm; p.tempos = r.tempos; }
+    const p = S.project, empty = !contentEnd(p), r = importMidi(await f.arrayBuffer(), empty);
+    if (r.bpm && empty) { p.bpm = r.bpm; p.tempos = r.tempos; }
+    // Projet vide : il prend aussi la signature du fichier (6/8, 3/4…), comme le tempo.
+    if (r.sig && empty) { p.sig = r.sig.sig; p.den = r.sig.den; }
     p.tracks.push(...r.tracks); S.selTrack = r.tracks[0].id; S.selClip = r.tracks[0].clips[0].id;
     commit(); toast(t('toast.midiImported', r.tracks.length));
   } catch { toast(t('toast.badMidi'), 'error'); }

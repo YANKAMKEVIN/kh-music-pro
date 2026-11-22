@@ -5777,6 +5777,28 @@ test('SG05', 'Signature', '6/8 dans le fichier MIDI exporté, dans le fichier pr
   const p = await proj(); expect(p.sig === 3 && p.den === 4 && await S(() => window.kh.bar()) === 12 && await page.$eval('#sig', e => e.value) === '3', `ancien projet : ${p.sig}/${p.den}`);
 });
 
+test('SG06', 'Signature', 'Import MIDI : un projet vide prend la signature du fichier (6/8, 12/8, 7/4) ; un projet déjà commencé garde la sienne ; signature inconnue ignorée', async () => {
+  // Fichier en 6/8 : une note de 20 pas sur la piste d'instrument.
+  const bytes = await S(() => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.sig = 6; p.den = 8; p.tracks = [p.tracks[1]]; p.tracks[0].clips = [{ id: 'm', name: 'm', start: 0, len: 24, offset: 0, patLen: 24, notes: [{ p: 60, s: 0, l: 20, v: 0.8 }] }]; return Array.from(k.exportMidi(p)); });
+  const f = path.join(TMP, 'six-huit.mid'); fs.writeFileSync(f, Buffer.from(bytes));
+  // Projet déjà commencé (4/4) : signature gardée, clip compté en mesures de 16 pas.
+  await page.setInputFiles('#fMidi', f); await sleep(300);
+  let r = await S(() => { const p = window.kh.S.project, c = p.tracks[p.tracks.length - 1].clips[0]; return { sig: p.sig, den: p.den, len: c.len }; });
+  expect(r.sig === 4 && r.den === 4 && r.len === 32, 'projet commencé : ' + JSON.stringify(r));
+  // Projet vide : il passe en 6/8, le clip se compte en mesures de 12 pas.
+  await S(() => { const k = window.kh; k.S.project.tracks.forEach(t => { t.clips = []; }); k.commit(); });
+  await page.setInputFiles('#fMidi', f); await sleep(300);
+  r = await S(() => { const p = window.kh.S.project, c = p.tracks[p.tracks.length - 1].clips[0]; return { sig: p.sig, den: p.den, len: c.len, bar: window.kh.bar() }; });
+  expect(r.sig === 6 && r.den === 8 && r.bar === 12 && r.len === 24, 'projet vide : ' + JSON.stringify(r));
+  expect(await page.$eval('#sig', e => e.value) === '6/8', 'le menu de la signature doit suivre');
+  await page.keyboard.press('Control+z'); expect(await S(() => window.kh.S.project.den) === 4, 'Annuler doit rendre la signature d’avant');
+  // Autres signatures lues directement ; une signature que l'application ne connaît pas (11/8) est ignorée.
+  const sigs = await S(() => { const k = window.kh, mk = (sig, den) => { const p = JSON.parse(JSON.stringify(k.S.project)); p.sig = sig; p.den = den; p.tracks = [p.tracks[1]]; p.tracks[0].clips = [{ id: 'm', name: 'm', start: 0, len: 16, offset: 0, patLen: 16, notes: [{ p: 60, s: 0, l: 4, v: 0.8 }] }]; return k.exportMidi(p); };
+    const odd = mk(4, 4), i = odd.findIndex((b, j) => b === 0xff && odd[j + 1] === 0x58); odd[i + 3] = 11; odd[i + 4] = 3;
+    return [k.importMidi(mk(12, 8).buffer, true).sig, k.importMidi(mk(7, 4).buffer, true).sig, k.importMidi(odd.buffer, true).sig]; });
+  expect(JSON.stringify(sigs) === JSON.stringify([{ sig: 12, den: 8 }, { sig: 7, den: 4 }, null]), 'signatures lues : ' + JSON.stringify(sigs));
+});
+
 test('AZ05', 'Automation', 'Fréquence du médium et taux du compresseur automatisés dans la tranche fixe : à l’écoute, à l’export, à l’arrêt ; conversion en chaîne et retour sans perte', async () => {
   const { lane, tid } = await sawSetup();
   await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.synth.cutoff = 12000; tr.eqMid = 12; k.commit(); });

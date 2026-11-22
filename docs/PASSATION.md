@@ -847,7 +847,7 @@ Aucune branche n'est supprimée.
 
 - Nouveau champ `Project.den` (4 ou 8 ; `migrate` met 4). `BAR` = numérateur × 16 / dénominateur ; nouveau `BEAT` (`types.ts`, `setBar(pas, temps)`) : noire (4 pas) en x/4, noire pointée (6 pas) en 6/8, 9/8, 12/8, croche (2 pas) en 5/8 et 7/8.
 - `BEAT` sert au métronome, au décompte (un clic par temps : 2 en 6/8 ; corrige au passage le décompte de 4 clics en 3/4, qui en fait maintenant 3), au compteur mesure.temps.double-croche, au témoin du temps, aux lignes de temps de l'arrangement et du piano roll (qui ignorait jusqu'ici la signature : lignes de mesure toutes les 16 pas même en 3/4), aux cases alternées du séquenceur, au calage « au temps » du mode Live.
-- Menu de la signature : valeurs « 2 » à « 7 » inchangées pour x/4 (anciens tests et anciens projets), « 5/8 » à « 12/8 » pour les croches. Export MIDI : évènement de signature (FF 58), y compris en x/4 ; pas lu à l'import.
+- Menu de la signature : valeurs « 2 » à « 7 » inchangées pour x/4 (anciens tests et anciens projets), « 5/8 » à « 12/8 » pour les croches. Export MIDI : évènement de signature (FF 58), y compris en x/4 ; lu à l'import depuis la section 20.
 - QA : SG02-SG05 (souris, règle, compteur, séquenceur, métronome et décompte épiés, 12/8 à 5/8, boucle d'une mesure de 7/8 à l'écoute, MIDI, fichier projet, ancien projet).
 
 ### Clips enregistrés à la volée en mode Live (idée de la feuille de route)
@@ -969,4 +969,10 @@ Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire san
 - Avant : ces deux réglages ne s'automatisaient qu'une fois la tranche convertie en chaîne d'effets (section 19), et une courbe sur l'un d'eux empêchait le retour à la tranche fixe.
 - Désormais : clés `set:eqMidF` (200 Hz à 8 kHz) et `set:compRatio` (1:1 à 20:1), mêmes plages logarithmiques que les réglages de l'effet de la chaîne, donc courbe reprise telle quelle par la conversion dans les deux sens (`CURVES`, `chain.ts`). Dans la liste des réglages de la courbe, groupe « Tranche » : graves, médiums, fréquence du médium, aigus, seuil, taux. Le gain de compensation du compresseur suit le seuil et le taux (courbe ou réglage fixe), comme au mixeur. À l'arrêt, les deux réglages reviennent à la valeur du mixeur. Le retour à la tranche fixe n'est plus refusé pour ces deux courbes (texte de la raison mis à jour en trois langues) ; il l'est toujours pour une courbe de trémolo.
 - QA : AZ05 (fréquence tracée à la souris, export plus brillant à la fin, valeur suivie à l'écoute puis rendue au mixeur ; taux de 1:1 à 20:1 comparé aux taux fixes ; conversion en chaîne sans changement de son, courbes passées aux effets, retour sans perte ; libellés traduits) ; AZ01 adapté (six réglages dans le groupe Tranche).
+
+### Signature lue à l'import d'un fichier MIDI
+
+- Avant : l'export MIDI écrivait la signature (section 18) mais l'import l'ignorait ; un fichier en 6/8 arrivait dans un projet en 4/4.
+- Désormais (`importMidi`, `files.ts`) : la signature du début du fichier (FF 58 au premier instant ; les changements en cours de morceau restent ignorés, faute de signatures multiples) est lue si l'application la connaît (2/4 à 7/4, 5/8, 6/8, 7/8, 9/8, 12/8). Comme le tempo, elle n'est reprise que par un projet vide (`importMidiFile`) ; les clips importés se comptent alors dans ses mesures. Un projet déjà commencé garde sa signature. Une seule entrée d'annulation pour l'import.
+- QA : SG06 (projet commencé en 4/4 inchangé ; projet vide passé en 6/8 avec le menu à jour, clip de 24 pas, Annuler ; 12/8 et 7/4 lus ; 11/8 ignoré).
 
