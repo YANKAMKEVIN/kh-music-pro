@@ -160,11 +160,14 @@ export function fxToNorm(type: string, k: string, x: number): number {
 }
 /**
  * Automation de la tranche fixe et de l'instrument (suite, 21/11/2026) : clé `set:<champ de la piste ou de l'instrument>`,
- * courbe de 0 à 1 sur la plage du réglage, comme pour les effets. Égaliseur et seuil du compresseur par rampes ;
+ * courbe de 0 à 1 sur la plage du réglage, comme pour les effets. Égaliseur (gains et fréquence du médium), seuil et taux
+ * du compresseur par rampes ;
  * coupure et résonance du filtre de l'instrument lues au départ de chaque note (une note tenue garde sa valeur).
  */
 export const SET_AUTO: Record<string, { min: number; max: number; synth?: boolean }> = {
   eqLow: { min: -15, max: 15 }, eqMid: { min: -15, max: 15 }, eqHigh: { min: -15, max: 15 }, compThr: { min: -60, max: 0 },
+  // Suite 3 (22/11/2026) : fréquence du médium et taux du compresseur, mêmes plages (logarithmiques) que dans la chaîne d'effets.
+  eqMidF: { min: 200, max: 8000 }, compRatio: { min: 1, max: 20 },
   cutoff: { min: 80, max: 12000, synth: true }, reso: { min: 0, max: 18, synth: true },
 };
 export const setKey = (k: string) => `set:${k}`;

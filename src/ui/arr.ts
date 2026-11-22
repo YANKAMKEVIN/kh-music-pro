@@ -167,8 +167,9 @@ function insParams(tr: Track): { key: string; fx: string; label: string; cur: nu
  */
 function setParams(tr: Track): { key: string; fx: string; label: string; cur: number }[] {
   // Tranche en chaîne d'effets : pas de tranche fixe, ses réglages s'automatisent dans le groupe de chaque effet.
-  const strip = t('auto.strip'), out = (tr.strip === 'chaine' ? [] : ['eqLow', 'eqMid', 'eqHigh', 'compThr'] as const).map(k => ({
-    key: setKey(k), fx: strip, label: k === 'compThr' ? t('mix.compThr') : t(k === 'eqLow' ? 'mix.low' : k === 'eqMid' ? 'mix.mid' : 'mix.high'), cur: setToNorm(k, tr[k]),
+  const labels = { eqLow: 'mix.low', eqMid: 'mix.mid', eqMidF: 'mix.midF', eqHigh: 'mix.high', compThr: 'mix.compThr', compRatio: 'mix.compRatio' } as const;
+  const strip = t('auto.strip'), out = (tr.strip === 'chaine' ? [] : ['eqLow', 'eqMid', 'eqMidF', 'eqHigh', 'compThr', 'compRatio'] as const).map(k => ({
+    key: setKey(k), fx: strip, label: t(labels[k]), cur: setToNorm(k, tr[k]),
   }));
   const sp = tr.type === 'synth' ? tr.synth : undefined;
   if (sp && sp.engine !== 'au') for (const k of ['cutoff', 'reso'] as const) out.push({ key: setKey(k), fx: t('auto.inst'), label: t('syn.' + k), cur: setToNorm(k, sp[k]) });

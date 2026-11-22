@@ -5654,7 +5654,7 @@ test('AZ01', 'Automation', 'Filtre de l’instrument automatisé : choisi dans l
   const { lane } = await sawSetup();
   const opts = await page.$$eval('[data-role=autoparam] optgroup', g => g.map(x => [x.label, [...x.querySelectorAll('option')].map(o => o.value)]));
   const strip = opts.find(o => o[0].startsWith('Tranche')), inst = opts.find(o => o[0].startsWith('Instrument'));
-  expect(strip && strip[1].join() === 'set:eqLow,set:eqMid,set:eqHigh,set:compThr', 'groupe Tranche : ' + JSON.stringify(opts));
+  expect(strip && strip[1].join() === 'set:eqLow,set:eqMid,set:eqMidF,set:eqHigh,set:compThr,set:compRatio', 'groupe Tranche : ' + JSON.stringify(opts));
   expect(inst && inst[1].join() === 'set:cutoff,set:reso', 'groupe Instrument : ' + JSON.stringify(opts));
   await page.selectOption('[data-role=autoparam]', 'set:cutoff');
   // Sans point, la courbe part de la valeur actuelle du réglage (1 500 Hz).
@@ -5775,6 +5775,50 @@ test('SG05', 'Signature', '6/8 dans le fichier MIDI exporté, dans le fichier pr
   delete saved.project.den; saved.project.sig = 3; const g = path.join(TMP, 'old-sig.khm'); fs.writeFileSync(g, JSON.stringify(saved));
   await page.setInputFiles('#fProj', g); await sleep(400);
   const p = await proj(); expect(p.sig === 3 && p.den === 4 && await S(() => window.kh.bar()) === 12 && await page.$eval('#sig', e => e.value) === '3', `ancien projet : ${p.sig}/${p.den}`);
+});
+
+test('AZ05', 'Automation', 'Fréquence du médium et taux du compresseur automatisés dans la tranche fixe : à l’écoute, à l’export, à l’arrêt ; conversion en chaîne et retour sans perte', async () => {
+  const { lane, tid } = await sawSetup();
+  await S(() => { const k = window.kh, tr = k.S.project.tracks[1]; tr.synth.cutoff = 12000; tr.eqMid = 12; k.commit(); });
+  await page.selectOption('[data-role=autoparam]', 'set:eqMidF'); await autoPoint(lane, 0, 0); await autoPoint(lane, 63, 1);
+  expect(await S(() => window.kh.S.project.tracks[1].auto['set:eqMidF']?.length) === 2, 'courbe de fréquence non tracée');
+  // Médium poussé de 12 dB qui monte de 200 Hz à 8 kHz : le son s'éclaircit au fil de la courbe.
+  const b = bright(await page.evaluate(() => window.qa.wins(window.kh.S.project, [[0.05, 0.4], [7.55, 7.9]])));
+  expect(b[1] > b[0] * 1.3, `fréquence du médium automatisée : ${b.map(v => v.toFixed(3)).join(' → ')}`);
+  await page.keyboard.press('Space'); await sleep(1200);
+  const f1 = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).mid.frequency.value, tid); await sleep(1500);
+  const f2 = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).mid.frequency.value, tid);
+  await page.keyboard.press('Space'); await sleep(400);
+  const f3 = await page.evaluate(id => window.kh.engine.mix.tracks.get(id).mid.frequency.value, tid);
+  expect(f1 < 600 && f2 > f1 * 1.5, `à l’écoute, la fréquence suit la courbe : ${Math.round(f1)} → ${Math.round(f2)} Hz`);
+  expect(Math.abs(f3 - 1000) < 20, `à l’arrêt, la fréquence revient au réglage du mixeur (1 000 Hz, obtenu ${Math.round(f3)})`);
+  // Taux du compresseur de 1:1 à 20:1, seuil à -40 dB : le début sonne comme le taux fixe à 1:1, la fin comme à 20:1.
+  const w = await S(async () => { const k = window.kh, mk = (ratio, auto) => { const p = JSON.parse(JSON.stringify(k.S.project)), tr = p.tracks[1]; tr.eqMid = 0; tr.comp = true; tr.compThr = -40; tr.compRatio = ratio; tr.auto = auto; return window.qa.wins(p, [[0.05, 0.4], [7.55, 7.9]]); };
+    return { auto: await mk(4, { 'set:compRatio': [{ s: 0, v: 0 }, { s: 1, v: 0 }, { s: 62, v: 1 }] }), lo: await mk(1, {}), hi: await mk(20, {}) }; });
+  expect(Math.abs(w.auto[0].l / w.lo[0].l - 1) < 0.15 && Math.abs(w.auto[1].l / w.hi[1].l - 1) < 0.15 && Math.abs(w.lo[0].l / w.hi[1].l - 1) > 0.2,
+    `taux automatisé : ${w.auto.map(x => x.l.toFixed(4)).join(' → ')} ; fixe à 1:1 ${w.lo[0].l.toFixed(4)}, à 20:1 ${w.hi[1].l.toFixed(4)}`);
+  // Conversion en chaîne : les deux courbes passent aux effets, le son ne change pas ; retour à la tranche fixe permis et sans perte.
+  const r = await S(async () => {
+    const k = window.kh, tr = k.S.project.tracks[1];
+    tr.comp = true; tr.compThr = -30; tr.auto['set:compRatio'] = [{ s: 0, v: 0.1 }, { s: 63, v: 0.9 }]; k.commit();
+    const before = JSON.stringify(tr.auto), w0 = await window.qa.wins(k.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]]);
+    k.chain.stripToChain(tr); k.commit();
+    const eq = tr.inserts.find(i => i.type === 'eq3'), cp = tr.inserts.find(i => i.type === 'comp');
+    const moved = !!(eq && cp && tr.auto[`ins:${eq.id}:freq`]?.length === 2 && tr.auto[`ins:${cp.id}:ratio`]?.length === 2 && !tr.auto['set:eqMidF'] && !tr.auto['set:compRatio']);
+    const w1 = await window.qa.wins(k.S.project, [[0.05, 0.4], [3.6, 3.9], [7.55, 7.9]]);
+    const can = k.chain.canRevert(tr), back = k.chain.chainToStrip(tr); k.commit();
+    return { moved, can, back, same: JSON.stringify(tr.auto) === before, strip: tr.strip, w0: w0.map(x => x.l), w1: w1.map(x => x.l) };
+  });
+  expect(r.moved, 'les courbes doivent passer aux effets de la chaîne');
+  expect(r.w0.every((x, i) => Math.abs(r.w1[i] / x - 1) < 0.01), `la conversion ne doit pas changer le son : ${r.w0.map(v => v.toFixed(4))} / ${r.w1.map(v => v.toFixed(4))}`);
+  expect(r.can && r.back && r.same && r.strip === 'fixe', 'retour à la tranche fixe : ' + JSON.stringify([r.can, r.back, r.same, r.strip]));
+  // Libellés traduits.
+  for (const [l, a, c] of [['en', 'Mid freq.', 'Ratio'], ['es', 'Frec. med.', 'Ratio']]) {
+    await page.evaluate(l => window.kh.setLang(l), l);
+    const labels = await page.$$eval('.ahead option', o => o.map(x => x.textContent.replace(/\s*•$/, '')));   // « • » : réglage qui a une courbe
+    expect(labels.includes(a) && labels.includes(c), `libellés en ${l} : ${labels.join(' | ')}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
 });
 
 // ============ Suite (21/11/2026) : clips enregistrés à la volée dans le Live ============

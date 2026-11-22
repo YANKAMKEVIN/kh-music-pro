@@ -29,6 +29,8 @@ const CURVES: [string, StripFx, string, (v: number) => number, (v: number) => nu
   ['chorus', 'chorus', 'mix', v => v, v => v],
   [setKey('eqLow'), 'eq3', 'low', v => v, v => v], [setKey('eqMid'), 'eq3', 'mid', v => v, v => v], [setKey('eqHigh'), 'eq3', 'high', v => v, v => v],
   [setKey('compThr'), 'comp', 'thr', v => v, v => v],
+  // Suite 3 : mêmes plages des deux côtés, la courbe passe telle quelle.
+  [setKey('eqMidF'), 'eq3', 'freq', v => v, v => v], [setKey('compRatio'), 'comp', 'ratio', v => v, v => v],
 ];
 
 const mapPts = (pts: Pt[], f: (v: number) => number) => pts.map(p => ({ s: p.s, v: f(p.v) }));
@@ -50,9 +52,9 @@ export function stripToChain(tr: Track): boolean {
   if (tr.crush > 0) head.push(mk('lofi', { amt: tr.crush }));
   if (tr.chorus > 0 || has(tr, 'chorus')) head.push(mk('chorus', { mix: tr.chorus }));
   if (tr.trem > 0) head.push(mk('trem', { depth: tr.trem }));
-  if (tr.eqLow || tr.eqMid || tr.eqHigh || ['eqLow', 'eqMid', 'eqHigh'].some(k => has(tr, setKey(k)))) head.push(mk('eq3', { low: tr.eqLow, mid: tr.eqMid, freq: tr.eqMidF, high: tr.eqHigh }));
+  if (tr.eqLow || tr.eqMid || tr.eqHigh || ['eqLow', 'eqMid', 'eqMidF', 'eqHigh'].some(k => has(tr, setKey(k)))) head.push(mk('eq3', { low: tr.eqLow, mid: tr.eqMid, freq: tr.eqMidF, high: tr.eqHigh }));
   // Compresseur éteint mais réglé ou automatisé : il devient un effet éteint (rien n'est perdu, le son ne change pas).
-  if (tr.comp || has(tr, setKey('compThr')) || tr.compThr !== NEUTRAL.compThr || tr.compRatio !== NEUTRAL.compRatio) { const c = mk('comp', { thr: tr.compThr, ratio: tr.compRatio }); c.on = tr.comp; head.push(c); }
+  if (tr.comp || has(tr, setKey('compThr')) || has(tr, setKey('compRatio')) || tr.compThr !== NEUTRAL.compThr || tr.compRatio !== NEUTRAL.compRatio) { const c = mk('comp', { thr: tr.compThr, ratio: tr.compRatio }); c.on = tr.comp; head.push(c); }
   const auto = tr.auto;
   for (const [key, type, k, to] of CURVES) {
     const pts = auto?.[key]; if (!pts) continue;
