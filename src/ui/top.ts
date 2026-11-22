@@ -94,7 +94,7 @@ export function buildTop(onLang: () => void) {
     return d;
   };
   const close = (el: HTMLElement) => { const d = el.closest('details'); if (d && d.id !== 'more') d.open = false; };
-  const item = (id: string, label: string, fn: () => void) => { const x: HTMLButtonElement = h('button', { id, onclick: () => { close(x); fn(); } }, label); return x; };
+  const item = (id: string, label: string | (string | Node)[], fn: () => void) => { const x: HTMLButtonElement = h('button', { id, onclick: () => { close(x); fn(); } }, ...(Array.isArray(label) ? label : [label])); return x; };
 
   // Version bureau : Enregistrer sous et fichiers récents (liste relue à chaque ouverture du menu).
   const desk = deskFiles(), recent = h('div', { id: 'recent', class: 'recent', role: 'group', 'aria-label': t('file.recent') });
@@ -120,9 +120,9 @@ export function buildTop(onLang: () => void) {
       h('label', { class: 'mini-in' }, t('top.to'), num('loopE', t('top.loopE'), 1, 999, setLoop))));
   const exportMore = drop('mExport', ['▾'], t('top.exportMore'),
     item('bMp3', t('top.mp3'), exportMp3), item('bStems', t('top.stems'), exportStems), item('bMidiOut', t('top.midiOut'), exportMidiFile),
-    item('bExpOpts', '⚙ ' + t('exp.menu'), showExportOptions));
-  const settings = drop('mSettings', ['⚙'], t('top.settings'),
-    item('bMidi', '🎛 ' + t('top.midiTip'), midiConnect), item('bAudio', '🔧 ' + t('aud.title'), showAudio),
+    item('bExpOpts', [icon('gear', 15), ' ' + t('exp.menu')], showExportOptions));
+  const settings = drop('mSettings', [icon('gear', 17)], t('top.settings'),
+    item('bMidi', [icon('midi', 15), ' ' + t('top.midiTip')], midiConnect), item('bAudio', [icon('wrench', 15), ' ' + t('aud.title')], showAudio),
     h('label', { class: 'mini-in mrow' }, t('top.lang'), langSel));
   // Tout ce qui sort du morceau : export, réglages, aide. Toujours ouvert sur ordinateur ; menu ☰ sur téléphone.
   const more = h('details', { class: 'more', id: 'more' });
@@ -213,7 +213,7 @@ export function showExportOptions() {
   const rate = h('select', { 'aria-label': t('exp.rate'), data: { role: 'exprate' } }, ...[[44100, '44,1 kHz'], [48000, '48 kHz']].map(([v, l]) => h('option', { value: String(v), selected: e.rate === v }, String(l))));
   rate.onchange = () => set(() => { e.rate = +rate.value as 44100 | 48000; });
   const sum = h('p', { class: 'tip', role: 'status', id: 'expSum' }, exportSummary());
-  d.replaceChildren(h('h2', {}, '⚙ ' + t('exp.title')),
+  d.replaceChildren(h('h2', {}, icon('gear', 22), ' ' + t('exp.title')),
     h('fieldset', { class: 'eset' }, h('legend', {}, t('exp.range')),
       radio('all', t('exp.all')), radio('loop', t('exp.loop', p.loopStart + 1, p.loopStart + p.loopLen)),
       h('div', { class: 'eopt' }, radio('bars', t('exp.bars')), h('label', { class: 'mini-in' }, t('exp.from'), from), h('label', { class: 'mini-in' }, t('exp.to'), to)),

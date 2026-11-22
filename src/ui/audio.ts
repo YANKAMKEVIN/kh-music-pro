@@ -3,6 +3,7 @@ import { t } from '../i18n';
 import { S } from '../store';
 import { h, slider, toast } from './dom';
 import { nativeAvailable, nativeBusy, nativeError, setNativeEngine } from './native';
+import { icon } from './icons';
 
 const dlg = () => document.getElementById('audio') as HTMLDialogElement;
 const ms = (s: number) => Math.round(s * 1000) + ' ms';
@@ -36,7 +37,7 @@ function render() {
   const out = h('select', { 'aria-label': t('aud.output'), data: { role: 'audout' }, disabled: !engine.canSetOutput() });
   out.onchange = async () => { if (await engine.setOutput(out.value)) { S.outputDevice = out.value; toast(t('aud.outSet')); } else toast(t('aud.outFail'), 'error'); render(); };
   const result = h('span', { class: 'lufs', role: 'status', data: { role: 'latresult' } }, '');
-  const measure = h('button', { class: 'pill', data: { act: 'latmeasure' }, title: t('aud.measureTip') }, '📏 ' + t('aud.measure'));
+  const measure = h('button', { class: 'pill', data: { act: 'latmeasure' }, title: t('aud.measureTip') }, icon('ruler', 15), ' ' + t('aud.measure'));
   measure.onclick = async () => {
     measure.disabled = true; result.textContent = t('aud.measuring');
     const r = await engine.measureLatency().catch(() => null);
@@ -66,7 +67,7 @@ function render() {
       h('p', { class: 'tip' }, t('nat.help')));
   }
   const kids: (HTMLElement | false | '')[] = [
-    h('h2', {}, '🔧 ' + t('aud.title')),
+    h('h2', {}, icon('wrench', 22), ' ' + t('aud.title')),
     nat,
     h('label', { class: 'fld' }, t('aud.output'), out),
     !engine.canSetOutput() && h('p', { class: 'tip' }, t('aud.outUnsupported')),

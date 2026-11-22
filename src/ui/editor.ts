@@ -108,8 +108,8 @@ function padsView(tr: Track) {
     const pad = h('div', { class: 'pad' + (custom ? ' custom' : '') + (S.padEdit === r ? ' editing' : '') + (tr.padFx?.[r] ? ' tuned' : ''), data: { pad: String(r) }, role: 'button', tabIndex: 0, 'aria-label': padName(tr, r) },
       h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', { class: 'pad-name' }, padName(tr, r)),
       h('span', { class: 'pact' },
-        h('button', { title: t('pad.settings'), 'aria-label': `${t('pad.settings')} – ${padName(tr, r)}`, data: { act: 'padfx' }, onclick: (e: Event) => { e.stopPropagation(); S.padEdit = S.padEdit === r ? -1 : r; emit(); } }, '⚙'),
-        h('button', { title: t('pad.load'), 'aria-label': t('pad.load'), data: { act: 'padload' }, onclick: (e: Event) => { e.stopPropagation(); pickFiles(fs => setSample(fs[0])); } }, '📂'),
+        h('button', { title: t('pad.settings'), 'aria-label': `${t('pad.settings')} – ${padName(tr, r)}`, data: { act: 'padfx' }, onclick: (e: Event) => { e.stopPropagation(); S.padEdit = S.padEdit === r ? -1 : r; emit(); } }, icon('gear', 14)),
+        h('button', { title: t('pad.load'), 'aria-label': t('pad.load'), data: { act: 'padload' }, onclick: (e: Event) => { e.stopPropagation(); pickFiles(fs => setSample(fs[0])); } }, icon('folder', 14)),
         custom && h('button', { title: t('pad.reset'), 'aria-label': t('pad.reset'), data: { act: 'padreset' }, onclick: (e: Event) => { e.stopPropagation(); tr.pads![r] = null; commit(); } }, '↺')));
     pad.onpointerdown = e => {
       if ((e.target as HTMLElement).closest('.pact')) return;
@@ -133,13 +133,13 @@ function padsView(tr: Track) {
   if (S.padEdit >= 0 && S.padEdit < NPADS) {
     const r = S.padEdit, cur = tr.padFx?.[r] ?? { vol: 1, tune: 0, pan: 0 };
     const set = (k: 'vol' | 'tune' | 'pan', v: number) => { tr.padFx ??= {}; const f = tr.padFx[r] ??= { vol: 1, tune: 0, pan: 0 }; f[k] = v; if (f.vol === 1 && !f.tune && !f.pan) delete tr.padFx[r]; };
-    fxBox = h('div', { class: 'padfx' }, h('strong', {}, `⚙ ${padName(tr, r)}`),
+    fxBox = h('div', { class: 'padfx' }, h('strong', {}, icon('gear', 16), ` ${padName(tr, r)}`),
       slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct, '', false, 1),
       slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st', '', false, 0),
       slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100)), '', false, 0),
       h('div', { class: 'tools' },
         h('button', { class: 'pill', data: { act: 'padtest' }, onclick: () => { padHit(r, 1, tr); flashPad(r); } }, '▶ ' + t('pad.test')),
-        h('button', { class: 'pill', data: { act: 'padfxload' }, onclick: () => pickFiles(async fs => { const smp = await loadSample(fs[0]); if (smp) { tr.pads![r] = { bufferId: smp.id, name: smp.name }; commit(); } }) }, '📂 ' + t('smp.load')),
+        h('button', { class: 'pill', data: { act: 'padfxload' }, onclick: () => pickFiles(async fs => { const smp = await loadSample(fs[0]); if (smp) { tr.pads![r] = { bufferId: smp.id, name: smp.name }; commit(); } }) }, icon('folder', 15), ' ' + t('smp.load')),
         h('button', { class: 'pill', data: { act: 'padfxreset' }, onclick: () => { if (tr.padFx) delete tr.padFx[r]; commit(); } }, '↺ ' + t('pad.fxReset'))));
   }
   // Choix du pad à régler par une liste : indispensable au doigt, où les petits boutons des pads sont masqués.
@@ -309,7 +309,7 @@ function samplerBox(tr: Track) {
   for (let p = 36; p <= 84; p++) root.append(h('option', { value: String(p), selected: sp.root === p }, noteName(p)));
   root.onchange = () => { sp.root = +root.value; commit(); };
   const box = h('div', { class: 'smp' },
-    h('button', { data: { act: 'smpload' }, onclick: () => pickFiles(fs => set(fs[0])) }, '📂 ' + t('smp.load')),
+    h('button', { data: { act: 'smpload' }, onclick: () => pickFiles(fs => set(fs[0])) }, icon('folder', 15), ' ' + t('smp.load')),
     h('span', { class: 'sname2' + (sp.bufferId ? '' : ' none') }, sp.sampleName ?? t('smp.none')),
     h('label', { class: 'fld' }, t('smp.root'), root));
   box.ondragover = e => { e.preventDefault(); box.classList.add('over'); };
@@ -459,21 +459,21 @@ function gridTools(c: Clip) {
   const has = !!c.ctl && Object.values(c.ctl).some(p => p?.length), on = S.ctlShow || has;
   return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.grid'), sel),
     h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'ctlshow' }, 'aria-pressed': String(on), disabled: has, title: t('ctl.showTip'), onclick: () => { S.ctlShow = !S.ctlShow; emit(); } }, '〰 ' + t('ctl.lane')),
-    h('button', { title: t('tip.quantize'), data: { act: 'quantize' }, onclick: () => quantizeNotes(target(), GRIDS[S.grid] ?? 1, c.patLen!, S.quant) }, '🧲 ' + t('act.quantize') + (S.quant.str < 1 || S.quant.swing ? ` ${Math.round(S.quant.str * 100)} %` : '')),
+    h('button', { title: t('tip.quantize'), data: { act: 'quantize' }, onclick: () => quantizeNotes(target(), GRIDS[S.grid] ?? 1, c.patLen!, S.quant) }, icon('magnet', 15), ' ' + t('act.quantize') + (S.quant.str < 1 || S.quant.swing ? ` ${Math.round(S.quant.str * 100)} %` : '')),
     quantMenu(c, target));
 }
 /** Réglages de la quantification (V19) : force, swing, humanisation, légato. */
 function quantMenu(c: Clip, target: () => Note[]) {
   const d = h('details', { class: 'menu tmenu qmenu' });
   const q = S.quant;
-  const btn = (act: string, icon: string, fn: () => void) => h('button', { data: { act }, title: t('q.' + act + 'Tip'), onclick: () => { d.open = false; fn(); } }, `${icon} ${t('q.' + act)}`);
+  const btn = (act: string, ico: string | Node, fn: () => void) => h('button', { data: { act }, title: t('q.' + act + 'Tip'), onclick: () => { d.open = false; fn(); } }, ico, ` ${t('q.' + act)}`);
   d.append(h('summary', { class: 'pill', title: t('q.menu'), 'aria-label': t('q.menu'), data: { act: 'qmenu' } }, '▾'), h('div', { class: 'menu-list' },
     slider(t('q.str'), 0, 1, 0.05, q.str, v => { q.str = v; }, pct, 'qstr', true),
     slider(t('q.swing'), 0, 1, 0.01, q.swing, v => { q.swing = v; }, pct, 'qswing', true),
-    btn('apply', '🧲', () => quantizeNotes(target(), GRIDS[S.grid] ?? 1, c.patLen!, q)),
+    btn('apply', icon('magnet', 15), () => quantizeNotes(target(), GRIDS[S.grid] ?? 1, c.patLen!, q)),
     h('p', { class: 'tip' }, t('q.swingTip')),
     slider(t('q.hum'), 0, 1, 0.05, q.hum, v => { q.hum = v; }, pct, 'qhum', true),
-    btn('humanize', '🎲', () => humanizeNotes(target(), q.hum, c.patLen!)),
+    btn('humanize', icon('dice', 15), () => humanizeNotes(target(), q.hum, c.patLen!)),
     btn('legato', '⟿', () => legatoNotes(target(), c.notes!, c.patLen!))));
   return d;
 }
@@ -640,11 +640,11 @@ function inputPanel() {
     h('option', { value: '' }, t('in.default')), ...inputs.map(d => h('option', { value: d.id, selected: S.inputDevice === d.id }, d.label)));
   dev.onchange = () => chooseInput(dev.value);
   return h('div', { class: 'ebar inbar' }, h('span', { class: 'sect' }, t('in.title')), h('label', { class: 'fld' }, t('in.device'), dev),
-    h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, '🎤 ' + t(on ? 'in.on' : 'in.open')),
+    h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, icon('audio', 15), ' ' + t(on ? 'in.on' : 'in.open')),
     h('div', { class: 'meter', title: t('in.level') }, h('div', { class: 'mfill', data: { id: 'input' } })),
     on && h('div', { class: 'tuner', role: 'status', title: t('tuner.tip'), 'aria-label': t('tuner.title') }, h('span', { class: 'tnote' }, '—'), h('span', { class: 'tbar' }, h('i', {})), h('span', { class: 'tcents' }, '')),
     slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true, 1),
-    h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, '🎧 ' + t('in.monitor')));
+    h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, icon('headphones', 15), ' ' + t('in.monitor')));
 }
 
 // ---------- Clip audio ----------

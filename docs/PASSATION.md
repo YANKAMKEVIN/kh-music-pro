@@ -956,3 +956,11 @@ Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire san
 - Désormais (`ctlIn`, `input.ts`) : ils sont écrits dans le clip de la prise, avec les mêmes règles que l'enregistrement (courbe allégée, retour au repos exact, un nouveau geste remplace l'ancien sur la même zone). Le clip ne jouant pas encore pendant la prise, l'écriture est immédiate. Le clip enregistré rejoue ensuite sa courbe en boucle, comme tout clip du Live.
 - QA : LR06 (note, montée du bend, molette à 90, retour du bend au centre : courbes gardées et dans le clip). LR06 échoue sans le correctif (courbe vide).
 
+### Icônes dessinées : deuxième tranche (suite de l'amélioration UX15 n° 13)
+
+- La première tranche (branche `claude/ux15`) avait dessiné les types de piste et les boutons les plus visibles ; restaient en emojis l'éditeur (accordeur, quantification, pads), les réglages et les modèles.
+- Dessinés maintenant (`src/ui/icons.ts`, même trait, couleur du texte) : réglages et chargement d'un pad (roue dentée, dossier), quantification et humanisation (aimant, dé), ouverture du micro et écoute de l'entrée audio, où se trouve l'accordeur (micro, casque), bouton des réglages, connexion MIDI, réglages audio et options d'export (roue dentée, prise MIDI, clé), mesure de latence (règle), modèles de la fenêtre des projets (page, flamme, boule à facettes, tasse, étincelles).
+- Les noms accessibles ne changent pas (les boutons à symbole seul gardent leur `aria-label`).
+- Restent des emojis ou symboles, hors du périmètre de la tranche : flocon du gel, ⚡ du moteur natif et du sidechain, 🍎 des plugins du Mac, 🎻 des instruments enregistrés, 🎹 du clavier à l'écran, 🎚 des réglages de l'instrument, 🪟 des fenêtres de plugin, ✂ 🔪 ⇄ 📈 de l'éditeur audio, 🧭 de la visite guidée, ★ des favoris. Les symboles typographiques (▶, ↶, ⚑, ♩, ✕) restent : ils ont le même dessin partout.
+- QA : UX13b (pads, quantification, entrée audio, réglages, fenêtre audio, modèles : icônes attendues, aucun emoji, noms accessibles).
+

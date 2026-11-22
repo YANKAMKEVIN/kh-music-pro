@@ -5500,6 +5500,40 @@ test('UX13a', 'Interface', 'Icônes dessinées : les types de piste ont le même
   expect(await page.$('#bNotes svg.ico') && (await page.getAttribute('#bNotes', 'aria-label')), 'bouton des notes : icône et nom accessible');
 });
 
+test('UX13b', 'Interface', 'Icônes dessinées (suite) : pads, quantification, entrée audio, réglages, modèles et réglages audio sans emoji, noms accessibles gardés', async () => {
+  const emoji = /[\u{1F300}-\u{1FAFF}\u{2699}\u{2615}\u{2728}]/u;
+  const ico = sel => page.$eval(sel, e => [...e.querySelectorAll('svg.ico')].map(x => x.dataset.ico).join());
+  // Pads de la batterie : réglages et chargement d'un son.
+  await page.click(await clipSel(0, 0)); await page.click('[data-view=pads]');
+  expect(await ico('.pad[data-pad="0"] [data-act=padfx]') === 'gear' && await ico('.pad[data-pad="0"] [data-act=padload]') === 'folder', 'icônes des pads');
+  expect(await page.getAttribute('.pad[data-pad="0"] [data-act=padfx]', 'aria-label') && await page.getAttribute('.pad[data-pad="0"] [data-act=padload]', 'aria-label'), 'les petits boutons des pads doivent garder un nom');
+  await page.click('.pad[data-pad="0"] [data-act=padfx]');
+  expect(await ico('.padfx strong') === 'gear' && await ico('[data-act=padfxload]') === 'folder', 'panneau de réglages du pad');
+  expect(!emoji.test(await page.textContent('.pads')) && !emoji.test(await page.textContent('.padfx')), 'emoji restant autour des pads');
+  // Quantification (piano roll).
+  await page.click(await clipSel(1, 0));
+  expect(await ico('[data-act=quantize]') === 'magnet' && (await page.textContent('[data-act=quantize]')).includes('Quantifier'), 'bouton de quantification');
+  await page.click('[data-act=qmenu]');
+  expect(await ico('.qmenu [data-act=apply]') === 'magnet' && await ico('.qmenu [data-act=humanize]') === 'dice', 'menu de quantification');
+  expect(!emoji.test(await page.textContent('.qmenu')), 'emoji restant dans le menu de quantification');
+  await page.keyboard.press('Escape');
+  // Entrée audio (piste audio) : micro et écoute.
+  await page.click(await headSel(4));
+  expect(await ico('[data-act=inopen]') === 'audio' && await ico('[data-act=inmon]') === 'headphones', 'entrée audio');
+  expect(!emoji.test(await page.textContent('.inbar')), 'emoji restant dans l’entrée audio');
+  // Réglages : bouton ⚙ dessiné, nom accessible gardé ; MIDI, réglages audio, options d'export.
+  expect(await ico('#mSettings > summary') === 'gear' && /MIDI/.test(await page.getAttribute('#mSettings > summary', 'aria-label')), 'bouton des réglages');
+  expect(await ico('#bMidi') === 'midi' && await ico('#bAudio') === 'wrench' && await ico('#bExpOpts') === 'gear', 'éléments des menus');
+  await clickIn('#bAudio'); expect(await ico('#audio h2') === 'wrench' && await ico('[data-act=latmeasure]') === 'ruler', 'fenêtre des réglages audio');
+  expect(!emoji.test((await page.textContent('#audio')).replace('⚡', '')), 'emoji restant dans les réglages audio');
+  await page.keyboard.press('Escape'); await sleep(150);
+  // Modèles de la fenêtre des projets.
+  await menu('bNew');
+  expect((await page.$$eval('#lib .tpl .tico svg.ico', l => l.map(e => e.dataset.ico).join())) === 'doc,flame,disco,cup,sparkle', 'icônes des modèles');
+  expect(!emoji.test(await page.textContent('#lib .tpls')), 'emoji restant dans les modèles');
+  await page.keyboard.press('Escape');
+});
+
 test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant le script, puis disparaît ; icônes PNG 192 et 512, version maskable et icône iPhone', async () => {
   const html = await (await page.request.get(BASE)).text();
   expect(/<div id="boot"[^>]*><span>KH<\/span><\/div>/.test(html) && html.indexOf('id="boot"') < html.indexOf('/src/main.ts'), 'le logo d’attente doit être dans la page, avant le script');
