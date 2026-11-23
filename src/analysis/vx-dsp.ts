@@ -78,7 +78,9 @@ const ON_N = 512, ON_H = 64, ON_BANDS = [30, 200, 800, 2500, 5000], ON_W = [2, 1
 export function onsetEnvelope(x: Float32Array, sr: number, prog?: Prog, p0 = 0, p1 = 1): { env: Float32Array; fps: number; t0: number } {
   const g = peakNorm(x), bins = ON_N / 2 + 1, prev = new Float64Array(bins), nb = ON_BANDS.length - 1, band: number[][] = Array.from({ length: nb }, () => []);
   const edge = ON_BANDS.map(f => Math.min(bins - 1, Math.max(1, Math.round(f / sr * ON_N))));
-  stft(x, ON_N, ON_H, (f, mag) => {
+  // silence ajouté devant : une attaque à l'instant 0 se voit aussi
+  const xp = new Float32Array(x.length + ON_N); xp.set(x, ON_N);
+  stft(xp, ON_N, ON_H, (f, mag) => {
     for (let j = 0; j < nb; j++) {
       let s = 0;
       for (let k = edge[j]; k < edge[j + 1]; k++) { const v = Math.sqrt(g * mag[k]); if (f) s += Math.max(0, v - prev[k]); prev[k] = v; }
@@ -99,7 +101,7 @@ export function onsetEnvelope(x: Float32Array, sr: number, prog?: Prog, p0 = 0, 
     env[i] = Math.max(0, raw[i] - (cs[b] - cs[a]) / (b - a));
   }
   // une attaque apparaît dans la trame dont la fenêtre commence à la contenir : l'instant est vers la fin de la fenêtre
-  return { env, fps, t0: 0.62 * ON_N / sr };
+  return { env, fps, t0: 0.77 * ON_N / sr - ON_N / sr };
 }
 
 /** Tempo (BPM, 60..200) et instant du premier temps (s) à partir de la courbe des attaques. */
@@ -174,15 +176,16 @@ export function tempoOf(env: Float32Array, fps: number, t0: number): { bpm: numb
   let bpm = 60 * fps / P;
   if (Math.abs(bpm - Math.round(bpm)) < 0.3) bpm = Math.round(bpm); else bpm = Math.round(bpm * 10) / 10;
   ph = ((ph % P) + P) % P;
-  // premier temps de la mesure (4 temps) : seulement si un temps se détache nettement
-  const bars = [0, 1, 2, 3].map(b => comb(ph + b * P, 4 * P));
-  const order = [...bars].sort((a, b) => b - a), bb = bars.indexOf(order[0]);
-  const acc = order[0] > 1.2 * order[1];
-  if (acc) ph += bb * P;
-  // en secondes, ramené au premier temps (ou premier temps de mesure) ; un temps à peine avant 0 compte comme 0
-  const span = (acc ? 4 : 1) * P / fps;
-  let offset = ((ph / fps + t0) % span + span) % span;
-  if (offset > span - 0.03) offset = 0;
+  // premier temps : celui où la musique commence vraiment (première attaque franche sur la grille)…
+  const beats: number[] = []; for (let q = ph; q < n; q += P) beats.push(pk(q));
+  const strong = 0.3 * median(beats.filter(v => v > 0));
+  let k0 = Math.max(0, beats.findIndex(v => v >= strong));
+  // …ou, si un temps sur quatre se détache nettement (accent du premier temps de la mesure), le premier de ceux-là
+  const bars = [0, 1, 2, 3].map(b => comb(ph + (k0 + b) * P, 4 * P));
+  const order = [...bars].sort((u, v) => v - u);
+  if (order[0] > 1.2 * order[1]) k0 += bars.indexOf(order[0]);
+  let offset = (ph + k0 * P) / fps + t0;
+  offset = Math.max(0, offset);
   return { bpm, offset: Math.round(offset * 1000) / 1000, score: Math.max(0, Math.min(1, fs)) };
 }
 
@@ -311,13 +314,16 @@ export function segmentNotes(tr: PitchTrack, opts: { minDur?: number } = {}): { 
         const nw = Math.round(v); let k = i;
         while (k > cuts[cuts.length - 1] + 1 && Math.abs(m[k - 1] - nw) < Math.abs(m[k - 1] - cur)) k--;
         for (let q = i + 1; q < Math.min(b, i + hw); q++) if (Math.abs(m[q] - nw) >= Math.abs(m[q] - cur)) k = q + 1;
+        // un glissé commence la note : on remonte au début du mouvement de hauteur (au plus 0,15 s)
+        const dir = Math.sign(nw - cur);
+        for (let st = 0; st < Math.round(0.15 * fps) && k > cuts[cuts.length - 1] + 1 && (m[k - 1] - cur) * dir > 0.3 && (m[k] - m[k - 1]) * dir > -0.05; st++) k--;
         if (k > cuts[cuts.length - 1]) cuts.push(k);
         cur = nw;
       }
     }
     // attaques sur la même hauteur : creux d'énergie
     const rs = new Float32Array(b - a);
-    for (let i = a; i < b; i++) { let acc = 0, c = 0; for (let j = Math.max(a, i - 2); j < Math.min(b, i + 3); j++) { acc += r[j]; c++; } rs[i - a] = acc / c; }
+    for (let i = a; i < b; i++) { let acc = 0, c = 0; for (let j = Math.max(a, i - 1); j < Math.min(b, i + 2); j++) { acc += r[j]; c++; } rs[i - a] = acc / c; }
     const art = new Set<number>();
     for (let i = a + minF; i < b - minF; i++) {
       const v = rs[i - a];
@@ -351,7 +357,7 @@ export function segmentNotes(tr: PitchTrack, opts: { minDur?: number } = {}): { 
       return true;
     });
     for (const pc of pieces) {
-      if (pc.b - pc.a < Math.max(3, minF * 0.6)) continue;
+      if (pc.b - pc.a < minF + 2) continue;   // la fenêtre d'analyse allonge un son bref d'environ 40 ms
       let e = 0; for (let i = pc.a; i < pc.b; i++) e += r[i] * r[i];
       notes.push({ t: pc.a / fps + t0, d: (pc.b - pc.a) / fps, midi: Math.round(pitchOf(pc)), vel: Math.sqrt(e / (pc.b - pc.a)) });
     }

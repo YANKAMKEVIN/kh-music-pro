@@ -6310,6 +6310,283 @@ test('AN04', 'Analyse', 'Un fichier qui n\'est pas un son est refusé avec un me
   }
 });
 
+// ============ V20 — chant → notes, tempo et tonalité (VX) ============
+/* Sons de test fabriqués dans la page (aucune musique protégée) :
+ * - vxVoice : voix synthétique (8 harmoniques, formant), vibrato réglable, glissés entre notes liées, bruit, désaccord ;
+ * - vxBeat : grosse caisse sur les temps (accent au premier de la mesure) et charleston sur les croches ;
+ * - vxChords : accords tenus. vxScore compare des notes de référence aux notes trouvées. */
+function vxVoice(sr, dur, notes, o = {}) {
+  const x = new Float32Array(Math.ceil(dur * sr)), vib = (o.vib ?? 40) / 100, rate = o.rate ?? 5.5, glide = o.glide ?? 0.08, det = (o.detune ?? 0) / 100, H = o.harm ?? 8;
+  let ph = 0, seed = 12345;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  for (let n = 0; n < notes.length; n++) {
+    const [t, d, m, v = 0.8] = notes[n], prev = notes[n - 1], next = notes[n + 1];
+    const leg = prev && prev[2] !== m && Math.abs(prev[0] + prev[1] - t) < 1e-6, nextLeg = next && next[2] !== m && Math.abs(t + d - next[0]) < 1e-6;
+    const a = Math.floor(t * sr), b = Math.min(x.length, Math.floor((t + d) * sr));
+    if (!leg) ph = 0;
+    for (let i = a; i < b; i++) {
+      const u = i / sr - t;
+      let mm = m + det;
+      if (leg && u < glide) mm = prev[2] + det + (m - prev[2]) * (0.5 - 0.5 * Math.cos(Math.PI * u / glide));
+      mm += vib * Math.min(1, Math.max(0, (u - 0.12) / 0.15)) * Math.sin(2 * Math.PI * rate * u);
+      ph += 440 * Math.pow(2, (mm - 69) / 12) / sr;
+      const env = (leg ? 1 : Math.min(1, u / 0.03)) * (nextLeg ? 1 : Math.min(1, (d - u) / 0.05));
+      let s = 0;
+      for (let k = 1; k <= H; k++) s += Math.sin(2 * Math.PI * k * ph) / Math.pow(k, 1.1) * (k === 3 || k === 4 ? 1.4 : 1);
+      x[i] += 0.25 * v * env * s;
+    }
+  }
+  if (o.noise) for (let i = 0; i < x.length; i++) x[i] += o.noise * rnd();
+  return x;
+}
+function vxBeat(sr, dur, bpm, o = {}) {
+  const x = new Float32Array(Math.ceil(dur * sr)), P = 60 / bpm, off = o.offset ?? 0;
+  let seed = 777; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  for (let k = 0; off + k * P / 2 < dur; k++) {
+    const t = off + k * P / 2, a = Math.floor(t * sr), beat = k % 2 === 0, down = k % 8 === 0;
+    for (let i = 0; i < 0.25 * sr && a + i < x.length; i++) {
+      const u = i / sr;
+      if (beat) x[a + i] += (down ? 0.8 : 0.55) * Math.sin(2 * Math.PI * (50 * u + 60 * (1 - Math.exp(-u * 30)) / 30)) * Math.exp(-u * 12);
+      if (o.hat !== false && u < 0.05) x[a + i] += 0.12 * rnd() * Math.exp(-u * 80);
+    }
+  }
+  return x;
+}
+function vxChords(sr, dur, chords) {
+  const x = new Float32Array(Math.ceil(dur * sr));
+  for (const [t, d, ms] of chords) for (const m of ms) {
+    const f = 440 * Math.pow(2, (m - 69) / 12), a = Math.floor(t * sr), b = Math.min(x.length, Math.floor((t + d) * sr));
+    for (let i = a; i < b; i++) { const u = i / sr - t, env = Math.min(1, u / 0.02) * Math.min(1, (d - u) / 0.05); x[i] += 0.12 * env * (Math.sin(2 * Math.PI * f * u) + 0.4 * Math.sin(4 * Math.PI * f * u) + 0.2 * Math.sin(6 * Math.PI * f * u)); }
+  }
+  return x;
+}
+/** Mélodie au hasard (graine fixe) dans la gamme de la mineur : durées variées, notes liées ou séparées par des silences. */
+function vxSong(seed, until = 18) {
+  let s = seed; const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const scale = [57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76], out = []; let t = 0.3, i = 5;
+  while (t < until) {
+    const d = [0.25, 0.5, 0.5, 0.75, 1, 1.5][Math.floor(rnd() * 6)];
+    i = Math.max(0, Math.min(scale.length - 1, i + Math.floor(rnd() * 5) - 2));
+    out.push([Math.round(t * 1000) / 1000, d, scale[i], 0.5 + 0.5 * rnd()]);
+    t += d + (rnd() < 0.4 ? 0 : [0.1, 0.25, 0.5][Math.floor(rnd() * 3)]);
+  }
+  return out;
+}
+function vxScore(ref, got, tol = 0.1) {
+  const used = new Set(); let hit = 0;
+  for (const [t, , m] of ref) { const j = got.findIndex((g, i) => !used.has(i) && Math.abs(g.t - t) <= tol && g.midi === m); if (j >= 0) { used.add(j); hit++; } }
+  return { recall: hit / ref.length, precision: got.length ? hit / got.length : 0, ref: ref.length, got: got.length };
+}
+const VX_LIB = `${vxVoice}\n${vxBeat}\n${vxChords}\nreturn { vxVoice, vxBeat, vxChords };`;
+/** Fabrique un son dans la page et le charge comme son à analyser. `spec` : { dur, voice: [notes, options], beat: [bpm, options], chords, stem: 'voice' (la voix devient la piste séparée), gain }. */
+async function vxLoad(spec, name = 'essai.wav') {
+  return page.evaluate(([lib, spec, name]) => {
+    const L = new Function(lib)(), ctx = window.kh.engine.ctx, sr = ctx.sampleRate, n = Math.ceil(spec.dur * sr);
+    const parts = { voice: spec.voice ? L.vxVoice(sr, spec.dur, spec.voice[0], spec.voice[1] || {}) : null, beat: spec.beat ? L.vxBeat(sr, spec.dur, spec.beat[0], spec.beat[1] || {}) : null, chords: spec.chords ? L.vxChords(sr, spec.dur, spec.chords) : null };
+    const buf = ch => { const b = ctx.createBuffer(ch, n, sr); return b; };
+    const b = buf(spec.stereo ? 2 : 1);
+    for (let c = 0; c < b.numberOfChannels; c++) { const x = b.getChannelData(c); for (const [k, p] of Object.entries(parts)) if (p && !(spec.stem && k === 'voice' && spec.stemOnly)) for (let i = 0; i < n; i++) x[i] += p[i] * (spec.gain ?? 1); }
+    window.kh.analysis.loadSource(name, b);
+    if (spec.stem && parts.voice) { const v = buf(1); v.getChannelData(0).set(parts.voice); window.kh.analysis.AN.result.stems = { vocals: v }; }
+  }, [VX_LIB, spec, name]);
+}
+const vxRunA = id => page.evaluate(id => window.kh.analysis.runAnalyzer(id), id);
+const vxRes = () => S(() => { const r = window.kh.analysis.AN.result; return { bpm: r.bpm, off: r.beatOffset, key: r.key, part: r.parts.find(p => p.id === 'vx-melody') || null }; });
+
+test('VX01', 'Analyse', 'Tempo trouvé à ±1 BPM de 70 à 170 (grosse caisse et charleston), y compris un tempo à virgule', async () => {
+  const out = [];
+  for (const bpm of [70, 84, 97, 110, 120, 128, 140, 150, 160, 170, 75.5]) {
+    await vxLoad({ dur: 16, beat: [bpm] }); await vxRunA('vx-tempo');
+    const r = await vxRes(); out.push(`${bpm}→${r.bpm}`);
+    expect(r.bpm && Math.abs(r.bpm - bpm) <= 1, `tempo faux : ${out.join(' ')}`);
+  }
+  // sans charleston (grosse caisse seule) et en stéréo
+  for (const bpm of [72, 165]) { await vxLoad({ dur: 16, beat: [bpm, { hat: false }], stereo: true }); await vxRunA('vx-tempo'); const r = await vxRes(); expect(Math.abs(r.bpm - bpm) <= 1, `grosse caisse seule ${bpm} → ${r.bpm}`); }
+});
+test('VX02', 'Analyse', 'Premier temps trouvé à 30 ms près (là où la musique commence), même quand le son commence en retard ou dès l\'instant 0', async () => {
+  for (const [bpm, off] of [[120, 0], [70, 0], [96, 0.37], [140, 1.1], [80, 0.05], [170, 2.3]]) {
+    await vxLoad({ dur: 16, beat: [bpm, { offset: off }] }); await vxRunA('vx-tempo');
+    const r = await vxRes(), want = off;
+    expect(Math.abs(r.off - want) <= 0.03, `premier temps à ${bpm} BPM : attendu ${want.toFixed(3)} s, trouvé ${r.off} s`);
+  }
+});
+test('VX03', 'Analyse', 'Tonalité : majeur et mineur, plusieurs toniques (accords + mélodie), nommée en trois langues', async () => {
+  const minor = [[0, 2, [57, 60, 64]], [2, 2, [53, 57, 60]], [4, 2, [55, 59, 62]], [6, 2, [52, 56, 59]], [8, 2, [57, 60, 64]]];
+  const melm = [[0, .5, 69], [.5, .5, 72], [1, 1, 71], [2, .5, 69], [2.5, .5, 67], [3, 1, 69], [4, .5, 64], [4.5, .5, 65], [5, 1, 67], [6, .5, 68], [6.5, .5, 71], [7, 1, 69], [8, 2, 69]];
+  const major = [[0, 2, [48, 52, 55]], [2, 2, [53, 57, 60]], [4, 2, [55, 59, 62]], [6, 2, [48, 52, 55]]];
+  const melM = [[0, .5, 72], [.5, .5, 74], [1, 1, 76], [2, .5, 77], [2.5, .5, 76], [3, 1, 74], [4, .5, 71], [4.5, .5, 74], [5, 1, 79], [6, 2, 72]];
+  const sh = (cs, k) => cs.map(([t, d, ms]) => [t, d, ms.map(m => m + k)]), shm = (ns, k) => ns.map(([t, d, m]) => [t, d, m + k]);
+  for (const [chords, mel, k, tonic, mode] of [[minor, melm, 0, 9, 'minor'], [minor, melm, 3, 0, 'minor'], [minor, melm, -3, 6, 'minor'], [major, melM, 0, 0, 'major'], [major, melM, 2, 2, 'major'], [major, melM, 7, 7, 'major'], [major, melM, -7, 5, 'major']]) {
+    await vxLoad({ dur: chords.at(-1)[0] + chords.at(-1)[1], chords: sh(chords, k), voice: [shm(mel, k)] }); await vxRunA('vx-tempo');
+    const r = await vxRes();
+    expect(r.key && r.key.tonic === tonic && r.key.mode === mode, `tonalité attendue ${tonic} ${mode}, trouvée ${JSON.stringify(r.key)}`);
+  }
+  await vxLoad({ dur: 10, chords: minor, voice: [melm] }); await menu('bAnalyze'); await vxRunA('vx-tempo');
+  for (const [l, w] of [['fr', 'La mineur'], ['en', 'A minor'], ['es', 'La menor']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await page.keyboard.press('Escape'); await menu('bAnalyze');
+    expect((await page.textContent('[data-role=vx-tempo] [data-role=key]')).includes(w), `tonalité non nommée en ${l} : ${await page.textContent('[data-role=vx-tempo] [data-role=key]')}`);
+  }
+  await page.evaluate(() => window.kh.setLang('fr')); await page.keyboard.press('Escape');
+});
+test('VX04', 'Analyse', 'Appliquer le tempo et la tonalité au morceau à la souris ; Ctrl+Z et le bouton Annuler du message reviennent en arrière', async () => {
+  const before = await S(() => ({ bpm: window.kh.S.project.bpm, key: window.kh.S.project.key, scale: window.kh.S.project.scale }));
+  await vxLoad({ dur: 12, beat: [97], chords: [[0, 3, [50, 54, 57]], [3, 3, [55, 59, 62]], [6, 3, [57, 61, 64]], [9, 3, [50, 54, 57]]] });
+  await menu('bAnalyze'); await page.click('[data-an="vx-tempo"] [data-role="run"]');
+  await page.waitForSelector('#vxApplyTempo');
+  expect((await page.textContent('[data-role=vx-tempo] [data-role=bpm]')).includes('97 BPM'), 'tempo affiché');
+  expect(await page.$eval('#vxApplyTempo', b => b.offsetHeight >= 44), 'bouton trop petit pour le doigt');
+  await page.click('#vxApplyTempo');
+  expect(await S(() => window.kh.S.project.bpm) === 97, 'tempo du projet non appliqué');
+  expect((await page.textContent('#toast')).includes('97 BPM'), 'message de confirmation');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.bpm) === before.bpm, 'Ctrl+Z doit rendre le tempo d\'avant');
+  await menu('bAnalyze'); await page.click('#vxApplyKey');
+  const k = await S(() => ({ key: window.kh.S.project.key, scale: window.kh.S.project.scale }));
+  expect(k.key === 2 && k.scale === 'major', 'tonalité ré majeur appliquée : ' + JSON.stringify(k));
+  await page.keyboard.press('Escape'); await page.click('#toast button:has-text("Annuler")');
+  const k2 = await S(() => ({ key: window.kh.S.project.key, scale: window.kh.S.project.scale }));
+  expect(k2.key === before.key && k2.scale === before.scale, 'le bouton Annuler du message rend la tonalité d\'avant');
+});
+test('VX05', 'Analyse', 'Chant → notes : au moins 90 % des notes justes au demi-ton et à 100 ms près (propre, vibrato, vibrato large, désaccord, bruit, glissés lents)', async () => {
+  const all = { hit: 0, ref: 0, got: 0 }, lines = [];
+  for (const [name, o] of [['propre', { vib: 0 }], ['vibrato', { vib: 50 }], ['vibrato large', { vib: 90 }], ['désaccord +35', { vib: 40, detune: 35 }], ['désaccord -40', { vib: 40, detune: -40 }], ['bruit', { vib: 40, noise: 0.05 }], ['glissés lents', { vib: 40, glide: 0.15 }]]) {
+    for (const seed of [1, 2, 3]) {
+      const ref = vxSong(seed); await vxLoad({ dur: 19, voice: [ref, o] }); await vxRunA('vx-melody');
+      const r = await vxRes(), sc = vxScore(ref, r.part ? r.part.notes : []);
+      all.hit += sc.recall * sc.ref; all.ref += sc.ref; all.got += sc.got;
+      lines.push(`${name}/${seed} ${Math.round(sc.recall * 100)}/${Math.round(sc.precision * 100)}`);
+      expect(sc.recall >= 0.9 && sc.precision >= 0.9, `trop d'erreurs (${name}, graine ${seed}) : ${JSON.stringify(sc)}`);
+    }
+  }
+  const R = all.hit / all.ref, P = all.hit / all.got;
+  console.log(`        VX05 notes retrouvées ${(R * 100).toFixed(1)} %, notes justes ${(P * 100).toFixed(1)} % (${lines.join(', ')})`);
+  expect(R >= 0.95 && P >= 0.95, `moyenne trop basse : ${R} / ${P}`);
+});
+test('VX06', 'Analyse', 'Chant → notes : vélocité selon la force du chant, notes trop courtes et glissés ignorés, note répétée séparée', async () => {
+  const ref = [[0.3, 0.6, 64, 1], [1.1, 0.6, 64, 0.35], [1.9, 0.6, 67, 1], [2.5, 0.6, 72, 0.9], [3.25, 0.04, 60, 1], [3.6, 0.5, 65, 0.4], [4.1, 0.5, 65, 1]];
+  await vxLoad({ dur: 5, voice: [ref, { vib: 30, glide: 0.25 }] }); await vxRunA('vx-melody');
+  const n = (await vxRes()).part.notes;
+  expect(n.length === 6, 'six notes attendues (le blip de 40 ms ignoré, glissé sans note intermédiaire) : ' + JSON.stringify(n.map(x => x.midi)));
+  expect(JSON.stringify(n.map(x => x.midi)) === '[64,64,67,72,65,65]', 'hauteurs : ' + JSON.stringify(n.map(x => x.midi)));
+  expect(n[0].vel >= 0.9 && n[1].vel <= 0.75 && n[0].vel - n[1].vel >= 0.2, 'vélocité qui suit le niveau : ' + JSON.stringify(n.map(x => x.vel)));
+  expect(n[4].vel < n[5].vel, 'note douce puis forte sur la même hauteur');
+  expect(Math.abs(n[3].t - 2.5) < 0.15, 'glissé : la note d\'arrivée commence pendant le glissé : ' + n[3].t);
+});
+test('VX07', 'Analyse', 'Chant → notes à la souris : avancement, partie « Chant », ajoutée au morceau calée sur le tempo trouvé, Ctrl+Z la retire', async () => {
+  const P = 0.5, ref = [[0, 0.5, 69], [0.5, 0.5, 72], [1, 1, 71], [2, 0.5, 69], [2.5, 0.25, 67], [2.75, 0.25, 65], [3, 1, 64], [4.5, 0.5, 76], [5, 1.5, 74]].map(([b, d, m]) => [0.5 + b * P * 2, d * P * 2 - 0.02, m, 0.9]);
+  // voix à 120 BPM qui commence sur le premier temps (0,5 s), batterie en dessous
+  await vxLoad({ dur: 16, voice: [ref, { vib: 30 }], beat: [120, { offset: 0.5 }], stem: true });
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await menu('bAnalyze');
+  await page.click('[data-an="vx-tempo"] [data-role="run"]'); await page.waitForSelector('#vxApplyTempo');
+  await page.click('[data-an="vx-melody"] [data-role="run"]');
+  await page.waitForSelector('#anParts [data-part="vx-melody"]');
+  expect((await page.textContent('[data-role=vx-melody] [data-role=src]')).includes('voix séparée'), 'la voix séparée doit servir quand elle existe');
+  expect((await page.textContent('[data-role=vx-melody] [data-role=found]')).includes('9 notes'), 'résumé : ' + await page.textContent('[data-role=vx-melody] [data-role=found]'));
+  await page.click('#anParts [data-part="vx-melody"] button');
+  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, notes: tr.clips[0].notes.map(n => [n.s, n.l, n.p]) }; });
+  expect(tr.n === n0 + 1 && tr.name === 'Chant', JSON.stringify(tr));
+  const want = [[0, 4, 69], [4, 4, 72], [8, 8, 71], [16, 4, 69], [20, 2, 67], [22, 2, 65], [24, 8, 64], [36, 4, 76], [40, 12, 74]];
+  const ok = want.filter(([s, l, p]) => tr.notes.some(n => n[2] === p && Math.abs(n[0] - s) <= 1 && Math.abs(n[1] - l) <= 1)).length;
+  expect(ok >= 8, `notes mal calées sur la grille (${ok}/9) : ${JSON.stringify(tr.notes)}`);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste ajoutée');
+});
+test('VX08', 'Analyse', 'Silence, bruit seul ou son très court : pas de note ni de tempo inventés, pas de panne', async () => {
+  for (const spec of [{ dur: 4 }, { dur: 6, voice: [[], { noise: 0.2 }] }, { dur: 0.5, voice: [[[0.1, 0.3, 69]]] }]) {
+    await vxLoad(spec); await vxRunA('vx-tempo'); await vxRunA('vx-melody');
+    const r = await vxRes();
+    expect(!r.part || (spec.dur === 0.5 && r.part.notes.length <= 1), 'notes inventées : ' + JSON.stringify(r.part));
+    if (!spec.voice) expect(!r.bpm, 'tempo inventé dans le silence');
+  }
+  await menu('bAnalyze');
+  expect((await page.textContent('[data-role=vx-melody] [data-role=found]')).length > 0, 'résumé affiché');
+  await vxLoad({ dur: 4 }); await vxRunA('vx-tempo'); await vxRunA('vx-melody');
+  expect((await page.textContent('[data-role=vx-tempo] [data-role=bpm]')).includes('Pas de tempo net'), 'message « pas de tempo »');
+  expect((await page.textContent('[data-role=vx-melody] [data-role=found]')).includes('Aucune note'), 'message « aucune note »');
+  expect(!(await page.$('#vxApplyTempo')), 'pas de bouton Appliquer sans tempo');
+  await page.keyboard.press('Escape');
+});
+test('VX09', 'Analyse', 'Chanson de 3 minutes : calcul hors de la page (elle reste fluide), avancement visible, Annuler l\'arrête sans message de panne', async () => {
+  const ref = vxSong(5, 178);
+  await vxLoad({ dur: 180, voice: [ref, { vib: 40 }], beat: [100], stem: true });
+  await menu('bAnalyze');
+  // la page doit continuer à répondre pendant le calcul : on mesure le plus long blocage
+  await S(() => { window.__vxGap = 0; let last = performance.now(); window.__vxTick = setInterval(() => { const n = performance.now(); window.__vxGap = Math.max(window.__vxGap, n - last); last = n; }, 20); });
+  const t0 = Date.now();
+  await page.click('[data-an="vx-melody"] [data-role="run"]');
+  await page.waitForSelector('[data-an="vx-melody"] .xprog');
+  await until(async () => Number(await page.getAttribute('[data-an="vx-melody"] .xprog', 'aria-valuenow').catch(() => '100')) > 0, 'avancement attendu', 20000);
+  await page.waitForSelector('#anParts [data-part="vx-melody"]', { timeout: 60000 });
+  const ms = Date.now() - t0, gap = await S(() => { clearInterval(window.__vxTick); return window.__vxGap; });
+  const sc = vxScore(ref, (await vxRes()).part.notes);
+  console.log(`        VX09 3 min analysées en ${(ms / 1000).toFixed(1)} s, plus long blocage de la page ${Math.round(gap)} ms, notes ${Math.round(sc.recall * 100)}/${Math.round(sc.precision * 100)} %`);
+  expect(ms < 45000, `trop lent : ${ms} ms`);
+  expect(gap < 400, `la page a été bloquée ${Math.round(gap)} ms`);
+  expect(sc.recall >= 0.9 && sc.precision >= 0.9, 'précision sur 3 minutes : ' + JSON.stringify(sc));
+  // Annuler pendant un nouveau calcul : l'ancienne partie reste, pas de message de panne
+  await page.click('[data-an="vx-melody"] [data-role="run"]');
+  await page.waitForSelector('[data-an="vx-melody"] .xprog');
+  await page.click('[data-an="vx-melody"] button:has-text("Annuler")');
+  await page.waitForSelector('[data-an="vx-melody"] [data-role="run"]');
+  expect(!(await page.$('[data-an="vx-melody"] .lufs')), 'annulé : pas de « Terminé »');
+  expect(!(await page.textContent('#toast')).includes('échoué'), 'une annulation ne doit pas s\'afficher comme une panne');
+  await page.keyboard.press('Escape');
+});
+test('VX10', 'Analyse', 'Au clavier : Tab jusqu\'à Lancer, Entrée, puis Entrée sur « Appliquer le tempo » ; relancer remplace la partie au lieu de la doubler', async () => {
+  await vxLoad({ dur: 12, beat: [132], voice: [vxSong(4, 10)], stem: true });
+  await menu('bAnalyze');
+  await page.focus('[data-an="vx-tempo"] [data-role="run"]'); await page.keyboard.press('Enter');
+  await page.waitForSelector('#vxApplyTempo'); await page.focus('#vxApplyTempo'); await page.keyboard.press('Enter');
+  expect(await S(() => window.kh.S.project.bpm) === 132, 'tempo appliqué au clavier');
+  for (let i = 0; i < 2; i++) {
+    await page.focus('[data-an="vx-melody"] [data-role="run"]'); await page.keyboard.press('Enter');
+    await page.waitForSelector('#anParts [data-part="vx-melody"]');
+    await until(async () => S(() => !document.querySelector('[data-an="vx-melody"] .xprog')), 'fin du calcul');
+  }
+  expect(await S(() => window.kh.analysis.AN.result.parts.filter(p => p.id === 'vx-melody').length) === 1, 'une seule partie Chant après deux lancements');
+  await page.focus('#anParts [data-part="vx-melody"] button'); await page.keyboard.press('Enter');
+  expect(await S(() => window.kh.S.project.tracks.at(-1).name) === 'Chant', 'partie ajoutée au clavier');
+  await page.keyboard.press('Escape');
+});
+test('VX11', 'Analyse', 'Au doigt, sur un téléphone : lancer les deux analyses, appliquer le tempo et ajouter le chant', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message));
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
+    await pg.evaluate(([lib, ref]) => {
+      const L = new Function(lib)(), ctx = window.kh.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, 10 * sr, sr), x = b.getChannelData(0);
+      const v = L.vxVoice(sr, 10, ref, {}), d = L.vxBeat(sr, 10, 110, {});
+      for (let i = 0; i < x.length; i++) x[i] = v[i] + d[i];
+      window.kh.analysis.showAnalyze(); window.kh.analysis.loadSource('tel.wav', b);
+    }, [VX_LIB, vxSong(6, 9)]);
+    for (const id of ['vx-tempo', 'vx-melody']) {
+      const run = `[data-an="${id}"] [data-role="run"]`;
+      expect(await pg.$eval(run, b => b.offsetHeight >= 44), 'bouton Lancer trop petit');
+      await pg.tap(run); await pg.waitForSelector(`[data-an="${id}"] .lufs`, { timeout: 30000 });
+    }
+    await pg.tap('#vxApplyTempo');
+    expect(await pg.evaluate(() => Math.abs(window.kh.S.project.bpm - 110) <= 1), 'tempo appliqué au doigt');
+    const n0 = await pg.evaluate(() => window.kh.S.project.tracks.length);
+    await pg.tap('#anParts [data-part="vx-melody"] button');
+    expect(await pg.evaluate(() => window.kh.S.project.tracks.length) === n0 + 1, 'chant ajouté au doigt');
+    const sw = await pg.evaluate(() => document.getElementById('analyze').scrollWidth <= document.getElementById('analyze').clientWidth + 1);
+    expect(sw, 'la fenêtre déborde en largeur sur le téléphone');
+    expect(!errs.length, 'erreurs : ' + errs.join(' | '));
+  } finally { await ctx2.close(); }
+});
+test('VX12', 'Analyse', 'Textes des deux analyses traduits (anglais, espagnol)', async () => {
+  await vxLoad({ dur: 8, voice: [vxSong(7, 7)], beat: [120] }); await vxRunA('vx-tempo'); await vxRunA('vx-melody');
+  for (const [l, title, mel, apply] of [['en', 'Tempo and key', 'Vocals → notes', 'Apply tempo to the song'], ['es', 'Tempo y tonalidad', 'Voz → notas', 'Aplicar el tempo a la canción']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
+    expect((await page.textContent('[data-an="vx-tempo"] h3')) === title && (await page.textContent('[data-an="vx-melody"] h3')) === mel, `titres en ${l}`);
+    expect((await page.textContent('#vxApplyTempo')) === apply, `bouton en ${l}`);
+    expect(!/vx\./.test(await page.textContent('#analyze')), `clé de texte non traduite en ${l}`);
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
