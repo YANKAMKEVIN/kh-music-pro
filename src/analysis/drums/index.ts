@@ -41,13 +41,16 @@ function scan(x: Float32Array, sr: number, progress: (f: number) => void, signal
     } catch { w = null; }
     const done = () => { w?.terminate(); if (url) URL.revokeObjectURL(url); };
     signal.addEventListener('abort', () => { done(); ko(new Error('aborted')); }, { once: true });
-    const local = () => { try { ok(detectDrums(x, sr, progress)); } catch (e) { ko(e); } };
+    const local = () => { mode = 'local'; try { ok(detectDrums(x, sr, progress)); } catch (e) { ko(e); } };
     if (!w) return void setTimeout(local, 0);
-    w.onmessage = e => { if (e.data.f !== undefined) progress(e.data.f); else { done(); ok(e.data.r); } };
+    w.onmessage = e => { if (e.data.f !== undefined) progress(e.data.f); else { done(); mode = 'worker'; ok(e.data.r); } };
     w.onerror = ev => { ev.preventDefault(); done(); if (!signal.aborted) local(); };
     w.postMessage({ x, sr }, [x.buffer]);
   });
 }
+
+/** Où le dernier repérage a tourné (QA) : dans un Worker, ou sur le fil principal (repli). */
+let mode: 'worker' | 'local' | '' = '';
 
 /** Ce que la dernière analyse a trouvé (gardé pour le résumé, le bouton d'ajout et la QA). */
 interface Found { notes: FoundNote[]; grid: Grid; bars: number; loop: ReturnType<typeof findLoop>; scan: DrumScan }
@@ -75,7 +78,7 @@ export function addFoundDrums(opts: Partial<typeof ui> = {}): Track | null {
   return tr;
 }
 
-const drums: Analyzer & { last: () => Found | null; add: typeof addFoundDrums; grid: typeof toGridRows } = {
+const drums: Analyzer & { last: () => Found | null; mode: () => string; add: typeof addFoundDrums; grid: typeof toGridRows } = {
   id: 'drums', order: 40,
   title: () => t('dr.title'),
   help: () => t('dr.help'),
@@ -108,6 +111,7 @@ const drums: Analyzer & { last: () => Found | null; add: typeof addFoundDrums; g
         h('button', { class: 'pill accent', id: 'drAdd', onclick: () => addFoundDrums() }, t('dr.add'))));
   },
   last: () => found,
+  mode: () => mode,
   add: addFoundDrums,
   grid: toGridRows,
 };

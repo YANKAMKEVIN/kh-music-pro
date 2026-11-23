@@ -25,7 +25,7 @@ export interface DrumHit {
 export interface DrumScan { hits: DrumHit[]; hop: number; sr: number; frames: number; debug?: { refs: number[]; cand: number[][]; W: number[][]; fc: number[] } }
 
 export function detectDrums(x: Float32Array, sr: number, report?: (f: number) => void): DrumScan {
-  const KICK_MAX_HZ = 100;   // au-dessus, un fût grave est un tom (mesuré par la QA, cas DR)
+  const KICK_MAX_HZ = 100, GHOST_HAT = 0.5, SNARE_HOLD = 0.5, KICK_HAT_SNARE = 0.6;   // au-dessus, un fût grave est un tom (mesuré par la QA, cas DR)
   const N = 2048, HOP = 256, half = N / 2;
   // silence ajouté avant et après : un coup au tout début du son a lui aussi une montée
   const PAD = N, xs = new Float32Array(x.length + 2 * PAD); xs.set(x, PAD); x = xs;
@@ -117,7 +117,8 @@ export function detectDrums(x: Float32Array, sr: number, report?: (f: number) =>
           for (let b = 0; b < B; b++) { if (!W0[b * K + k]) continue; let s = 0; for (let t = 0; t < frames; t++) s += R[b * frames + t] * H[k * frames + t]; W[b * K + k] *= s / hs; }
         }
         normW();
-        for (let i = 0; i < W.length; i++) W[i] = 0.85 * W[i] + 0.15 * W0[i];
+        // la caisse claire est tenue plus près de son gabarit : rare face au charleston, elle dériverait vers lui
+        for (let i = 0; i < W.length; i++) { const a = i % K === 1 ? SNARE_HOLD : 0.15; W[i] = (1 - a) * W[i] + a * W0[i]; }
         normW();
       }
       if (report) report(0.35 + (learn ? 0.35 : 0.2) * (it + 1) / ITER + (learn ? 0 : 0.35));
@@ -158,15 +159,15 @@ export function detectDrums(x: Float32Array, sr: number, report?: (f: number) =>
     // Fuites : un son réel déborde un peu sur les autres gabarits (le médium d'un charleston acoustique sur la caisse claire,
     // le clic d'une grosse caisse…). On mesure ce débordement sur les coups de la source qui ne tombent pas avec un vrai coup
     // de la cible, puis on le retranche de chaque pic de la cible. Une ghost note réelle, elle, dépasse la fuite attendue.
-    const leak: number[][] = [0, 1, 2].map(k => [0, 1, 2].map(c => {
+    const leak: number[][] = [0, 1, 2].map(k => [0, 1, 2, 3].map(c => {
       // seule la caisse claire est corrigée : les aigus d'une caisse claire ne se distinguent pas d'un vrai charleston joué
       // avec elle, ni le grave d'une caisse claire d'une grosse caisse jouée avec elle
       if (k !== 1 || c === k) return 0;
       const q: number[] = [];
       for (const y of kept[c]) {
-        // coups de la source seuls (ni vrai coup de la cible, ni coup du troisième instrument en même temps)
+        // coups nets de la source, sans vrai coup de la cible ni troisième instrument en même temps
         if (y.p < 0.5 * refs[c] || kept[k].some(x => Math.abs(x.t - y.t) <= 0.025 && x.p >= 0.85 * refs[k])) continue;
-        if (kept[3 - k - c].some(x => Math.abs(x.t - y.t) <= 0.025 && x.p >= 0.3 * refs[3 - k - c])) continue;
+        if ([0, 1, 2, 3].some(o => o !== k && o !== c && kept[o].some(x => Math.abs(x.t - y.t) <= 0.025 && x.p >= 0.3 * refs[o]))) continue;
         let m = 0; for (let f = Math.max(0, y.f - 3); f <= Math.min(frames - 1, y.f + 3); f++) m = Math.max(m, Hk(k, f));
         q.push(m / Math.max(1e-9, Hk(c, y.f)));
       }
@@ -175,8 +176,11 @@ export function detectDrums(x: Float32Array, sr: number, report?: (f: number) =>
     }));
     for (let k = 0; k < 3; k++) kept[k] = kept[k].filter(x => {
       let e = 0;
-      for (let c = 0; c < 3; c++) if (leak[k][c]) { let m = 0; for (let f = Math.max(0, x.f - 3); f <= Math.min(frames - 1, x.f + 3); f++) m = Math.max(m, Hk(c, f)); e += leak[k][c] * m; }
-      return Hk(k, x.f) - x.mn - e >= 0.12 * refs[k];
+      for (let c = 0; c < 4; c++) if (leak[k][c]) { let m = 0; for (let f = Math.max(0, x.f - 3); f <= Math.min(frames - 1, x.f + 3); f++) m = Math.max(m, Hk(c, f)); e += leak[k][c] * m; }
+      if (Hk(k, x.f) - x.mn - e < 0.12 * refs[k]) return false;
+      // caisse claire moyenne pile sur une grosse caisse ET un charleston : clic + aigus, pas une caisse claire
+      if (k === 1 && x.p < KICK_HAT_SNARE * refs[1] && [0, 2].every(c => kept[c].some(y => Math.abs(y.t - x.t) <= 0.025))) return false;
+      return true;
     });
     return { kept, refs, leak, present, cand: peaks.map(ps => ps.length) };
   };
@@ -222,6 +226,8 @@ export function detectDrums(x: Float32Array, sr: number, report?: (f: number) =>
         }
       }
       if (k === 2) {
+        // coup de métal faible sur une caisse claire faible (ghost note) : ce sont les aigus de la caisse claire
+        if (hit.vel < GHOST_HAT && kept[1].some(x => Math.abs(x.t - pk.t) <= 0.025 && x.p < 0.6 * refs[1])) continue;
         // extinction mesurée avant le coup suivant (de n'importe quel instrument), fenêtre comprise
         const dt = Math.max(2, Math.min(Math.round(0.1 * fps), nextAny(pk.f) - pk.f - Math.round(0.03 * fps)));
         const r = Math.max(1e-6, (h[Math.min(frames - 1, pk.f + dt)] - pk.mn) / Math.max(1e-9, h[pk.f] - pk.mn));
@@ -231,6 +237,14 @@ export function detectDrums(x: Float32Array, sr: number, report?: (f: number) =>
       }
       hits.push(hit);
     }
+  }
+  // Toms : une attaque sans grosse caisse ni caisse claire, dont le fût sonne encore au-dessus de la grosse caisse
+  // (un tom électronique pur n'a que du grave-médium, la composante « attaque » le prend souvent pour elle).
+  for (const pk of kept[3]) {
+    if (kept[0].concat(kept[1]).some(x => Math.abs(x.t - pk.t) <= 0.035) || hits.some(h => h.cls === 'tom' && Math.abs(h.t - pk.t) <= 0.045)) continue;
+    const pitch = pitchAt(pk.f);
+    if (pitch <= KICK_MAX_HZ || pk.p < 0.3 * refs[3]) continue;
+    hits.push({ t: Math.max(0, pk.t), cls: 'tom', vel: Math.min(1, pk.p / refs[3]), pitch });
   }
   report?.(1);
   hits.sort((a, b) => a.t - b.t);
