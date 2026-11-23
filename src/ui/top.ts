@@ -6,6 +6,7 @@ import { S, commit, emit, redo, undo } from '../store';
 import { clamp, h, toast } from './dom';
 import { keyLabel } from './editor';
 import { showAudio } from './audio';
+import { showAnalyze } from './analyze';
 import { showLibrary, showVersions } from './library';
 import { startTour } from './tour';
 import { icon } from './icons';
@@ -109,7 +110,7 @@ export function buildTop(onLang: () => void) {
   const menu = drop('menu', [t('top.project') + ' ▾'], t('top.project'),
     item('bRename', t('top.rename'), renameProject),
     item('bNew', t('top.new'), showLibrary), item('bLib', t('top.lib'), showLibrary), item('bVersions', t('ver.menu'), showVersions), item('bOpen', t('top.open'), openProjectFile),
-    item('bSave', t('top.save'), saveFile), ...(desk ? [item('bSaveAs', t('file.saveAs'), saveFileAs)] : []), item('bImport', t('top.import'), () => pickAudio()),
+    item('bSave', t('top.save'), saveFile), ...(desk ? [item('bSaveAs', t('file.saveAs'), saveFileAs)] : []), item('bImport', t('top.import'), () => pickAudio()), item('bAnalyze', '🎧 ' + t('an.menu'), showAnalyze),
     ...(desk ? [recent] : []), item('bMidiIn', t('top.midiIn'), () => $('fMidi').click()));
   menu.addEventListener('toggle', () => { if (menu.open) fillRecent(); });
 

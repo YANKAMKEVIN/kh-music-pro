@@ -773,3 +773,12 @@ details.tmenu.kept[open] > .menu-list { animation: none; }
 .lcell.lrec.armed { border-color: var(--rec); animation: blink .5s steps(2) infinite; }
 .lcell.lrec.on, .lcell.recording { background: var(--rec); border-color: var(--rec); color: #fff; box-shadow: 0 0 14px var(--rec); }
 .mini.chainmode { color: var(--a1); border-color: var(--a1); white-space: nowrap; }
+
+/* V20 — Du son à la séquence */
+#analyze { width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; }
+#analyze .an-row { border-top: 1px solid var(--line); padding: 4px 0 10px; }
+#analyze .an-row h3 { margin: 12px 0 4px; }
+#analyze .fxfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+#analyze .xprog { border-radius: 10px; border-right: 1px solid var(--a1); }
+#analyze .an-parts > .fxfoot { justify-content: space-between; padding: 4px 0; }
+#analyze button { min-height: 44px; }

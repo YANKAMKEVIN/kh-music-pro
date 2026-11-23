@@ -169,6 +169,7 @@ async function reset() {
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
     k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
     k.S.selTrack = k.S.project.tracks[0].id; k.S.selClip = k.S.project.tracks[0].clips[0].id;
+    k.analysis.reset();
     k.resetHistory(); k.commit();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     document.querySelector('main').style.gridTemplateRows = '';
@@ -6250,6 +6251,63 @@ test('CE10', 'Chaînes d\'effets', 'Textes traduits (fenêtre des effets, mixeur
     expect((await page.textContent('.strip >> nth=1 >> [data-role=chainmode]')).includes(mode), `badge du mixeur non traduit en ${l}`);
   }
   await page.evaluate(() => window.kh.setLang('fr'));
+});
+
+// ============ V20 — Du son à la séquence : socle commun ============
+/** Son de test : une suite de notes sinusoïdales (Hz, début s, durée s), mono, au taux du moteur. */
+async function anTone(notes, dur = 4) {
+  await page.evaluate(([notes, dur]) => {
+    const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, Math.ceil(dur * sr), sr), x = b.getChannelData(0);
+    for (const [f, t0, d] of notes) for (let i = Math.floor(t0 * sr), e = Math.min(x.length, Math.floor((t0 + d) * sr)); i < e; i++) x[i] += 0.4 * Math.sin(2 * Math.PI * f * (i / sr - t0));
+    window.kh.analysis.loadSource('essai.wav', b);
+  }, [notes, dur]);
+}
+test('AN01', 'Analyse', 'Projet › Du son à la séquence ouvre la fenêtre, sans son chargé, Échap la ferme', async () => {
+  await menu('bAnalyze'); await page.waitForSelector('#analyze[open]');
+  expect((await page.textContent('#anSrc')).includes('Aucun son'), 'état « aucun son » attendu');
+  expect(await page.$eval('#anPick', b => b.offsetHeight >= 44), 'bouton Choisir un son trop petit pour le doigt');
+  await page.keyboard.press('Escape'); expect(!(await page.$eval('#analyze', d => d.open)), 'Échap doit fermer');
+});
+test('AN02', 'Analyse', 'Un son chargé s\'affiche avec sa durée ; une analyse trouve une partie qu\'on ajoute au morceau, calée sur le tempo', async () => {
+  await S(() => window.kh.analysis.registerAnalyzer({ id: 'qa-fake', order: 0, title: () => 'Analyse factice', help: () => 'essai', run: async ctx => { ctx.result.bpm = 120; ctx.result.parts.push({ id: 'p1', kind: 'melody', name: 'Chant', notes: [{ t: 0.5, d: 0.5, midi: 64, vel: 0.8 }, { t: 1.25, d: 0.25, midi: 67, vel: 0.6 }] }); } }));
+  await menu('bAnalyze'); await page.waitForSelector('#analyze[open]');
+  await anTone([[440, 0, 1]], 3);
+  expect((await page.textContent('#anSrc')).includes('essai.wav · 0:03'), 'nom et durée du son');
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click('[data-an="qa-fake"] [data-role="run"]');
+  await page.waitForSelector('#anParts [data-part="p1"]');
+  await page.click('#anParts [data-part="p1"] button');
+  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, type: tr.type, notes: tr.clips[0].notes, len: tr.clips[0].len }; });
+  expect(tr.n === n0 + 1 && tr.type === 'synth' && tr.name === 'Chant', JSON.stringify(tr));
+  expect(tr.notes[0].s === 4 && tr.notes[0].l === 4 && tr.notes[0].p === 64 && tr.notes[1].s === 10 && tr.notes[1].l === 2, 'notes calées à 120 : ' + JSON.stringify(tr.notes));
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste ajoutée');
+});
+test('AN03', 'Analyse', 'Une analyse qui échoue affiche un message ; une analyse longue s\'annule', async () => {
+  await S(() => {
+    window.kh.analysis.registerAnalyzer({ id: 'qa-bad', order: 0, title: () => 'Panne', help: () => '', run: async () => { throw new Error('modèle absent'); } });
+    window.kh.analysis.registerAnalyzer({ id: 'qa-slow', order: 1, title: () => 'Lente', help: () => '', run: (ctx, prog, sig) => new Promise((ok, ko) => { let f = 0; const iv = setInterval(() => { prog(f += 0.01); }, 50); sig.addEventListener('abort', () => { clearInterval(iv); ko(new Error('annulé')); }); }) });
+  });
+  await menu('bAnalyze'); await anTone([[220, 0, 1]], 1);
+  await page.click('[data-an="qa-bad"] [data-role="run"]');
+  await until(async () => (await page.textContent('#toast')).includes('modèle absent'), 'message d\'échec attendu', 3000);
+  await page.click('[data-an="qa-slow"] [data-role="run"]');
+  await page.waitForSelector('[data-an="qa-slow"] .xprog');
+  await page.click('[data-an="qa-slow"] button:has-text("Annuler")');
+  await page.waitForSelector('[data-an="qa-slow"] [data-role="run"]');
+  expect(!(await page.textContent('#toast')).includes('annulé'), 'une annulation ne doit pas s\'afficher comme une panne');
+  await page.keyboard.press('Escape');
+});
+test('AN04', 'Analyse', 'Un fichier qui n\'est pas un son est refusé avec un message clair, en trois langues', async () => {
+  await menu('bAnalyze');
+  await page.setInputFiles('#analyze input[type=file]', { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('pas du son') });
+  await until(async () => (await page.textContent('#toast')).includes('pas un son lisible'), 'message attendu', 5000);
+  expect((await page.textContent('#anSrc')).includes('Aucun son'), 'aucun son chargé');
+  await page.keyboard.press('Escape');
+  for (const [l, w] of [['en', 'From audio to sequence'], ['es', 'Del audio a la secuencia']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
+    expect((await page.textContent('#anT')).includes(w), `titre en ${l}`); await page.keyboard.press('Escape');
+  }
 });
 
 (async () => {

@@ -827,3 +827,6 @@ const D: Record<string, [string, string, string]> = {
   "save.hide": ["Masquer cet avertissement", "Hide this warning", "Ocultar este aviso"],
   "save.back": ["Sauvegarde automatique rétablie", "Autosave is working again", "Guardado automático restablecido"],
 };
+
+/** Textes d'un module à part (V20, du son à la séquence) : chaque analyse garde ses textes dans son propre fichier. */
+export function addTexts(extra: Record<string, [string, string, string]>) { Object.assign(D, extra); }
