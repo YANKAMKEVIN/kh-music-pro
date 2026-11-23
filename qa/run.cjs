@@ -6525,6 +6525,218 @@ test('PO15', 'Analyse', 'Téléphone : les deux analyses se lancent au doigt, r�
   } finally { await ctx2.close(); }
 });
 
+// ============ V20 — Batterie → motif (DR) ============
+/** Rend hors ligne un motif connu avec les sons de batterie de l'appli, le charge comme son à analyser, lance l'analyse
+ *  « Batterie → motif » et compare : coups retrouvés par instrument (à 35 ms près) et cases du motif retrouvé.
+ *  `rows` : { pad: 'x...o...' } une case par double-croche (x = fort, o = moyen 0,6, g = ghost note 0,3), répété sur `bars` mesures.
+ *  Classes : k grosse caisse, s caisse claire/clap, c charleston fermé, o ouvert, y cymbale, t toms. */
+const DR_CLS = { 0: 'k', 8: 'k', 1: 's', 2: 's', 9: 's', 3: 'c', 12: 'c', 4: 'o', 13: 'y', 14: 'y', 5: 't', 10: 't', 11: 't' };
+const DR_GM = { 36: 'k', 35: 'k', 38: 's', 39: 's', 40: 's', 42: 'c', 46: 'o', 49: 'y', 51: 'y', 45: 't', 47: 't', 50: 't' };
+async function drRun(spec, opts = {}) {
+  return page.evaluate(async ([spec, opts, CLS, GM]) => {
+    const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), bars = spec.bars || 4, len = bars * 16;
+    const dr = p.tracks.find(t => t.type === 'drums');
+    Object.assign(dr, { kit: spec.kit || 'electro', rev: 0, dly: 0, mute: false, solo: false, vol: 0.8, inserts: [], sends: [], pads: new Array(16).fill(null) });
+    p.tracks = [dr]; Object.assign(p, { bpm: spec.bpm, swing: spec.swing || 0, tempos: [], sig: 4, den: 4, loop: false, master: 0.9, buses: [] });
+    const drums = Array.from({ length: 16 }, () => new Array(len).fill(0)), truth = [];
+    const st = 15 / spec.bpm;
+    for (const [r, pat] of Object.entries(spec.rows)) for (let s = 0; s < len; s++) {
+      const c = pat[s % pat.length], v = c === 'x' ? 1 : c === 'o' ? 0.6 : c === 'g' ? 0.3 : 0;
+      if (!v) continue; drums[+r][s] = v;
+      truth.push({ t: s * st + (s % 2 ? p.swing * st * 0.5 : 0), c: CLS[r], s, r: +r, v });
+    }
+    dr.clips = [{ id: 'dr', name: 'motif', start: 0, len, offset: 0, patLen: len, drums }];
+    // banques de sons : un chargement peut échouer sous forte charge (plusieurs campagnes en parallèle) ; on réessaie une fois
+    let b; try { b = await k.renderOffline(p, true); } catch (e) { if (String(e.message) !== 'bank') throw e; await new Promise(r => setTimeout(r, 1500)); b = await k.renderOffline(p, true); }
+    if (spec.lead) {   // silence avant le premier coup (le son commence en cours de mesure)
+      const n = Math.round(spec.lead * b.sampleRate), o = k.engine.ctx.createBuffer(b.numberOfChannels, b.length + n, b.sampleRate);
+      for (let c = 0; c < b.numberOfChannels; c++) o.getChannelData(c).set(b.getChannelData(c), n);
+      b = o; for (const x of truth) x.t += spec.lead;
+    }
+    if (spec.noise) { for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] += spec.noise * (Math.random() * 2 - 1); } }
+    k.S.project.bpm = spec.bpm;
+    k.analysis.loadSource(spec.name || 'rythme.wav', b);
+    if (opts.give) k.analysis.AN.result.bpm = opts.give;
+    if (opts.load) return null;
+    const t0 = performance.now();
+    await k.analysis.runAnalyzer('drums');
+    const ms = performance.now() - t0;
+    const an = k.analysis.analyzers().find(a => a.id === 'drums'), f = an.last();
+    // Coups : appariement par classe, à 35 ms près.
+    const per = {}, used = new Set(), miss = []; let errSum = 0, errN = 0;
+    for (const c of 'kscoyt') per[c] = { tp: 0, fp: 0, fn: 0 };
+    const got = f.notes.map(n => ({ t: n.t, c: GM[n.midi] || '?', midi: n.midi }));
+    for (const tr of truth) {
+      let bi = -1, bd = 0.035;
+      got.forEach((g, i) => { const d = Math.abs(g.t - tr.t); if (!used.has(i) && g.c === tr.c && d <= bd) { bd = d; bi = i; } });
+      if (bi >= 0) { used.add(bi); per[tr.c].tp++; errSum += got[bi].t - tr.t; errN++; } else { per[tr.c].fn++; miss.push(tr.c + (tr.s % 16)); }
+    }
+    got.forEach((g, i) => { if (!used.has(i) && per[g.c]) per[g.c].fp++; });
+    // Motif : cases retrouvées (classe par case), après calage de la grille.
+    const { rows } = an.grid(f.notes, f.grid), shift = Math.round((spec.lead || 0) / st - f.grid.offset / st);
+    const cell = new Set(truth.map(x => x.c + ':' + x.s)), found = new Set();
+    rows.forEach((row, r) => row.forEach((v, s) => { if (v) { const c = GM[[36, 38, 39, 42, 46, 45, 37, 56, 35, 40, 47, 50, 70, 49, 51, 63][r]] || '?'; found.add(c + ':' + (s - shift)); } }));
+    let ctp = 0; for (const x of found) if (cell.has(x)) ctp++;
+    const cellF = 2 * ctp / (cell.size + found.size || 1);
+    return { miss: miss.join(' '), extra: got.filter((g, i) => !used.has(i)).map(g => g.c + Math.round(g.t / st) % 16).join(' '), per, cellF, off: f.grid.offset, swing: f.grid.swing, bias: errN ? errSum / errN * 1000 : 0, n: got.length, truth: truth.length, ms, bars: f.bars, loop: { bars: f.loop.bars, share: f.loop.share }, decays: f.scan.hits.filter(h => h.cls === 'hat').map(h => Math.round(h.decay)), pitches: f.scan.hits.filter(h => h.cls === 'tom').map(h => Math.round(h.pitch)) };
+  }, [spec, opts, DR_CLS, DR_GM]);
+}
+const drF = x => (2 * x.tp) / (2 * x.tp + x.fp + x.fn || 1);
+const drShow = r => Object.entries(r.per).filter(([, x]) => x.tp + x.fp + x.fn).map(([c, x]) => `${c} ${x.tp}/${x.tp + x.fn}${x.fp ? ' +' + x.fp : ''}`).join(' · ') + ` · cases ${(r.cellF * 100).toFixed(0)} %`;
+/** Vérifie la F-mesure de chaque instrument présent (seuils `min` par classe, 0,9 par défaut). */
+function drExpect(r, min = {}, label = '') {
+  for (const [c, x] of Object.entries(r.per)) if (x.tp + x.fn) expect(drF(x) >= (min[c] ?? 0.9), `${label} ${c} : F=${drF(x).toFixed(2)} (${drShow(r)})`);
+}
+const ROCK = { 0: 'x.......x.x.....', 1: '....x.......x...', 3: 'x.x.x.x.x.x.x.x.' };
+const DR_MEASURE = [
+  ['rock 120', { bpm: 120, rows: ROCK }],
+  ['rock 100 acoustique', { bpm: 100, kit: 'acoustic', rows: ROCK }],
+  ['hip-hop 90 doubles', { bpm: 90, rows: { 0: 'x......x..x.....', 1: '....x.......x...', 3: 'xxxxxxxxxxxxxxxx' } }],
+  ['ghost notes 95', { bpm: 95, rows: { 0: 'x.....x...x.....', 1: '..g.x..g.g..x..g', 3: 'x.x.x.x.x.x.x.x.' } }],
+  ['ouvert 110', { bpm: 110, rows: { 0: 'x.......x.......', 1: '....x.......x...', 3: 'x.x.x.x.x.x.x...', 4: '..............x.' } }],
+  ['crash + toms 130', { bpm: 130, bars: 2, rows: { 0: 'x.......x.......x.......x.......', 1: '....x.......x.......x...........', 3: '..x.x.x.x.x.x.x...x.x.x.x.x.....', 13: 'x...............................', 11: '........................x.x.....', 10: '............................x.x.', 5: '..............................x.' } }],
+  ['swing 100', { bpm: 100, swing: 0.4, rows: { 0: 'x.....x.x.......', 1: '....x.......x...', 3: 'xxxxxxxxxxxxxxxx' } }],
+  ['rapide 174', { bpm: 174, bars: 8, rows: { 0: 'x.........x.....', 1: '....x.......x...', 3: 'x.x.x.x.x.x.x.x.' } }],
+  ['lent 70 profond', { bpm: 70, kit: 'deep', rows: ROCK }],
+  ['studio 120', { bpm: 120, kit: 'studio', rows: ROCK }],
+];
+test('DR00', 'Batterie → motif', 'Mesure de précision (affichée) sur dix rythmes fabriqués', async () => {
+  for (const [name, spec] of DR_MEASURE) { const r = await drRun(spec); console.log(`        ${name.padEnd(22)} ${drShow(r)} · décalage ${r.bias.toFixed(1)} ms · grille ${r.off.toFixed(3)} s · swing ${r.swing.toFixed(2)} · ${r.ms.toFixed(0)} ms` + (process.env.DR_DEBUG ? `\n          manqués ${r.miss} · en trop ${r.extra} · métal ${r.decays.join(',')} · toms ${r.pitches.join(',')}` : '')); }
+});
+// Seuils : F-mesure par instrument (coups retrouvés à 35 ms près et bien classés). Mesures du 23/11/2026 dans le README de la V20.
+test('DR01', 'Batterie → motif', 'Rock à 120 (kit électro) : grosse caisse, caisse claire et charleston en croches retrouvés, motif identique case par case', async () => {
+  const r = await drRun(DR_MEASURE[0][1]);
+  drExpect(r, { k: 0.95, s: 0.95, c: 0.9 }, 'rock');
+  expect(r.cellF >= 0.95, 'motif ' + drShow(r));
+  expect(Math.abs(r.off) < 0.03 && Math.abs(r.bias) < 15, `calage : grille ${r.off} s, décalage moyen ${r.bias} ms`);
+});
+test('DR02', 'Batterie → motif', 'Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 %', async () => {
+  drExpect(await drRun(DR_MEASURE[1][1]), {}, 'acoustique');
+  drExpect(await drRun(DR_MEASURE[9][1]), {}, 'studio');
+});
+test('DR03', 'Batterie → motif', 'Hip-hop à 90 : charleston en doubles-croches, grosse caisse syncopée', async () => {
+  const r = await drRun(DR_MEASURE[2][1]);
+  drExpect(r, { c: 0.9 }, 'hip-hop'); expect(r.cellF >= 0.9, 'motif ' + drShow(r));
+});
+test('DR04', 'Batterie → motif', 'Ghost notes : les caisses claires douces sont retrouvées, avec une force plus faible que les coups appuyés', async () => {
+  const r = await drRun(DR_MEASURE[3][1]);
+  drExpect(r, { s: 0.9, c: 0.85 }, 'ghost');
+  const v = await S(() => { const f = window.kh.analysis.analyzers().find(a => a.id === 'drums').last(), st = 15 / 95; const sn = f.notes.filter(n => n.midi === 38).map(n => ({ s: Math.round(n.t / st) % 16, v: n.vel })); const avg = a => a.reduce((x, y) => x + y.v, 0) / (a.length || 1); return { ghost: avg(sn.filter(x => x.s !== 4 && x.s !== 12)), main: avg(sn.filter(x => x.s === 4 || x.s === 12)) }; });
+  expect(v.ghost < 0.6 * v.main, `forces : ghost ${v.ghost.toFixed(2)}, appuyés ${v.main.toFixed(2)}`);
+});
+test('DR05', 'Batterie → motif', 'Charleston ouvert reconnu (fin de mesure) à côté des charlestons fermés', async () => {
+  const r = await drRun(DR_MEASURE[4][1]);
+  drExpect(r, { o: 0.75, c: 0.85 }, 'ouvert');
+});
+test('DR06', 'Batterie → motif', 'Swing : retrouvé (0,4 joué) et retiré du calage, le motif reste droit ; « Appliquer ce swing » le règle dans le morceau', async () => {
+  const r = await drRun(DR_MEASURE[6][1]);
+  expect(Math.abs(r.swing - 0.4) <= 0.1, 'swing trouvé ' + r.swing);
+  drExpect(r, { c: 0.9 }, 'swing'); expect(r.cellF >= 0.9, 'motif ' + drShow(r));
+  await S(() => { window.kh.S.project.swing = 0; window.kh.analysis.analyzers().find(a => a.id === 'drums').add({ swing: true }); });
+  expect(Math.abs(await S(() => window.kh.S.project.swing) - r.swing) < 0.01, 'swing du morceau');
+});
+test('DR07', 'Batterie → motif', 'Tempos variés : 174 BPM sur 8 mesures, 70 BPM (kit profond), 140 BPM avec un léger bruit de fond', async () => {
+  drExpect(await drRun(DR_MEASURE[7][1]), {}, '174');
+  drExpect(await drRun(DR_MEASURE[8][1]), {}, '70');
+  drExpect(await drRun({ bpm: 140, rows: ROCK, noise: 0.01 }), { c: 0.85 }, '140 bruit');
+});
+test('DR08', 'Batterie → motif', 'Cymbale crash et toms : la crash est reconnue, les toms en partie (toms électroniques purs, limite connue)', async () => {
+  const r = await drRun(DR_MEASURE[5][1]);
+  drExpect(r, { k: 0.9, s: 0.75, c: 0.75, y: 0.6, t: 0.4 }, 'crash/toms');
+  expect(r.per.y.tp === 1, 'la crash du premier temps : ' + drShow(r));
+  expect(r.per.t.tp >= 2, 'au moins deux toms : ' + drShow(r));
+});
+test('DR09', 'Batterie → motif', 'Le son commence en cours de mesure (1,3 s de silence) : la grille se cale sur les coups, pas sur le début du fichier', async () => {
+  const r = await drRun({ bpm: 110, lead: 1.3, rows: ROCK });
+  drExpect(r, {}, 'levée'); expect(r.cellF >= 0.95, 'motif ' + drShow(r));
+});
+test('DR10', 'Batterie → motif', 'Le tempo trouvé par l\'analyse du tempo est utilisé (100) même si le morceau est à 120 ; affiché dans le résumé', async () => {
+  await menu('bAnalyze');
+  await drRun({ bpm: 100, rows: ROCK }, { load: true, give: 100 });
+  await S(() => { window.kh.S.project.bpm = 120; });
+  await page.click('[data-an="drums"] [data-role="run"]');
+  await page.waitForSelector('#drSum', { timeout: 20000 });
+  expect((await page.textContent('[data-an="drums"]')).includes('Tempo 100 BPM · 4 mesures'), 'tempo et mesures : ' + await page.textContent('[data-an="drums"]'));
+  const g = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'drums').last().grid);
+  expect(g.bpm === 100 && Math.abs(g.offset) < 0.03, JSON.stringify(g));
+  await page.keyboard.press('Escape');
+});
+test('DR11', 'Batterie → motif', 'Gestes réels : Lancer, avancement, résumé, « Ajouter en piste de batterie » → piste du séquenceur au bon motif ; Ctrl+Z la retire', async () => {
+  await menu('bAnalyze');
+  await drRun({ bpm: 120, rows: ROCK }, { load: true });
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click('[data-an="drums"] [data-role="run"]');
+  await page.waitForSelector('#drSum', { timeout: 20000 });
+  const sum = await page.textContent('#drSum');
+  const num = re => +((sum.match(re) || [])[1] || -1);
+  expect(Math.abs(num(/(\d+) coups/) - 52) <= 2 && num(/grosse caisse (\d+)/) === 12 && Math.abs(num(/caisse claire (\d+)/) - 8) <= 1 && Math.abs(num(/charleston fermé (\d+)/) - 32) <= 1, 'résumé : ' + sum);
+  expect(await page.$eval('#drAdd', b => b.offsetHeight >= 44), 'bouton trop petit pour le doigt');
+  expect(await S(() => window.kh.analysis.analyzers().find(a => a.id === 'drums').mode()) === 'worker', 'le calcul doit tourner dans un Worker');
+  expect(await page.$('#anParts [data-part="drums"]'), 'partie « Batterie » dans la liste des parties');
+  await page.selectOption('[data-role=drkit]', 'electro');
+  await page.click('#drAdd');
+  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1], c = tr.clips[0]; return { n: p.tracks.length, type: tr.type, kit: tr.kit, name: tr.name, len: c.len, patLen: c.patLen, rows: c.drums.map(r => r.slice(0, 16).map(v => v ? 'x' : '.').join('')) }; });
+  expect(tr.n === n0 + 1 && tr.type === 'drums' && tr.kit === 'electro' && tr.name === 'Batterie' && tr.len === 64 && tr.patLen === 64, JSON.stringify(tr));
+  const diff = (a, b) => [...a].filter((c, i) => c !== b[i]).length;
+  expect(diff(tr.rows[0], ROCK[0]) + diff(tr.rows[1], ROCK[1]) + diff(tr.rows[3], ROCK[3]) <= 1, 'motif : ' + tr.rows.slice(0, 4).join(' | '));
+  expect((await page.textContent('#toast')).includes('Batterie'), 'message de confirmation');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste ajoutée');
+});
+test('DR12', 'Batterie → motif', 'Repérer la mesure qui se répète : une mesure en boucle sur tout le morceau ; un motif de deux mesures (variation) reste en deux mesures', async () => {
+  await menu('bAnalyze');
+  await drRun({ bpm: 120, bars: 8, rows: ROCK }, { load: true });
+  await page.click('[data-an="drums"] [data-role="run"]'); await page.waitForSelector('#drSum', { timeout: 20000 });
+  // au clavier : on atteint la case et on la coche avec Espace
+  await page.focus('[data-role=drloop]'); await page.keyboard.press('Space');
+  expect(await page.$eval('[data-role=drloop]', c => c.checked), 'case cochée au clavier');
+  expect((await page.textContent('#drLoopInfo')).includes('1 mesure(s), présent dans 100 %'), 'info : ' + await page.textContent('#drLoopInfo'));
+  await page.focus('#drAdd'); await page.keyboard.press('Enter');
+  const c1 = await S(() => { const p = window.kh.S.project, c = p.tracks[p.tracks.length - 1].clips[0]; return { len: c.len, patLen: c.patLen, k: c.drums[0].map(v => v ? 'x' : '.').join('') }; });
+  expect(c1.len === 128 && c1.patLen === 16 && c1.k === ROCK[0], JSON.stringify(c1));
+  await page.keyboard.press('Escape');
+  const two = { 0: 'x.......x.x.....x.......x.....x.', 1: '....x.......x.......x.......xxxx', 3: 'x.x.x.x.x.x.x.x.x.x.x.x.x.x.....' };
+  const r = await drRun({ bpm: 120, bars: 8, rows: two });
+  expect(r.loop.bars === 2 && r.loop.share >= 0.9, 'boucle de deux mesures : ' + JSON.stringify(r.loop));
+  const pat = await S(() => { const an = window.kh.analysis.analyzers().find(a => a.id === 'drums'); const tr = an.add({ loop: true }); return { patLen: tr.clips[0].patLen, s: tr.clips[0].drums[1].map(v => v ? 'x' : '.').join('') }; });
+  expect(pat.patLen === 32 && [...pat.s].filter((c, i) => c !== two[1][i]).length <= 1, JSON.stringify(pat));
+});
+test('DR13', 'Batterie → motif', 'Une analyse longue (une minute de son) avance puis s\'annule sans message d\'erreur ; elle se relance ensuite', async () => {
+  await menu('bAnalyze');
+  await S(() => { const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, sr * 60, sr), x = b.getChannelData(0); for (let i = 0; i < x.length; i++) x[i] = (i % Math.round(sr / 2) < 2000 ? 0.5 : 0.01) * (Math.random() * 2 - 1); window.kh.analysis.loadSource('long.wav', b); });
+  await page.click('[data-an="drums"] [data-role="run"]');
+  await page.waitForSelector('[data-an="drums"] .xprog');
+  await until(async () => +(await page.getAttribute('[data-an="drums"] .xprog', 'aria-valuenow') || 0) > 0, 'l\'avancement doit bouger', 15000);
+  await page.click('[data-an="drums"] button:has-text("Annuler")');
+  await page.waitForSelector('[data-an="drums"] [data-role="run"]');
+  expect(!(await page.textContent('#toast')).includes('échoué'), 'une annulation n\'est pas une panne');
+  expect(!(await page.$('#drSum')), 'pas de résultat après annulation');
+  await page.keyboard.press('Escape');
+});
+test('DR14', 'Batterie → motif', 'Sans batterie (silence, note tenue) : « Aucun coup de batterie trouvé », rien à ajouter', async () => {
+  await menu('bAnalyze');
+  await S(() => { const ctx = window.kh.engine.ctx, b = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate); window.kh.analysis.loadSource('silence.wav', b); });
+  await page.click('[data-an="drums"] [data-role="run"]'); await page.waitForSelector('#drSum', { timeout: 20000 });
+  expect((await page.textContent('#drSum')).includes('Aucun coup'), await page.textContent('#drSum'));
+  expect(!(await page.$('#drAdd')) && !(await page.$('#anParts [data-part="drums"]')), 'rien à ajouter');
+  // note tenue entrée et sortie en fondu (une attaque brutale serait, elle, un vrai coup)
+  await S(() => { const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, sr * 3, sr), x = b.getChannelData(0); for (let i = 0; i < x.length; i++) { const t = i / sr; x[i] = 0.4 * Math.min(1, t / 0.15, (3 - t) / 0.15) * (Math.sin(2 * Math.PI * 220 * t) + 0.3 * Math.sin(2 * Math.PI * 440 * t)); } window.kh.analysis.loadSource('tenue.wav', b); });
+  await page.click('[data-an="drums"] [data-role="run"]'); await page.waitForSelector('#drSum', { timeout: 20000 });
+  const n = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'drums').last().notes.length);
+  expect(n <= 2, 'une note tenue ne doit pas donner une batterie : ' + n + ' coups');
+  await page.keyboard.press('Escape');
+});
+test('DR15', 'Batterie → motif', 'Textes en anglais et en espagnol (titre, résumé, boutons)', async () => {
+  await drRun({ bpm: 120, rows: ROCK });
+  for (const [l, title, add, kick] of [['en', 'Drums → pattern', 'Add as a drum track', 'kick 12'], ['es', 'Batería → patrón', 'Añadir como pista de batería', 'bombo 12']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
+    expect((await page.textContent('[data-an="drums"] h3')).includes(title), `titre en ${l}`);
+    expect((await page.textContent('#drAdd')).includes(add) && (await page.textContent('#drSum')).includes(kick), `résumé en ${l} : ` + await page.textContent('#drSum'));
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
