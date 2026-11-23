@@ -3,7 +3,7 @@ import { S, emit } from '../store';
 import { clamp, h } from './dom';
 
 /** Étapes de la visite : l'élément mis en lumière à chaque étape. */
-const STEPS = ['.transport', '.corner', '.lanes', '#panel', '#tabs', '#bLoop', '#menu', '#bHelp'];
+const STEPS = ['.transport', '#abar .addtr', '.lanes', '#panel', '#tabs', '#bLoop', '#menu', '#bHelp'];
 
 export function startTour() {
   document.querySelector('.tour')?.remove();

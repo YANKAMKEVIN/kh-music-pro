@@ -90,6 +90,8 @@ const D: Record<string, [string, string, string]> = {
   'top.more': ['Plus de commandes', 'More controls', 'Más controles'],
   'top.loopRange': ['Boucle de la mesure {0} à la mesure {1}', 'Loop from bar {0} to bar {1}', 'Bucle del compás {0} al compás {1}'],
   'abar.label': ['Outils d’arrangement', 'Arrangement tools', 'Herramientas de arreglo'],
+  'abar.addTracks': ['Ajouter une piste', 'Add a track', 'Añadir una pista'],
+  'arr.tracks': ['Pistes', 'Tracks', 'Pistas'],
   'top.help': ['Aide et raccourcis (?)', 'Help and shortcuts (?)', 'Ayuda y atajos (?)'],
   'tab.editor': ['Éditeur', 'Editor', 'Editor'],
   'tab.mixer': ['Mixeur', 'Mixer', 'Mezclador'],

@@ -36,7 +36,7 @@ La barre du haut tient sur une ligne et se lit en trois groupes :
 - **Jouer**, au centre : stop, lecture, enregistrement, compteur (mesure, temps, tempo), Tap, mesure (4/4), métronome ♪, boucle (le bouton affiche sa plage, par exemple « ⟲ 1 → 4 »), menu **Prise ▾** (décompte, punch, plage de la boucle).
 - **Sortie**, à droite : **Exporter** (WAV) avec son menu ▾ (MP3, pistes séparées, MIDI), réglages ⚙ (clavier MIDI, carte son, langue) et aide.
 
-Une **barre d'arrangement**, juste au-dessus des pistes, réunit la grille, le zoom, les changements de tempo, les repères et les notes du projet.
+Une **barre d'arrangement**, juste au-dessus des pistes, réunit l'ajout de pistes (＋ Batterie, ＋ Instrument, ＋ Audio, au début de la barre depuis le 22/11/2026, comme sur la maquette de la V18), la grille, le zoom, les changements de tempo, les repères et les notes du projet.
 
 Sur **téléphone**, la barre tient sur deux lignes sans déborder : ☰, transport et compteur en haut ; projet, métronome, boucle et prise en dessous. Export, réglages et aide sont dans ☰, et le menu Projet propose « Renommer le projet… ». Un appui long sur un clip ouvre son menu même quand le téléphone est occupé (chargement des sons, gros redessin) : c'est la durée de l'appui qui compte ; le menu reste ouvert quand le doigt se lève, même juste après un appui bref (depuis le 21/11/2026).
 
