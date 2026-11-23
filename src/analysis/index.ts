@@ -3,3 +3,4 @@ export { analyzers, dropTestAnalyzers, registerAnalyzer } from './registry';
 export { addPartAsTrack, toNotes, toStep } from './build';
 import './poly';
 import './drums';
+import './vx';
