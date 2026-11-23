@@ -6310,6 +6310,78 @@ test('AN04', 'Analyse', 'Un fichier qui n\'est pas un son est refusé avec un me
   }
 });
 
+// ============ V20 — Batterie → motif (DR) ============
+/** Rend hors ligne un motif connu avec les sons de batterie de l'appli, le charge comme son à analyser, lance l'analyse
+ *  « Batterie → motif » et compare : coups retrouvés par instrument (à 35 ms près) et cases du motif retrouvé.
+ *  `rows` : { pad: 'x...o...' } une case par double-croche (x = fort, o = moyen 0,6, g = ghost note 0,3), répété sur `bars` mesures.
+ *  Classes : k grosse caisse, s caisse claire/clap, c charleston fermé, o ouvert, y cymbale, t toms. */
+const DR_CLS = { 0: 'k', 8: 'k', 1: 's', 2: 's', 9: 's', 3: 'c', 12: 'c', 4: 'o', 13: 'y', 14: 'y', 5: 't', 10: 't', 11: 't' };
+const DR_GM = { 36: 'k', 35: 'k', 38: 's', 39: 's', 40: 's', 42: 'c', 46: 'o', 49: 'y', 51: 'y', 45: 't', 47: 't', 50: 't' };
+async function drRun(spec, opts = {}) {
+  return page.evaluate(async ([spec, opts, CLS, GM]) => {
+    const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)), bars = spec.bars || 4, len = bars * 16;
+    const dr = p.tracks.find(t => t.type === 'drums');
+    Object.assign(dr, { kit: spec.kit || 'electro', rev: 0, dly: 0, mute: false, solo: false, vol: 0.8, inserts: [], sends: [], pads: new Array(16).fill(null) });
+    p.tracks = [dr]; Object.assign(p, { bpm: spec.bpm, swing: spec.swing || 0, tempos: [], sig: 4, den: 4, loop: false, master: 0.9, buses: [] });
+    const drums = Array.from({ length: 16 }, () => new Array(len).fill(0)), truth = [];
+    const st = 15 / spec.bpm;
+    for (const [r, pat] of Object.entries(spec.rows)) for (let s = 0; s < len; s++) {
+      const c = pat[s % pat.length], v = c === 'x' ? 1 : c === 'o' ? 0.6 : c === 'g' ? 0.3 : 0;
+      if (!v) continue; drums[+r][s] = v;
+      truth.push({ t: s * st + (s % 2 ? p.swing * st * 0.5 : 0), c: CLS[r], s, r: +r, v });
+    }
+    dr.clips = [{ id: 'dr', name: 'motif', start: 0, len, offset: 0, patLen: len, drums }];
+    const b = await k.renderOffline(p, true);
+    if (spec.noise) { for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] += spec.noise * (Math.random() * 2 - 1); } }
+    k.S.project.bpm = spec.bpm;
+    k.analysis.loadSource(spec.name || 'rythme.wav', b);
+    if (opts.give) k.analysis.AN.result.bpm = spec.bpm;
+    const t0 = performance.now();
+    await k.analysis.runAnalyzer('drums');
+    const ms = performance.now() - t0;
+    const an = k.analysis.analyzers().find(a => a.id === 'drums'), f = an.last();
+    // Coups : appariement par classe, à 35 ms près.
+    const per = {}, used = new Set(), miss = []; let errSum = 0, errN = 0;
+    for (const c of 'kscoyt') per[c] = { tp: 0, fp: 0, fn: 0 };
+    const got = f.notes.map(n => ({ t: n.t, c: GM[n.midi] || '?', midi: n.midi }));
+    for (const tr of truth) {
+      let bi = -1, bd = 0.035;
+      got.forEach((g, i) => { const d = Math.abs(g.t - tr.t); if (!used.has(i) && g.c === tr.c && d <= bd) { bd = d; bi = i; } });
+      if (bi >= 0) { used.add(bi); per[tr.c].tp++; errSum += got[bi].t - tr.t; errN++; } else { per[tr.c].fn++; miss.push(tr.c + (tr.s % 16)); }
+    }
+    got.forEach((g, i) => { if (!used.has(i) && per[g.c]) per[g.c].fp++; });
+    // Motif : cases retrouvées (classe par case), après calage de la grille.
+    const { rows } = an.grid(f.notes, f.grid), shift = Math.round(-f.grid.offset / st);
+    const cell = new Set(truth.map(x => x.c + ':' + x.s)), found = new Set();
+    rows.forEach((row, r) => row.forEach((v, s) => { if (v) { const c = GM[[36, 38, 39, 42, 46, 45, 37, 56, 35, 40, 47, 50, 70, 49, 51, 63][r]] || '?'; found.add(c + ':' + (s - shift)); } }));
+    let ctp = 0; for (const x of found) if (cell.has(x)) ctp++;
+    const cellF = 2 * ctp / (cell.size + found.size || 1);
+    return { miss: miss.join(' '), extra: got.filter((g, i) => !used.has(i)).map(g => g.c + Math.round(g.t / st) % 16).join(' '), per, cellF, off: f.grid.offset, swing: f.grid.swing, bias: errN ? errSum / errN * 1000 : 0, n: got.length, truth: truth.length, ms, bars: f.bars, loop: { bars: f.loop.bars, share: f.loop.share }, decays: f.scan.hits.filter(h => h.cls === 'hat').map(h => Math.round(h.decay)), pitches: f.scan.hits.filter(h => h.cls === 'tom').map(h => Math.round(h.pitch)) };
+  }, [spec, opts, DR_CLS, DR_GM]);
+}
+const drF = x => (2 * x.tp) / (2 * x.tp + x.fp + x.fn || 1);
+const drShow = r => Object.entries(r.per).filter(([, x]) => x.tp + x.fp + x.fn).map(([c, x]) => `${c} ${x.tp}/${x.tp + x.fn}${x.fp ? ' +' + x.fp : ''}`).join(' · ') + ` · cases ${(r.cellF * 100).toFixed(0)} %`;
+/** Vérifie la F-mesure de chaque instrument présent (seuils `min` par classe, 0,9 par défaut). */
+function drExpect(r, min = {}, label = '') {
+  for (const [c, x] of Object.entries(r.per)) if (x.tp + x.fn) expect(drF(x) >= (min[c] ?? 0.9), `${label} ${c} : F=${drF(x).toFixed(2)} (${drShow(r)})`);
+}
+const ROCK = { 0: 'x.......x.x.....', 1: '....x.......x...', 3: 'x.x.x.x.x.x.x.x.' };
+const DR_MEASURE = [
+  ['rock 120', { bpm: 120, rows: ROCK }],
+  ['rock 100 acoustique', { bpm: 100, kit: 'acoustic', rows: ROCK }],
+  ['hip-hop 90 doubles', { bpm: 90, rows: { 0: 'x......x..x.....', 1: '....x.......x...', 3: 'xxxxxxxxxxxxxxxx' } }],
+  ['ghost notes 95', { bpm: 95, rows: { 0: 'x.....x...x.....', 1: '..g.x..g.g..x..g', 3: 'x.x.x.x.x.x.x.x.' } }],
+  ['ouvert 110', { bpm: 110, rows: { 0: 'x.......x.......', 1: '....x.......x...', 3: 'x.x.x.x.x.x.x...', 4: '..............x.' } }],
+  ['crash + toms 130', { bpm: 130, bars: 2, rows: { 0: 'x.......x.......x.......x.......', 1: '....x.......x.......x...........', 3: '..x.x.x.x.x.x.x...x.x.x.x.x.....', 13: 'x...............................', 11: '........................x.x.....', 10: '............................x.x.', 5: '..............................x.' } }],
+  ['swing 100', { bpm: 100, swing: 0.4, rows: { 0: 'x.....x.x.......', 1: '....x.......x...', 3: 'xxxxxxxxxxxxxxxx' } }],
+  ['rapide 174', { bpm: 174, bars: 8, rows: { 0: 'x.........x.....', 1: '....x.......x...', 3: 'x.x.x.x.x.x.x.x.' } }],
+  ['lent 70 profond', { bpm: 70, kit: 'deep', rows: ROCK }],
+  ['studio 120', { bpm: 120, kit: 'studio', rows: ROCK }],
+];
+test('DR00', 'Batterie → motif', 'Mesure de précision (affichée) sur dix rythmes fabriqués', async () => {
+  for (const [name, spec] of DR_MEASURE) { const r = await drRun(spec); console.log(`        ${name.padEnd(22)} ${drShow(r)} · décalage ${r.bias.toFixed(1)} ms · grille ${r.off.toFixed(3)} s · swing ${r.swing.toFixed(2)} · ${r.ms.toFixed(0)} ms` + (process.env.DR_DEBUG ? `\n          manqués ${r.miss} · en trop ${r.extra} · métal ${r.decays.join(',')} · toms ${r.pitches.join(',')}` : '')); }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
