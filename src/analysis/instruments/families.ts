@@ -51,6 +51,8 @@ export interface FrameData {
   scores: Float32Array;
   /** niveau RMS de chaque fenêtre */
   rms: Float32Array;
+  /** vrai si les pistes séparées ont été classées : la basse, isolée sur sa piste, ne fait plus d'ombre aux autres familles */
+  stems?: boolean;
   /** variation d'enveloppe de chaque fenêtre (écart-type / moyenne des niveaux sur 20 ms) : bas = son tenu */
   flux: Float32Array;
 }
@@ -81,7 +83,7 @@ export function summarize(d: FrameData, tune = TUNE): FamilyFound[] {
     if (d.rms[i] < tune.silence) continue;
     live++;
     const row = (c: number) => d.scores[i * W + (col.get(c) ?? 0)];
-    const fam = frameFamilies(row), top = Math.max(...fam.filter((_, j) => j !== DRUMS));
+    const fam = frameFamilies(row), top = Math.max(...fam.filter((_, j) => j !== DRUMS && !(d.stems && j === BASS)));
     fam.forEach((v, j) => {
       if (j === DRUMS ? v < tune.drums : j === BASS ? v < tune.bass : v < tune.hear || v < tune.rel * top) return;
       hits[j]++; sum[j] += v;

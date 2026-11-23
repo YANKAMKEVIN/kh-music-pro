@@ -6390,19 +6390,19 @@ test('INF01', 'Analyse', 'Familles d\'instruments : au clic, le modèle se charg
   } finally { page.off('request', onReq); }
   await page.keyboard.press('Escape');
 });
-test('INF02', 'Analyse', 'Instruments de l\'appli joués seuls (34 sons enregistrés et synthés) : au moins 85 % de bonnes familles (mesuré : 92 %)', async () => {
+test('INF02', 'Analyse', 'Instruments de l\'appli joués seuls (34 sons enregistrés et synthés) : au moins 85 % des familles retrouvées, 75 % d\'annonces justes (mesuré : 100 % et 84 %)', async () => {
   const r = await inCampaign(IN_SINGLE);
   console.log(`        INF02 seuls : rappel ${(r.recall * 100).toFixed(0)} %, précision ${(r.precision * 100).toFixed(0)} % ; écarts : ${r.misses.join(' ; ')}`);
   expect(r.recall >= 0.85, `rappel ${r.recall.toFixed(2)} < 0,85`);
   expect(r.precision >= 0.75, `précision ${r.precision.toFixed(2)} < 0,75`);
 });
-test('INF03', 'Analyse', 'Mélanges de 2 à 4 instruments de l\'appli, sans pistes séparées : au moins 45 % des familles retrouvées, 70 % d\'annonces justes', async () => {
+test('INF03', 'Analyse', 'Mélanges de 2 à 4 instruments de l\'appli, sans pistes séparées : au moins 45 % des familles retrouvées, 70 % d\'annonces justes (mesuré : 54 % et 93 %)', async () => {
   const r = await inCampaign(IN_MIX);
   console.log(`        INF03 mélanges : rappel ${(r.recall * 100).toFixed(0)} %, précision ${(r.precision * 100).toFixed(0)} % ; écarts : ${r.misses.join(' ; ')}`);
   expect(r.recall >= 0.45, `rappel ${r.recall.toFixed(2)} < 0,45`);
   expect(r.precision >= 0.7, `précision ${r.precision.toFixed(2)} < 0,70`);
 });
-test('INF04', 'Analyse', 'Mêmes mélanges avec les pistes séparées (voix, batterie, basse, reste) : chaque piste est classée à part, bien plus de familles retrouvées', async () => {
+test('INF04', 'Analyse', 'Mêmes mélanges avec les pistes séparées (voix, batterie, basse, reste) : chaque piste est classée à part : au moins 70 % retrouvées, 70 % d\'annonces justes (mesuré : 77 % et 96 %)', async () => {
   const r = await inCampaign(IN_MIX, { stems: true });
   console.log(`        INF04 avec pistes : rappel ${(r.recall * 100).toFixed(0)} %, précision ${(r.precision * 100).toFixed(0)} % ; écarts : ${r.misses.join(' ; ')}`);
   expect(r.recall >= 0.7, `rappel ${r.recall.toFixed(2)} < 0,70`);

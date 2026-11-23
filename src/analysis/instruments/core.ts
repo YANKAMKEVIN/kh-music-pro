@@ -105,5 +105,5 @@ export async function runYamnet(inp: Inputs, files: ModelFiles, progress: (f: nu
     for (let i = 0; i < n; i++) for (let j = 0; j < W; j++) if (ok[j]) { const o = i * W + j; if (r.scores[o] > scores[o]) scores[o] = r.scores[o]; }
   }
   progress(1);
-  return { n, scores, rms, flux, backend, means };
+  return { n, scores, rms, flux, backend, means, stems: Object.keys(st).length > 0 };
 }
