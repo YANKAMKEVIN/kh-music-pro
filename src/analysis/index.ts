@@ -4,3 +4,4 @@ export { addPartAsTrack, toNotes, toStep } from './build';
 import './poly';
 import './drums';
 import './vx';
+import './instruments';
