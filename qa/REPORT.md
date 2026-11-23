@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-401 cas réussis sur 401.
+477 cas réussis sur 477.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -14,7 +14,7 @@
 | T08 | Transport | Un clic sur la règle déplace la tête de lecture | OK |
 | A01 | Arrangement | Ajouter une piste de chaque type | OK |
 | A02 | Arrangement | Renommer une piste | OK |
-| A03 | Arrangement | Supprimer une piste (avec confirmation) | OK |
+| A03 | Arrangement | Supprimer une piste (sans question, annulable) | OK |
 | A04 | Arrangement | Double-clic dans une piste : crée un clip et ouvre l'éditeur | OK |
 | A05 | Arrangement | Déplacer un clip en le glissant (aimanté à la grille) | OK |
 | A06 | Arrangement | Raccourcir un clip par son bord droit | OK |
@@ -48,6 +48,8 @@
 | R03 | Enregistrement | Le clip enregistré épouse la zone de boucle | OK |
 | R04 | Enregistrement | Décompte : une mesure avant le départ | OK |
 | R05 | Enregistrement | Enregistrer le micro : un clip audio apparaît, avec du signal | OK |
+| R09 | Enregistrement | Enregistrer au-delà de la 48e mesure : la règle s'allonge pendant la prise, le clip arrive à la bonne place | OK |
+| R10 | Enregistrement | Enregistrer des notes au-delà de la 48e mesure : la règle suit la tête de lecture | OK |
 | R06 | Enregistrement | Micro avec décompte : la prise est calée sur le premier temps | OK |
 | U01 | Audio | Importer un fichier audio : le clip a la bonne durée | OK |
 | U02 | Audio | Régler le gain d'un clip audio puis le scinder | OK |
@@ -196,11 +198,12 @@
 | LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
 | LAT03 | Latence | Sans le module natif (version web), le son entre et sort toujours par le navigateur | OK |
 | NAT01 | Moteur natif | Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac | OK |
-| NAT02 | Moteur natif | Avec le module : réglage désactivé par défaut, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu | OK |
+| NAT02 | Moteur natif | Avec le module, moteur arrêté : réglage désactivé, activé au clic, désactivé au clavier ; le son change de chemin et le choix est retenu | OK |
 | NAT03 | Moteur natif | Échec du moteur natif : message clair, le son reste au navigateur, la sortie choisie est gardée | OK |
 | NAT04 | Moteur natif | Le choix est retenu : au lancement suivant, le moteur natif se rallume tout seul | OK |
 | NAT05 | Moteur natif | Réglage et plugins du Mac en anglais et en espagnol | OK |
 | NAT06 | Moteur natif | Horloge de Web Audio : sur une carte son externe, le navigateur se cale sur les haut-parleurs du Mac (pas sur la carte du natif) ; sinon sur la sortie du natif ; carte débranchée suivie | OK |
+| NAT07 | Moteur natif | Activé par défaut sur Mac (décision du 21/11/2026) : allumé au lancement sans choix retenu, « Désactivé » est retenu, un échec au lancement rend la main au navigateur sans message d'erreur | OK |
 | MAC01 | Plugins du Mac | Les plugins d'effet du Mac sont proposés dans la chaîne d'effets, triés ; en ajouter un affiche ses réglages | OK |
 | MAC02 | Plugins du Mac | Les curseurs d'un plugin du Mac pilotent le plugin, s'enregistrent dans le projet, s'annulent et reviennent aux réglages d'origine | OK |
 | MAC03 | Plugins du Mac | Projet avec un plugin du Mac ouvert sans module natif : mention « indisponible ici », son tel quel, aucun message d'erreur | OK |
@@ -265,6 +268,7 @@
 | EX08 | Banques expressives | Piano expressif et batterie Studio conservés dans le fichier, après rechargement, et audibles à l’export | OK |
 | EX09 | Banques expressives | Un téléchargement incomplet reste indisponible, bloque l’export puis se recharge après réessai | OK |
 | EX10 | Banques expressives | Un ancien projet garde le piano et le kit acoustique historiques | OK |
+| VD01 | Banques expressives | Batterie à plusieurs nuances (Virtuosity Drums, décision du 21/11/2026) : le kit Studio se charge, une frappe douce et une frappe forte jouent des enregistrements différents | OK |
 | MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | OK |
 | MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | OK |
 | MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
@@ -331,6 +335,7 @@
 | FZ03 | Gel de piste | Une piste avec un effet et une automation de filtre se gèle avec son traitement : même son, mais un réglage de l’originale ne change plus rien | OK |
 | FZ04 | Gel de piste | Au clavier : le bouton de gel s’atteint et s’actionne avec Entrée ; le gel voyage dans le fichier projet | OK |
 | FZ05 | Gel de piste | Bouton de gel traduit (anglais, espagnol), absent des pistes audio | OK |
+| FZ06 | Gel de piste | Le général (volume, égaliseur, filtre, largeur) ne s’applique qu’une fois à une piste gelée : même niveau qu’avant le gel | OK |
 | PF01 | Performance | Gros projet (40 pistes, 120 effets) : mesures chiffrées de la charge, du redessin de l’écran et de l’export ; l’écran reste rapide et la lecture se mesure | OK |
 | PF03 | Performance | Gros projet allégé par le gel : les 32 pistes d’instruments gelées d’un clic chacune, la charge chute, la lecture ne prend plus de retard | OK |
 | PF02 | Performance | Indicateur de charge du mixeur : un clic mesure et affiche la charge, les pistes et les effets ; traduit en anglais et en espagnol | OK |
@@ -350,12 +355,14 @@
 | AD04 | Correctifs audit | Tempo au centième : 93,5 BPM gardé (champ, changement de tempo, fichier MIDI) ; une saisie vide ou nulle garde le tempo | OK |
 | AD05 | Correctifs audit | Sauvegarde impossible (espace plein, stockage bloqué) : bandeau qui reste, bouton « Enregistrer en fichier », message de retour ; traduit | OK |
 | AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | OK |
+| AD06b | Correctifs audit | Accordeur : la trame où la note commence est sautée ; une trame abîmée proche de la note ne décale pas l’affichage ; rouvert, il ne lisse pas depuis la note d’avant | OK |
 | AD07 | Correctifs audit | Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide | OK |
 | AD08 | Correctifs audit | Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet | OK |
 | TH01 | Têtes de piste | Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles | OK |
 | TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | OK |
 | TH03 | Têtes de piste | Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus | OK |
 | TH04 | Têtes de piste | Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom | OK |
+| TH07 | Têtes de piste | Le menu ⋯ reste ouvert quand l’écran se redessine (lecture, note jouée en prise) ; seuls un clic dehors, Échap ou un choix le referment | OK |
 | TH05 | Têtes de piste | Téléphone : noms lisibles, ⋯ au doigt (monter, descendre, supprimer enfin possibles), menu dans l’écran | OK |
 | TH06 | Têtes de piste | Menu ⋯ et repère ❄ traduits en anglais et en espagnol | OK |
 | CT01 | Contrôles joués | Pitch bend MIDI joué en direct : la note tenue monte, descend et revient au centre | OK |
@@ -405,3 +412,72 @@
 | AI03 | Instruments du Mac | Lecture d’un clip : chaque note part à son instant et se relâche à sa fin ; l’arrêt coupe tout | OK |
 | AI04 | Instruments du Mac | L’état réglé dans la fenêtre est gardé dans le projet, rechargé dans le plugin, et l’export reste d’un seul tenant | OK |
 | AI05 | Instruments du Mac | Version web : pas de liste, piste muette annoncée, export possible ; textes traduits | OK |
+| UX01a | Export | Pendant un export, le bouton Exporter devient une barre qui avance, puis revient ; le fichier arrive | OK |
+| UX01b | Export | Annuler un export : aucun fichier, message clair, et l’export suivant marche | OK |
+| UX01c | Export | Pistes séparées : « piste i sur n » dans la barre ; part faite calculée juste ; annulation au clavier ; trois langues | OK |
+| UX02a | Arrangement | Ctrl + molette zoome autour du pointeur : la mesure visée ne bouge pas ; les boutons − et + restent | OK |
+| UX02b | Arrangement | Maj + molette fait défiler dans le temps ; la molette seule ne zoome pas | OK |
+| UX02c | Piano roll | Ctrl + molette zoome le piano roll autour du pointeur ; les notes restent éditables | OK |
+| UX02d | Téléphone | Pincer à deux doigts zoome l’arrangement ; un clip touché en premier ne se déplace pas | OK |
+| UX03a | Arrangement | Clic droit sur un clip : menu avec Renommer, Dupliquer, Scinder ici, Boucler, Copier, Supprimer et leurs raccourcis | OK |
+| UX03b | Arrangement | Menu du clip : scinder à l’endroit visé, boucler, copier puis coller, renommer, supprimer | OK |
+| UX03c | Accessibilité | Menu du clip au clavier : Maj+F10 l’ouvre, les flèches le parcourent, Entrée choisit ; Suppr n’agit pas derrière le menu | OK |
+| UX03d | Téléphone | Appui long au doigt sur un clip : le menu s’ouvre, le clip ne bouge pas, Supprimer et Dupliquer marchent au doigt | OK |
+| UX04a | Enregistrement | Décompte visible : 4 · 3 · 2 · 1 en grand à la place du compteur, puis la position revient ; la barre ne change pas de hauteur | OK |
+| UX04b | Transport | Témoin du temps : il bat à chaque temps, plus fort sur le premier ; éteint à l’arrêt ; fixe si le système demande moins d’animations | OK |
+| UX05a | Mixeur | Tranche en quatre sections (Égaliseur, Effets, Envois, Dynamique) ; le panoramique est au-dessus du fader et règle la piste | OK |
+| UX05b | Mixeur | Replier une section la replie sur toutes les tranches ; l’état est gardé après un redessin et dans l’appareil ; les réglages repliés marchent toujours | OK |
+| UX05c | Mixeur | Un point signale les sections qui contiennent un réglage actif, même repliées ; titres traduits | OK |
+| UX06a | Mixeur | Double-clic sur un curseur : retour à sa valeur d’origine, annulable ; un repère la marque ; le fader revient à 80 % | OK |
+| UX06b | Mixeur | Suppr sur un curseur le remet à l’origine sans supprimer le clip sélectionné ; Maj + glissé règle finement | OK |
+| UX06c | Interface | Retour à l’origine dans l’arrangement, le Live et les effets ; les curseurs sans valeur neutre ne changent pas | OK |
+| UX07a | Interface | Supprimer une piste : plus de question, la piste part et le message propose Annuler | OK |
+| UX07b | Interface | Fenêtres maison : la valeur est sélectionnée, Entrée valide, Échap annule ; renommer le projet et un repère ; trois langues | OK |
+| UX08a | Arrangement | Chaque tête de piste montre le niveau de sa piste pendant la lecture, comme le vumètre du mixeur | OK |
+| UX08b | Mixeur | Crête retenue une seconde ; le témoin de saturation reste allumé jusqu’au clic, dans la tête de piste comme dans le mixeur | OK |
+| UX09a | Live | La case qui joue se remplit au fil de sa boucle, puis repart de zéro | OK |
+| UX09b | Live | La case en attente compte les temps avant son départ (3 · 2 · 1), puis joue | OK |
+| UX09c | Live | La scène en cours est marquée, la scène attendue clignote ; rien n’est marqué à l’arrêt | OK |
+| UX10a | Accueil | Première visite : un accueil court (question, cinq modèles, visite guidée, Commencer) à la place de la notice ; « ? » ouvre toujours l’aide | OK |
+| UX10b | Accueil | Choisir un modèle à l’accueil : il remplace le morceau d’exemple (un seul projet dans la bibliothèque) et joue | OK |
+| UX10c | Accueil | Accueil : la visite guidée démarre ; Échap referme ; téléphone et trois langues | OK |
+| UX11a | Projets | Chaque projet de la bibliothèque montre son tempo, ses pistes, sa durée et une miniature de l’arrangement | OK |
+| UX11b | Projets | Renommer un projet depuis la liste, ouvert ou non ; le nom est gardé | OK |
+| UX11c | Projets | Au-delà de huit projets, un champ de recherche filtre la liste par nom (sans tenir compte des accents) | OK |
+| UX12a | Enregistrement | Pendant une prise : tête de lecture et règle rouges, liseré sur la piste enregistrée, voile sur la zone déjà captée ; tout s’efface à l’arrêt | OK |
+| UX12b | Enregistrement | Prise micro : la piste audio sélectionnée est marquée ; rien n’est voilé pendant le décompte | OK |
+| UX13a | Interface | Icônes dessinées : les types de piste ont le même dessin partout (têtes, mixeur, Live, éditeur), à la couleur de la piste, sans emoji | OK |
+| UX13b | Interface | Icônes dessinées (suite) : pads, quantification, entrée audio, réglages, modèles et réglages audio sans emoji, noms accessibles gardés | OK |
+| UX14a | Démarrage | Écran d’attente : le logo est dans la page avant le script, puis disparaît ; icônes PNG 192 et 512, version maskable et icône iPhone | OK |
+| UX15a | Interface | Fenêtres et menus s’ouvrent en 140 ms (fondu, léger agrandissement, voile qui s’installe) ; rien ne bouge si le système demande moins d’animations | OK |
+| PH01 | Téléphone | Rétablir est visible au doigt sur téléphone : annuler puis rétablir une case du séquenceur | OK |
+| PH02 | Téléphone | Le morceau s’ouvre sur téléphone avec au moins quatre mesures visibles | OK |
+| PH03 | Téléphone | Séquenceur sur téléphone : 8 pas entiers à la fois, cases hautes de 44 px, glisser passe aux 8 suivants, toucher allume | OK |
+| PH04 | Téléphone | Au doigt, tout ce qu’on touche fait au moins 44 px (barre, arrangement, pistes, éditeur, onglets, menus) et rien ne déborde | OK |
+| AZ01 | Automation | Filtre de l’instrument automatisé : choisi dans le groupe Instrument, tracé à la souris ; les notes s’ouvrent au fil de la courbe à l’export | OK |
+| AZ02 | Automation | Une note garde le filtre de son départ ; à l’arrêt, une note jouée à la main reprend le réglage fixe | OK |
+| AZ03 | Automation | Aigus de l’égaliseur automatisés de −15 à +15 dB : export plus brillant à la fin ; à l’arrêt, l’égaliseur revient à son réglage | OK |
+| AZ04 | Automation | Seuil du compresseur automatisé ; la courbe voyage dans le fichier projet ; batterie sans groupe Instrument ; textes traduits | OK |
+| CF05 | Fondus enchaînés | Clips qui suivent le tempo (joués plus vite que leur tempo d’origine) : le premier continue en s’effaçant pendant le fondu enchaîné | OK |
+| SG02 | Signature | Passer en 6/8 à la souris : mesure de 12 pas en deux temps d’une noire pointée (règle, lignes de temps, compteur, séquenceur) | OK |
+| SG03 | Signature | Métronome en 6/8 : deux clics par mesure, le premier accentué ; décompte de deux clics ; en 3/4, trois clics de décompte | OK |
+| SG04 | Signature | 12/8, 9/8, 7/8 et 5/8 : longueur de mesure, temps, boucle d’une mesure à l’écoute | OK |
+| SG05 | Signature | 6/8 dans le fichier MIDI exporté, dans le fichier projet ; un ancien projet s’ouvre en x/4 | OK |
+| SG06 | Signature | Import MIDI : un projet vide prend la signature du fichier (6/8, 12/8, 7/4) ; un projet déjà commencé garde la sienne ; signature inconnue ignorée | OK |
+| AZ05 | Automation | Fréquence du médium et taux du compresseur automatisés dans la tranche fixe : à l’écoute, à l’export, à l’arrêt ; conversion en chaîne et retour sans perte | OK |
+| LR01 | Live | Enregistrer un clip à la volée : ● sur une piste, la prise part à la mesure, les notes jouées s’y rangent, puis le clip tourne en boucle | OK |
+| LR02 | Live | Batterie : les pads joués pendant la prise remplissent le motif ; le clip enregistré sonne en boucle et apparaît dans l’arrangement | OK |
+| LR03 | Live | Un second appui abandonne la prise (rien n’est gardé, la musique continue) ; Arrêter pendant une prise garde ce qui a été joué | OK |
+| LR04 | Live | Au clavier : ● se déclenche avec Entrée ; une piste audio n’a pas de bouton ; longueur gardée dans le fichier ; textes traduits | OK |
+| LR05 | Live | Arpégiateur et répétition de notes pendant une prise à la volée : les notes égrenées et les coups répétés sont rangés dans le clip | OK |
+| LR06 | Live | Pitch bend et molette joués pendant une prise à la volée : la courbe est gardée dans le clip, retour au centre compris | OK |
+| CE01 | Chaînes d'effets | Migration : un ancien projet s’ouvre en tranche fixe ; « Tout le projet » convertit pistes et bus en chaînes, et le rendu reste identique à l’échantillon près (piste par piste, courbes comprises) | OK |
+| CE02 | Chaînes d'effets | Migration sans perte : courbes renommées vers les effets, Annuler revient à la tranche fixe, le fichier garde la chaîne ; retour à la tranche fixe identique, refusé si l’ordre a changé | OK |
+| CE03 | Chaînes d'effets | Interface : ajouter un étage de tranche depuis le menu (un de chaque, rangé dans l’ordre du son, hors limite de huit), le retirer, réordonner à la souris et au clavier | OK |
+| CE04 | Chaînes d'effets | Mixeur d’une tranche en chaîne : les curseurs pilotent les effets de la chaîne, un étage absent n’a pas de curseur, le préréglage crée ce qui manque, la réduction du compresseur s’affiche | OK |
+| CE05 | Chaînes d'effets | Assignation MIDI : un bouton assigné au filtre pilote le filtre de la chaîne ; un étage absent ne bouge pas ; la tranche fixe ne bouge pas | OK |
+| CE06 | Chaînes d'effets | Automation : le filtre de la chaîne se choisit dans le groupe de l’effet et se trace à la souris ; export plus brillant au fil de la courbe ; à l’écoute la courbe pilote le filtre, puis l’arrêt rend le réglage | OK |
+| CE07 | Chaînes d'effets | Automation de réglages qui ne l’étaient pas dans la tranche fixe : profondeur du trémolo (de rien à fond) et fréquence du médium ; saturation et lo-fi non proposés | OK |
+| CE08 | Chaînes d'effets | Export identique à la lecture : à l’écoute, le filtre de la chaîne prend à chaque instant la valeur de la courbe que suit l’export ; export parallèle d’un gros projet en chaînes = rendu d’un seul tenant | OK |
+| CE09 | Chaînes d'effets | Gel d’une piste en chaîne d’effets : le son gelé est exactement celui de la même piste gelée en tranche fixe (chaîne et courbes comprises) ; dégeler rend la chaîne | OK |
+| CE10 | Chaînes d'effets | Textes traduits (fenêtre des effets, mixeur, noms des étages) ; au clavier, la conversion s’atteint et s’actionne avec Entrée | OK |
