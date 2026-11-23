@@ -314,9 +314,9 @@ export function segmentNotes(tr: PitchTrack, opts: { minDur?: number } = {}): { 
         const nw = Math.round(v); let k = i;
         while (k > cuts[cuts.length - 1] + 1 && Math.abs(m[k - 1] - nw) < Math.abs(m[k - 1] - cur)) k--;
         for (let q = i + 1; q < Math.min(b, i + hw); q++) if (Math.abs(m[q] - nw) >= Math.abs(m[q] - cur)) k = q + 1;
-        // un glissé commence la note : on remonte au début du mouvement de hauteur (au plus 0,15 s)
+        // un glissé commence la note : on remonte au début du mouvement de hauteur (au plus 0,3 s)
         const dir = Math.sign(nw - cur);
-        for (let st = 0; st < Math.round(0.15 * fps) && k > cuts[cuts.length - 1] + 1 && (m[k - 1] - cur) * dir > 0.3 && (m[k] - m[k - 1]) * dir > -0.05; st++) k--;
+        for (let st = 0; st < Math.round(0.3 * fps) && k > cuts[cuts.length - 1] + 1 && (m[k - 1] - cur) * dir > 0.3 && (m[k] - m[k - 1]) * dir > -0.05; st++) k--;
         if (k > cuts[cuts.length - 1]) cuts.push(k);
         cur = nw;
       }
@@ -338,6 +338,12 @@ export function segmentNotes(tr: PitchTrack, opts: { minDur?: number } = {}): { 
     cuts = cuts.filter((c, i) => i === 0 || c > cuts[i - 1]);
     let pieces = cuts.map((c, i) => ({ a: c, b: i + 1 < cuts.length ? cuts[i + 1] : b, art: c === a || art.has(c) || [...art].some(k => Math.abs(k - c) < minF), p: 0 }));
     const pitchOf = (pc: { a: number; b: number }) => { const L = pc.b - pc.a, tr2 = Math.floor(L * 0.2); return median(Array.from(m.subarray(pc.a + tr2, pc.b - tr2 > pc.a + tr2 ? pc.b - tr2 : pc.b))); };
+    for (const pc of pieces) pc.p = pitchOf(pc);
+    // glissé : les morceaux brefs de passage entre deux hauteurs vont à la note d'arrivée (de droite à gauche, pour qu'une suite de morceaux y aille toute)
+    for (let i = pieces.length - 2; i >= 1; i--) {
+      const pc = pieces[i], L2 = pieces[i - 1], R2 = pieces[i + 1];
+      if (pc.b - pc.a < minF && !R2.art && L2.b === pc.a && pc.b === R2.a && (pc.p - L2.p) * (R2.p - pc.p) > 0) { R2.a = pc.a; pieces.splice(i, 1); }
+    }
     for (const pc of pieces) pc.p = pitchOf(pc);
     // morceaux trop courts (glissés, ratés) fusionnés au voisin le plus proche en hauteur
     for (let guard = 0; guard < 1000; guard++) {

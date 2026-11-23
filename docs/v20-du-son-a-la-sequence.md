@@ -47,7 +47,7 @@ Pas de téléchargement depuis YouTube dans l'application (conditions d'utilisat
 - **Tempo** : courbe des attaques par bandes de fréquence (la bande grave pèse double, car grosse caisse et basse marquent les temps, les cymbales souvent les croches), autocorrélation, peigne de tempo de 50 à 205 BPM, puis choix du tempo le plus rapide dont la grille tombe sur des attaques aussi fortes (évite les tempos moitié/double), affinage au centième puis recalage par régression sur chaque temps. Tempo arrondi à l'entier quand il en est à moins de 0,3.
 - **Premier temps** : le premier temps de la grille où la musique commence vraiment ; si un temps sur quatre se détache nettement (accent), le premier temps de mesure. Remarque : `build.ts` écarte les notes placées avant le premier temps (levée) ; à revoir si besoin lors du rassemblement.
 - **Tonalité** : chromagramme (pics du spectre de 60 à 2 000 Hz, chaque trame normalisée), corrélation avec les profils de Krumhansl et Kessler pour les 24 tonalités.
-- **Chant** : YIN (65 à 1 100 Hz, 100 mesures par seconde), seuil de silence relatif au niveau du son, erreurs d'octave isolées corrigées, accord global du chanteur estimé puis retiré (un chanteur 35 centièmes trop haut garde les bonnes notes), hauteur lissée sur une période de vibrato, découpe avec hystérésis, début d'un glissé = début de la note, notes de moins de ~0,1 s fusionnées ou ignorées, même note répétée séparée par le creux d'énergie, vélocité de 0,2 à 1 selon le niveau par rapport à la note la plus forte (−30 dB → 0).
+- **Chant** : YIN (65 à 1 100 Hz, 100 mesures par seconde), seuil de silence relatif au niveau du son, erreurs d'octave isolées corrigées, accord global du chanteur estimé puis retiré (un chanteur 35 centièmes trop haut garde les bonnes notes), hauteur lissée sur une période de vibrato, découpe avec hystérésis, début d'un glissé = début de la note, glissés rattachés à la note d'arrivée, notes de moins de ~0,1 s fusionnées ou ignorées, même note répétée séparée par le creux d'énergie, vélocité de 0,2 à 1 selon le niveau par rapport à la note la plus forte (−30 dB → 0).
 
 ### Mesures (sons fabriqués dans la QA, VX01-VX12)
 
@@ -56,7 +56,7 @@ Pas de téléchargement depuis YouTube dans l'application (conditions d'utilisat
 | Tempo, 70 à 170 BPM + 75,5 BPM, grosse caisse + charleston ; grosse caisse seule en stéréo | 13/13 à ±1 BPM (écart mesuré 0 en pratique) |
 | Premier temps (départ à 0 s, 0,05 s, 0,37 s, 1,1 s, 2,3 s) | à 30 ms près (écart mesuré ~7 ms) |
 | Tonalité, 4 majeures et 3 mineures (accords + mélodie) | 7/7 |
-| Chant → notes, 7 variantes × 3 mélodies de 18 s (propre, vibrato ±0,5 et ±0,9 demi-ton, désaccord +35 et −40 centièmes, bruit, glissés de 0,15 s) | 99,5 % des notes retrouvées, 99,5 % justes (au demi-ton, attaque à 100 ms près) ; pire cas 94 % (glissés lents) |
+| Chant → notes, 7 variantes × 3 mélodies de 18 s (propre, vibrato ±0,5 et ±0,9 demi-ton, désaccord +35 et −40 centièmes, bruit, glissés de 0,15 s) | 100 % des notes retrouvées et justes (au demi-ton, attaque à 100 ms près) ; sur 42 mélodies hors QA : 100 % |
 | Chanson de 3 minutes | ~3,5 s de calcul, la page n'est jamais bloquée plus de ~170 ms, 99/100 % |
 
 ### Ce qui n'est pas vérifié

@@ -6470,7 +6470,7 @@ test('VX06', 'Analyse', 'Chant → notes : vélocité selon la force du chant, n
   expect(JSON.stringify(n.map(x => x.midi)) === '[64,64,67,72,65,65]', 'hauteurs : ' + JSON.stringify(n.map(x => x.midi)));
   expect(n[0].vel >= 0.9 && n[1].vel <= 0.75 && n[0].vel - n[1].vel >= 0.2, 'vélocité qui suit le niveau : ' + JSON.stringify(n.map(x => x.vel)));
   expect(n[4].vel < n[5].vel, 'note douce puis forte sur la même hauteur');
-  expect(Math.abs(n[3].t - 2.5) < 0.15, 'glissé : la note d\'arrivée commence pendant le glissé : ' + n[3].t);
+  expect(Math.abs(n[3].t - 2.5) < 0.08, 'glissé : la note d\'arrivée commence pendant le glissé : ' + n[3].t);
 });
 test('VX07', 'Analyse', 'Chant → notes à la souris : avancement, partie « Chant », ajoutée au morceau calée sur le tempo trouvé, Ctrl+Z la retire', async () => {
   const P = 0.5, ref = [[0, 0.5, 69], [0.5, 0.5, 72], [1, 1, 71], [2, 0.5, 69], [2.5, 0.25, 67], [2.75, 0.25, 65], [3, 1, 64], [4.5, 0.5, 76], [5, 1.5, 74]].map(([b, d, m]) => [0.5 + b * P * 2, d * P * 2 - 0.02, m, 0.9]);
