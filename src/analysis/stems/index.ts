@@ -37,7 +37,7 @@ const label = (s: StemName) => t('st.' + s);
 /** Mémoire de l'appareil en octets (Chrome : `deviceMemory`, plafonnée à 8 Go) ; QA : `qa.mem` la remplace. */
 const deviceBytes = () => qa.mem ?? (((navigator as { deviceMemory?: number }).deviceMemory ?? 8) * 2 ** 30);
 /** Part de la mémoire qu'on s'autorise pour la séparation. */
-const budget = () => deviceBytes() * 0.3;
+const budget = () => qa.budget ?? deviceBytes() * 0.3;
 
 // ---------- Calcul (Worker, sinon fil principal) ----------
 const NO_WORKER = new Error('no-worker');
@@ -173,7 +173,7 @@ function view(ctx: Ctx): HTMLElement | null {
 }
 
 /** Réglages pour la QA (pas d'effet en usage normal). */
-const qa = { mem: undefined as number | undefined, mainThread: false, chunkSec: undefined as number | undefined, runs: 0, fallbacks: 0, separate, stopListening, addStems, playing: () => playing?.stem ?? null };
+const qa = { mem: undefined as number | undefined, budget: undefined as number | undefined, mainThread: false, chunkSec: undefined as number | undefined, runs: 0, fallbacks: 0, separate, stopListening, addStems, playing: () => playing?.stem ?? null };
 
 const stemsAnalyzer: Analyzer & { qa: typeof qa } = {
   id: 'stems', order: 10,

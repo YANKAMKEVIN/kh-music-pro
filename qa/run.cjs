@@ -6310,6 +6310,322 @@ test('AN04', 'Analyse', 'Un fichier qui n\'est pas un son est refusé avec un me
   }
 });
 
+// ============ V20 — Séparation des pistes (SEP) ============
+// Mélanges fabriqués (qa/stems-mix.cjs) dont on connaît chaque source : voix synthétique au centre, batterie, basse au centre,
+// accompagnement à gauche et à droite. On mesure le gain de séparation : rapport source / erreur de la piste séparée, moins le même
+// rapport si l'on rendait le mélange entier (en dB). Mesures du 23/11/2026 (Chromium, 48 kHz, mélange stéréo de 10 s) notées dans
+// docs/v20-du-son-a-la-sequence.md ; les seuils sont pris 2 à 3 dB en dessous.
+const { stemsMix, stemScore } = require('./stems-mix.cjs');
+const ST_FN = `window.__stemsMix = ${stemsMix}; window.__stemScore = ${stemScore}; 0`;
+const stQa = () => S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa);
+/** Prépare un mélange connu et le charge dans la fenêtre (ouverte). opts : ceux de stemsMix, plus sr (taux du son), monoCh (un seul canal), name. */
+async function stLoad(opts = {}) {
+  await page.evaluate(ST_FN);
+  await page.evaluate(opts => {
+    const k = window.kh, q = k.analysis.analyzers().find(a => a.id === 'stems').qa;
+    Object.assign(q, { mem: undefined, budget: undefined, mainThread: false, chunkSec: undefined }); q.stopListening();
+    const sr = opts.sr || k.engine.ctx.sampleRate, m = window.__stemsMix(sr, opts);
+    if (opts.monoCh) {   // un seul canal : moyenne gauche/droite, pour le mélange comme pour chaque source
+      const down = a => { const x = new Float32Array(a[0].length); for (let i = 0; i < x.length; i++) x[i] = (a[0][i] + a[1][i]) / 2; return [x]; };
+      m.mix = down(m.mix); for (const s in m.src) m.src[s] = down(m.src[s]);
+    }
+    window.__st = m;
+    const b = k.engine.ctx.createBuffer(m.mix.length, m.mix[0].length, sr); m.mix.forEach((x, c) => b.copyToChannel(x, c));
+    k.analysis.loadSource(opts.name || 'mélange.wav', b);
+  }, opts);
+}
+/** Lance la séparation par un vrai clic et attend la vue des pistes. */
+async function stRun(timeout = 60000) {
+  await clickIn('[data-an="stems"] [data-role="run"]');
+  await page.waitForSelector('#stView', { timeout });
+}
+/** Gains de séparation de chaque piste face aux sources connues. */
+const stScores = () => S(() => {
+  const st = window.kh.analysis.AN.result.stems, m = window.__st, out = {};
+  for (const s of ['vocals', 'drums', 'bass', 'other']) {
+    const b = st[s], e = Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
+    out[s] = window.__stemScore(m.src[s], e, m.mix, b.sampleRate);
+  }
+  return out;
+});
+/** Énergie de chaque piste séparée par rapport au mélange (dB). */
+const stEnergy = () => S(() => {
+  const st = window.kh.analysis.AN.result.stems, m = window.__st, en = a => a.reduce((s, x) => s + x.reduce((y, v) => y + v * v, 0), 0), M = en(m.mix) + 1e-12, out = {};
+  for (const s in st) out[s] = +(10 * Math.log10(en(Array.from({ length: st[s].numberOfChannels }, (_, c) => st[s].getChannelData(c))) / M + 1e-12)).toFixed(1);
+  return out;
+});
+/** Crête instantanée de la sortie (sans la retombée lente de l'indicateur de niveau). */
+const stPeak = () => S(() => { const a = window.kh.engine.mix.analyser, b = new Float32Array(a.fftSize); a.getFloatTimeDomainData(b); return b.reduce((m, v) => Math.max(m, Math.abs(v)), 0); });
+const stLog = (what, v) => console.log(`        ${what} : ${JSON.stringify(v)}`);
+async function stOpen() { await menu('bAnalyze'); await page.waitForSelector('#analyze[open]'); }
+
+test('SEP01', 'Analyse', 'Séparer les pistes : la ligne est là avec son aide, son bouton Lancer est grisé sans son, actif avec un son', async () => {
+  await stOpen();
+  expect((await page.textContent('[data-an="stems"] h3')).includes('Séparer les pistes'), 'titre de la ligne');
+  expect((await page.textContent('[data-an="stems"] .tip')).includes('voix, batterie, basse'), 'aide');
+  expect(await page.$eval('[data-an="stems"] [data-role="run"]', b => b.disabled), 'Lancer doit être grisé sans son');
+  await stLoad({ dur: 2 });
+  expect(!(await page.$eval('[data-an="stems"] [data-role="run"]', b => b.disabled)), 'Lancer doit être actif avec un son');
+  await page.keyboard.press('Escape');
+});
+test('SEP02', 'Analyse', 'Mélange stéréo connu : quatre pistes au taux du son, la voix, la batterie, la basse et les autres sont séparées (gains mesurés)', async () => {
+  await stOpen(); await stLoad({ dur: 10 }); await stRun();
+  const info = await S(() => { const a = window.kh.analysis.AN, st = a.result.stems, s = a.source.buffer; return Object.fromEntries(Object.entries(st).map(([k, b]) => [k, b.sampleRate === s.sampleRate && b.length === s.length && b.numberOfChannels === 2])); });
+  expect(Object.keys(info).length === 4 && Object.values(info).every(Boolean), 'pistes de même taux, longueur et canaux que le son : ' + JSON.stringify(info));
+  const sc = await stScores(); stLog('gains SEP02', sc);
+  expect(sc.vocals.gain >= 17 && sc.vocals.corr >= 0.88, 'voix mal séparée ' + JSON.stringify(sc.vocals));
+  expect(sc.drums.gain >= 6.5 && sc.drums.corr >= 0.7, 'batterie mal séparée ' + JSON.stringify(sc.drums));
+  expect(sc.bass.gain >= 3.5 && sc.bass.corr >= 0.85, 'basse mal séparée ' + JSON.stringify(sc.bass));
+  expect(sc.other.gain >= 11 && sc.other.corr >= 0.85, 'autres mal séparés ' + JSON.stringify(sc.other));
+  expect((await page.$$('#stView [data-stem]')).length === 4, 'quatre lignes dans la vue');
+  expect((await page.textContent('[data-an="stems"] [role=status]')).includes('Terminé'), 'état Terminé');
+  await page.keyboard.press('Escape');
+});
+test('SEP03', 'Analyse', 'Rien ne se perd : les quatre pistes additionnées redonnent exactement le son d\'origine', async () => {
+  await stOpen(); await stLoad({ dur: 9.3, seed: 3 }); await stRun();
+  const err = await S(() => { const st = window.kh.analysis.AN.result.stems, x = window.__st.mix; let e = 0; for (let c = 0; c < 2; c++) { const p = ['vocals', 'drums', 'bass', 'other'].map(s => st[s].getChannelData(c)); for (let i = 0; i < x[c].length; i++) e = Math.max(e, Math.abs(p[0][i] + p[1][i] + p[2][i] + p[3][i] - x[c][i])); } return e; });
+  expect(err < 1e-4, `écart à l'original ${err}`);
+  await page.keyboard.press('Escape');
+});
+test('SEP04', 'Analyse', 'Une partie absente du mélange donne une piste presque vide (sans voix, sans batterie, sans basse)', async () => {
+  await stOpen();
+  const res = {};
+  for (const [abs, opt, max] of [['vocals', { voice: 0 }, -18], ['drums', { drums: 0 }, -13], ['bass', { bass: 0 }, -7]]) {
+    await stLoad({ dur: 6, ...opt }); await stRun();
+    const e = await stEnergy(); res[abs] = e[abs];
+    expect(e[abs] <= max, `piste « ${abs} » trop pleine sans cette partie : ${e[abs]} dB (seuil ${max})`);
+  }
+  stLog('énergie des pistes absentes (dB / mélange)', res);
+  await page.keyboard.press('Escape');
+});
+test('SEP05', 'Analyse', 'Son mono : pistes mono, la batterie et la basse restent séparées ; la voix garde les autres instruments (limite connue)', async () => {
+  await stOpen(); await stLoad({ dur: 8, monoCh: true }); await stRun();
+  expect(await S(() => Object.values(window.kh.analysis.AN.result.stems).every(b => b.numberOfChannels === 1)), 'pistes mono attendues');
+  const sc = await stScores(); stLog('gains SEP05 (mono)', sc);
+  expect(sc.drums.gain >= 6 && sc.bass.gain >= 3, 'batterie ou basse mal séparées en mono ' + JSON.stringify(sc));
+  expect(sc.vocals.corr >= 0.5, 'la voix doit rester dominante dans sa piste ' + JSON.stringify(sc.vocals));
+  expect((await page.textContent('#stView')).includes('son mono'), 'la limite du mono est expliquée');
+  await page.keyboard.press('Escape');
+});
+test('SEP06', 'Analyse', 'Son à 44,1 kHz dans un moteur à un autre taux : les pistes gardent le taux du son source', async () => {
+  await stOpen();
+  const sr0 = await S(() => window.kh.engine.ctx.sampleRate), sr = sr0 === 44100 ? 48000 : 44100;
+  await stLoad({ dur: 4, sr }); await stRun();
+  const rates = await S(() => Object.values(window.kh.analysis.AN.result.stems).map(b => b.sampleRate));
+  expect(rates.every(r => r === sr), `taux ${rates} au lieu de ${sr}`);
+  const sc = await stScores(); expect(sc.vocals.gain >= 15 && sc.drums.gain >= 6, 'séparation à ' + sr + ' Hz ' + JSON.stringify(sc));
+  await page.keyboard.press('Escape');
+});
+test('SEP07', 'Analyse', 'Sons très courts et longueurs quelconques : pas de panne, pistes de la même longueur que le son', async () => {
+  await stOpen();
+  for (const dur of [0.05, 0.4, 8.017]) {
+    await stLoad({ dur }); await stRun();
+    const ok = await S(() => { const a = window.kh.analysis.AN; return Object.values(a.result.stems).every(b => b.length === a.source.buffer.length && b.getChannelData(0).every(Number.isFinite)); });
+    expect(ok, `longueur ou valeurs incorrectes pour ${dur} s`);
+  }
+  await page.keyboard.press('Escape');
+});
+test('SEP08', 'Analyse', 'Silence : la séparation aboutit et les quatre pistes sont annoncées « presque vides »', async () => {
+  await stOpen(); await stLoad({ dur: 3, voice: 0, drums: 0, bass: 0, other: 0 }); await stRun();
+  expect((await page.$$('#stView [data-stem]')).length === 4, 'quatre lignes');
+  const txt = await page.$$eval('#stView [data-stem]', rs => rs.map(r => r.textContent));
+  expect(txt.every(x => x.includes('presque vide')), 'pistes vides annoncées : ' + txt.join(' | '));
+  await page.keyboard.press('Escape');
+});
+test('SEP09', 'Analyse', 'L\'avancement progresse par morceaux pendant le calcul, puis la barre laisse place à « Terminé »', async () => {
+  await stOpen(); await stLoad({ dur: 24 });
+  await S(() => { window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.chunkSec = 2; });
+  await page.evaluate(() => { window.__stp = new Set(); window.__sto = new MutationObserver(() => { const b = document.querySelector('[data-an="stems"] .xprog'); if (b) window.__stp.add(b.getAttribute('aria-valuenow')); }); window.__sto.observe(document.getElementById('analyze'), { subtree: true, attributes: true, childList: true }); });
+  await stRun();
+  const seen = await S(() => { window.__sto.disconnect(); return [...window.__stp].filter(Boolean).map(Number); });
+  expect(seen.filter(v => v > 0 && v < 100).length >= 3, 'avancement intermédiaire attendu : ' + seen.join(','));
+  expect(!(await page.$('[data-an="stems"] .xprog')), 'la barre disparaît à la fin');
+  await page.keyboard.press('Escape');
+});
+test('SEP10', 'Analyse', 'Annuler arrête le calcul (pas de pistes, pas de message d\'erreur) ; relancer ensuite aboutit', async () => {
+  await stOpen(); await stLoad({ dur: 40 });
+  await S(() => { window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.chunkSec = 1.5; });
+  const runs0 = (await stQa()).runs;
+  await clickIn('[data-an="stems"] [data-role="run"]');
+  await page.waitForSelector('[data-an="stems"] .xprog');
+  await until(async () => Number(await page.getAttribute('[data-an="stems"] .xprog', 'aria-valuenow')) > 0, 'aucun avancement avant l\'annulation', 20000);
+  await page.click('[data-an="stems"] button:has-text("Annuler")');
+  await page.waitForSelector('[data-an="stems"] [data-role="run"]');
+  await sleep(400);
+  const st = await S(() => ({ stems: !!window.kh.analysis.AN.result.stems, runs: window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.runs }));
+  expect(!st.stems && st.runs === runs0, 'le calcul annulé ne doit rien produire ' + JSON.stringify(st));
+  expect(!(await page.textContent('#toast')).includes('échoué'), 'une annulation ne doit pas s\'afficher comme une panne');
+  expect(!(await page.$('#stView')), 'pas de vue des pistes');
+  await stLoad({ dur: 5 }); await stRun();
+  expect(await S(() => Object.keys(window.kh.analysis.AN.result.stems).length === 4), 'relance après annulation');
+  await page.keyboard.press('Escape');
+});
+test('SEP11', 'Analyse', 'Écouter une piste seule : le son sort, une autre piste remplace la première, un second appui arrête, fermer la fenêtre coupe', async () => {
+  await S(() => { const p = window.kh.S.project; p.tracks.forEach(t => { t.mute = true; }); window.kh.commit(); });
+  await stOpen(); await stLoad({ dur: 10 }); await stRun();
+  const pressed = () => page.$$eval('#stView [data-stem]', rs => rs.filter(r => r.querySelector('[data-role=listen]').getAttribute('aria-pressed') === 'true').map(r => r.dataset.stem));
+  await page.click('[data-stem="vocals"] [data-role=listen]');
+  expect(JSON.stringify(await pressed()) === '["vocals"]', 'Voix enfoncée seule');
+  const lv = await S(() => window.qa.level(500)); expect(lv > 0.05, `aucun son à l'écoute de la voix (${lv})`);
+  expect((await page.textContent('[data-stem="vocals"] [data-role=listen]')).includes('Arrêter'), 'le bouton devient Arrêter');
+  await page.click('[data-stem="drums"] [data-role=listen]');
+  expect(JSON.stringify(await pressed()) === '["drums"]', 'Batterie remplace Voix');
+  expect(await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.playing()) === 'drums', 'lecture de la batterie');
+  await page.click('[data-stem="drums"] [data-role=listen]');
+  expect((await pressed()).length === 0, 'second appui : arrêt');
+  await sleep(300); const off = await stPeak(); expect(off < 0.005, `le son continue après l'arrêt (${off})`);
+  await page.click('[data-stem="bass"] [data-role=listen]'); await sleep(200);
+  await page.keyboard.press('Escape'); await sleep(300);
+  expect(await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.playing()) === null, 'fermer la fenêtre arrête l\'écoute');
+  const off2 = await stPeak(); expect(off2 < 0.005, `le son continue après la fermeture (${off2})`);
+});
+test('SEP12', 'Analyse', 'Écouter au clavier : Tab jusqu\'au bouton, Entrée lance, Espace arrête ; boutons assez grands pour le doigt', async () => {
+  await stOpen(); await stLoad({ dur: 6 }); await stRun();
+  const sizes = await page.$$eval('#stView button', bs => bs.map(b => b.getBoundingClientRect().height));
+  expect(sizes.every(h => h >= 44), 'boutons trop petits ' + sizes.join(','));
+  await page.focus('[data-stem="bass"] [data-role=listen]'); await page.keyboard.press('Enter');
+  expect(await page.getAttribute('[data-stem="bass"] [data-role=listen]', 'aria-pressed') === 'true', 'Entrée lance l\'écoute');
+  expect(await page.evaluate(() => document.activeElement?.closest('[data-stem]')?.dataset.stem) === 'bass', 'le focus reste sur le bouton');
+  await page.keyboard.press('Space');
+  expect(await page.getAttribute('[data-stem="bass"] [data-role=listen]', 'aria-pressed') === 'false', 'Espace arrête l\'écoute');
+  expect((await page.getAttribute('[data-stem="bass"] [data-role=listen]', 'aria-label')).includes('Basse'), 'nom accessible du bouton');
+  await page.keyboard.press('Escape');
+});
+test('SEP13', 'Analyse', 'Ajouter la basse au morceau : une piste audio « Basse » au début, avec le son séparé ; Ctrl+Z la retire', async () => {
+  await stOpen(); await stLoad({ dur: 6, name: 'chanson.mp3' }); await stRun();
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click('[data-stem="bass"] [data-role=add]');
+  const r = await S(() => { const k = window.kh, p = k.S.project, tr = p.tracks[p.tracks.length - 1], c = tr.clips[0], b = k.buffers.get(c.bufferId); return { n: p.tracks.length, type: tr.type, name: tr.name, clip: c.name, start: c.start, same: b === k.analysis.AN.result.stems.bass, len: c.len, want: Math.ceil(b.duration / (60 / p.bpm / 4)) }; });
+  expect(r.n === n0 + 1 && r.type === 'audio' && r.name === 'Basse' && r.start === 0 && r.same, JSON.stringify(r));
+  expect(r.clip === 'chanson · Basse' && r.len === r.want, 'nom ou durée du clip ' + JSON.stringify(r));
+  expect((await page.textContent('#toast')).includes('Basse'), 'message de confirmation');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste ajoutée');
+});
+test('SEP14', 'Analyse', 'Ajouter les quatre pistes : quatre pistes audio d\'un coup, qu\'on entend en lecture ; un seul Ctrl+Z les retire', async () => {
+  await stOpen(); await stLoad({ dur: 6 }); await stRun();
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click('#stAddAll');
+  const names = await S(() => window.kh.S.project.tracks.slice(-4).map(t => t.type + ':' + t.name));
+  expect(JSON.stringify(names) === JSON.stringify(['audio:Voix', 'audio:Batterie', 'audio:Basse', 'audio:Autres instruments']), 'pistes ' + names.join(', '));
+  expect((await page.textContent('#toast')).includes('Quatre pistes'), 'message');
+  await page.keyboard.press('Escape');
+  const st = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.S.project)); p.tracks = p.tracks.slice(-4); return window.qa.stats(p); });
+  expect(st.rms > 0.02 && !st.bad, `les pistes ajoutées ne s'entendent pas au rendu (${JSON.stringify(st)})`);
+  await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'un Ctrl+Z retire les quatre pistes');
+});
+test('SEP15', 'Analyse', 'Les autres analyses lisent la piste séparée : ctx.input(\'vocals\') rend la voix après séparation, le son entier avant', async () => {
+  await stOpen(); await stLoad({ dur: 3 });
+  expect(await S(() => { const a = window.kh.analysis.AN; return a.input('vocals') === a.source.buffer; }), 'avant séparation : le son entier');
+  await stRun();
+  expect(await S(() => { const a = window.kh.analysis.AN; return ['vocals', 'drums', 'bass', 'other'].every(s => a.input(s) === a.result.stems[s]); }), 'après séparation : chaque piste');
+  await page.keyboard.press('Escape');
+});
+test('SEP16', 'Analyse', 'Charger un autre son efface les pistes séparées et coupe l\'écoute', async () => {
+  await stOpen(); await stLoad({ dur: 5 }); await stRun();
+  await page.click('[data-stem="vocals"] [data-role=listen]');
+  await stLoad({ dur: 2, seed: 11 });
+  const r = await S(() => ({ stems: !!window.kh.analysis.AN.result.stems, play: window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.playing() }));
+  expect(!r.stems && !(await page.$('#stView')), 'pistes de l\'ancien son encore là');
+  await stRun(); expect(await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.playing()) === null, 'l\'écoute de l\'ancien son doit s\'arrêter');
+  await page.keyboard.press('Escape');
+});
+test('SEP17', 'Analyse', 'Calcul hors du fil principal : la page reste réactive ; sans Worker, le calcul de repli donne le même résultat', async () => {
+  await stOpen(); await stLoad({ dur: 30 });
+  await S(() => { window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.chunkSec = 3; });
+  await page.evaluate(() => { window.__gap = 0; let t = performance.now(); window.__gapIv = setInterval(() => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - t); t = n; }, 10); });
+  await stRun();
+  const gap = await S(() => { clearInterval(window.__gapIv); return window.__gap; });
+  expect(gap < 250, `la page s'est figée ${Math.round(gap)} ms pendant le calcul`);
+  await stLoad({ dur: 7 }); await stRun();
+  const a = await S(() => Object.fromEntries(Object.entries(window.kh.analysis.AN.result.stems).map(([k, b]) => [k, Array.from(b.getChannelData(0).subarray(50000, 50400))])));
+  // Worker refusé au démarrage (comme une version bureau qui ne l'autoriserait pas) : repli sur le fil principal
+  await page.evaluate(() => { window.__W = window.Worker; window.Worker = function () { throw new Error('interdit'); }; });
+  try {
+    const f0 = (await stQa()).fallbacks;
+    await stLoad({ dur: 7 }); await stRun();
+    const b = await S(() => Object.fromEntries(Object.entries(window.kh.analysis.AN.result.stems).map(([k, b]) => [k, Array.from(b.getChannelData(0).subarray(50000, 50400))])));
+    const d = Math.max(...Object.keys(a).flatMap(k => a[k].map((v, i) => Math.abs(v - b[k][i]))));
+    expect(d < 1e-6, `résultats différents entre Worker et repli (${d})`);
+    expect((await stQa()).fallbacks === f0 + 1, 'le repli doit avoir servi');
+  } finally { await page.evaluate(() => { window.Worker = window.__W; }); }
+  await page.keyboard.press('Escape');
+});
+test('SEP18', 'Analyse', 'Mémoire : appareil trop petit → séparation indisponible avec la raison ; son trop long → message clair avec la durée maximale', async () => {
+  await stOpen();
+  await stLoad({ dur: 2 });
+  await S(() => { const q = window.kh.analysis.analyzers().find(a => a.id === 'stems').qa; q.mem = 512 * 2 ** 20; window.kh.analysis.loadSource('petit.wav', window.kh.analysis.AN.source.buffer); });
+  expect(await page.$eval('[data-an="stems"] [data-role="run"]', b => b.disabled), 'Lancer grisé sur un appareil trop petit');
+  expect((await page.textContent('[data-an="stems"] .err')).includes('pas assez de mémoire'), 'raison affichée');
+  await stLoad({ dur: 20 });
+  await S(() => { window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.budget = 60e6; });
+  await clickIn('[data-an="stems"] [data-role="run"]');
+  await until(async () => /trop long.*\d+:\d\d au plus/.test(await page.textContent('#toast')), 'message « son trop long » attendu', 5000);
+  expect(!(await S(() => window.kh.analysis.AN.result.stems)), 'aucune piste produite');
+  await page.keyboard.press('Escape');
+});
+test('SEP19', 'Analyse', 'Parcours réel : un fichier WAV stéréo choisi dans la fenêtre, séparé, écouté puis ajouté au morceau', async () => {
+  const f = path.join(TMP, 'qa-mix.wav');
+  if (!fs.existsSync(f)) {   // WAV 16 bits stéréo écrit sur le disque, comme un vrai fichier de l'utilisateur
+    const m = stemsMix(44100, { dur: 6 }), n = m.mix[0].length, b = Buffer.alloc(44 + n * 4);
+    b.write('RIFF', 0); b.writeUInt32LE(36 + n * 4, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(2, 22);
+    b.writeUInt32LE(44100, 24); b.writeUInt32LE(44100 * 4, 28); b.writeUInt16LE(4, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 4, 40);
+    for (let i = 0; i < n; i++) for (let c = 0; c < 2; c++) b.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(m.mix[c][i] * 16000))), 44 + i * 4 + c * 2);
+    fs.writeFileSync(f, b);
+  }
+  await stOpen();
+  await page.setInputFiles('#analyze input[type=file]', f);
+  await until(async () => (await page.textContent('#anSrc')).includes('qa-mix.wav · 0:06'), 'fichier chargé');
+  await stRun();
+  await page.click('[data-stem="drums"] [data-role=listen]');
+  const lv = await S(() => window.qa.level(400)); expect(lv > 0.03, `batterie inaudible (${lv})`);
+  await page.click('[data-stem="drums"] [data-role=add]');
+  const tr = await S(() => { const p = window.kh.S.project, t = p.tracks[p.tracks.length - 1]; return t.type + ':' + t.name + ':' + t.clips[0].name; });
+  expect(tr === 'audio:Batterie:qa-mix · Batterie', tr);
+  await page.keyboard.press('Escape');
+});
+test('SEP20', 'Analyse', 'Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l\'écran', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, locale: 'fr-FR' });
+  try {
+    const pg = await phonePage(ctx2);
+    await pg.evaluate(ST_FN);
+    await pg.evaluate(() => { const k = window.kh, sr = k.engine.ctx.sampleRate, m = window.__stemsMix(sr, { dur: 5 }), b = k.engine.ctx.createBuffer(2, m.mix[0].length, sr); m.mix.forEach((x, c) => b.copyToChannel(x, c)); k.analysis.showAnalyze(); k.analysis.loadSource('tel.wav', b); });
+    await pg.waitForSelector('#analyze[open]');
+    const run = pg.locator('[data-an="stems"] [data-role="run"]'); await run.scrollIntoViewIfNeeded(); await run.tap();
+    await pg.waitForSelector('#stView', { timeout: 60000 });
+    const lay = await pg.evaluate(() => { const v = document.getElementById('stView').getBoundingClientRect(), d = document.getElementById('analyze'); return { right: v.right, sw: d.scrollWidth, cw: d.clientWidth }; });
+    expect(lay.right <= 390 && lay.sw <= lay.cw + 1, 'la vue déborde sur le téléphone ' + JSON.stringify(lay));
+    const l = pg.locator('[data-stem="vocals"] [data-role=listen]'); await l.scrollIntoViewIfNeeded(); await l.tap();
+    expect(await l.getAttribute('aria-pressed') === 'true', 'écoute au doigt');
+    await l.tap();
+    const add = pg.locator('[data-stem="other"] [data-role=add]'); await add.tap();
+    expect(await pg.evaluate(() => { const p = window.kh.S.project; return p.tracks[p.tracks.length - 1].name; }) === 'Autres instruments', 'ajout au doigt');
+  } finally { await ctx2.close(); }
+});
+test('SEP21', 'Analyse', 'Séparation en anglais et en espagnol : titre, pistes et boutons traduits', async () => {
+  await stOpen(); await stLoad({ dur: 2 }); await stRun(); await page.keyboard.press('Escape');
+  for (const [l, title, stem, btn] of [['en', 'Separate the stems', 'Vocals', 'Add all four stems'], ['es', 'Separar las pistas', 'Voz', 'Añadir las cuatro pistas']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await stOpen();
+    expect((await page.textContent('[data-an="stems"] h3')).includes(title), `titre en ${l}`);
+    expect((await page.textContent('[data-stem="vocals"]')).includes(stem), `nom de piste en ${l}`);
+    expect((await page.textContent('#stAddAll')).includes(btn), `bouton en ${l}`);
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+test('SEP22', 'Analyse', 'Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés)', async () => {
+  await stOpen();
+  const res = {};
+  for (const [k, opt, min] of [['sansVibrato', { noVibrato: true }, 15], ['decentree', { voicePan: 0.3 }, 6]]) {
+    await stLoad({ dur: 8, ...opt }); await stRun();
+    const sc = await stScores(); res[k] = sc.vocals;
+    expect(sc.vocals.gain >= min, `voix ${k} : gain ${sc.vocals.gain} dB (seuil ${min})`);
+  }
+  stLog('voix SEP22', res);
+  await page.keyboard.press('Escape');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
