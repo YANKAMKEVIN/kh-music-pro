@@ -42,8 +42,8 @@ async function setup(files: ModelFiles) {
 export type StemName = 'vocals' | 'drums' | 'bass' | 'other';
 /** Sons à classer, mono à 16 kHz : le morceau entier et, si l'analyse « pistes séparées » les a produites, ses pistes. */
 export interface Inputs { full: Float32Array; stems?: Partial<Record<StemName, Float32Array>>; opts?: Partial<typeof SPLIT> }
-/** Bandes de la séparation légère (Hz) : instruments entre `tonalLo` et `tonalHi` (ni basse ni cymbales), basse sous `bassHi`. */
-export const SPLIT = { tonalLo: 180, tonalHi: 5000, bassHi: 250 };
+/** Bandes de la séparation légère (Hz), mesurées sur les sons de l'appli : instruments au-dessus de `tonalLo` (et sous `tonalHi`, 0 = sans limite), basse sous `bassHi`. */
+export const SPLIT = { tonalLo: 120, tonalHi: 0, bassHi: 300 };
 interface Pass { name: string; wave: Float32Array; fams: string[] | null }
 
 const ALL_BUT = (...no: string[]) => FAMILIES.map(f => f.id).filter(id => !no.includes(id));
@@ -78,14 +78,14 @@ export async function runYamnet(inp: Inputs, files: ModelFiles, progress: (f: nu
     // pistes séparées : chacune ne parle que de ce qu'elle contient
     if (st.vocals) passes.push({ name: 'vocals', wave: level(st.vocals), fams: ['voice'] });
     if (st.drums) passes.push({ name: 'drums', wave: level(st.drums), fams: ['drums'] });
-    if (st.bass) passes.push({ name: 'bass', wave: level(st.bass), fams: ['bass'] });
+    if (st.bass) passes.push({ name: 'bass', wave: level(st.bass), fams: ['bass'] }, { name: 'bass-low', wave: level(lowpass(st.bass, (inp.opts?.bassHi ?? SPLIT.bassHi), SR)), fams: ['bass'] });
     if (st.other) passes.push({ name: 'other', wave: level(st.other), fams: ALL_BUT('drums') });
     tonal = st.other || full;
     progress(0.3);
   } else {
     const harm = harmonic(full, f => progress(0.05 + 0.25 * f), stop);
     const o = { ...SPLIT, ...inp.opts };
-    passes.push({ name: 'harmonic', wave: level(lowpass(highpass(harm, o.tonalLo, SR), o.tonalHi, SR)), fams: ALL_BUT('drums') });
+    passes.push({ name: 'harmonic', wave: level(((x: Float32Array) => o.tonalHi ? lowpass(x, o.tonalHi, SR) : x)(highpass(harm, o.tonalLo, SR))), fams: ALL_BUT('drums') });
     passes.push({ name: 'low', wave: level(lowpass(harm, o.bassHi, SR)), fams: ['bass'] });
     const perc = new Float32Array(full.length); for (let i = 0; i < full.length; i++) perc[i] = full[i] - harm[i];
     passes.push({ name: 'percussive', wave: level(perc), fams: ['drums'] });

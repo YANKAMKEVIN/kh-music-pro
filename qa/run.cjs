@@ -6310,6 +6310,210 @@ test('AN04', 'Analyse', 'Un fichier qui n\'est pas un son est refusé avec un me
   }
 });
 
+// ============ V20 — Familles d'instruments (INF ; « IN » était déjà pris par l'entrée audio) ============
+/**
+ * Son de test rendu par l'appli elle-même : une piste par son (clé de PRESETS, ou « drums:<kit> »), 4 mesures à 100 BPM.
+ * Les basses jouent la fondamentale, les claviers, nappes et cordes des accords tenus, les autres une mélodie en arpèges.
+ * `stems` : chaque groupe (voix, batterie, basse, reste) est aussi rendu seul et donné comme piste séparée, comme le ferait l'analyse ST.
+ */
+async function inLoad(sounds, opts = {}) {
+  await page.evaluate(async ([sounds, opts]) => {
+    const kh = window.kh, demo = kh.demoProject(), dr = demo.tracks[0], syn = demo.tracks[1], bars = opts.bars || 4;
+    const chords = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]];
+    const group = s => s.startsWith('drums:') ? 'drums' : /choir/.test(s) ? 'vocals' : /bass/i.test(kh.PRESETS[s].cat) || ['r_contrabass', 'sub808', 'reese'].includes(s) ? 'bass' : 'other';
+    const track = (s, k) => {
+      if (s.startsWith('drums:')) { const t = structuredClone(dr); t.id = 'd' + k; t.kit = s.slice(6); t.clips = [structuredClone(dr.clips[0])]; t.clips[0].len = bars * 16; return t; }
+      const t = structuredClone(syn), cat = kh.PRESETS[s].cat, notes = []; t.id = 's' + k; t.synth = kh.makeSynth(s); t.vol = 0.8;
+      for (let bar = 0; bar < bars; bar++) {
+        const c = chords[bar % 4];
+        if (group(s) === 'bass' || s === 'r_cello') for (let q = 0; q < 4; q++) notes.push({ p: c[0] - 24 + (q % 2 ? 7 : 0), s: bar * 16 + q * 4, l: 3.5, v: 0.85 });
+        else if (/pad|strings|keys|organ|realKeys/i.test(cat)) { for (const n of c) notes.push({ p: n, s: bar * 16, l: 8, v: 0.75 }); for (const n of c) notes.push({ p: n + 12 * (bar % 2), s: bar * 16 + 8, l: 8, v: 0.7 }); for (let q = 0; q < 4; q++) notes.push({ p: c[q % 3] + 12, s: bar * 16 + q * 4 + 2, l: 2, v: 0.7 }); }
+        else for (let q = 0; q < 8; q++) notes.push({ p: c[q % 3] + 12 * ((q >> 2) % 2), s: bar * 16 + q * 2, l: 1.8, v: 0.8 });
+      }
+      t.clips = [{ id: 'c' + k, name: s, start: 0, len: bars * 16, offset: 0, patLen: bars * 16, notes }];
+      return t;
+    };
+    const proj = list => { const p = structuredClone(demo); p.bpm = 100; p.loop = false; p.tracks = list.map(([s, k]) => track(s, k)); return p; };
+    for (const s of sounds) { const ps = kh.PRESETS[s]; if (ps && ps.p.bank) await kh.banks.loadBank(ps.p.bank); }
+    const all = sounds.map((s, k) => [s, k]);
+    const full = await kh.renderOffline(proj(all), true);
+    const stems = {};
+    if (opts.stems) for (const g of ['vocals', 'drums', 'bass', 'other']) { const part = all.filter(([s]) => group(s) === g); if (part.length) stems[g] = await kh.renderOffline(proj(part), false); }
+    kh.analysis.loadSource(opts.name || sounds.join('+') + '.wav', full);
+    if (opts.stems) kh.analysis.AN.result.stems = stems;
+  }, [sounds, opts]);
+}
+const inQa = () => S(() => window.kh.analysis.analyzers().find(a => a.id === 'instruments').qa);
+const inFound = () => S(() => (window.kh.analysis.AN.result.instruments || []).map(f => ({ family: f.family, preset: f.preset, score: f.score, presence: f.presence })));
+async function inRun(sounds, opts) { await inLoad(sounds, opts); await S(() => window.kh.analysis.runAnalyzer('instruments')); return inFound(); }
+/** Familles acceptées pour chaque son de l'appli (la première est la bonne ; les suivantes sont des voisines admises). */
+const IN_EXPECT = { r_piano: 'piano|epiano', r_salamander: 'piano|epiano', r_honky: 'piano|epiano', r_epiano: 'epiano|piano', r_wurli: 'epiano|piano', epiano: 'epiano|piano', r_clavinet: 'epiano|piano|aguitar',
+  r_drawbar: 'organ|piano|epiano', r_church: 'organ|piano', organ: 'organ|piano|epiano|synth', r_nylon: 'aguitar', r_steel: 'aguitar', guitar: 'aguitar', r_eguitar: 'eguitar|aguitar', r_overdrive: 'eguitar|aguitar',
+  r_ebass: 'bass', r_abass: 'bass', r_slap: 'bass', r_fashionbass: 'bass', bass: 'bass|synth', sub808: 'bass|synth', reese: 'bass|synth', r_contrabass: 'bass|strings',
+  r_strings: 'strings', r_violin: 'strings', r_cello: 'strings|bass', strings: 'strings|synth', r_brass: 'brass', r_trumpet: 'brass', r_trombone: 'brass', brass: 'brass|synth',
+  r_sax: 'wind', r_flute: 'wind', flute: 'wind|synth', r_choir: 'voice', r_synthchoir: 'voice|synth', r_marimba: 'mallet', r_vibes: 'mallet', r_steelpan: 'mallet',
+  pad: 'synth', supersaw: 'synth', lead: 'synth', square: 'synth', pluck: 'synth|aguitar', r_air: 'synth' };
+const inExp = s => s.startsWith('drums:') ? ['drums'] : IN_EXPECT[s].split('|');
+/** Taux de familles retrouvées (rappel) et de familles annoncées à raison (précision) sur une liste de sons. */
+async function inCampaign(sets, opts = {}) {
+  let hit = 0, want = 0, bad = 0, said = 0; const misses = [];
+  for (const s of sets) {
+    const found = (await inRun(s, opts)).map(f => f.family), alts = s.map(inExp);
+    const h = alts.filter(a => a.some(x => found.includes(x))).length, b = found.filter(f => !alts.some(a => a.includes(f)));
+    hit += h; want += alts.length; bad += b.length; said += found.length;
+    if (h < alts.length || b.length) misses.push(`${s.join('+')}→${found.join(',') || '∅'}`);
+  }
+  return { recall: hit / want, precision: (said - bad) / Math.max(1, said), misses };
+}
+const IN_SINGLE = ['r_piano', 'r_salamander', 'r_epiano', 'r_wurli', 'r_drawbar', 'r_church', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_slap', 'r_contrabass', 'r_violin', 'r_cello', 'r_brass', 'r_trumpet', 'r_trombone', 'r_sax', 'r_flute', 'r_choir', 'r_marimba', 'r_vibes', 'r_steelpan', 'drums:studio', 'drums:acoustic', 'drums:electro', 'drums:percussion', 'pad', 'supersaw', 'lead', 'reese', 'epiano', 'brass', 'guitar'].map(s => [s]);
+const IN_MIX = [['r_piano', 'r_ebass', 'drums:studio'], ['r_eguitar', 'r_ebass', 'drums:studio'], ['r_strings', 'r_brass'], ['r_epiano', 'r_abass', 'drums:studio'], ['r_sax', 'r_piano', 'r_contrabass'], ['r_drawbar', 'r_ebass', 'drums:studio'],
+  ['supersaw', 'sub808', 'drums:electro'], ['pad', 'lead', 'bass', 'drums:electro'], ['r_flute', 'r_strings'], ['r_nylon', 'r_violin'], ['r_marimba', 'r_ebass', 'drums:percussion'], ['r_trumpet', 'r_piano', 'r_ebass', 'drums:studio'],
+  ['r_cello', 'r_piano'], ['r_choir', 'r_strings', 'r_church'], ['r_sax', 'r_ebass', 'drums:studio'], ['r_brass', 'r_fashionbass', 'drums:studio'], ['r_vibes', 'r_contrabass', 'drums:studio'], ['r_church', 'r_choir'], ['r_nylon', 'r_flute'], ['r_choir', 'r_piano', 'r_ebass', 'drums:studio']];
+
+test('INF01', 'Analyse', 'Familles d\'instruments : au clic, le modèle se charge depuis le site, l\'avancement s\'affiche, le piano est reconnu, avec l\'avertissement « famille, pas modèle exact »', async () => {
+  const hosts = new Set(); const onReq = r => { const u = new URL(r.url()); if (/^https?:$/.test(u.protocol)) hosts.add(u.host); }; page.on('request', onReq);
+  try {
+    await menu('bAnalyze'); await page.waitForSelector('#analyze[open]');
+    expect((await page.textContent('[data-an="instruments"] h3')).includes('Familles d\'instruments'), 'ligne « Familles d\'instruments » attendue');
+    expect(await page.$eval('[data-an="instruments"] [data-role="run"]', b => b.disabled), 'Lancer désactivé tant qu\'aucun son n\'est chargé');
+    await inLoad(['r_piano'], { bars: 8 });
+    await page.click('[data-an="instruments"] [data-role="run"]');
+    await page.waitForSelector('[data-an="instruments"] .xprog');
+    await page.waitForSelector('#inFound', { timeout: 60000 });
+    const fam = await page.$$eval('#inFound .in-item', li => li.map(x => x.dataset.family));
+    expect(fam.includes('piano') || fam.includes('epiano'), 'piano attendu : ' + fam);
+    expect((await page.textContent('#inFamilyOnly')).includes('pas le modèle exact'), 'avertissement famille attendu');
+    expect((await page.textContent('#inFound')).includes('Son le plus proche'), 'son le plus proche affiché');
+    const q = await inQa(); expect(q.last.backend.includes('worker'), 'calcul dans un Worker attendu : ' + q.last.backend);
+    expect(q.last.backend.startsWith('wasm'), 'moteur WebAssembly attendu : ' + q.last.backend);
+    const own = new URL(BASE).host; expect([...hosts].every(h => h === own), 'aucun appel réseau vers un tiers : ' + [...hosts].join(', '));
+  } finally { page.off('request', onReq); }
+  await page.keyboard.press('Escape');
+});
+test('INF02', 'Analyse', 'Instruments de l\'appli joués seuls (34 sons enregistrés et synthés) : au moins 85 % de bonnes familles (mesuré : 92 %)', async () => {
+  const r = await inCampaign(IN_SINGLE);
+  console.log(`        INF02 seuls : rappel ${(r.recall * 100).toFixed(0)} %, précision ${(r.precision * 100).toFixed(0)} % ; écarts : ${r.misses.join(' ; ')}`);
+  expect(r.recall >= 0.85, `rappel ${r.recall.toFixed(2)} < 0,85`);
+  expect(r.precision >= 0.75, `précision ${r.precision.toFixed(2)} < 0,75`);
+});
+test('INF03', 'Analyse', 'Mélanges de 2 à 4 instruments de l\'appli, sans pistes séparées : au moins 45 % des familles retrouvées, 70 % d\'annonces justes', async () => {
+  const r = await inCampaign(IN_MIX);
+  console.log(`        INF03 mélanges : rappel ${(r.recall * 100).toFixed(0)} %, précision ${(r.precision * 100).toFixed(0)} % ; écarts : ${r.misses.join(' ; ')}`);
+  expect(r.recall >= 0.45, `rappel ${r.recall.toFixed(2)} < 0,45`);
+  expect(r.precision >= 0.7, `précision ${r.precision.toFixed(2)} < 0,70`);
+});
+test('INF04', 'Analyse', 'Mêmes mélanges avec les pistes séparées (voix, batterie, basse, reste) : chaque piste est classée à part, bien plus de familles retrouvées', async () => {
+  const r = await inCampaign(IN_MIX, { stems: true });
+  console.log(`        INF04 avec pistes : rappel ${(r.recall * 100).toFixed(0)} %, précision ${(r.precision * 100).toFixed(0)} % ; écarts : ${r.misses.join(' ; ')}`);
+  expect(r.recall >= 0.7, `rappel ${r.recall.toFixed(2)} < 0,70`);
+  expect(r.precision >= 0.7, `précision ${r.precision.toFixed(2)} < 0,70`);
+});
+test('INF05', 'Analyse', '« Créer une piste » à la souris et au clavier : piste d\'instrument avec le son conseillé, piste de batterie avec son kit ; Ctrl+Z les retire', async () => {
+  await menu('bAnalyze'); await inLoad(['r_trumpet', 'drums:studio'], { stems: true });
+  await page.click('[data-an="instruments"] [data-role="run"]'); await page.waitForSelector('#inFound', { timeout: 60000 });
+  const found = await inFound();
+  expect(found.some(f => f.family === 'brass') && found.some(f => f.family === 'drums'), 'cuivres et batterie attendus : ' + JSON.stringify(found));
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  const btn = '#inFound [data-family="brass"] [data-role="in-create"]';
+  expect(await page.$eval(btn, b => b.offsetHeight >= 44), 'bouton trop petit pour le doigt');
+  expect((await page.getAttribute(btn, 'aria-label')).includes('Cuivres'), 'nom accessible du bouton');
+  await page.click(btn);
+  let tr = await S(() => { const p = window.kh.S.project, t = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, type: t.type, preset: t.synth && t.synth.preset, name: t.name, sel: window.kh.S.selTrack === t.id }; });
+  const brass = found.find(f => f.family === 'brass').preset;
+  expect(tr.n === n0 + 1 && tr.type === 'synth' && tr.preset === brass && tr.name === 'Cuivres' && tr.sel, 'piste de cuivres : ' + JSON.stringify(tr));
+  expect((await page.textContent('#toast')).includes('Cuivres'), 'message de confirmation');
+  await page.focus('#inFound [data-family="drums"] [data-role="in-create"]'); await page.keyboard.press('Enter');
+  tr = await S(() => { const p = window.kh.S.project, t = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, type: t.type, kit: t.kit, name: t.name }; });
+  expect(tr.n === n0 + 2 && tr.type === 'drums' && tr.kit === 'studio' && tr.name === 'Batterie', 'piste de batterie au clavier : ' + JSON.stringify(tr));
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire les pistes créées');
+});
+test('INF06', 'Analyse', 'Les parties trouvées par les autres analyses (basse, piano, mélodie) reçoivent le son de la famille entendue, sans écraser un son déjà choisi', async () => {
+  await S(() => window.kh.analysis.registerAnalyzer({ id: 'qa-parts', order: 0, title: () => 'Parties factices', help: () => '', run: async ctx => {
+    ctx.result.bpm = 100;
+    ctx.result.parts.push({ id: 'b', kind: 'bass', name: 'Basse', notes: [{ t: 0, d: 0.5, midi: 36, vel: 0.8 }] }, { id: 'k', kind: 'piano', name: 'Piano', notes: [{ t: 0, d: 1, midi: 60, vel: 0.8 }] },
+      { id: 'm', kind: 'melody', name: 'Mélodie', notes: [{ t: 0, d: 0.5, midi: 72, vel: 0.8 }] }, { id: 'x', kind: 'bass', name: 'Basse choisie', preset: 'sub808', notes: [{ t: 0, d: 0.5, midi: 36, vel: 0.8 }] });
+  } }));
+  await menu('bAnalyze'); await inLoad(['r_epiano', 'r_ebass'], { stems: true });
+  await page.click('[data-an="instruments"] [data-role="run"]'); await page.waitForSelector('#inFound', { timeout: 60000 });
+  await page.click('[data-an="qa-parts"] [data-role="run"]'); await page.waitForSelector('#anParts [data-part="b"]');
+  const parts = await S(() => Object.fromEntries(window.kh.analysis.AN.result.parts.map(p => [p.id, p.preset])));
+  const found = await inFound(), pre = id => (found.find(f => f.family === id) || {}).preset;
+  expect(parts.b === pre('bass') && parts.b, 'basse → son de la famille basse : ' + JSON.stringify(parts) + JSON.stringify(found));
+  expect(parts.k && [pre('piano'), pre('epiano'), pre('organ')].includes(parts.k), 'piano → son de la famille clavier : ' + JSON.stringify(parts));
+  expect(parts.m && parts.m === found.find(f => !['bass', 'drums', 'voice'].includes(f.family) && !f.preset.startsWith('drums:')).preset, 'mélodie → instrument mélodique le plus sûr : ' + JSON.stringify(parts));
+  expect(parts.x === 'sub808', 'un son déjà choisi est gardé');
+  await page.click('#anParts [data-part="b"] button');
+  expect(await S(() => { const p = window.kh.S.project; return p.tracks[p.tracks.length - 1].synth.preset; }) === parts.b, 'la piste ajoutée prend ce son');
+  await page.keyboard.press('Escape');
+});
+test('INF07', 'Analyse', 'Un morceau d\'une minute est analysé en entier en moins de 40 s ; « Annuler » l\'arrête sans message d\'erreur, et l\'analyse relancée aboutit', async () => {
+  await menu('bAnalyze'); await inLoad(['r_piano', 'r_ebass', 'drums:studio'], { bars: 24 });
+  expect(await S(() => window.kh.analysis.AN.source.buffer.duration) > 55, 'son d\'au moins 55 s');
+  await page.click('[data-an="instruments"] [data-role="run"]');
+  await until(async () => Number(await page.getAttribute('[data-an="instruments"] .xprog', 'aria-valuenow').catch(() => 0)) >= 15, 'l\'avancement doit progresser', 30000);
+  await page.click('[data-an="instruments"] button:has-text("Annuler")');
+  await page.waitForSelector('[data-an="instruments"] [data-role="run"]');
+  expect(!(await page.$('#inFound')) && !(await page.textContent('#toast')).includes('échoué'), 'annulé sans résultat ni message d\'échec');
+  const t0 = Date.now(); await page.click('[data-an="instruments"] [data-role="run"]');
+  await page.waitForSelector('#inFound, #inNone', { timeout: 60000 });
+  const sec = (Date.now() - t0) / 1000; console.log(`        INF07 : 60 s de son analysées en ${sec.toFixed(1)} s`);
+  expect(sec < 40, `analyse trop lente : ${sec.toFixed(1)} s`);
+  expect((await inFound()).some(f => f.family === 'drums'), 'batterie retrouvée sur le morceau entier');
+  await page.keyboard.press('Escape');
+});
+test('INF08', 'Analyse', 'Un silence ne fait inventer aucun instrument : message « aucune famille reconnue »', async () => {
+  await menu('bAnalyze');
+  await S(() => { const ctx = window.kh.engine.ctx; window.kh.analysis.loadSource('silence.wav', ctx.createBuffer(2, ctx.sampleRate * 5, ctx.sampleRate)); });
+  await page.click('[data-an="instruments"] [data-role="run"]'); await page.waitForSelector('#inNone', { timeout: 60000 });
+  expect((await page.textContent('#inNone')).includes('Aucune famille'), 'message attendu');
+  await page.keyboard.press('Escape');
+});
+test('INF09', 'Analyse', 'Familles d\'instruments en anglais et en espagnol : titres, familles, avertissement, son conseillé et bouton traduits', async () => {
+  await inLoad(['r_violin']); await S(() => window.kh.analysis.runAnalyzer('instruments'));
+  for (const [l, title, fam, warn, btn] of [['en', 'Instrument families', 'Strings', 'not the exact instrument', 'Create a track'], ['es', 'Familias de instrumentos', 'Cuerdas', 'no el modelo exacto', 'Crear una pista']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
+    const txt = await page.textContent('[data-an="instruments"]');
+    for (const w of [title, fam, warn, btn]) expect(txt.includes(w), `« ${w} » attendu en ${l}`);
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+});
+test('INF10', 'Analyse', 'Familles d\'instruments sur téléphone (375 px) : liste lisible, bouton pleine largeur au doigt, pas de défilement de côté', async () => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  try {
+    await menu('bAnalyze'); await inLoad(['r_flute', 'r_nylon']);
+    await page.click('[data-an="instruments"] [data-role="run"]'); await page.waitForSelector('#inFound', { timeout: 60000 });
+    const m = await page.$eval('#analyze', d => { const b = d.querySelector('.in-item button').getBoundingClientRect(), li = d.querySelector('.in-item').getBoundingClientRect(); return { over: d.scrollWidth - d.clientWidth, bh: b.height, bw: b.width, lw: li.width }; });
+    expect(m.over <= 1, 'défilement de côté : ' + m.over);
+    expect(m.bh >= 44 && m.bw >= m.lw * 0.8, 'bouton au doigt : ' + JSON.stringify(m));
+  } finally { await page.setViewportSize({ width: 1500, height: 900 }); }
+  await page.keyboard.press('Escape');
+});
+test('INF11', 'Analyse', 'Sans Worker (repli sur le fil principal), le résultat est le même qu\'avec le Worker', async () => {
+  const q = () => S(() => window.kh.analysis.analyzers().find(a => a.id === 'instruments').qa);
+  const a = await inRun(['r_brass', 'r_ebass']);
+  await page.evaluate(() => window.kh.analysis.analyzers().find(a => a.id === 'instruments').qa.setForceMain(true));
+  try {
+    const b = await inRun(['r_brass', 'r_ebass']);
+    expect((await q()).last.backend.includes('main'), 'calcul sur le fil principal attendu');
+    expect(JSON.stringify(a.map(f => f.family)) === JSON.stringify(b.map(f => f.family)), `mêmes familles : ${a.map(f => f.family)} / ${b.map(f => f.family)}`);
+    for (let i = 0; i < a.length; i++) near(b[i].score, a[i].score, 0.02, 'même confiance');
+  } finally { await page.evaluate(() => window.kh.analysis.analyzers().find(a => a.id === 'instruments').qa.setForceMain(false)); }
+});
+test('INF12', 'Analyse', 'Le modèle introuvable donne un message clair, et l\'analyse marche dès qu\'il revient', async () => {
+  await page.route('**/models/yamnet/model.json', r => r.abort()); ignoreErr = /ERR_FAILED/;
+  await S(() => window.kh.analysis.analyzers().find(a => a.id === 'instruments').qa.forgetModel());
+  try {
+    await menu('bAnalyze'); await inLoad(['r_sax']);
+    await page.click('[data-an="instruments"] [data-role="run"]');
+    await until(async () => (await page.textContent('#toast')).includes('modèle d\'analyse n\'a pas pu être chargé'), 'message de modèle absent', 15000);
+  } finally { await page.unroute('**/models/yamnet/model.json'); }
+  await page.click('[data-an="instruments"] [data-role="run"]'); await page.waitForSelector('#inFound', { timeout: 60000 });
+  expect((await inFound()).some(f => f.family === 'wind'), 'saxophone → bois');
+  await page.keyboard.press('Escape');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

@@ -197,7 +197,7 @@ export const instrumentsAnalyzer: Analyzer & { qa: object } = {
   id: 'instruments', order: 50,
   title: () => t('in.title'), help: () => t('in.help'),
   run, view,
-  qa: { last, TUNE, summarize, createTrack, tagParts, soundName, familyName, setForceMain: (v: boolean) => { forceMain = v; }, setSplit: (o: Inputs['opts']) => { split = o; } },
+  qa: { last, TUNE, summarize, createTrack, tagParts, soundName, familyName, setForceMain: (v: boolean) => { forceMain = v; }, setSplit: (o: Inputs['opts']) => { split = o; }, forgetModel: () => { files = null; worker?.terminate(); worker = null; } },
 };
 registerAnalyzer(instrumentsAnalyzer);
 

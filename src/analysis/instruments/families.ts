@@ -22,18 +22,24 @@ export const FAMILIES: Family[] = [
 ];
 /** Classe « Guitar » sans précision : comptée pour la guitare (acoustique ou électrique) la plus probable dans la même fenêtre. */
 const GUITAR = 135, ACOUSTIC = 138, ELECTRIC = 136;
+/** Classes trop générales (« Keyboard (musical) » s'allume pour presque tout son tenu) : leur probabilité compte moins. */
+const WEAK: Record<number, number> = { 147: 0.4 };
 
+const DRUMS = FAMILIES.findIndex(f => f.id === 'drums'), BASS = FAMILIES.findIndex(f => f.id === 'bass');
 /** Toutes les classes utiles, dans l'ordre : le Worker ne renvoie que ces colonnes. */
 export const USED: number[] = [...new Set([GUITAR, ...FAMILIES.flatMap(f => Object.keys(f.classes).map(Number))])].sort((a, b) => a - b);
 
 /** Réglages mesurés sur les sons de l'application (voir docs/v20-du-son-a-la-sequence.md). */
 export const TUNE = {
   /** une famille « s'entend » dans une fenêtre si sa probabilité y dépasse ce seuil */
-  hear: 0.12,
-  /** …et au moins cette fraction de la famille la plus probable dans la même fenêtre */
-  rel: 0,
+  hear: 0.02,
+  /** …et au moins cette fraction de la famille la plus probable dans la même fenêtre (la batterie, analysée à part, n’entre pas dans ce maximum ; la basse y entre mais a son propre seuil) */
+  rel: 0.8,
+  /** seuils propres à la batterie et à la basse (classées à part, sur la partie frappée et la bande grave) */
+  drums: 0.2,
+  bass: 0.1,
   /** part minimale des fenêtres sonores pour retenir une famille */
-  presence: 0.08,
+  presence: 0.3,
   /** fenêtre trop faible (RMS) pour compter : silence */
   silence: 0.003,
 };
@@ -56,7 +62,7 @@ export function frameFamilies(row: (cls: number) => number): number[] {
   const g = row(GUITAR), ac = row(ACOUSTIC), el = row(ELECTRIC);
   return FAMILIES.map(f => {
     let m = 0;
-    for (const k in f.classes) m = Math.max(m, row(+k));
+    for (const k in f.classes) m = Math.max(m, row(+k) * (WEAK[+k] ?? 1));
     if (f.id === 'aguitar' && ac >= el) m = Math.max(m, g);
     if (f.id === 'eguitar' && el > ac) m = Math.max(m, g);
     return m;
@@ -75,9 +81,9 @@ export function summarize(d: FrameData, tune = TUNE): FamilyFound[] {
     if (d.rms[i] < tune.silence) continue;
     live++;
     const row = (c: number) => d.scores[i * W + (col.get(c) ?? 0)];
-    const fam = frameFamilies(row), top = Math.max(...fam);
+    const fam = frameFamilies(row), top = Math.max(...fam.filter((_, j) => j !== DRUMS));
     fam.forEach((v, j) => {
-      if (v < tune.hear || v < tune.rel * top) return;
+      if (j === DRUMS ? v < tune.drums : j === BASS ? v < tune.bass : v < tune.hear || v < tune.rel * top) return;
       hits[j]++; sum[j] += v;
       for (const k in FAMILIES[j].classes) { const p = FAMILIES[j].classes[+k]; votes[j].set(p, (votes[j].get(p) || 0) + row(+k)); }
       if (FAMILIES[j].id === 'synth') flux.push(d.flux[i]);
@@ -91,9 +97,9 @@ export function summarize(d: FrameData, tune = TUNE): FamilyFound[] {
     let preset = '', best = -1;
     for (const [p, v] of votes[j]) if (v > best) { best = v; preset = p; }
     if (f.id === 'synth') preset = median(flux) < 0.25 ? 'pad' : 'lead';
-    // confiance : probabilité moyenne quand on l'entend, ramenée vers 1 (les probabilités de YAMNet restent basses pour un instrument dans un mélange)
+    // confiance : moitié probabilité moyenne quand on l'entend (ramenée vers 1 : YAMNet reste bas pour un instrument dans un mélange), moitié part du morceau
     const mean = sum[j] / hits[j];
-    const score = Math.min(1, Math.sqrt(mean) * (0.6 + 0.4 * presence));
+    const score = Math.min(1, 0.5 * Math.sqrt(Math.min(1, mean / 0.5)) + 0.5 * presence);
     out.push({ family: f.id, score, presence, preset });
   });
   return out.sort((a, b) => b.score - a.score);
