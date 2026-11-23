@@ -400,10 +400,26 @@ function keepTrackMenu(root: HTMLElement): () => void {
   };
 }
 
+/**
+ * Longueur dessinée en plus pendant la lecture : la tête de lecture peut dépasser la fin du morceau (un enregistrement
+ * n'a pas encore de clip tant qu'il n'est pas arrêté). Sans elle, la règle s'arrêtait à 48 mesures et ses numéros disparaissaient.
+ */
+let playSpan = 0, drawn = 0;
+const baseSpan = () => Math.max(contentEnd(S.project) + BAR * 8, BAR * 48);
+/** Appelé à chaque image : rallonge l'arrangement avant que la tête de lecture n'atteigne sa fin, et le ramène à l'arrêt. */
+export function followPlayhead(step: number, playing: boolean) {
+  // En lecture : on agrandit par 16 mesures, 4 mesures avant la fin. À l'arrêt : juste de quoi voir la tête de lecture.
+  const want = playing ? Math.max(playSpan, step + BAR * 4 > drawn ? Math.ceil((step + BAR * 16) / BAR) * BAR : 0)
+    : step + BAR * 2 > baseSpan() ? Math.ceil((step + BAR * 8) / BAR) * BAR : 0;
+  if (want === playSpan) return;
+  playSpan = want;
+  if (Math.max(baseSpan(), playSpan) !== drawn) renderArr();
+}
+
 export function renderArr() {
   const root = document.getElementById('arr')!, p = S.project, px = S.px;
   const reopen = keepTrackMenu(root);
-  const total = Math.max(contentEnd(p) + BAR * 8, BAR * 48);
+  const total = drawn = Math.max(baseSpan(), playSpan);
   const heads = h('div', { class: 'heads' });
   const lanes = h('div', { class: 'lanes', style: `width:${total * px}px;--bar:${BAR * px}px;--beat:${BEAT * px}px` });
 
@@ -443,7 +459,9 @@ export function renderArr() {
   if (!p.tracks.length) lanes.append(h('div', { class: 'empty' }, t('hint.noTracks')));
   lanes.append(h('div', { id: 'recz' }), h('div', { id: 'ph' }));
 
+  const keep = root.scrollLeft;
   root.replaceChildren(h('div', { class: 'arr-inner' }, heads, lanes));
+  root.scrollLeft = keep;
   reopen();
 }
 

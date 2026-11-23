@@ -19,7 +19,7 @@ import { setLang, t } from './i18n';
 import { allNotesOff, kb, learn, midi, noteOff, noteOn, onMidi, padHit, padRelease } from './input';
 import { projectInfo, S, addBuffer, buffers, commit, crash, saveHealth, emit, findTrack, listVersions, loadAutosave, markRecovered, onChange, onSelect, redo, resetHistory, restoreVersion, saveNow, snapshot, undo, versioning, watchSession } from './store';
 import { BAR, BEAT, MIX_PRESETS, barSteps, beatSteps, PRESETS, bpmAt, demoProject, makeSynth, newBus, newInsert, setBar, setRes, templateProject, timeOf } from './types';
-import { initArrDrop, initArrZoom, recSpan, refreshSelection, renderArr, updateRecView, zoomAt } from './ui/arr';
+import { followPlayhead, initArrDrop, initArrZoom, recSpan, refreshSelection, renderArr, updateRecView, zoomAt } from './ui/arr';
 import { clamp, followDrag, h, toast } from './ui/dom';
 import { detectPitch } from './audio/pitch';
 import { flashPad, notesKey, readKeyboardLayout, renderEditor, setKeyboardLayout, updateEditorPlayhead, updateTuner } from './ui/editor';
@@ -162,6 +162,7 @@ function frame() {
   document.body.classList.toggle('recording', !!engine.recording);
   document.body.classList.toggle('livemode', live);
   $('bPlay').textContent = engine.playing ? '❚❚' : '▶';
+  followPlayhead(step, engine.playing && !live);
   if (engine.playing && !live) {
     const arr = $('arr'), x = step * S.px, view = arr.clientWidth - 256;
     if (x > arr.scrollLeft + view - 40 || x < arr.scrollLeft) arr.scrollLeft = Math.max(0, x - 80);
