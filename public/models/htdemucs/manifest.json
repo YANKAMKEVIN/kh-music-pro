@@ -1,0 +1,8 @@
+{
+  "name": "htdemucs",
+  "source": "https://huggingface.co/Ghilda/htdemucs-onnx (htdemucs.onnx), reconverti depuis les poids officiels de facebookresearch/demucs",
+  "license": "MIT",
+  "size": 174266088,
+  "sha256": "e528a932a7d091e15938369135569884b62c2193fb11044c3d4a0d4c7b9221af",
+  "parts": ["htdemucs.onnx.0", "htdemucs.onnx.1", "htdemucs.onnx.2", "htdemucs.onnx.3"]
+}
