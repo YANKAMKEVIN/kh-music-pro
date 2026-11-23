@@ -22,7 +22,8 @@ export interface DrumHit {
   /** coup de métal tombé en même temps qu'une grosse caisse ou une caisse claire (extinction moins sûre) */
   shared?: boolean;
 }
-export interface DrumScan { hits: DrumHit[]; hop: number; sr: number; frames: number; debug?: { refs: number[]; cand: number[][]; W: number[][]; fc: number[] } }
+/** `debug` : forces de référence, présence, nombre de pics candidats et fuites mesurées, par instrument (QA, réglages). */
+export interface DrumScan { hits: DrumHit[]; hop: number; sr: number; frames: number; debug?: { refs: number[]; present: boolean[]; cand: number[]; leak: number[][] } }
 
 export function detectDrums(x: Float32Array, sr: number, report?: (f: number) => void): DrumScan {
   const KICK_MAX_HZ = 100, GHOST_HAT = 0.5, SNARE_HOLD = 0.5, KICK_HAT_SNARE = 0.6;   // au-dessus, un fût grave est un tom (mesuré par la QA, cas DR)
@@ -248,6 +249,6 @@ export function detectDrums(x: Float32Array, sr: number, report?: (f: number) =>
   }
   report?.(1);
   hits.sort((a, b) => a.t - b.t);
-  const debug = { leak, h0: Array.from(H.subarray(0, 120)).map(v => +v.toFixed(2)), v1: Array.from(Vraw.subarray(1 * frames, 1 * frames + 120)).map(v => +v.toFixed(1)), refs, present, cand, W: Array.from({ length: K }, (_, k) => bands.map((_, b) => Math.round(W[b * K + k] * 1000) / 1000)), fc: bands.map(x => Math.round(x.fc)) } as unknown as NonNullable<DrumScan['debug']>;
+  const debug = { refs, present, cand, leak };
   return { hits, hop: HOP, sr, frames, debug };
 }
