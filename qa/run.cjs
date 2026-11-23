@@ -6310,6 +6310,221 @@ test('AN04', 'Analyse', 'Un fichier qui n\'est pas un son est refusé avec un me
   }
 });
 
+// ============ V20 — basse et piano → notes (PO) ============
+/** Son de test fabriqué dans la page : notes [midi, début s, durée s, force?, cents?], timbre 'piano' (harmoniques 1/h, légère inharmonicité,
+ *  aigus qui s'éteignent plus vite), 'bassweak' (fondamentale faible), 'bass' (harmoniques 1/h), 'sine' ; bruit blanc en option ; `mix` : autre son ajouté. */
+async function poSound(notes, dur, kind, opt = {}) {
+  await page.evaluate(([notes, dur, kind, opt]) => {
+    const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, Math.ceil(dur * sr), sr), x = b.getChannelData(0);
+    let seed = 7; if (opt.noise) for (let i = 0; i < x.length; i++) { seed = (seed * 16807) % 2147483647; x[i] = opt.noise * (seed / 2147483647 * 2 - 1); }
+    const add = (notes, kind) => { for (const [m, t0, d, a = 1, cents = 0] of notes) {
+      const f0 = 440 * 2 ** ((m + cents / 100 - 69) / 12), i0 = Math.round(t0 * sr), i1 = Math.min(x.length, Math.round((t0 + d) * sr));
+      for (let h = 1; h <= (kind === 'sine' ? 1 : 10); h++) {
+        const f = f0 * h * Math.sqrt(1 + (kind === 'piano' ? 0.0004 : 0) * h * h); if (f > sr * 0.45) continue;
+        const amp = kind === 'bassweak' ? (h === 1 ? 0.15 : 1 / (h - 0.5)) : kind === 'sine' ? 1 : 1 / h;
+        const dec = kind === 'piano' ? 0.7 * (1 + 0.3 * h) : kind.startsWith('bass') ? 2.5 : 0;
+        for (let i = i0; i < i1; i++) { const tt = (i - i0) / sr; x[i] += 0.15 * a * amp * Math.min(1, tt / 0.004) * Math.exp(-dec * tt) * Math.min(1, (i1 - i) / sr / 0.03) * Math.sin(2 * Math.PI * f * tt + h); }
+      } } };
+    add(notes, kind); if (opt.mix) add(opt.mix[0], opt.mix[1]);
+    window.kh.analysis.loadSource('essai.wav', b);
+    if (opt.stem) window.kh.analysis.AN.result.stems = { [opt.stem]: b };
+  }, [notes, dur, kind, opt]);
+}
+/** Lance une analyse (`bass-notes` ou `piano-notes`) et renvoie les notes trouvées. */
+async function poRun(id, settings) {
+  return page.evaluate(async ([id, settings]) => {
+    const a = window.kh.analysis.analyzers().find(x => x.id === id); Object.assign(a.po.settings, { sens: 0.5, minDur: 0.06 }, settings || {});
+    await window.kh.analysis.runAnalyzer(id);
+    const p = window.kh.analysis.AN.result.parts.find(p => p.id === (id === 'bass-notes' ? 'bass' : 'piano')); return p ? p.notes : null;
+  }, [id, settings]);
+}
+/** Précision : F-mesure sur les débuts de note (même hauteur, à ±50 ms), et écart moyen des débuts retrouvés. */
+function poScore(ref, est, tol = 0.05) {
+  const used = new Set(); let tp = 0, err = 0;
+  for (const [m, t] of ref) { let bi = -1, bd = tol; est.forEach((e, i) => { if (!used.has(i) && e.midi === m && Math.abs(e.t - t) <= bd) { bd = Math.abs(e.t - t); bi = i; } }); if (bi >= 0) { used.add(bi); tp++; err += bd; } }
+  const P = est.length ? tp / est.length : 0, R = tp / ref.length, F = P + R ? 2 * P * R / (P + R) : 0;
+  return { F: +F.toFixed(3), P: +P.toFixed(2), R: +R.toFixed(2), n: est.length, ref: ref.length, ms: tp ? Math.round(1000 * err / tp) : null };
+}
+const poLog = (name, s) => console.log(`        mesure ${name} : F ${s.F} (précision ${s.P}, rappel ${s.R}, ${s.n}/${s.ref} notes, écart moyen ${s.ms} ms)`);
+const PO_BASS = [40, 40, 43, 45, 47, 45, 43, 38, 36, 36, 41, 43, 28, 33, 35, 52].map((m, i) => [m, 0.3 + i * 0.5, 0.42]);
+const PO_TRIADS = [[48, 52, 55], [45, 48, 52], [41, 45, 48, 53], [43, 47, 50, 55], [48, 52, 55, 60], [50, 53, 57, 60], [55, 59, 62, 65], [52, 55, 59]];
+const poChords = (dt = 1, d = 0.9, extra = []) => PO_TRIADS.flatMap((c, i) => c.map(m => [m, 0.3 + i * dt, d, ...extra]));
+
+test('PO01', 'Analyse', 'Basse → notes et Piano → notes ont leur ligne dans la fenêtre, inactives sans son, traduites en trois langues', async () => {
+  await menu('bAnalyze'); await page.waitForSelector('#analyze[open]');
+  for (const id of ['bass-notes', 'piano-notes']) {
+    expect(await page.$(`[data-an="${id}"]`), `ligne ${id} absente`);
+    expect(await page.$eval(`[data-an="${id}"] [data-role=run]`, b => b.disabled && b.offsetHeight >= 44), `${id} : Lancer doit être inactif sans son et assez grand pour le doigt`);
+  }
+  expect((await page.textContent('[data-an="bass-notes"] h3')).includes('Basse → notes') && (await page.textContent('[data-an="piano-notes"] h3')).includes('Piano → notes'), 'titres en français');
+  await page.keyboard.press('Escape');
+  for (const [l, b, p] of [['en', 'Bass → notes', 'separated “other instruments”'], ['es', 'Bajo → notas', 'otros instrumentos']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
+    expect((await page.textContent('[data-an="bass-notes"] h3')).includes(b) && (await page.textContent('[data-an="piano-notes"] .tip')).includes(p), `textes en ${l}`);
+    await page.keyboard.press('Escape');
+  }
+});
+test('PO02', 'Analyse', 'Basse à la fondamentale faible : lancée à la souris, avancement visible, notes justes (F ≥ 0,9 à ±50 ms), registre affiché', async () => {
+  await menu('bAnalyze'); await poSound(PO_BASS, 8.5, 'bassweak');
+  await S(() => { const a = window.kh.analysis.analyzers().find(x => x.id === 'bass-notes'); Object.assign(a.po.settings, { sens: 0.5, minDur: 0.06 }); });
+  await page.click('[data-an="bass-notes"] [data-role=run]');
+  await page.waitForSelector('[data-an="bass-notes"] [data-role=summary]', { timeout: 20000 });
+  const notes = await S(() => window.kh.analysis.AN.result.parts.find(p => p.id === 'bass').notes);
+  const s = poScore(PO_BASS, notes); poLog('basse fondamentale faible', s);
+  expect(s.F >= 0.9, 'précision insuffisante ' + JSON.stringify(s));
+  const sum = await page.textContent('[data-an="bass-notes"] [data-role=summary]');
+  expect(sum.includes(`${notes.length} notes, de Mi1 à Mi3`), 'résumé : ' + sum);
+  expect(await S(() => window.kh.analysis.analyzers().find(x => x.id === 'bass-notes').po.lastRun().worker), 'le calcul doit tourner dans un Worker');
+  expect(await page.$('#anParts [data-part="bass"]'), 'la partie Basse doit être proposée');
+  await page.keyboard.press('Escape');
+});
+test('PO03', 'Analyse', 'Basse rapide : notes répétées en doubles croches et sauts d\'octave (F ≥ 0,9)', async () => {
+  const ref = Array.from({ length: 32 }, (_, i) => [[33, 33, 45, 33, 36, 36, 48, 36][i % 8], 0.2 + i * 0.17, 0.16]);
+  await poSound(ref, 6, 'bass'); const s = poScore(ref, await poRun('bass-notes')); poLog('basse rapide', s);
+  expect(s.F >= 0.9, JSON.stringify(s));
+});
+test('PO04', 'Analyse', 'Basse jouée liée (la hauteur change sans nouvelle attaque) et basse en sons purs (F ≥ 0,9)', async () => {
+  const leg = [40, 42, 43, 45, 47, 48, 50, 52, 50, 48].map((m, i) => [m, 0.2 + i * 0.5, 0.5]);
+  await poSound(leg, 6, 'bass'); const s = poScore(leg, await poRun('bass-notes')); poLog('basse liée', s);
+  expect(s.F >= 0.9, 'lié ' + JSON.stringify(s));
+  await poSound(PO_BASS, 8.5, 'sine'); const s2 = poScore(PO_BASS, await poRun('bass-notes')); poLog('basse sons purs', s2);
+  expect(s2.F >= 0.9, 'sons purs ' + JSON.stringify(s2));
+});
+test('PO05', 'Analyse', 'Accords de 3 et 4 notes au timbre de piano (F ≥ 0,9) ; noms d\'accord par mesure (Do, La m, Fa, Sol 7)', async () => {
+  const ref = poChords(); await poSound(ref, 9, 'piano', { stem: 'other' });
+  const s = poScore(ref, await poRun('piano-notes')); poLog('accords piano', s);
+  expect(s.F >= 0.9, JSON.stringify(s));
+  // une mesure = 2 s à 120 : Do, La m, Fa, Sol 7
+  const bars = [[48, 52, 55, 60], [45, 48, 52, 57], [41, 45, 48, 53], [43, 47, 50, 53]].flatMap((c, i) => c.map(m => [m, i * 2 + 0.05, 1.8]));
+  await poSound(bars, 8.2, 'piano', { stem: 'other' }); await S(() => { window.kh.analysis.AN.result.bpm = 120; window.kh.analysis.AN.result.beatOffset = 0; });
+  await menu('bAnalyze'); await poRun('piano-notes');
+  const chips = await page.$$eval('[data-po="piano"] .po-chords li', l => l.map(x => x.getAttribute('aria-label')));
+  expect(chips.slice(0, 4).join(' | ') === 'Mesure 1 : Do | Mesure 2 : La m | Mesure 3 : Fa | Mesure 4 : Sol 7', 'accords : ' + chips.join(' | '));
+  await page.keyboard.press('Escape'); await page.evaluate(() => window.kh.setLang('en')); await menu('bAnalyze');
+  const en = await page.$$eval('[data-po="piano"] .po-chords li', l => l.map(x => x.getAttribute('aria-label')));
+  expect(en.slice(0, 4).join(' | ') === 'Bar 1: C | Bar 2: Am | Bar 3: F | Bar 4: G7', 'accords en anglais : ' + en.join(' | '));
+  await page.keyboard.press('Escape');
+});
+test('PO06', 'Analyse', 'Arpèges, notes tenues sous une mélodie, accord rejoué huit fois (F ≥ 0,9 chacun)', async () => {
+  const arp = Array.from({ length: 24 }, (_, i) => [[48, 52, 55, 60, 64, 60, 55, 52, 45, 48, 52, 57][i % 12], 0.2 + i * 0.25, 0.6]);
+  const held = [[36, 0.2, 6], [43, 0.2, 6], ...[60, 64, 67, 72, 67, 64, 62, 59].map((m, i) => [m, 0.5 + i * 0.7, 0.6])];
+  const rep = Array.from({ length: 8 }, (_, i) => [60, 64, 67].map(m => [m, 0.2 + i * 0.5, 0.45])).flat();
+  for (const [name, ref, dur] of [['arpèges', arp, 7], ['notes tenues', held, 7], ['accord rejoué', rep, 5]]) {
+    await poSound(ref, dur, 'piano', { stem: 'other' }); const s = poScore(ref, await poRun('piano-notes')); poLog(name, s);
+    expect(s.F >= 0.9, name + ' ' + JSON.stringify(s));
+  }
+});
+test('PO07', 'Analyse', 'Accords en sons purs avec octave, aigus, note jouée doucement dans l\'accord (F ≥ 0,9)', async () => {
+  const hiC = [[72, 76, 79], [74, 77, 81], [71, 74, 79, 83], [76, 79, 84]].flatMap((c, i) => c.map(m => [m, 0.3 + i * 1.2, 1.1]));
+  const soft = PO_TRIADS.flatMap((c, i) => c.map((m, k) => [m, 0.3 + i, 0.9, k === 1 ? 0.35 : 1]));
+  for (const [name, ref, dur, kind] of [['sons purs', poChords(), 9, 'sine'], ['aigus', hiC, 6, 'piano'], ['note douce', soft, 9, 'piano']]) {
+    await poSound(ref, dur, kind, { stem: 'other' }); const s = poScore(ref, await poRun('piano-notes')); poLog(name, s);
+    expect(s.F >= 0.9, name + ' ' + JSON.stringify(s));
+  }
+});
+test('PO08', 'Analyse', 'Morceau accordé plus bas (−35 cents) ou plus haut (+25 cents) : basse et piano restent justes', async () => {
+  const bass = PO_BASS.map(n => [...n, 1, -35]);
+  await poSound(bass, 8.5, 'bassweak'); const s = poScore(PO_BASS, await poRun('bass-notes')); poLog('basse −35 cents', s);
+  expect(s.F >= 0.9, 'basse ' + JSON.stringify(s));
+  for (const c of [-35, 25]) {
+    await poSound(poChords(1, 0.9, [1, c]), 9, 'piano', { stem: 'other' }); const s2 = poScore(poChords(), await poRun('piano-notes')); poLog(`piano ${c} cents`, s2);
+    expect(s2.F >= 0.9, `piano ${c} ` + JSON.stringify(s2));
+  }
+});
+test('PO09', 'Analyse', 'Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair', async () => {
+  await poSound(poChords(), 9, 'piano', { noise: 0.01, stem: 'other' }); const s = poScore(poChords(), await poRun('piano-notes')); poLog('piano + bruit', s);
+  expect(s.F >= 0.9, 'piano ' + JSON.stringify(s));
+  await poSound(PO_BASS, 8.5, 'bassweak', { noise: 0.01 }); const s2 = poScore(PO_BASS, await poRun('bass-notes')); poLog('basse + bruit', s2);
+  expect(s2.F >= 0.9, 'basse ' + JSON.stringify(s2));
+  await menu('bAnalyze'); await poSound([], 3, 'piano');
+  expect((await poRun('piano-notes')).length === 0 && (await poRun('bass-notes')).length === 0, 'aucune note attendue dans un silence');
+  expect((await page.textContent('[data-an="piano-notes"] [data-role=summary]')).includes('Aucune note trouvée'), 'message attendu');
+  await page.keyboard.press('Escape');
+});
+test('PO10', 'Analyse', 'Sans pistes séparées, basse et accords mélangés : chaque analyse garde sa partie (mesuré) et prévient que le son entier est analysé', async () => {
+  const keys = PO_TRIADS.flatMap((c, i) => c.map(m => [m + 12, 0.3 + i, 0.9, 0.6]));
+  const bass = PO_BASS.slice(0, 16);
+  await menu('bAnalyze'); await poSound(bass, 9, 'bass', { mix: [keys, 'piano'] });
+  const sb = poScore(bass, await poRun('bass-notes')); poLog('basse dans le mélange', sb);
+  const sp = poScore(keys, await poRun('piano-notes')); poLog('piano dans le mélange', sp);
+  expect(sb.F >= 0.7 && sp.F >= 0.6, `mélange : basse ${JSON.stringify(sb)} piano ${JSON.stringify(sp)}`);
+  expect((await page.textContent('[data-an="bass-notes"]')).includes('Pas de piste séparée'), 'avertissement « son entier » attendu');
+  // avec une piste séparée, l'analyse la lit et ne prévient plus
+  await poSound(bass, 9, 'bass', { stem: 'bass' }); await poRun('bass-notes');
+  expect(await S(() => window.kh.analysis.analyzers().find(x => x.id === 'bass-notes').po.lastRun().stem), 'la piste de basse séparée doit être utilisée');
+  expect(!(await page.textContent('[data-an="bass-notes"]')).includes('Pas de piste séparée'), 'pas d\'avertissement avec une piste séparée');
+  await page.keyboard.press('Escape');
+});
+test('PO11', 'Analyse', 'La basse trouvée s\'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire', async () => {
+  const ref = [[40, 0.5, 0.45], [43, 1, 0.45], [45, 1.5, 0.45], [47, 2, 0.95]];
+  await menu('bAnalyze'); await poSound(ref, 3.5, 'bass'); await S(() => { window.kh.analysis.AN.result.bpm = 120; });
+  await poRun('bass-notes'); await page.waitForSelector('#anParts [data-part="bass"]');
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click('#anParts [data-part="bass"] button');
+  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.map(n => [n.p, n.s]) }; });
+  expect(tr.n === n0 + 1 && tr.name === 'Basse' && tr.preset === 'r_ebass', JSON.stringify(tr).slice(0, 200));
+  expect(JSON.stringify(tr.notes) === '[[40,4],[43,8],[45,12],[47,16]]', 'notes calées à 120 : ' + JSON.stringify(tr.notes));
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste');
+});
+test('PO12', 'Analyse', 'Une longue analyse s\'annule par le bouton, sans message d\'échec ; l\'interface reste fluide pendant le calcul', async () => {
+  const ref = Array.from({ length: 60 }, (_, i) => PO_TRIADS[i % 8].map(m => [m, 0.3 + i, 0.9])).flat();
+  await menu('bAnalyze'); await poSound(ref, 61, 'piano', { stem: 'other' });
+  await page.click('[data-an="piano-notes"] [data-role=run]');
+  await page.waitForSelector('[data-an="piano-notes"] .xprog');
+  // pendant le calcul, la page continue de dessiner (le calcul est dans un Worker)
+  const frames = await page.evaluate(() => new Promise(ok => { let n = 0; const end = performance.now() + 500; const f = () => { n++; if (performance.now() < end) requestAnimationFrame(f); else ok(n); }; requestAnimationFrame(f); }));
+  expect(frames >= 10, `l'interface se fige pendant l'analyse (${frames} images en 0,5 s)`);
+  await page.click('[data-an="piano-notes"] button:has-text("Annuler")');
+  await page.waitForSelector('[data-an="piano-notes"] [data-role="run"]');
+  expect(!(await page.textContent('#toast')).includes('échoué'), 'une annulation ne doit pas s\'afficher comme une panne');
+  expect(await S(() => !window.kh.analysis.AN.result.parts.some(p => p.id === 'piano')), 'aucune partie après annulation');
+  await page.keyboard.press('Escape');
+});
+test('PO13', 'Analyse', 'Réglages au clavier : plus de sensibilité → la note jouée doucement apparaît ; note la plus courte 200 ms → les notes brèves disparaissent', async () => {
+  const ref = [[48, 52, 55], [45, 48, 52], [43, 47, 50]].flatMap((c, i) => c.map((m, k) => [m, 0.3 + i, 0.9, k === 1 ? 0.12 : 1]));
+  await menu('bAnalyze'); await poSound(ref, 3.5, 'piano', { stem: 'other' }); await poRun('piano-notes');
+  const mid = await S(() => window.kh.analysis.AN.result.parts.find(p => p.id === 'piano').notes.map(n => n.midi));
+  expect(mid.join() === '48,55,45,52,43,50', 'à 50 %, seules les notes fortes : ' + mid);
+  // le curseur de sensibilité se règle au clavier (flèche vers la droite : +5 %)
+  await page.focus('[data-po="piano"] .po-sens input'); for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowRight');
+  expect(await page.$eval('[data-po="piano"] .po-sens input', i => i.getAttribute('aria-valuetext')) === '100 %', 'curseur à 100 %');
+  await page.click('[data-an="piano-notes"] [data-role=run]'); await page.waitForSelector('[data-an="piano-notes"] [data-role=summary]');
+  const all = await S(() => window.kh.analysis.AN.result.parts.find(p => p.id === 'piano').notes.map(n => n.midi));
+  expect(all.length === 9, 'à 100 %, les 9 notes : ' + all);
+  // note la plus courte
+  const ref2 = [[40, 0.3, 0.1], [43, 0.8, 0.5], [45, 1.5, 0.1], [47, 2, 0.5]];
+  await poSound(ref2, 3, 'bass'); await poRun('bass-notes', { minDur: 0.06 });
+  expect(await S(() => window.kh.analysis.AN.result.parts.find(p => p.id === 'bass').notes.length) === 4, 'les 4 notes à 60 ms');
+  await page.focus('[data-po="bass"] .po-min input'); for (let i = 0; i < 14; i++) await page.keyboard.press('ArrowRight');
+  expect(await page.$eval('[data-po="bass"] .po-min input', i => i.getAttribute('aria-valuetext')) === '200 ms', 'curseur à 200 ms');
+  await page.click('[data-an="bass-notes"] [data-role=run]'); await page.waitForSelector('[data-an="bass-notes"] [data-role=summary]');
+  const kept = await S(() => window.kh.analysis.AN.result.parts.find(p => p.id === 'bass').notes.map(n => n.midi));
+  expect(JSON.stringify(kept) === '[43,47]', 'à 200 ms, seules les notes longues : ' + kept);
+  await page.keyboard.press('Escape');
+});
+test('PO14', 'Analyse', 'Trois minutes de piano : analyse en moins de 60 s, toutes les notes justes', async () => {
+  const ref = Array.from({ length: 170 }, (_, i) => PO_TRIADS[i % 8].map(m => [m, 0.3 + i * 1.05, 0.9])).flat();
+  await poSound(ref, 180, 'piano', { stem: 'other' });
+  const t0 = Date.now(), s = poScore(ref, await poRun('piano-notes')), ms = Date.now() - t0; poLog(`3 min de piano en ${(ms / 1000).toFixed(1)} s`, s);
+  expect(s.F >= 0.9 && ms < 60000, JSON.stringify(s) + ' ' + ms + ' ms');
+});
+test('PO15', 'Analyse', 'Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l\'écran', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
+    await pg.evaluate(() => { window.kh.analysis.showAnalyze(); const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, sr * 3, sr), x = b.getChannelData(0);
+      for (const [m, t0] of [[40, 0.3], [43, 1.3], [45, 2.1]]) { const f = 440 * 2 ** ((m - 69) / 12); for (let i = Math.round(t0 * sr); i < Math.round((t0 + 0.6) * sr); i++) for (let h = 1; h < 6; h++) x[i] += 0.1 / h * Math.sin(2 * Math.PI * f * h * (i / sr - t0)); }
+      window.kh.analysis.loadSource('essai.wav', b); });
+    for (const id of ['bass-notes', 'piano-notes']) {
+      await pg.tap(`[data-an="${id}"] [data-role=run]`); await pg.waitForSelector(`[data-an="${id}"] [data-role=summary]`, { timeout: 20000 });
+    }
+    expect((await pg.textContent('[data-an="bass-notes"] [data-role=summary]')).includes('3 notes'), 'résumé de la basse');
+    const lay = await pg.evaluate(() => ({ sw: document.getElementById('analyze').scrollWidth, cw: document.getElementById('analyze').clientWidth, sl: [...document.querySelectorAll('#analyze .po-view input[type=range]')].map(i => i.getBoundingClientRect().right) }));
+    expect(lay.sw <= lay.cw + 1 && lay.sl.every(r => r <= 390), 'la fenêtre déborde : ' + JSON.stringify(lay));
+  } finally { await ctx2.close(); }
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });
