@@ -26,6 +26,13 @@ async function fetchBytes(url: string, onBytes: (n: number) => void): Promise<Ui
   return out;
 }
 
+/** Garde un fichier dans le cache ; si l'appareil refuse (espace plein, navigation privée), le modèle sert quand même cette fois. */
+async function keep(c: Cache, url: string, res: Response) {
+  try { await c.put(url, res); keepFailed = false; } catch { keepFailed = true; }
+}
+/** Le dernier enregistrement dans le cache a-t-il été refusé ? (QA, message éventuel) */
+export let keepFailed = false;
+
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 
 /** Le modèle est-il déjà gardé dans l'appareil ? */
@@ -44,7 +51,7 @@ export async function loadModel(base: string, progress: (got: number, total: num
   const cache = canCache(base) ? await caches.open(MODEL_CACHE) : null;
   let man: Manifest;
   const mUrl = base + 'manifest.json';
-  try { const r = await fetch(mUrl, { cache: 'no-cache' }); if (!r.ok) throw new Error('HTTP ' + r.status); man = await r.json(); if (cache) await cache.put(mUrl, new Response(JSON.stringify(man))); }
+  try { const r = await fetch(mUrl, { cache: 'no-cache' }); if (!r.ok) throw new Error('HTTP ' + r.status); man = await r.json(); if (cache) await keep(cache, mUrl, new Response(JSON.stringify(man))); }
   catch (e) {
     const hit = cache && await cache.match(mUrl);
     if (!hit) throw new ModelError('offline', String((e as Error)?.message || e));
@@ -59,7 +66,7 @@ export async function loadModel(base: string, progress: (got: number, total: num
     else {
       fromCache = false;
       b = await fetchBytes(url, n => { got += n; progress(got, man.size, false); });
-      if (cache) await cache.put(url, new Response(b as Uint8Array<ArrayBuffer>, { headers: { 'Content-Type': 'application/octet-stream' } }));
+      if (cache) await keep(cache, url, new Response(b as Uint8Array<ArrayBuffer>, { headers: { 'Content-Type': 'application/octet-stream' } }));
     }
     if (off + b.length > man.size) throw new ModelError('corrupt', 'taille');
     all.set(b, off); off += b.length;

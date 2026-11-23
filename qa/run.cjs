@@ -6771,6 +6771,19 @@ test('SEP31', 'Analyse', 'Appareil à moins de 4 Go : Demucs n\'est pas tenté (
   expect((await page.textContent('#toast')).includes('Pas assez de mémoire pour Demucs'), 'raison affichée : ' + await page.textContent('#toast'));
   await page.keyboard.press('Escape');
 });
+test('SEP32', 'Analyse', 'Appareil qui refuse de garder le modèle (espace plein) : Demucs sépare quand même, rien n\'est gardé, pas de message d\'erreur', async () => {
+  await stDmReset();
+  const cdp = await ctx.newCDPSession(page), origin = new URL(BASE).origin;
+  await cdp.send('Storage.overrideQuotaForOrigin', { origin, quotaSize: 10 * 2 ** 20 });
+  try {
+    await stOpen(); await stLoad({ dur: 3, mode: 'best' }); await stRun(DM_TIMEOUT);
+    const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
+    expect(m && m.kind === 'demucs', 'Demucs attendu malgré l\'espace plein : ' + JSON.stringify(m) + ' ' + await page.textContent('#toast'));
+    expect(await stCached() === 0, 'rien ne doit être gardé');
+    expect(!/échoué|abîmé|impossible/.test(await page.textContent('#toast')), 'pas de message d\'erreur : ' + await page.textContent('#toast'));
+  } finally { await cdp.send('Storage.overrideQuotaForOrigin', { origin }); await cdp.detach(); }
+  await page.keyboard.press('Escape');
+});
 test('SEP30', 'Analyse', 'Demucs sur carte graphique (WebGPU, navigateur à part) : même séparation que sur le processeur, temps mesuré', async () => {
   const b2 = await chromium.launch({ channel: 'chromium', executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-unsafe-webgpu', '--autoplay-policy=no-user-gesture-required'] });
   try {
