@@ -976,3 +976,13 @@ Demande de Kevin (« oui vas-y ») : faire ce qui reste et qui peut se faire san
 - Désormais (`importMidi`, `files.ts`) : la signature du début du fichier (FF 58 au premier instant ; les changements en cours de morceau restent ignorés, faute de signatures multiples) est lue si l'application la connaît (2/4 à 7/4, 5/8, 6/8, 7/8, 9/8, 12/8). Comme le tempo, elle n'est reprise que par un projet vide (`importMidiFile`) ; les clips importés se comptent alors dans ses mesures. Un projet déjà commencé garde sa signature. Une seule entrée d'annulation pour l'import.
 - QA : SG06 (projet commencé en 4/4 inchangé ; projet vide passé en 6/8 avec le menu à jour, clip de 24 pas, Annuler ; 12/8 et 7/4 lus ; 11/8 ignoré).
 
+
+## 21. V20 — Du son à la séquence (branche `v20`, 23/11/2026)
+
+Charger un son (usage personnel ; pas de téléchargement YouTube dans l'appli) et en tirer de quoi refaire le morceau : menu Projet › « Du son à la séquence… ». Cinq analyses : chant → notes, tempo et tonalité (VX) ; séparation des pistes, Demucs en qualité maximale avec un mode rapide en secours (SEP) ; basse et piano → notes (PO) ; batterie → motif du séquenceur (DR) ; familles d'instruments avec YAMNet (IN). Détail, méthodes, mesures et non-vérifié : `docs/v20-du-son-a-la-sequence.md`.
+
+- Construite par cinq sessions en parallèle sur le socle `v20`, puis rassemblée sur `v20` (commit 08f96f5). Nouvelles dépendances : `onnxruntime-web`, `@tensorflow/tfjs-*` ; modèles dans `public/models` (Demucs ~175 Mo en 4 parties, YAMNet).
+- Campagne complète du 23/11/2026 au calme : 565/566. SEP20 (séparation au doigt sur téléphone) a dépassé son attente de 60 s pendant la campagne ; seul, il passe 2 fois sur 2. Demucs prend environ 4 min par minute de son sur le Mac.
+- `KH_PORT` choisit le port du serveur de QA (`KH_PORT=5231 npm run qa:all`) pour faire tourner plusieurs campagnes en même temps.
+- Base : `main` (0.18.0). La V19 (branche `v19`) n'y est pas : à réconcilier avant toute fusion. Numéro de version non changé.
+- Non vérifié : vraies chansons, vraie voix, écoute à l'oreille, installateurs avec le modèle (+175 Mo chacun), Windows, vrai téléphone.

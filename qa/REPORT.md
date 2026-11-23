@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-511 cas réussis sur 511.
+565 cas réussis sur 566.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -483,6 +483,61 @@
 | AN02 | Analyse | Un son chargé s'affiche avec sa durée ; une analyse trouve une partie qu'on ajoute au morceau, calée sur le tempo | OK |
 | AN03 | Analyse | Une analyse qui échoue affiche un message ; une analyse longue s'annule | OK |
 | AN04 | Analyse | Un fichier qui n'est pas un son est refusé avec un message clair, en trois langues | OK |
+| PO01 | Analyse | Basse → notes et Piano → notes ont leur ligne dans la fenêtre, inactives sans son, traduites en trois langues | OK |
+| PO02 | Analyse | Basse à la fondamentale faible : lancée à la souris, avancement visible, notes justes (F ≥ 0,9 à ±50 ms), registre affiché | OK |
+| PO03 | Analyse | Basse rapide : notes répétées en doubles croches et sauts d'octave (F ≥ 0,9) | OK |
+| PO04 | Analyse | Basse jouée liée (la hauteur change sans nouvelle attaque) et basse en sons purs (F ≥ 0,9) | OK |
+| PO05 | Analyse | Accords de 3 et 4 notes au timbre de piano (F ≥ 0,9) ; noms d'accord par mesure (Do, La m, Fa, Sol 7) | OK |
+| PO06 | Analyse | Arpèges, notes tenues sous une mélodie, accord rejoué huit fois (F ≥ 0,9 chacun) | OK |
+| PO07 | Analyse | Accords en sons purs avec octave, aigus, note jouée doucement dans l'accord (F ≥ 0,9) | OK |
+| PO08 | Analyse | Morceau accordé plus bas (−35 cents) ou plus haut (+25 cents) : basse et piano restent justes | OK |
+| PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | OK |
+| PO10 | Analyse | Sans pistes séparées, basse et accords mélangés : chaque analyse garde sa partie (mesuré) et prévient que le son entier est analysé | OK |
+| PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | OK |
+| PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | OK |
+| PO13 | Analyse | Réglages au clavier : plus de sensibilité → la note jouée doucement apparaît ; note la plus courte 200 ms → les notes brèves disparaissent | OK |
+| PO14 | Analyse | Trois minutes de piano : analyse en moins de 60 s, toutes les notes justes | OK |
+| PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | OK |
+| DR00 | Batterie → motif | Mesure de précision (affichée) sur dix rythmes fabriqués | OK |
+| DR01 | Batterie → motif | Rock à 120 (kit électro) : grosse caisse, caisse claire et charleston en croches retrouvés, motif identique case par case | OK |
+| DR02 | Batterie → motif | Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 % | OK |
+| DR03 | Batterie → motif | Hip-hop à 90 : charleston en doubles-croches, grosse caisse syncopée | OK |
+| DR04 | Batterie → motif | Ghost notes : les caisses claires douces sont retrouvées, avec une force plus faible que les coups appuyés | OK |
+| DR05 | Batterie → motif | Charleston ouvert reconnu (fin de mesure) à côté des charlestons fermés | OK |
+| DR06 | Batterie → motif | Swing : retrouvé (0,4 joué) et retiré du calage, le motif reste droit ; « Appliquer ce swing » le règle dans le morceau | OK |
+| DR07 | Batterie → motif | Tempos variés : 174 BPM sur 8 mesures, 70 BPM (kit profond), 140 BPM avec un léger bruit de fond | OK |
+| DR08 | Batterie → motif | Cymbale crash et toms : la crash est reconnue, les toms en partie (toms électroniques purs, limite connue) | OK |
+| DR09 | Batterie → motif | Le son commence en cours de mesure (1,3 s de silence) : la grille se cale sur les coups, pas sur le début du fichier | OK |
+| DR10 | Batterie → motif | Le tempo trouvé par l'analyse du tempo est utilisé (100) même si le morceau est à 120 ; affiché dans le résumé | OK |
+| DR11 | Batterie → motif | Gestes réels : Lancer, avancement, résumé, « Ajouter en piste de batterie » → piste du séquenceur au bon motif ; Ctrl+Z la retire | OK |
+| DR12 | Batterie → motif | Repérer la mesure qui se répète : une mesure en boucle sur tout le morceau ; un motif de deux mesures (variation) reste en deux mesures | OK |
+| DR13 | Batterie → motif | Une analyse longue (une minute de son) avance puis s'annule sans message d'erreur ; elle se relance ensuite | OK |
+| DR14 | Batterie → motif | Sans batterie (silence, note tenue) : « Aucun coup de batterie trouvé », rien à ajouter | OK |
+| DR15 | Batterie → motif | Textes en anglais et en espagnol (titre, résumé, boutons) | OK |
+| VX01 | Analyse | Tempo trouvé à ±1 BPM de 70 à 170 (grosse caisse et charleston), y compris un tempo à virgule | OK |
+| VX02 | Analyse | Premier temps trouvé à 30 ms près (là où la musique commence), même quand le son commence en retard ou dès l'instant 0 | OK |
+| VX03 | Analyse | Tonalité : majeur et mineur, plusieurs toniques (accords + mélodie), nommée en trois langues | OK |
+| VX04 | Analyse | Appliquer le tempo et la tonalité au morceau à la souris ; Ctrl+Z et le bouton Annuler du message reviennent en arrière | OK |
+| VX05 | Analyse | Chant → notes : au moins 90 % des notes justes au demi-ton et à 100 ms près (propre, vibrato, vibrato large, désaccord, bruit, glissés lents) | OK |
+| VX06 | Analyse | Chant → notes : vélocité selon la force du chant, notes trop courtes et glissés ignorés, note répétée séparée | OK |
+| VX07 | Analyse | Chant → notes à la souris : avancement, partie « Chant », ajoutée au morceau calée sur le tempo trouvé, Ctrl+Z la retire | OK |
+| VX08 | Analyse | Silence, bruit seul ou son très court : pas de note ni de tempo inventés, pas de panne | OK |
+| VX09 | Analyse | Chanson de 3 minutes : calcul hors de la page (elle reste fluide), avancement visible, Annuler l'arrête sans message de panne | OK |
+| VX10 | Analyse | Au clavier : Tab jusqu'à Lancer, Entrée, puis Entrée sur « Appliquer le tempo » ; relancer remplace la partie au lieu de la doubler | OK |
+| VX11 | Analyse | Au doigt, sur un téléphone : lancer les deux analyses, appliquer le tempo et ajouter le chant | OK |
+| VX12 | Analyse | Textes des deux analyses traduits (anglais, espagnol) | OK |
+| INF01 | Analyse | Familles d'instruments : au clic, le modèle se charge depuis le site, l'avancement s'affiche, le piano est reconnu, avec l'avertissement « famille, pas modèle exact » | OK |
+| INF02 | Analyse | Instruments de l'appli joués seuls (34 sons enregistrés et synthés) : au moins 85 % des familles retrouvées, 75 % d'annonces justes (mesuré : 100 % et 84 %) | OK |
+| INF03 | Analyse | Mélanges de 2 à 4 instruments de l'appli, sans pistes séparées : au moins 45 % des familles retrouvées, 70 % d'annonces justes (mesuré : 54 % et 93 %) | OK |
+| INF04 | Analyse | Mêmes mélanges avec les pistes séparées (voix, batterie, basse, reste) : chaque piste est classée à part : au moins 70 % retrouvées, 70 % d'annonces justes (mesuré : 77 % et 96 %) | OK |
+| INF05 | Analyse | « Créer une piste » à la souris et au clavier : piste d'instrument avec le son conseillé, piste de batterie avec son kit ; Ctrl+Z les retire | OK |
+| INF06 | Analyse | Les parties trouvées par les autres analyses (basse, piano, mélodie) reçoivent le son de la famille entendue, sans écraser un son déjà choisi | OK |
+| INF07 | Analyse | Un morceau d'une minute est analysé en entier en moins de 40 s ; « Annuler » l'arrête sans message d'erreur, et l'analyse relancée aboutit | OK |
+| INF08 | Analyse | Un silence ne fait inventer aucun instrument : message « aucune famille reconnue » | OK |
+| INF09 | Analyse | Familles d'instruments en anglais et en espagnol : titres, familles, avertissement, son conseillé et bouton traduits | OK |
+| INF10 | Analyse | Familles d'instruments sur téléphone (375 px) : liste lisible, bouton pleine largeur au doigt, pas de défilement de côté | OK |
+| INF11 | Analyse | Sans Worker (repli sur le fil principal), le résultat est le même qu'avec le Worker | OK |
+| INF12 | Analyse | Le modèle introuvable donne un message clair, et l'analyse marche dès qu'il revient | OK |
 | SEP01 | Analyse | Séparer les pistes : la ligne est là avec son aide, son bouton Lancer est grisé sans son, actif avec un son | OK |
 | SEP02 | Analyse | Mélange stéréo connu : quatre pistes au taux du son, la voix, la batterie, la basse et les autres sont séparées (gains mesurés) | OK |
 | SEP03 | Analyse | Rien ne se perd : les quatre pistes additionnées redonnent exactement le son d'origine | OK |
@@ -502,7 +557,7 @@
 | SEP17 | Analyse | Calcul hors du fil principal : la page reste réactive ; sans Worker, le calcul de repli donne le même résultat | OK |
 | SEP18 | Analyse | Mémoire : appareil trop petit → séparation indisponible avec la raison ; son trop long → message clair avec la durée maximale | OK |
 | SEP19 | Analyse | Parcours réel : un fichier WAV stéréo choisi dans la fenêtre, séparé, écouté puis ajouté au morceau | OK |
-| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | OK |
+| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | ÉCHEC : page.waitForSelector: Timeout 60000ms exceeded. |
 | SEP21 | Analyse | Séparation en anglais et en espagnol : titre, pistes et boutons traduits | OK |
 | SEP22 | Analyse | Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés) | OK |
 | SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | OK |
