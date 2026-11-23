@@ -6323,13 +6323,14 @@ async function stLoad(opts = {}) {
   await page.evaluate(ST_FN);
   await page.evaluate(opts => {
     const k = window.kh, q = k.analysis.analyzers().find(a => a.id === 'stems').qa;
-    Object.assign(q, { mem: undefined, budget: undefined, mainThread: false, chunkSec: undefined }); q.stopListening();
+    Object.assign(q, { mem: undefined, budget: undefined, mainThread: false, chunkSec: undefined, maxSec: undefined, ep: 'auto' }); q.stopListening();
+    q.setMode(opts.mode || 'fast');   // cas SEP01-22 : traitement du signal ; les cas Demucs demandent mode: 'best'
     const sr = opts.sr || k.engine.ctx.sampleRate, m = window.__stemsMix(sr, opts);
     if (opts.monoCh) {   // un seul canal : moyenne gauche/droite, pour le mélange comme pour chaque source
       const down = a => { const x = new Float32Array(a[0].length); for (let i = 0; i < x.length; i++) x[i] = (a[0][i] + a[1][i]) / 2; return [x]; };
       m.mix = down(m.mix); for (const s in m.src) m.src[s] = down(m.src[s]);
     }
-    window.__st = m;
+    window.__st = m; const ts = document.getElementById('toast'); if (ts) ts.textContent = '';
     const b = k.engine.ctx.createBuffer(m.mix.length, m.mix[0].length, sr); m.mix.forEach((x, c) => b.copyToChannel(x, c));
     k.analysis.loadSource(opts.name || 'mélange.wav', b);
   }, opts);
@@ -6378,7 +6379,7 @@ test('SEP02', 'Analyse', 'Mélange stéréo connu : quatre pistes au taux du son
   expect(sc.bass.gain >= 3.5 && sc.bass.corr >= 0.85, 'basse mal séparée ' + JSON.stringify(sc.bass));
   expect(sc.other.gain >= 11 && sc.other.corr >= 0.85, 'autres mal séparés ' + JSON.stringify(sc.other));
   expect((await page.$$('#stView [data-stem]')).length === 4, 'quatre lignes dans la vue');
-  expect((await page.textContent('[data-an="stems"] [role=status]')).includes('Terminé'), 'état Terminé');
+  expect((await page.textContent('[data-an="stems"] .lufs')).includes('Terminé'), 'état Terminé');
   await page.keyboard.press('Escape');
 });
 test('SEP03', 'Analyse', 'Rien ne se perd : les quatre pistes additionnées redonnent exactement le son d\'origine', async () => {
@@ -6624,6 +6625,172 @@ test('SEP22', 'Analyse', 'Voix décentrée et voix sans vibrato : la séparation
   }
   stLog('voix SEP22', res);
   await page.keyboard.press('Escape');
+});
+
+// ---- HTDemucs (modèle d'apprentissage, qualité maximale) ----
+// Le navigateur de la QA n'a pas de carte graphique : le modèle tourne sur le processeur (WebAssembly, un seul cœur), environ une
+// à deux minutes par segment de 7,8 s. Les cas gardent donc des sons courts (un ou deux segments). SEP30 lance un navigateur à part
+// la vraie carte graphique (WebGPU ; Chromium complet sans fenêtre, « channel: 'chromium' »). Ordre voulu : SEP23 télécharge le modèle, SEP24 et SEP28 s'en servent depuis le cache, SEP25-26-29 l'effacent.
+const DM_PART = /\/models\/htdemucs\/htdemucs\.onnx\.\d$/;
+const stDmReset = () => S(async () => { const q = window.kh.analysis.analyzers().find(a => a.id === 'stems').qa; q.killModel(); await q.forgetModel(); });
+const stCached = () => S(async () => { const c = await caches.open('kh-models-v1'); return (await c.keys()).filter(r => /htdemucs\.onnx\.\d$/.test(r.url)).length; });
+/** Compte les demandes de morceaux du modèle pendant `fn`. */
+async function stCountParts(fn) {
+  let n = 0; const on = r => { if (DM_PART.test(r.url())) n++; };
+  ctx.on('request', on);
+  try { await fn(); } finally { ctx.off('request', on); }
+  return n;
+}
+/** Gains de la séparation rapide (traitement du signal) sur le même mélange, pour comparer. */
+const stDspScores = () => S(async () => {
+  const q = window.kh.analysis.analyzers().find(a => a.id === 'stems').qa, m = window.__st, sr = window.kh.analysis.AN.source.buffer.sampleRate;
+  const o = await q.separate(m.mix, sr), r = {};
+  for (const s of ['vocals', 'drums', 'bass', 'other']) r[s] = window.__stemScore(m.src[s], o[s], m.mix, sr);
+  return r;
+});
+const DM_TIMEOUT = 8 * 60000;
+
+test('SEP23', 'Analyse', 'Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l\'appareil, et sépare bien mieux que le mode rapide', async () => {
+  await stDmReset();
+  await stOpen(); await stLoad({ dur: 10, mode: 'best' });
+  expect(await page.isChecked('input[name=stMode][value=best]'), 'Qualité maximale cochée');
+  expect((await page.textContent('#stModel')).includes('174 Mo'), 'taille du modèle annoncée');
+  await page.evaluate(() => { window.__dl = false; window.__dlo = new MutationObserver(() => { if ((document.getElementById('stPhase')?.textContent || '').includes('Téléchargement du modèle')) window.__dl = true; }); window.__dlo.observe(document.getElementById('analyze'), { subtree: true, childList: true, characterData: true }); });
+  const n = await stCountParts(() => stRun(DM_TIMEOUT));
+  expect(n === 4, `${n} morceaux du modèle demandés (4 attendus)`);
+  expect(await S(() => { window.__dlo.disconnect(); return window.__dl; }), 'avancement du téléchargement affiché');
+  expect(await stCached() === 4, 'les 4 morceaux du modèle sont gardés dans l\'appareil');
+  const meth = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
+  expect(meth && meth.kind === 'demucs' && meth.ep === 'wasm', 'méthode ' + JSON.stringify(meth));
+  expect((await page.textContent('#stMethod')).includes('Demucs (processeur)'), 'méthode annoncée sous les pistes');
+  const dm = await stScores(), dsp = await stDspScores();
+  stLog('gains SEP23 Demucs', dm); stLog('gains SEP23 rapide', dsp); stLog('durée Demucs (s)', Math.round(meth.sec));
+  for (const [s, min] of [['vocals', 16], ['drums', 13], ['bass', 16], ['other', 16]]) expect(dm[s].gain >= min, `${s} : gain ${dm[s].gain} dB (seuil ${min})`);
+  expect(dm.drums.gain >= dsp.drums.gain + 5 && dm.bass.gain >= dsp.bass.gain + 10, 'Demucs doit nettement battre le mode rapide sur la batterie et la basse');
+  await page.keyboard.press('Escape');
+});
+test('SEP24', 'Analyse', 'Demucs hors ligne après rechargement : le choix est gardé, le modèle vient de l\'appareil sans réseau ; son mono à 44,1 kHz rendu au taux d\'origine', async () => {
+  await S(() => localStorage.setItem('kh-stems-mode', 'best'));
+  await page.reload(); await page.waitForSelector('.clip'); await settle(page); await closeWelcome(page);
+  await ctx.route(DM_PART, r => r.abort()); await ctx.route('**/models/htdemucs/manifest.json', r => r.abort()); ignoreErr = /ERR_FAILED|Failed to load resource/;
+  try {
+    await stOpen(); await stLoad({ dur: 10, mode: 'best', monoCh: true, sr: 44100 });
+    await until(async () => (await page.textContent('#stModel')).includes('gardé dans l\'appareil'), 'modèle annoncé comme gardé dans l\'appareil', 5000);
+    expect(await page.isChecked('input[name=stMode][value=best]'), 'le choix Qualité maximale est gardé');
+    await stRun(DM_TIMEOUT);   // morceaux et manifeste refusés par la route : seul le cache peut servir
+    const r = await S(() => { const a = window.kh.analysis.AN, q = window.kh.analysis.analyzers().find(x => x.id === 'stems').qa; return { m: q.method, e: q.lastError, ch: Object.values(a.result.stems).map(b => b.numberOfChannels + '@' + b.sampleRate + ':' + (b.length === a.source.buffer.length)) }; });
+    expect(r.m && r.m.kind === 'demucs', 'Demucs attendu hors ligne : ' + JSON.stringify(r));
+    expect(r.ch.every(x => x === '1@44100:true'), 'pistes mono au taux du son : ' + r.ch.join(','));
+    const sc = await stScores(); stLog('gains SEP24 (mono, Demucs)', sc);
+    expect(sc.drums.gain >= 12 && sc.bass.gain >= 10, 'séparation mono par Demucs ' + JSON.stringify(sc));
+  } finally { await ctx.unroute(DM_PART); await ctx.unroute('**/models/htdemucs/manifest.json'); }
+  await page.keyboard.press('Escape');
+});
+test('SEP28', 'Analyse', 'Demucs trop lent pour l\'appareil : arrêt après le premier segment, séparation rapide à la place, avec l\'estimation', async () => {
+  await stOpen(); await stLoad({ dur: 14, mode: 'best' });
+  await S(() => { window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.maxSec = 1; });
+  await stRun(DM_TIMEOUT);
+  expect(/trop lent sur cet appareil \(environ \d+ min\).*rapide utilisée/.test(await page.textContent('#toast')), 'message « trop lent » attendu : ' + await page.textContent('#toast'));
+  const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
+  expect(m.kind === 'dsp' && m.why === 'slow', JSON.stringify(m));
+  expect((await page.textContent('#stMethod')).includes('mode rapide'), 'méthode annoncée');
+  expect(await S(() => Object.keys(window.kh.analysis.AN.result.stems).length) === 4, 'quatre pistes quand même');
+  await page.keyboard.press('Escape');
+});
+test('SEP25', 'Analyse', 'Pas de réseau et pas de modèle gardé : message clair, séparation rapide à la place, sans panne', async () => {
+  await stDmReset();
+  await ctx.route('**/models/htdemucs/**', r => r.abort()); ignoreErr = /ERR_FAILED|Failed to load resource/;
+  try {
+    await stOpen(); await stLoad({ dur: 3, mode: 'best' }); await stRun(DM_TIMEOUT);
+    expect((await page.textContent('#toast')).includes('impossible à télécharger'), 'message hors ligne : ' + await page.textContent('#toast'));
+    const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
+    expect(m.kind === 'dsp' && m.why === 'offline', JSON.stringify(m));
+    const sc = await stScores(); expect(sc.vocals.gain >= 15, 'la séparation rapide a bien tourné');
+  } finally { await ctx.unroute('**/models/htdemucs/**'); }
+  await page.keyboard.press('Escape');
+});
+test('SEP26', 'Analyse', 'Modèle abîmé pendant le téléchargement : empreinte refusée, rien n\'est gardé, séparation rapide à la place', async () => {
+  await stDmReset();
+  await ctx.route('**/models/htdemucs/htdemucs.onnx.2', async r => { const res = await r.fetch(); const b = Buffer.from(await res.body()); b[1000] ^= 0xff; await r.fulfill({ response: res, body: b }); });
+  try {
+    await stOpen(); await stLoad({ dur: 3, mode: 'best' }); await stRun(DM_TIMEOUT);
+    expect((await page.textContent('#toast')).includes('abîmé'), 'message modèle abîmé : ' + await page.textContent('#toast'));
+    expect(await stCached() === 0, 'le modèle abîmé ne doit pas rester dans l\'appareil');
+    const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
+    expect(m.kind === 'dsp' && m.why === 'corrupt', JSON.stringify(m));
+  } finally { await ctx.unroute('**/models/htdemucs/htdemucs.onnx.2'); }
+  await page.keyboard.press('Escape');
+});
+test('SEP27', 'Analyse', 'Choix « Rapide » au clic : gardé, aucun téléchargement du modèle ; « Qualité maximale » est le choix par défaut ; en trois langues', async () => {
+  await S(() => localStorage.removeItem('kh-stems-mode'));
+  await stOpen(); await stLoad({ dur: 3 });
+  await S(() => localStorage.removeItem('kh-stems-mode')); await S(() => window.kh.analysis.loadSource('m.wav', window.kh.analysis.AN.source.buffer));
+  expect(await page.isChecked('input[name=stMode][value=best]'), 'Qualité maximale par défaut');
+  await page.click('input[name=stMode][value=fast]');
+  expect(await S(() => localStorage.getItem('kh-stems-mode')) === 'fast', 'choix gardé');
+  const n = await stCountParts(() => stRun());
+  expect(n === 0, `${n} demandes du modèle en mode rapide`);
+  expect((await page.textContent('#stMethod')).includes('mode rapide'), 'méthode annoncée');
+  await page.keyboard.press('Escape');
+  for (const [l, best, fast] of [['en', 'Best quality (Demucs)', 'Fast'], ['es', 'Calidad máxima (Demucs)', 'Rápido']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await stOpen();
+    const txt = await page.textContent('[data-an="stems"] fieldset');
+    expect(txt.includes(best) && txt.includes(fast), `choix traduits en ${l} : ${txt}`);
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
+  // au clavier : flèche dans le groupe de boutons radio
+  await stOpen(); await page.focus('input[name=stMode][value=fast]'); await page.keyboard.press('ArrowUp');
+  expect(await S(() => localStorage.getItem('kh-stems-mode')) === 'best', 'choix au clavier');
+  await page.keyboard.press('Escape');
+});
+test('SEP29', 'Analyse', 'Annuler pendant le téléchargement du modèle : arrêt net, pas de pistes, pas de message d\'erreur', async () => {
+  await stDmReset();
+  await ctx.route(DM_PART, async r => { await sleep(1500); await r.continue().catch(() => {}); });
+  ignoreErr = /ERR_FAILED|Failed to load resource|aborted/i;
+  try {
+    await stOpen(); await stLoad({ dur: 3, mode: 'best' });
+    await clickIn('[data-an="stems"] [data-role="run"]');
+    await until(async () => (await page.textContent('#stPhase')).includes('Téléchargement') || !!(await page.$('[data-an="stems"] .xprog')), 'calcul lancé', 10000);
+    await sleep(300);
+    await page.click('[data-an="stems"] button:has-text("Annuler")');
+    await page.waitForSelector('[data-an="stems"] [data-role="run"]');
+    await sleep(500);
+    expect(!(await S(() => window.kh.analysis.AN.result.stems)), 'pas de pistes après annulation');
+    expect(!/échoué|impossible|abîmé/.test(await page.textContent('#toast')), 'pas de message d\'erreur : ' + await page.textContent('#toast'));
+  } finally { await ctx.unroute(DM_PART); }
+  await page.keyboard.press('Escape');
+});
+test('SEP31', 'Analyse', 'Appareil à moins de 4 Go : Demucs n\'est pas tenté (rien n\'est téléchargé), séparation rapide avec la raison', async () => {
+  await stOpen(); await stLoad({ dur: 3, mode: 'best' });
+  await S(() => { window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.mem = 3 * 2 ** 30; });
+  const n = await stCountParts(() => stRun());
+  expect(n === 0, `${n} demandes du modèle`);
+  const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
+  expect(m.kind === 'dsp' && m.why === 'mem', 'méthode ' + JSON.stringify(m));
+  expect((await page.textContent('#toast')).includes('Pas assez de mémoire pour Demucs'), 'raison affichée : ' + await page.textContent('#toast'));
+  await page.keyboard.press('Escape');
+});
+test('SEP30', 'Analyse', 'Demucs sur carte graphique (WebGPU, navigateur à part) : même séparation que sur le processeur, temps mesuré', async () => {
+  const b2 = await chromium.launch({ channel: 'chromium', executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-unsafe-webgpu', '--autoplay-policy=no-user-gesture-required'] });
+  try {
+    const c2 = await b2.newContext({ viewport: { width: 1200, height: 900 }, locale: 'fr-FR' }), pg = await c2.newPage();
+    await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
+    const gpu = await pg.evaluate(async () => !!(navigator.gpu && await navigator.gpu.requestAdapter()));
+    if (!gpu) { stLog('SEP30', 'pas de carte graphique visible dans ce navigateur : cas sans objet'); return; }
+    await pg.evaluate(ST_FN);
+    const r = await pg.evaluate(async () => {
+      const k = window.kh, q = k.analysis.analyzers().find(a => a.id === 'stems').qa; q.setMode('best'); q.maxSec = 1e9;
+      const sr = k.engine.ctx.sampleRate, m = window.__stemsMix(sr, { dur: 10 }), b = k.engine.ctx.createBuffer(2, m.mix[0].length, sr); m.mix.forEach((x, c) => b.copyToChannel(x, c));
+      k.analysis.showAnalyze(); k.analysis.loadSource('gpu.wav', b); await k.analysis.runAnalyzer('stems');
+      const st = k.analysis.AN.result.stems, sc = {};
+      for (const s of ['vocals', 'drums', 'bass', 'other']) sc[s] = st ? window.__stemScore(m.src[s], [st[s].getChannelData(0), st[s].getChannelData(1)], m.mix, sr).gain : null;
+      return { m: q.method, e: q.lastError, sc };
+    });
+    stLog('SEP30 WebGPU', r);
+    expect(r.m && r.m.kind === 'demucs', 'Demucs attendu : ' + JSON.stringify(r));
+    expect(r.m.ep === 'webgpu' && r.sc.drums >= 13 && r.sc.bass >= 16 && r.sc.vocals >= 16, 'séparation sur carte graphique ' + JSON.stringify(r.sc));
+  } finally { await b2.close(); }
 });
 
 (async () => {
