@@ -92,6 +92,7 @@ function render() {
     return h('section', { class: 'an-row', data: { an: a.id } },
       h('h3', {}, a.title()),
       h('p', { class: 'tip' }, a.help()),
+      a.options?.(AN) || '',
       h('div', { class: 'fxfoot' },
         busy ? h('button', { class: 'pill', onclick: () => running.get(a.id)?.abort() }, '✕ ' + t('an.cancel'))
           : h('button', { class: 'pill accent', disabled: !src || !!off, data: { role: 'run' }, onclick: () => runAnalyzer(a.id) }, t('an.run')),

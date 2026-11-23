@@ -8,6 +8,8 @@ self.addEventListener('message', e => { if (e.data && e.data.cache) e.waitUntil(
 self.addEventListener('fetch', e => {
   const r = e.request;
   if (r.method !== 'GET' || new URL(r.url).origin !== location.origin) return;
+  // Modèles d'analyse (V20, ~170 Mo) : gardés par l'application dans leur propre cache, pas en double ici.
+  if (new URL(r.url).pathname.includes('/models/')) return;
   // Réseau d'abord (pour recevoir les mises à jour), cache en secours hors-ligne.
   e.respondWith(fetch(r).then(res => {
     if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(r, copy)); }

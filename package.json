@@ -26,7 +26,8 @@
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "@tensorflow/tfjs-converter": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
-    "@webaudiomodules/sdk": "^0.0.12"
+    "@webaudiomodules/sdk": "^0.0.12",
+    "onnxruntime-web": "1.31.1"
   },
   "description": "Studio de musique : beatmaking, enregistrement, mixage et live.",
   "author": "KH Music Pro",

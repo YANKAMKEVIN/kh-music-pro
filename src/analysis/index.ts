@@ -5,3 +5,4 @@ import './poly';
 import './drums';
 import './vx';
 import './instruments';
+import './stems';

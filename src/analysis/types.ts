@@ -45,6 +45,8 @@ export interface Analyzer {
   help(): string;
   /** Lance l'analyse. `progress` reçoit 0..1 ; `signal` annule. Doit écrire dans `ctx.result`. */
   run(ctx: Ctx, progress: (f: number) => void, signal: AbortSignal): Promise<void>;
+  /** Réglages à choisir avant de lancer (affichés sous l'aide), facultatif. */
+  options?(ctx: Ctx): HTMLElement | null;
   /** Résumé de ce qui a été trouvé (affiché sous le bouton), facultatif. */
   view?(ctx: Ctx): HTMLElement | null;
   /** Analyse impossible ici (raison à afficher), par exemple module trop lourd pour le téléphone. */
