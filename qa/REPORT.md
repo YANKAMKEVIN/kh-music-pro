@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-565 cas réussis sur 566.
+576 cas réussis sur 581.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -269,7 +269,7 @@
 | VD01 | Banques expressives | Batterie à plusieurs nuances (Virtuosity Drums, décision du 21/11/2026) : le kit Studio se charge, une frappe douce et une frappe forte jouent des enregistrements différents | OK |
 | MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | OK |
 | MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | OK |
-| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
+| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | ÉCHEC : durée de pédale perdue : [{"p":60,"s":1,"l":3,"v":0.71}] |
 | MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | OK |
 | MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | OK |
 | BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | OK |
@@ -352,7 +352,7 @@
 | AD03 | Correctifs audit | Une prise jouée sur trois mesures reste un seul clip, annulé d’un coup ; une seconde prise fait un clip à elle | OK |
 | AD04 | Correctifs audit | Tempo au centième : 93,5 BPM gardé (champ, changement de tempo, fichier MIDI) ; une saisie vide ou nulle garde le tempo | OK |
 | AD05 | Correctifs audit | Sauvegarde impossible (espace plein, stockage bloqué) : bandeau qui reste, bouton « Enregistrer en fichier », message de retour ; traduit | OK |
-| AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | OK |
+| AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | ÉCHEC : valeurs affichées : ["La4/+3","La4/+2","La4/+1","La4/0"] |
 | AD06b | Correctifs audit | Accordeur : la trame où la note commence est sautée ; une trame abîmée proche de la note ne décale pas l’affichage ; rouvert, il ne lisse pas depuis la note d’avant | OK |
 | AD07 | Correctifs audit | Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide | OK |
 | AD08 | Correctifs audit | Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet | OK |
@@ -491,13 +491,13 @@
 | PO06 | Analyse | Arpèges, notes tenues sous une mélodie, accord rejoué huit fois (F ≥ 0,9 chacun) | OK |
 | PO07 | Analyse | Accords en sons purs avec octave, aigus, note jouée doucement dans l'accord (F ≥ 0,9) | OK |
 | PO08 | Analyse | Morceau accordé plus bas (−35 cents) ou plus haut (+25 cents) : basse et piano restent justes | OK |
-| PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | OK |
+| PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | ÉCHEC : basse {"F":0.857,"P":0.79,"R":0.94,"n":19,"ref":16,"ms":17} |
 | PO10 | Analyse | Sans pistes séparées, basse et accords mélangés : chaque analyse garde sa partie (mesuré) et prévient que le son entier est analysé | OK |
-| PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | OK |
+| PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | ÉCHEC : notes calées à 120 : [[40,4.5],[43,8.5],[45,12.5],[47,16.5]] |
 | PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | OK |
 | PO13 | Analyse | Réglages au clavier : plus de sensibilité → la note jouée doucement apparaît ; note la plus courte 200 ms → les notes brèves disparaissent | OK |
 | PO14 | Analyse | Trois minutes de piano : analyse en moins de 60 s, toutes les notes justes | OK |
-| PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | OK |
+| PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | ÉCHEC : résumé de la basse |
 | DR00 | Batterie → motif | Mesure de précision (affichée) sur dix rythmes fabriqués | OK |
 | DR01 | Batterie → motif | Rock à 120 (kit électro) : grosse caisse, caisse claire et charleston en croches retrouvés, motif identique case par case | OK |
 | DR02 | Batterie → motif | Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 % | OK |
@@ -557,7 +557,7 @@
 | SEP17 | Analyse | Calcul hors du fil principal : la page reste réactive ; sans Worker, le calcul de repli donne le même résultat | OK |
 | SEP18 | Analyse | Mémoire : appareil trop petit → séparation indisponible avec la raison ; son trop long → message clair avec la durée maximale | OK |
 | SEP19 | Analyse | Parcours réel : un fichier WAV stéréo choisi dans la fenêtre, séparé, écouté puis ajouté au morceau | OK |
-| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | ÉCHEC : page.waitForSelector: Timeout 60000ms exceeded. |
+| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | OK |
 | SEP21 | Analyse | Séparation en anglais et en espagnol : titre, pistes et boutons traduits | OK |
 | SEP22 | Analyse | Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés) | OK |
 | SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | OK |
@@ -570,3 +570,18 @@
 | SEP31 | Analyse | Appareil à moins de 4 Go : Demucs n'est pas tenté (rien n'est téléchargé), séparation rapide avec la raison | OK |
 | SEP32 | Analyse | Appareil qui refuse de garder le modèle (espace plein) : Demucs sépare quand même, rien n'est gardé, pas de message d'erreur | OK |
 | SEP30 | Analyse | Demucs sur carte graphique (WebGPU, navigateur à part) : même séparation que sur le processeur, temps mesuré | OK |
+| TM01 | Analyse | Tempo qui change (120 puis 90 BPM) : changement montré à la bonne place, appliqué au morceau en marques de tempo, Ctrl+Z revient | OK |
+| TM02 | Analyse | Tempo régulier joué à la main (±8 ms) : « Tempo régulier », appliqué sans marque de tempo | OK |
+| TM03 | Analyse | Jeu en demi-temps (grosse caisse un temps sur deux) au milieu du morceau : pas de faux changement de tempo | OK |
+| TM04 | Analyse | Accélération progressive (100 → 124 BPM) : les notes jouées sur les temps tombent sur les temps de la grille une fois ajoutées | OK |
+| TM05 | Analyse | Changements de tempo traduits en anglais et en espagnol ; bouton Appliquer au clavier (Tab puis Entrée) | OK |
+| TM06 | Analyse | Batteur peu régulier (±25 ms) à 110 BPM : un seul tempo, grille de temps parfaitement régulière, aucune marque de tempo | OK |
+| TM07 | Analyse | Changement de tempo joué à la main (120 puis 90 BPM, ±15 ms) : une seule marque de tempo, pas un morcellement | OK |
+| TM08 | Analyse | Notes jouées régulièrement sur un batteur peu régulier : une fois ajoutées, elles restent régulières (pas d'accélérations ni de ralentis) | OK |
+| TM09 | Analyse | Intro suivie à moitié tempo puis morceau au tempo normal : ramenée à la même pulsation, un seul tempo | OK |
+| TM10 | Analyse | Ralenti réel de fin de morceau (115 puis 87 BPM) : il est gardé (ce n'est ni une moitié ni un double) | OK |
+| BP01 | Analyse | Piano → notes par le modèle : gamme et accord retrouvés à 60 ms près, sans fausse note tenue | OK |
+| BP02 | Analyse | Sans le modèle (fichier absent), le piano se replie sur le calcul maison et trouve quand même les notes | OK |
+| BP03 | Analyse | Chant → notes par le modèle : au moins 85 % des notes d'une voix avec vibrato, une seule note à la fois | OK |
+| BP04 | Analyse | Basse → notes par le modèle : ligne de basse grave retrouvée, une note à la fois, dans le registre de la basse | OK |
+| BP05 | Analyse | Une transcription par le modèle s'annule par le bouton, sans message d'échec, puis se relance | OK |
