@@ -22,6 +22,8 @@ export interface FoundInstrument { family: string; label: string; score: number;
 export interface Result {
   /** tempo détecté (battements par minute) et décalage du premier temps, en secondes */
   bpm?: number; beatOffset?: number;
+  /** temps suivis un par un (secondes) quand le tempo bouge ; `beat0` = indice du premier temps (celui de `beatOffset`) */
+  beats?: number[]; beat0?: number;
   /** tonalité : tonique 0..11 (0 = do), mode */
   key?: { tonic: number; mode: 'major' | 'minor'; score: number };
   /** pistes séparées (voix, batterie, basse, autres), au taux du son source */

@@ -4,6 +4,7 @@ import { S } from '../../store';
 import { BAR, KITS, Track } from '../../types';
 import { h, toast } from '../../ui/dom';
 import { registerAnalyzer } from '../registry';
+import { warpNotes } from '../build';
 import type { Analyzer, Ctx, FoundNote } from '../types';
 import { DrumScan, detectDrums } from './dsp';
 import { Grid, addDrumTrack, findLoop, fitGrid, toGridRows, toNotesGM } from './pattern';
@@ -86,10 +87,12 @@ const drums: Analyzer & { last: () => Found | null; mode: () => string; add: typ
     const buf = ctx.input('drums');
     const sc = await scan(mono(buf), buf.sampleRate, f => progress(0.95 * f), signal);
     const notes = toNotesGM(sc.hits);
+    // tempo qui bouge : les coups sont redressés sur les temps suivis avant d'être posés sur la grille
+    const onGrid = warpNotes(ctx.result, notes);
     const bpm = ctx.result.bpm || S.project.bpm;
-    const grid = fitGrid(notes, bpm, ctx.result.bpm ? ctx.result.beatOffset : undefined);
-    const { rows, len } = toGridRows(notes, grid);
-    found = { notes, grid, bars: len / BAR, loop: findLoop(rows, len), scan: sc }; foundFor = ctx.source;
+    const grid = fitGrid(onGrid, bpm, ctx.result.bpm ? ctx.result.beatOffset : undefined);
+    const { rows, len } = toGridRows(onGrid, grid);
+    found = { notes: onGrid, grid, bars: len / BAR, loop: findLoop(rows, len), scan: sc }; foundFor = ctx.source;
     ctx.result.parts = ctx.result.parts.filter(p => p.id !== 'drums');
     if (notes.length) ctx.result.parts.push({ id: 'drums', kind: 'drums', name: t('dr.part'), notes });
     progress(1);

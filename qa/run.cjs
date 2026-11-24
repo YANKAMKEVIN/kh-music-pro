@@ -7714,6 +7714,91 @@ test('SEP30', 'Analyse', 'Demucs sur carte graphique (WebGPU, navigateur à part
   } finally { await b2.close(); }
 });
 
+// ============ V20 — Tempo qui change en cours de morceau (TM) ============
+/** Batterie de test sur une liste de temps (s) : grosse caisse sur chaque temps (accent tous les 4), charleston entre deux temps.
+ *  o.half : grosse caisse un temps sur deux seulement (jeu « en demi-temps »), charleston toujours sur chaque croche. */
+function tmDrums(sr, dur, beats, o = {}) {
+  const x = new Float32Array(Math.ceil(dur * sr)); let seed = 99; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  const hit = (t, kick, acc) => { const a = Math.floor(t * sr); for (let i = 0; i < 0.25 * sr && a + i < x.length; i++) { const u = i / sr; if (kick) x[a + i] += (acc ? 0.8 : 0.55) * Math.sin(2 * Math.PI * (50 * u + 60 * (1 - Math.exp(-u * 30)) / 30)) * Math.exp(-u * 12); if (u < 0.05) x[a + i] += 0.12 * rnd() * Math.exp(-u * 80); } };
+  beats.forEach((t, k) => { hit(t, !o.half || k % 2 === 0, k % 4 === 0); if (beats[k + 1]) hit((t + beats[k + 1]) / 2, false, false); });
+  return x;
+}
+/** Temps d'un morceau dont le tempo passe de `segs[i][0]` BPM pendant `segs[i][1]` s ; `ramp` : passage progressif ; `jitter` : jeu humain (s). */
+function tmTimes(segs, o = {}) {
+  const out = []; let t = o.offset ?? 0.5, seed = 5; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  let start = t;
+  for (const [bpm, len, bpm2] of segs) {
+    const end = start + len;
+    while (t < end) { out.push(t + (o.jitter ? o.jitter * rnd() : 0)); const f = (t - start) / len, b = bpm2 ? bpm + (bpm2 - bpm) * f : bpm; t += 60 / b; }
+    start = end;
+  }
+  return out;
+}
+async function tmLoad(beats, dur, o = {}) {
+  await page.evaluate(([lib, beats, dur, o]) => {
+    const f = new Function(lib)(), ctx = window.kh.engine.ctx, sr = ctx.sampleRate, x = f(sr, dur, beats, o), b = ctx.createBuffer(1, x.length, sr);
+    b.copyToChannel(x, 0); window.kh.analysis.loadSource('tempo.wav', b);
+  }, [`${tmDrums}\nreturn tmDrums;`, beats, dur, o]);
+}
+const tmView = () => page.$eval('[data-an="vx-tempo"]', e => e.innerText);
+test('TM01', 'Analyse', 'Tempo qui change (120 puis 90 BPM) : changement montré à la bonne place, appliqué au morceau en marques de tempo, Ctrl+Z revient', async () => {
+  const beats = tmTimes([[120, 20], [90, 22]]); await menu('bAnalyze'); await tmLoad(beats, 43);
+  await page.click('[data-an="vx-tempo"] [data-role="run"]'); await page.waitForSelector('[data-role="tempo-map"]');
+  const v = await tmView(); expect(/0:2[01] → (89|90|91) BPM/.test(v), 'changement attendu vers 0:20 → 90 : ' + v);
+  const r = await S(() => { const R = window.kh.analysis.AN.result; return { n: R.beats.length, b0: R.beat0 }; });
+  expect(Math.abs(r.n - beats.length) <= 3, `temps suivis : ${r.n} pour ${beats.length}`);
+  await page.click('#vxApplyTempo');
+  const p = await S(() => ({ bpm: window.kh.S.project.bpm, tempos: window.kh.S.project.tempos }));
+  const m = p.tempos.find(x => Math.abs(x.bpm - 90) <= 1.5);
+  expect(Math.abs(p.bpm - 120) <= 1 && m && Math.abs(m.s - 160) <= 4, 'marques de tempo : ' + JSON.stringify(p));
+  // la grille du morceau suit le son : le temps 60 (en plein 90 BPM) tombe au bon instant
+  const t60 = await S(() => window.kh.timeOf(window.kh.S.project, 240)), want = beats[60] - beats[0];
+  expect(Math.abs(t60 - want) < 0.06, `temps 60 à ${t60.toFixed(3)} s au lieu de ${want.toFixed(3)} s`);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tempos.length === 0 && window.kh.S.project.bpm !== 120 || window.kh.S.project.tempos.length === 0), 'Ctrl+Z retire les marques');
+});
+test('TM02', 'Analyse', 'Tempo régulier joué à la main (±8 ms) : « Tempo régulier », appliqué sans marque de tempo', async () => {
+  await menu('bAnalyze'); await tmLoad(tmTimes([[104, 30]], { jitter: 0.008 }), 31);
+  await page.click('[data-an="vx-tempo"] [data-role="run"]'); await page.waitForSelector('[data-role="tempo-steady"]');
+  await page.click('#vxApplyTempo');
+  const p = await S(() => ({ bpm: window.kh.S.project.bpm, n: window.kh.S.project.tempos.length }));
+  expect(Math.abs(p.bpm - 104) <= 1 && p.n === 0, JSON.stringify(p)); await page.keyboard.press('Escape');
+});
+test('TM03', 'Analyse', 'Jeu en demi-temps (grosse caisse un temps sur deux) au milieu du morceau : pas de faux changement de tempo', async () => {
+  await menu('bAnalyze'); await tmLoad(tmTimes([[140, 14], [140, 16]]).map(t => t), 31, {});
+  // seconde moitié jouée en demi-temps
+  await page.evaluate(([lib, beats]) => {
+    const f = new Function(lib)(), ctx = window.kh.engine.ctx, sr = ctx.sampleRate, a = f(sr, 31, beats.filter(t => t < 14.5), {}), b = f(sr, 31, beats.filter(t => t >= 14.5), { half: true }), buf = ctx.createBuffer(1, a.length, sr), x = buf.getChannelData(0);
+    for (let i = 0; i < x.length; i++) x[i] = a[i] + b[i]; window.kh.analysis.loadSource('demi.wav', buf);
+  }, [`${tmDrums}\nreturn tmDrums;`, tmTimes([[140, 30]])]);
+  await vxRunA('vx-tempo'); const v = await tmView();
+  expect(v.includes('Tempo régulier'), 'le demi-temps ne doit pas passer pour un changement de tempo : ' + v.replace(/\n+/g, ' | '));
+  await page.keyboard.press('Escape');
+});
+test('TM04', 'Analyse', 'Accélération progressive (100 → 124 BPM) : les notes jouées sur les temps tombent sur les temps de la grille une fois ajoutées', async () => {
+  const beats = tmTimes([[100, 36, 124]]); await menu('bAnalyze'); await tmLoad(beats, 37);
+  await vxRunA('vx-tempo');
+  await S(() => {});
+  await page.evaluate(beats => window.kh.analysis.registerAnalyzer({ id: 'qa-beatnotes', order: 99, title: () => 'notes', help: () => '', run: async ctx => { ctx.result.parts = ctx.result.parts.filter(p => p.id !== 'qb'); ctx.result.parts.push({ id: 'qb', kind: 'melody', name: 'Sur les temps', notes: beats.map((t, k) => ({ t, d: 0.2, midi: 60 + (k % 4), vel: 0.8 })) }); } }), beats);
+  await vxRunA('qa-beatnotes'); await page.evaluate(() => window.kh.analysis.addPart('qb'));
+  const off = await S(() => { const p = window.kh.S.project, n = p.tracks[p.tracks.length - 1].clips[0].notes; return n.map(x => Math.abs(x.s / 4 - Math.round(x.s / 4))); });
+  const bad = off.filter(e => e > 0.0625).length;
+  expect(off.length >= beats.length - 3 && bad <= 2, `${bad} notes hors des temps sur ${off.length}`);
+  await page.keyboard.press('Escape');
+});
+test('TM05', 'Analyse', 'Changements de tempo traduits en anglais et en espagnol ; bouton Appliquer au clavier (Tab puis Entrée)', async () => {
+  await menu('bAnalyze'); await tmLoad(tmTimes([[96, 18], [128, 18]]), 37); await vxRunA('vx-tempo');
+  await page.keyboard.press('Escape');
+  for (const [l, w] of [['en', 'The tempo changes'], ['es', 'El tempo cambia']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await page.evaluate(() => window.kh.analysis.showAnalyze());
+    expect((await tmView()).includes(w), `texte en ${l} : ` + (await tmView()).replace(/\n+/g, ' | ')); await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr')); await page.evaluate(() => window.kh.analysis.showAnalyze());
+  await page.focus('#vxApplyTempo'); await page.keyboard.press('Enter');
+  const p = await S(() => window.kh.S.project.tempos.map(x => Math.round(x.bpm)));
+  expect(p.some(b => Math.abs(b - 128) <= 2), 'marque à 128 BPM attendue : ' + JSON.stringify(p)); await page.keyboard.press('Escape');
+});
+
 (async () => {
   // SharedArrayBuffer activé comme dans la version bureau en mode natif (cas NAT et AU, module natif simulé).
   browser = await chromium.launch({ executablePath: process.env.KH_CHROMIUM_PATH || undefined, args: ['--enable-features=SharedArrayBuffer', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${MIC}`, '--autoplay-policy=no-user-gesture-required'] });

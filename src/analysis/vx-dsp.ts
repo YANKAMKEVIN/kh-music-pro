@@ -378,6 +378,94 @@ export function segmentNotes(tr: PitchTrack, opts: { minDur?: number } = {}): { 
   return { notes, tuning: Math.round(tuning * 100) / 100 };
 }
 
+
+// ---------- Tempo qui change en cours de morceau ----------
+/** Tempo local (BPM) par fenêtre de 8 s tous les 2 s, choisi par Viterbi : un changement coûte, d'autant plus qu'il est grand
+ *  (un doublement coûte plus qu'un vrai ralenti), ce qui garde la même pulsation sauf preuve répétée du contraire. */
+export function tempoPath(env: Float32Array, fps: number, bpm0: number): { c: number[]; bpm: number[] } {
+  const n = env.length, W = Math.round(8 * fps), H = Math.round(2 * fps);
+  const B: number[] = []; for (let b = 50; b <= 210; b += 0.5) B.push(b);
+  const em: Float64Array[] = [], cen: number[] = [];
+  for (let a = 0; a === 0 || a + W <= n; a += H) {
+    const e = env.subarray(a, Math.min(n, a + W)), m = e.length;
+    let mean = 0; for (const v of e) mean += v; mean /= m;
+    const L = Math.min(m - 1, Math.ceil(60 * fps / 50 * 4) + 2), ac = new Float64Array(L + 1);
+    for (let l = 0; l <= L; l++) { let s = 0; for (let i = 0; i + l < m; i++) s += (e[i] - mean) * (e[i + l] - mean); ac[l] = s / (m - l); }
+    const z = ac[0] > 0 ? ac[0] : 1, row = new Float64Array(B.length);
+    for (let j = 0; j < B.length; j++) {
+      const P = 60 * fps / B[j]; let s = 0, k = 1;
+      for (; k <= 4 && k * P < L; k++) { const q = k * P; s += Math.max(lin(ac, q - 1), lin(ac, q), lin(ac, q + 1)) / z; }
+      row[j] = k > 1 ? s / (k - 1) : 0;
+    }
+    // la pulsation la plus rapide qui explique presque aussi bien les attaques l'emporte (comme pour le tempo global) :
+    // un tempo moitié n'est gardé que si le double explique nettement moins bien les attaques
+    const dbl = Float64Array.from(row);
+    for (let j = 0; j < B.length; j++) { const j2 = B.indexOf(B[j] * 2); if (j2 >= 0) dbl[j] -= 0.6 * Math.max(0, row[j2] - 0.8 * row[j]); }
+    row.set(dbl);
+    em.push(row); cen.push((a + Math.min(n, a + W)) / 2);
+    if (a + W >= n) break;
+  }
+  const lam = 1.2, S = B.length, T = em.length;
+  let cost = Float64Array.from(B, (b, j) => -em[0][j] + 0.3 * lam * Math.abs(Math.log2(b / bpm0)));
+  const back: Int16Array[] = [];
+  for (let t = 1; t < T; t++) {
+    const nc = new Float64Array(S), bk = new Int16Array(S);
+    for (let j = 0; j < S; j++) {
+      let best = Infinity, bi = j;
+      for (let i = 0; i < S; i++) { const c = cost[i] + lam * Math.abs(Math.log2(B[j] / B[i])); if (c < best) { best = c; bi = i; } }
+      nc[j] = best - em[t][j]; bk[j] = bi;
+    }
+    cost = nc; back.push(bk);
+  }
+  let j = 0; for (let i = 1; i < S; i++) if (cost[i] < cost[j]) j = i;
+  const path = new Array<number>(T); path[T - 1] = B[j];
+  for (let t = T - 1; t > 0; t--) { j = back[t - 1][j]; path[t - 1] = B[j]; }
+  return { c: cen, bpm: path };
+}
+
+/** Temps du morceau un par un (programmation dynamique d'Ellis), avec une période qui suit le tempo local. Renvoie des secondes. */
+export function beatTrack(env: Float32Array, fps: number, t0: number, path: { c: number[]; bpm: number[] }): number[] {
+  const n = env.length;
+  if (n < fps * 2 || !path.bpm.length) return [];
+  const per = new Float64Array(n);
+  for (let i = 0, k = 0; i < n; i++) {
+    while (k + 1 < path.c.length && path.c[k + 1] <= i) k++;
+    const b = k + 1 < path.c.length && i > path.c[k] ? path.bpm[k] + (path.bpm[k + 1] - path.bpm[k]) * (i - path.c[k]) / (path.c[k + 1] - path.c[k]) : path.bpm[k];
+    per[i] = 60 * fps / b;
+  }
+  let mx = 0; for (const v of env) mx = Math.max(mx, v);
+  const o = Float64Array.from(env, v => v / (mx || 1)), C = new Float64Array(n), prev = new Int32Array(n).fill(-1), alpha = 6;
+  for (let i = 0; i < n; i++) {
+    const P = per[i], a = Math.max(0, Math.floor(i - 2 * P)), b = Math.floor(i - P / 2);
+    let best = 0, bj = -1;
+    for (let j = a; j <= b; j++) { const r = Math.log((i - j) / P), v = C[j] - alpha * r * r; if (v > best) { best = v; bj = j; } }
+    C[i] = o[i] + best; prev[i] = bj;
+  }
+  const tail = Math.max(0, Math.floor(n - per[n - 1]));
+  let i = tail; for (let k = tail; k < n; k++) if (C[k] > C[i]) i = k;
+  const out: number[] = [];
+  for (; i >= 0; i = prev[i]) out.push(i / fps + t0);
+  return out.reverse();
+}
+
+/** Sections de tempo constant : dans chaque section, presque tous les temps (sauf un sur dix, coups manqués) restent
+ *  à moins de `tol` s de la grille régulière qui va du premier au dernier temps de la section. */
+export function tempoSections(beats: number[], tol = 0.04): { beat: number; t: number; bpm: number }[] {
+  const out: { beat: number; t: number; bpm: number }[] = [];
+  for (let i = 0; i + 1 < beats.length;) {
+    let j = i + 1;
+    for (let k = j + 1; k < beats.length; k++) {
+      const per = (beats[k] - beats[i]) / (k - i);
+      let bad = 0; for (let q = i + 1; q < k; q++) if (Math.abs(beats[i] + (q - i) * per - beats[q]) > tol) bad++;
+      if (bad > Math.max(1, 0.1 * (k - i))) break;
+      j = k;
+    }
+    out.push({ beat: i, t: beats[i], bpm: 60 * (j - i) / (beats[j] - beats[i]) });
+    i = j;
+  }
+  return out;
+}
+
 // ---------- Tâches complètes ----------
 export type VxJob = 'tempo' | 'melody';
 export function runJob(job: VxJob, x0: Float32Array, sr0: number, prog: Prog) {
@@ -386,9 +474,10 @@ export function runJob(job: VxJob, x0: Float32Array, sr0: number, prog: Prog) {
   if (job === 'tempo') {
     const { env, fps, t0 } = onsetEnvelope(x, sr, prog, 0.1, 0.55);
     const tempo = tempoOf(env, fps, t0);
+    const beats = tempo ? beatTrack(env, fps, t0, tempoPath(env, fps, tempo.bpm)) : [];
     prog(0.6);
     const key = keyOf(chroma(x, sr, prog, 0.6, 0.98));
-    return { tempo, key };
+    return { tempo, key, beats };
   }
   const tr = pitchTrack(x, sr, prog, 0.1, 0.9);
   return segmentNotes(tr);
