@@ -139,7 +139,7 @@ export function buildTop(onLang: () => void) {
   syncMore(); wide.onchange = syncMore;
 
   $('top').replaceChildren(
-    h('div', { class: 'brand', 'aria-label': 'KH Music Pro' }, h('span', { class: 'logo' }, 'KH'), h('span', { class: 'bname' }, 'MUSIC PRO')),
+    h('div', { class: 'brand', 'aria-label': 'KH Music Pro' }, h('img', { class: 'logo', src: './icon-192.png', alt: '', width: 38, height: 38 }), h('span', { class: 'bname' }, 'MUSIC PRO')),
     h('div', { class: 'grp proj', role: 'group', 'aria-label': t('top.project') }, pname, menu,
       b('bUndo', 'icon', '↶', t('top.undo'), undo), b('bRedo', 'icon', '↷', t('top.redo'), redo)),
     h('div', { class: 'grp transport', role: 'group' },
@@ -265,7 +265,7 @@ function buildHelp() {
     [`${k(keyLabel('Z'))} / ${k('X')}`, 'octave'], [`${k('Ctrl')}+${k('A')} / ${k('C')} / ${k('V')}`, 'notes'], [`${k('←')} ${k('→')} ${k('↑')} ${k('↓')}`, 'arrows'], [`${k('1')}–${k('9')}`, 'scenes'], [k(t('help.key.shiftClick')), 'multi'], [k(t('help.key.shiftDrag')), 'looprule'], [k(t('help.key.ctrlWheel')), 'zoom'], [k(t('help.key.shiftWheel')), 'hscroll'], [`${k('1')}–${k('8')} · ${k(keyLabel('A'))}–${k('K')}`, 'pads'],
   ];
   $('help').innerHTML = `
-    <h2><span class="logo">KH</span> ${t('help.title')}</h2>
+    <h2><img class="logo" src="./icon-192.png" alt="" width="38" height="38"> ${t('help.title')}</h2>
     <div class="hcols">
       <div><h3>${t('help.start')}</h3><ol>${[1, 11, 2, 3, 4, 5, 10, 6, 7, 9, 8].map(i => `<li>${t('help.s' + i)}</li>`).join('')}</ol></div>
       <div><h3>${t('help.keys')}</h3><table>${rows.map(([a, key]) => `<tr><td>${a}</td><td>${t('help.k.' + key)}</td></tr>`).join('')}</table></div>

@@ -39,7 +39,8 @@
       "package.json"
     ],
     "linux": {
-      "category": "AudioVideo"
+      "category": "AudioVideo",
+      "icon": "public/icon-512.png"
     },
     "mac": {
       "category": "public.app-category.music",
@@ -51,10 +52,12 @@
           "from": "native/kh-au-bridge/build/Release/kh_au_bridge.node",
           "to": "native/kh_au_bridge.node"
         }
-      ]
+      ],
+      "icon": "build/icon.icns"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "fileAssociations": [
       {

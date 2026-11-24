@@ -1,9 +1,11 @@
 # Rapport de QA — KH Music Pro
 
-477 cas réussis sur 477.
+480 cas réussis sur 480.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
+| LG01 | Identité | Le logo choisi apparaît dans la barre, l’aide et les icônes installables | OK |
+| LG02 | Identité | Le logo reste visible dans l’aide sur téléphone sans déborder | OK |
 | T01 | Transport | Espace lance la lecture : le son sort et la position avance | OK |
 | T02 | Transport | Stop revient au point de départ, un second Stop revient au début | OK |
 | T03 | Transport | La boucle revient au début de la zone bouclée | OK |
@@ -349,6 +351,7 @@
 | TB05 | Barre du haut | Téléphone : barre sans débordement, transport et tempo visibles, tout le reste au doigt par ☰, Projet et Prise | OK |
 | TB06 | Barre du haut | Écran moyen (1100 px) : la barre passe proprement sur deux lignes, rien n’est coupé ni caché | OK |
 | TB07 | Barre du haut | Nouveaux menus et bulles traduits en anglais et en espagnol | OK |
+| TB08 | Barre du haut | Ajout de pistes dans la barre d’arrangement (maquette V18) : les trois boutons y sont, devant la grille, et ajoutent la piste choisie ; le coin des pistes n’en a plus ; au doigt aussi | OK |
 | AD01 | Correctifs audit | Séquenceur au clavier : une seule case atteinte par Tab, les flèches, Début et Fin passent d’une case à l’autre, Entrée allume, le focus survit au redessin | OK |
 | AD02 | Correctifs audit | Lettres des touches : celles du vrai clavier quand le navigateur les donne (QWERTY en français, AZERTY en anglais), sinon d’après la langue | OK |
 | AD03 | Correctifs audit | Une prise jouée sur trois mesures reste un seul clip, annulé d’un coup ; une seconde prise fait un clip à elle | OK |

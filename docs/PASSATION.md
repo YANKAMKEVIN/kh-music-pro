@@ -992,3 +992,12 @@ Branche partie de `main` à `9a70e01` (suite 3 fusionnée). Pas de fusion ni de 
 - **Second appui sur une prise à la volée du Live = abandon** (comportement actuel, section 18) : pas de longueur libre.
 - **L'arpégiateur du Live garde son horloge libre** (section 20) : ses notes restent aimantées sur la grille au rangement.
 - **Les 13 icônes dessinées de la deuxième tranche sont gardées** (section 20).
+
+
+## 22. Identité visuelle — logo 06 (24/11/2026)
+
+Le propriétaire a choisi la proposition 06 : monogramme KH en onde sonore violet et rose, sur fond prune. Emblème sans numéro ni texte préparé avec imagegen à partir de la proposition validée ; source conservée dans `build/logo-06-source.png`.
+
+Déclinaisons : barre supérieure, aide et écran de démarrage, favicon PNG, icônes PWA 192/512 et Apple 180, icônes bureau `build/icon.icns` et `build/icon.ico`, Linux PNG. Une déclinaison maskable dédiée protège le dessin dans la zone sûre. L’ancien chemin SVG conserve le nouveau logo. Cache hors-ligne renouvelé. Les chemins de l’interface restent relatifs pour GitHub Pages et Electron. Aucun changement audio ni de format de projet. Cas LG01/LG02 pour le chargement des images, les icônes installables, l’accessibilité et le petit écran.
+
+Validation sur la version actuelle de `main` (`da7be02`) : **480/480 cas réussis**, campagne sur copie figée, puis compilation finale. Le contrôle W01 suit le cache actif au lieu de figer son ancien nom ; UX14a vérifie le nouvel emblème au démarrage et la zone sûre de l’icône maskable dédiée. Application Mac Apple construite dans `release/logo-06/`, icône ICNS du paquet identique à la source préparée, et `qa/packaged-mac.cjs --strict` réussi (logo, module natif universel, isolation, effets et cinq banques). Lanceur avec profil distinct dans `livrables/logo-06/`. Application installée et site en ligne non remplacés.

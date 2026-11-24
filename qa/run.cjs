@@ -231,6 +231,38 @@ async function refuse(pg = page) { await pg.waitForSelector('dialog.ask[open]');
 const cases = [];
 const test = (id, cat, title, fn) => cases.push({ id, cat, title, fn });
 
+// ============ Identité visuelle ============
+test('LG01', 'Identité', 'Le logo choisi apparaît dans la barre, l’aide et les icônes installables', async () => {
+  const loaded = async selector => {
+    await page.locator(selector).waitFor({state:'visible'});
+    expect(await page.locator(selector).evaluate(img => img.complete && img.naturalWidth === 192), 'logo absent ou non chargé');
+  };
+  await loaded('.brand img.logo');
+  expect(await page.locator('.brand').getAttribute('aria-label') === 'KH Music Pro', 'nom accessible absent');
+  await page.click('#bHelp'); await loaded('#help img.logo'); await page.keyboard.press('Escape');
+  const assets = await page.evaluate(async () => {
+    const manifest = await (await fetch(new URL('manifest.webmanifest', location.href))).json();
+    const icons = await Promise.all(manifest.icons.map(async i => {
+      const img = new Image(); img.src = new URL(i.src, location.href).href; await img.decode();
+      return i.sizes === 'any' || img.naturalWidth + 'x' + img.naturalHeight === i.sizes;
+    }));
+    const favicon = new Image(); favicon.src = document.querySelector('link[rel=icon]').href; await favicon.decode();
+    const apple = new Image(); apple.src = document.querySelector('link[rel=apple-touch-icon]').href; await apple.decode();
+    return {icons, favicon:favicon.naturalWidth, apple:apple.naturalWidth};
+  });
+  expect(assets.icons.length === 4 && assets.icons.every(Boolean), 'icônes installables invalides');
+  expect(assets.favicon === 192 && assets.apple === 180, 'icônes navigateur/iOS invalides');
+});
+test('LG02', 'Identité', 'Le logo reste visible dans l’aide sur téléphone sans déborder', async () => {
+  try {
+    await page.setViewportSize({width:390,height:844});
+    await page.click('#more > summary'); await page.click('#bHelp');
+    await page.locator('#help').evaluate(d => Promise.all(d.getAnimations().map(a => a.finished)));
+    const logo = await page.locator('#help img.logo').boundingBox();
+    expect(logo && logo.width === 38 && logo.height === 38 && logo.x >= 0 && logo.x + logo.width <= 390, 'logo déformé ou hors écran');
+  } finally { await page.keyboard.press('Escape'); await page.setViewportSize({width:1500,height:900}); }
+});
+
 // ============ Transport ============
 test('T01', 'Transport', 'Espace lance la lecture : le son sort et la position avance', async () => {
   await page.keyboard.press('Space'); await sleep(700);
@@ -1052,7 +1084,7 @@ test('W01', 'Application', 'Version construite : installable (manifeste) et util
     const m = await pg.evaluate(async () => { const href = document.querySelector('link[rel=manifest]').href, j = await (await fetch(href)).json(); await navigator.serviceWorker.ready; return { name: j.name, display: j.display, icons: j.icons.length }; });
     expect(m.name === 'KH Music Pro' && m.display === 'standalone' && m.icons > 0, 'manifeste incomplet');
     await pg.evaluate(async () => { const k = window.kh; k.S.project.tracks[1].synth = k.makeSynth('r_drawbar'); k.commit(); await k.engine.prepare(); });
-    await until(() => pg.evaluate(async () => { const c = await caches.open('kh-music-pro-v3'); return (await c.keys()).filter(r => r.url.includes('/banks/drawbar_organ/')).length === 25; }), 'Les 25 notes ne sont pas encore dans le cache hors ligne');
+    await until(() => pg.evaluate(async () => { const names = (await caches.keys()).filter(n => n.startsWith('kh-music-pro-')); if (names.length !== 1) return false; const c = await caches.open(names[0]); return (await c.keys()).filter(r => r.url.includes('/banks/drawbar_organ/')).length === 25; }), 'Les 25 notes ne sont pas encore dans le cache hors ligne');
     await sleep(1500); await ctx2.setOffline(true); await pg.reload(); await pg.waitForSelector('.clip', { timeout: 8000 });
     expect(await pg.evaluate(() => !!window.kh && document.querySelectorAll('.head').length === 5 && getComputedStyle(document.body).display === 'grid'), 'application incomplète hors-ligne');
     const offline = await pg.evaluate(async () => { const k = window.kh; const p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = [p.tracks[1]]; const b = await k.renderOffline(p, false), d = b.getChannelData(0); return { id: p.tracks[0].synth.preset, rms: Math.sqrt(d.reduce((s, v) => s + v * v, 0) / d.length) }; });
@@ -5586,15 +5618,15 @@ test('UX13b', 'Interface', 'Icônes dessinées (suite) : pads, quantification, e
 
 test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant le script, puis disparaît ; icônes PNG 192 et 512, version maskable et icône iPhone', async () => {
   const html = await (await page.request.get(BASE)).text();
-  expect(/<div id="boot"[^>]*><span>KH<\/span><\/div>/.test(html) && html.indexOf('id="boot"') < html.indexOf('/src/main.ts'), 'le logo d’attente doit être dans la page, avant le script');
+  expect(/<div id="boot"[^>]*><span><img[^>]+src="\/icon-192.png"[^>]*><\/span><\/div>/.test(html) && html.indexOf('id="boot"') < html.indexOf('/src/main.ts'), 'le logo d’attente doit être dans la page, avant le script');
   expect(/#boot span \{[^}]*animation: bootbeat/.test(html) && /prefers-reduced-motion: reduce\) \{ #boot span \{ animation: none/.test(html), 'battement du logo, coupé si le système demande moins d’animations');
   expect(!(await page.$('#boot')), 'l’écran d’attente reste affiché après le démarrage');
   // Sans script (page bloquée avant son exécution), le logo est bien ce qu'on voit.
   const c = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
   try {
     const pg = await c.newPage(); await pg.goto(BASE);
-    const b = await pg.$eval('#boot span', e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return { w: r.width, cx: r.left + r.width / 2, cy: r.top + r.height / 2, bg: cs.backgroundImage, txt: e.textContent }; });
-    expect(b.txt === 'KH' && b.w >= 60 && Math.abs(b.cx - 195) < 12 && Math.abs(b.cy - 422) < 12 && b.bg.includes('gradient'), 'logo d’attente : ' + JSON.stringify(b));
+    const b = await pg.$eval('#boot span', e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return { w: r.width, cx: r.left + r.width / 2, cy: r.top + r.height / 2, bg: cs.backgroundColor, loaded: e.querySelector('img')?.naturalWidth }; });
+    expect(b.loaded === 192 && b.w >= 60 && Math.abs(b.cx - 195) < 12 && Math.abs(b.cy - 422) < 12 && b.bg === 'rgb(22, 5, 31)', 'logo d’attente : ' + JSON.stringify(b));
   } finally { await c.close(); }
   const man = await (await page.request.get(new URL('manifest.webmanifest', BASE).href)).json(), sizes = {};
   for (const ic of man.icons.filter(i => i.type === 'image/png')) {
@@ -5606,7 +5638,7 @@ test('UX14a', 'Démarrage', 'Écran d’attente : le logo est dans la page avant
   const apple = await page.$eval('link[rel=apple-touch-icon]', l => l.href), ab = await (await page.request.get(apple)).body();
   expect(ab.readUInt32BE(16) === 180 && ab.readUInt32BE(20) === 180, 'icône iPhone de 180 px');
   // Version maskable : rien d'important hors de la zone sûre (cercle de 80 % du côté) ; les coins sont du fond uni.
-  const safe = await page.evaluate(async url => { const img = new Image(); img.src = url; await img.decode(); const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, 512, 512).data; let out = 0; for (let y = 0; y < 512; y += 4) for (let x = 0; x < 512; x += 4) { const i = (y * 512 + x) * 4, bg = Math.abs(d[i] - 6) + Math.abs(d[i + 1] - 9) + Math.abs(d[i + 2] - 20) < 12; if (!bg && Math.hypot(x - 256, y - 256) > 205) out++; } return out; }, new URL('icon-maskable-512.png', BASE).href);
+  const safe = await page.evaluate(async url => { const img = new Image(); img.src = url; await img.decode(); const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, 512, 512).data; let out = 0; for (let y = 0; y < 512; y += 4) for (let x = 0; x < 512; x += 4) { const i = (y * 512 + x) * 4, bg = Math.abs(d[i] - 22) + Math.abs(d[i + 1] - 5) + Math.abs(d[i + 2] - 31) < 12; if (!bg && Math.hypot(x - 256, y - 256) > 205) out++; } return out; }, new URL('icon-maskable-512.png', BASE).href);
   expect(safe === 0, `icône maskable : ${safe} points du dessin hors de la zone sûre`);
 });
 

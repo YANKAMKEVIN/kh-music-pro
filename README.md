@@ -1,3 +1,5 @@
+![KH Music Pro](public/icon-192.png)
+
 # KH Music Pro
 
 Station de travail audio (DAW) dans le navigateur, pour composer, enregistrer, mixer et jouer en direct.
