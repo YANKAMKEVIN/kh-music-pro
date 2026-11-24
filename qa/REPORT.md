@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-576 cas réussis sur 581.
+583 cas réussis sur 586.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -269,7 +269,7 @@
 | VD01 | Banques expressives | Batterie à plusieurs nuances (Virtuosity Drums, décision du 21/11/2026) : le kit Studio se charge, une frappe douce et une frappe forte jouent des enregistrements différents | OK |
 | MD01 | Pédale MIDI | La pédale tient le piano après la touche, et son relâchement arrête le son | OK |
 | MD02 | Pédale MIDI | La pédale n’agit que sur son canal et une répétition réattaque sans note bloquée | OK |
-| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | ÉCHEC : durée de pédale perdue : [{"p":60,"s":1,"l":3,"v":0.71}] |
+| MD03 | Pédale MIDI | Les notes enregistrées avec pédale gardent leur durée jusqu’au lever de pédale | OK |
 | MD04 | Pédale MIDI | Arrêt et perte de focus coupent le maintien, même pendant le premier chargement | OK |
 | MD05 | Pads MIDI | L’enregistrement conserve les frappes douces et fortes, et le MIDI exporté les distingue | OK |
 | BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | OK |
@@ -352,12 +352,12 @@
 | AD03 | Correctifs audit | Une prise jouée sur trois mesures reste un seul clip, annulé d’un coup ; une seconde prise fait un clip à elle | OK |
 | AD04 | Correctifs audit | Tempo au centième : 93,5 BPM gardé (champ, changement de tempo, fichier MIDI) ; une saisie vide ou nulle garde le tempo | OK |
 | AD05 | Correctifs audit | Sauvegarde impossible (espace plein, stockage bloqué) : bandeau qui reste, bouton « Enregistrer en fichier », message de retour ; traduit | OK |
-| AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | ÉCHEC : valeurs affichées : ["La4/+3","La4/+2","La4/+1","La4/0"] |
+| AD06 | Correctifs audit | Accordeur : une mesure abîmée (ordinateur chargé) n’est jamais affichée ; la note s’affiche juste une fois confirmée | OK |
 | AD06b | Correctifs audit | Accordeur : la trame où la note commence est sautée ; une trame abîmée proche de la note ne décale pas l’affichage ; rouvert, il ne lisse pas depuis la note d’avant | OK |
 | AD07 | Correctifs audit | Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide | OK |
 | AD08 | Correctifs audit | Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet | OK |
 | TH01 | Têtes de piste | Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles | OK |
-| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | OK |
+| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | ÉCHEC : le menu est caché par la zone des pistes |
 | TH03 | Têtes de piste | Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus | OK |
 | TH04 | Têtes de piste | Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom | OK |
 | TH07 | Têtes de piste | Le menu ⋯ reste ouvert quand l’écran se redessine (lecture, note jouée en prise) ; seuls un clic dehors, Échap ou un choix le referment | OK |
@@ -483,7 +483,7 @@
 | AN02 | Analyse | Un son chargé s'affiche avec sa durée ; une analyse trouve une partie qu'on ajoute au morceau, calée sur le tempo | OK |
 | AN03 | Analyse | Une analyse qui échoue affiche un message ; une analyse longue s'annule | OK |
 | AN04 | Analyse | Un fichier qui n'est pas un son est refusé avec un message clair, en trois langues | OK |
-| PO01 | Analyse | Basse → notes et Piano → notes ont leur ligne dans la fenêtre, inactives sans son, traduites en trois langues | OK |
+| PO01 | Analyse | Basse → notes et Piano → notes ont leur ligne dans la fenêtre, inactives sans son, traduites en trois langues | ÉCHEC : textes en en |
 | PO02 | Analyse | Basse à la fondamentale faible : lancée à la souris, avancement visible, notes justes (F ≥ 0,9 à ±50 ms), registre affiché | OK |
 | PO03 | Analyse | Basse rapide : notes répétées en doubles croches et sauts d'octave (F ≥ 0,9) | OK |
 | PO04 | Analyse | Basse jouée liée (la hauteur change sans nouvelle attaque) et basse en sons purs (F ≥ 0,9) | OK |
@@ -491,13 +491,18 @@
 | PO06 | Analyse | Arpèges, notes tenues sous une mélodie, accord rejoué huit fois (F ≥ 0,9 chacun) | OK |
 | PO07 | Analyse | Accords en sons purs avec octave, aigus, note jouée doucement dans l'accord (F ≥ 0,9) | OK |
 | PO08 | Analyse | Morceau accordé plus bas (−35 cents) ou plus haut (+25 cents) : basse et piano restent justes | OK |
-| PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | ÉCHEC : basse {"F":0.857,"P":0.79,"R":0.94,"n":19,"ref":16,"ms":17} |
+| PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | OK |
 | PO10 | Analyse | Sans pistes séparées, basse et accords mélangés : chaque analyse garde sa partie (mesuré) et prévient que le son entier est analysé | OK |
-| PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | ÉCHEC : notes calées à 120 : [[40,4.5],[43,8.5],[45,12.5],[47,16.5]] |
+| PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | OK |
 | PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | OK |
 | PO13 | Analyse | Réglages au clavier : plus de sensibilité → la note jouée doucement apparaît ; note la plus courte 200 ms → les notes brèves disparaissent | OK |
 | PO14 | Analyse | Trois minutes de piano : analyse en moins de 60 s, toutes les notes justes | OK |
-| PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | ÉCHEC : résumé de la basse |
+| PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | OK |
+| PO16 | Analyse | Guitare → notes : lit la piste « guitare » séparée, trouve ses notes (pas celles du piano), s'ajoute au morceau au son de guitare ; Ctrl+Z la retire | OK |
+| PO17 | Analyse | Piano → notes lit la piste « piano » quand elle existe : les notes de la guitare n'y sont plus ; accords par mesure montrés aussi pour la guitare | OK |
+| PO18 | Analyse | Piste piano presque vide (l'instrument ne joue pas) : pas de fausse partie, message clair ; la guitare, elle, est bien proposée | OK |
+| PO19 | Analyse | Restes de voix dans une piste piano faible : les notes qui doublent le chant sont retirées, celles du piano restent ; nombre annoncé | OK |
+| PO20 | Analyse | Guitare → notes sans piste guitare (mode rapide) : lit « autres instruments » ; titre en trois langues ; lancement au clavier | OK |
 | DR00 | Batterie → motif | Mesure de précision (affichée) sur dix rythmes fabriqués | OK |
 | DR01 | Batterie → motif | Rock à 120 (kit électro) : grosse caisse, caisse claire et charleston en croches retrouvés, motif identique case par case | OK |
 | DR02 | Batterie → motif | Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 % | OK |
@@ -557,7 +562,7 @@
 | SEP17 | Analyse | Calcul hors du fil principal : la page reste réactive ; sans Worker, le calcul de repli donne le même résultat | OK |
 | SEP18 | Analyse | Mémoire : appareil trop petit → séparation indisponible avec la raison ; son trop long → message clair avec la durée maximale | OK |
 | SEP19 | Analyse | Parcours réel : un fichier WAV stéréo choisi dans la fenêtre, séparé, écouté puis ajouté au morceau | OK |
-| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | OK |
+| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | ÉCHEC : page.waitForSelector: Timeout 60000ms exceeded. |
 | SEP21 | Analyse | Séparation en anglais et en espagnol : titre, pistes et boutons traduits | OK |
 | SEP22 | Analyse | Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés) | OK |
 | SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | OK |

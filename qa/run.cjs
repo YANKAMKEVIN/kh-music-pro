@@ -6358,7 +6358,7 @@ test('PO01', 'Analyse', 'Basse → notes et Piano → notes ont leur ligne dans 
   }
   expect((await page.textContent('[data-an="bass-notes"] h3')).includes('Basse → notes') && (await page.textContent('[data-an="piano-notes"] h3')).includes('Piano → notes'), 'titres en français');
   await page.keyboard.press('Escape');
-  for (const [l, b, p] of [['en', 'Bass → notes', 'separated “other instruments”'], ['es', 'Bajo → notas', 'otros instrumentos']]) {
+  for (const [l, b, p] of [['en', 'Bass → notes', 'separated “piano” track'], ['es', 'Bajo → notas', 'otros instrumentos']]) {
     await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
     expect((await page.textContent('[data-an="bass-notes"] h3')).includes(b) && (await page.textContent('[data-an="piano-notes"] .tip')).includes(p), `textes en ${l}`);
     await page.keyboard.press('Escape');
