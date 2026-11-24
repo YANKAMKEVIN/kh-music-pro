@@ -986,3 +986,15 @@ Charger un son (usage personnel ; pas de téléchargement YouTube dans l'appli) 
 - `KH_PORT` choisit le port du serveur de QA (`KH_PORT=5231 npm run qa:all`) pour faire tourner plusieurs campagnes en même temps.
 - Base : `main` (0.18.0). La V19 (branche `v19`) n'y est pas : à réconcilier avant toute fusion. Numéro de version non changé.
 - Non vérifié : vraies chansons, vraie voix, écoute à l'oreille, installateurs avec le modèle (+175 Mo chacun), Windows, vrai téléphone.
+
+### Suite du 24/11/2026 : essai sur une vraie chanson, notes par modèle, tempo stabilisé
+
+Kevin a fourni une vraie chanson (« Tous les jours », 7 min ; jamais mise dans le dépôt : `public/_essai/` est exclu de git, à ne jamais committer).
+
+- **Premier essai (calculs maison) : « complètement raté » à l'écoute.** Les cas de QA sur sons fabriqués ne prouvaient rien sur de la vraie musique. Leçon : seul l'avis de Kevin à l'oreille valide une transcription.
+- **Notes par le modèle Basic Pitch** (Spotify, Apache 2.0, 0,9 Mo dans `public/models/basic-pitch`, `src/analysis/bp/`) pour le chant, la basse et le piano ; les calculs maison restent en secours (cas PO et VX les testent avec `kh.analysis.bp.off = true`). Cas BP01-BP05. Verdict de Kevin sur la reconstitution : « beaucoup mieux, ça commence à venir, pas encore totalement ça ».
+- **Tempo qui bouge** : temps suivis un par un (`tempoPath`, `beatTrack`), parties calées dessus (`warpNotes`), marques de tempo posées par « Appliquer le tempo ». Cas TM01-TM05.
+- **Tempo stabilisé (retour de Kevin : « le tempo semble accélérer puis ralentir »)** : les temps suivis tremblaient (48 marques de tempo sur la chanson, intro suivie à moitié tempo). `steadyGrid` (`src/analysis/vx-dsp.ts`) les remplace par des tronçons de tempo constant raccordés bout à bout (coupe seulement si c'est nettement mieux, recoupe là où le tempo glisse vraiment, ramène les tronçons suivis à la moitié ou au double à la pulsation principale). Résultat sur la chanson : 6 tronçons au lieu de 48 (115 à 118 BPM jusqu'à 4:55, puis 87). `Result.tempoSecs` porte les tronçons. Cas TM06-TM10.
+- **Doute non levé** : la fin de la chanson (à partir de 4:55) est lue à 87 BPM. D'après les attaques, c'est probablement un passage en ternaire (6/8) à la même pulsation plutôt qu'un vrai ralenti ; KHMP le range à 87 BPM, où les notes tombent sur la grille des doubles-croches. À faire juger par Kevin.
+- **Pistes de progrès** : piano trop chargé (la piste « autres » de Demucs contient guitares, claviers et nappes ; une version allégée a été soumise à l'écoute de Kevin) ; sons d'instruments choisis d'office (flûte pour le chant) ; mesures ternaires (pas de grille en triolets) ; reconnaissance d'instruments incomplète.
+- **Sessions d'agents V20** : archivées le 24/11/2026 à la demande de Kevin (tout leur travail est dans `v20`).

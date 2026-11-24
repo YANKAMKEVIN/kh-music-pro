@@ -262,3 +262,13 @@ Autres cas : somme des pistes = son d'origine (SEP03), taux du son gardé à 44,
 - Version bureau : vérifiée seulement en lançant l'application construite sur le Mac (pas d'installateur ni Windows).
 - Téléphones réels (mémoire, durée du calcul) ; Safari et Firefox (pas de `deviceMemory` : la limite suppose 8 Go).
 - Durée de calcul sur un morceau de 3-4 min dans le navigateur.
+
+## Tempo stabilisé (24/11/2026, cas TM06-TM10)
+
+Les temps suivis un par un tremblent de quelques centièmes (davantage quand le rythme est discret), ce qui donnait des dizaines de marques de tempo et des notes qui semblaient accélérer puis ralentir. `steadyGrid(temps, tempoGlobal)` dans `vx-dsp.ts` :
+
+1. `steadyBeats` : tronçons de tempo constant (droites des moindres carrés, programmation dynamique, coût `pen` = 0,06 s² par coupe, 12 temps au moins), recoupés en deux là où les temps s'écartent durablement (médiane sur 5 temps > 30 ms d'une droite robuste) : accélérations et ralentis progressifs.
+2. `foldBeats` : un tronçon suivi à la moitié ou au double du tempo principal (le tempo global, sinon celui qui dure le plus) est ramené à sa pulsation. Les rapports 3/4 et 4/3 ne sont pas touchés (un vrai changement de tempo peut avoir ce rapport).
+3. Les tronçons sont raccordés bout à bout : `Result.beats` est la grille régulière par morceaux, `Result.tempoSecs` la liste des tronçons. « Appliquer le tempo » pose une marque par tronçon ; les parties ajoutées (`warpNotes`) gardent donc exactement leur placement d'origine.
+
+Non vérifié : musique à tempo très libre (rubato), mesures ternaires.

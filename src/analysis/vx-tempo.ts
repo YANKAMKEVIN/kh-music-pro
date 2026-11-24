@@ -5,7 +5,6 @@ import { h, toast } from '../ui/dom';
 import { registerAnalyzer } from './registry';
 import type { Ctx } from './types';
 import { vxRun } from './vx-run';
-import { tempoSections } from './vx-dsp';
 import { clock } from '../ui/library';
 
 addTexts({
@@ -36,14 +35,21 @@ addTexts({
 export const keyName = (k: { tonic: number; mode: 'major' | 'minor' }) => t(k.mode === 'major' ? 'vx.major' : 'vx.minor', t('vx.notes').split(',')[k.tonic]);
 const fmt = (v: number, d = 1) => v.toLocaleString(document.documentElement.lang || 'fr', { maximumFractionDigits: d });
 
-interface TempoRes { tempo: { bpm: number; offset: number; score: number } | null; key: { tonic: number; mode: 'major' | 'minor'; score: number } | null; beats?: number[] }
+interface TempoRes { tempo: { bpm: number; offset: number; score: number } | null; key: { tonic: number; mode: 'major' | 'minor'; score: number } | null; beats?: number[]; secs?: { beat: number; bpm: number }[] }
 
-/** Sections de tempo à partir du premier temps (`beat` compté depuis lui). Vide sans temps suivis. */
-export function sectionsOf(ctx: Ctx) {
-  const B = ctx.result.beats, k0 = ctx.result.beat0 ?? 0;
-  return B ? tempoSections(B.slice(k0)) : [];
+/** Tronçons de tempo à partir du premier temps (`beat` compté depuis lui). Vide sans temps suivis. */
+export function sectionsOf(ctx: Ctx): { beat: number; t: number; bpm: number }[] {
+  const B = ctx.result.beats, secs = ctx.result.tempoSecs, k0 = ctx.result.beat0 ?? 0;
+  if (!B || !secs?.length) return [];
+  const out: { beat: number; t: number; bpm: number }[] = [];
+  secs.forEach((x, q) => {
+    if ((secs[q + 1]?.beat ?? Infinity) <= k0) return;
+    const k = Math.max(k0, x.beat);
+    out.push({ beat: k - k0, t: B[k], bpm: x.bpm });
+  });
+  return out;
 }
-/** Changements à montrer : on regroupe les sections voisines à moins de 2 % l'une de l'autre, et on ignore celles de moins de 8 temps. */
+/** Changements à montrer : on regroupe les tronçons voisins à moins de 2 % l'un de l'autre, et on ignore ceux de moins de 8 temps. */
 export function tempoChanges(ctx: Ctx): { t: number; bpm: number }[] {
   const secs = sectionsOf(ctx), out: { t: number; bpm: number; beat: number }[] = [];
   secs.forEach((x, i) => {
@@ -63,8 +69,8 @@ export function applyTempo(ctx: Ctx) {
   const secs = sectionsOf(ctx);
   if (secs.length > 1) {
     // une marque de tempo par section, posée sur son temps (un temps = 4 pas) : la grille suit le morceau
-    S.project.bpm = lim(secs[0].bpm, 10);
-    S.project.tempos = secs.slice(1).map(x => ({ s: x.beat * 4, bpm: lim(x.bpm, 10) }));
+    S.project.bpm = lim(secs[0].bpm);
+    S.project.tempos = secs.slice(1).map(x => ({ s: x.beat * 4, bpm: lim(x.bpm) }));
     commit();
     toast(t('vx.appliedTempos', fmt(S.project.bpm, 1), S.project.tempos.length), 'info', { action: { label: t('vx.undo'), fn: undo } });
     return;
@@ -89,14 +95,14 @@ registerAnalyzer({
   help: () => t('vx.tempo.help'),
   async run(ctx, progress, signal) {
     const r = await vxRun<TempoRes>('tempo', ctx.source!.buffer, progress, signal);
-    delete ctx.result.beats; delete ctx.result.beat0;
+    delete ctx.result.beats; delete ctx.result.beat0; delete ctx.result.tempoSecs;
     if (r.tempo) {
       ctx.result.bpm = r.tempo.bpm; ctx.result.beatOffset = r.tempo.offset;
       const B = r.beats ?? [];
       if (B.length >= 8) {
         // premier temps = le temps suivi le plus proche de celui trouvé par le tempo global
         let k0 = 0; for (let k = 1; k < B.length; k++) if (Math.abs(B[k] - r.tempo.offset) < Math.abs(B[k0] - r.tempo.offset)) k0 = k;
-        ctx.result.beats = B; ctx.result.beat0 = k0; ctx.result.beatOffset = B[k0];
+        ctx.result.beats = B; ctx.result.beat0 = k0; ctx.result.beatOffset = B[k0]; ctx.result.tempoSecs = r.secs;
         // tempo montré : celui des temps suivis (médiane), sauf s'il confirme le tempo global à 3 % près
         const iv = B.slice(1).map((b, i) => b - B[i]).sort((a, b) => a - b), med = 60 / iv[iv.length >> 1];
         if (Math.abs(med / r.tempo.bpm - 1) > 0.03) ctx.result.bpm = Math.round(med * 10) / 10;

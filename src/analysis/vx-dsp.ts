@@ -466,6 +466,86 @@ export function tempoSections(beats: number[], tol = 0.04): { beat: number; t: n
   return out;
 }
 
+/** Grille de temps régulière par morceaux. Les temps suivis un par un tremblent (quelques centièmes, parfois plus quand le
+ *  rythme est discret) : on les remplace par des tronçons de tempo constant, raccordés bout à bout, en ne coupant que si
+ *  cela explique nettement mieux les temps (`pen`, en s²), en tronçons d'au moins `minLen` temps (moitié moins quand le tempo glisse).
+ *  `secs` : pour chaque tronçon, l'indice de son premier temps et son tempo. */
+export function steadyBeats(B: number[], minLen = 12, pen = 0.06): { beats: number[]; secs: { beat: number; bpm: number }[] } {
+  const n = B.length;
+  if (n < 3) return { beats: B.slice(), secs: n === 2 && B[1] > B[0] ? [{ beat: 0, bpm: 60 / (B[1] - B[0]) }] : [] };
+  const sk = new Float64Array(n + 1), skk = new Float64Array(n + 1), sy = new Float64Array(n + 1), sky = new Float64Array(n + 1), syy = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) { const y = B[i] - B[0]; sk[i + 1] = sk[i] + i; skk[i + 1] = skk[i] + i * i; sy[i + 1] = sy[i] + y; sky[i + 1] = sky[i] + i * y; syy[i + 1] = syy[i] + y * y; }
+  // droite des moindres carrés sur les temps i..j : pente (s par temps), ordonnée, somme des carrés des écarts
+  const fit = (i: number, j: number) => {
+    const m = j - i + 1, a1 = sk[j + 1] - sk[i], a2 = skk[j + 1] - skk[i], b1 = sy[j + 1] - sy[i], b2 = sky[j + 1] - sky[i], b3 = syy[j + 1] - syy[i];
+    const den = m * a2 - a1 * a1, a = den ? (m * b2 - a1 * b1) / den : 0, b = (b1 - a * a1) / m;
+    return { a, b, sse: Math.max(0, b3 - a * b2 - b * b1) };
+  };
+  const L = Math.min(minLen, n), best = new Float64Array(n + 1).fill(Infinity), back = new Int32Array(n + 1);
+  best[0] = 0;
+  for (let e = L; e <= n; e++) for (let s = 0; s <= e - L; s++) {
+    if (best[s] === Infinity) continue;
+    const f = fit(s, e - 1); if (f.a <= 0) continue;
+    const c = best[s] + f.sse + pen; if (c < best[e]) { best[e] = c; back[e] = s; }
+  }
+  if (best[n] === Infinity) return { beats: B.slice(), secs: [{ beat: 0, bpm: 60 * (n - 1) / (B[n - 1] - B[0]) }] };
+  const cuts: number[] = []; for (let e = n; e > 0; e = back[e]) cuts.push(back[e]);
+  cuts.reverse();
+  // tempo qui glisse (accélération, ralenti progressif) : là où les temps s'écartent durablement de la droite
+  // (médiane sur 5 temps, pour ignorer les à-coups isolés), on recoupe le tronçon en deux
+  const starts: number[] = [];
+  const refine = (s: number, e: number) => {
+    // droite robuste (pente et hauteur médianes) : un temps mal placé ne la fait pas pencher
+    const med = (v: number[]) => { v.sort((x, y) => x - y); return v[v.length >> 1]; };
+    const hh = Math.max(1, (e - s + 1) >> 1), sl: number[] = []; for (let k = s; k + hh <= e; k++) sl.push((B[k + hh] - B[k]) / hh);
+    const a = med(sl), hgt: number[] = []; for (let k = s; k <= e; k++) hgt.push(B[k] - a * k);
+    const b = med(hgt), r: number[] = []; for (let k = s; k <= e; k++) r.push(B[k] - (a * k + b));
+    let worst = 0;
+    for (let i = 0; i < r.length; i++) { const w = r.slice(Math.max(0, i - 2), i + 3).sort((u, v) => u - v); worst = Math.max(worst, Math.abs(w[w.length >> 1])); }
+    if (e - s + 1 >= 12 && worst > 0.03) { const m = (s + e + 1) >> 1; refine(s, m - 1); refine(m, e); } else starts.push(s);
+  };
+  cuts.forEach((s, q) => refine(s, (cuts[q + 1] ?? n) - 1));
+  const lines = starts.map((s, q) => fit(s, (starts[q + 1] ?? n) - 1));
+  // nœuds : début, chaque raccord (moyenne des deux droites, pour ne pas dériver), fin
+  const kn = [...starts, n - 1], T = [lines[0].b];
+  for (let q = 1; q < starts.length; q++) { const i = starts[q]; T.push((lines[q - 1].a * i + lines[q - 1].b + lines[q].a * i + lines[q].b) / 2); }
+  T.push(lines[lines.length - 1].a * (n - 1) + lines[lines.length - 1].b);
+  const beats = new Array<number>(n), secs: { beat: number; bpm: number }[] = [];
+  for (let q = 0; q < starts.length; q++) {
+    const a = (T[q + 1] - T[q]) / (kn[q + 1] - kn[q]);
+    secs.push({ beat: kn[q], bpm: 60 / a });
+    for (let k = kn[q]; k <= kn[q + 1]; k++) beats[k] = B[0] + T[q] + (k - kn[q]) * a;
+  }
+  return { beats, secs };
+}
+/** Tronçons suivis à la moitié ou au double du tempo principal (`ref`, ou celui qui dure le plus) : on les ramène à sa pulsation,
+ *  en glissant un temps entre deux ou en n'en gardant qu'un sur deux. Renvoie `null` s'il n'y a rien à changer. */
+export function foldBeats(R: number[], secs: { beat: number; bpm: number }[], ref = 0): number[] | null {
+  const n = R.length, end = (q: number) => secs[q + 1]?.beat ?? n - 1, dur = new Map<number, number>();
+  secs.forEach((x, q) => { let key = x.bpm; for (const k of dur.keys()) if (Math.abs(x.bpm / k - 1) < 0.03) key = k; dur.set(key, (dur.get(key) ?? 0) + R[end(q)] - R[x.beat]); });
+  let main = 0, md = -1; for (const [k, v] of dur) if (v > md) { md = v; main = k; }
+  // le tempo trouvé sur tout le morceau l'emporte s'il est bien suivi quelque part (sinon : le tempo qui dure le plus)
+  for (const k of dur.keys()) if (ref && Math.abs(k / ref - 1) < 0.05) main = k;
+  const out: number[] = []; let ch = false;
+  secs.forEach((x, q) => {
+    const r = main / x.bpm;
+    for (let k = x.beat; k < end(q); k++) {
+      if (Math.abs(r / 2 - 1) < 0.05) { out.push(R[k], (R[k] + R[k + 1]) / 2); ch = true; }
+      else if (Math.abs(r * 2 - 1) < 0.05) { ch = true; if ((k - x.beat) % 2 === 0) out.push(R[k]); }
+      else out.push(R[k]);
+    }
+  });
+  out.push(R[n - 1]);
+  return ch ? out : null;
+}
+/** Temps suivis → grille régulière par morceaux, à la pulsation principale. */
+export function steadyGrid(raw: number[], ref = 0) {
+  let g = steadyBeats(raw);
+  const f = foldBeats(g.beats, g.secs, ref);
+  if (f) g = steadyBeats(f);
+  return g;
+}
+
 // ---------- Tâches complètes ----------
 export type VxJob = 'tempo' | 'melody';
 export function runJob(job: VxJob, x0: Float32Array, sr0: number, prog: Prog) {
@@ -474,10 +554,10 @@ export function runJob(job: VxJob, x0: Float32Array, sr0: number, prog: Prog) {
   if (job === 'tempo') {
     const { env, fps, t0 } = onsetEnvelope(x, sr, prog, 0.1, 0.55);
     const tempo = tempoOf(env, fps, t0);
-    const beats = tempo ? beatTrack(env, fps, t0, tempoPath(env, fps, tempo.bpm)) : [];
+    const grid = steadyGrid(tempo ? beatTrack(env, fps, t0, tempoPath(env, fps, tempo.bpm)) : [], tempo?.bpm);
     prog(0.6);
     const key = keyOf(chroma(x, sr, prog, 0.6, 0.98));
-    return { tempo, key, beats };
+    return { tempo, key, beats: grid.beats, secs: grid.secs };
   }
   const tr = pitchTrack(x, sr, prog, 0.1, 0.9);
   return segmentNotes(tr);

@@ -7799,6 +7799,49 @@ test('TM05', 'Analyse', 'Changements de tempo traduits en anglais et en espagnol
   expect(p.some(b => Math.abs(b - 128) <= 2), 'marque à 128 BPM attendue : ' + JSON.stringify(p)); await page.keyboard.press('Escape');
 });
 
+const tmGrid = () => S(() => { const R = window.kh.analysis.AN.result; return { beats: R.beats, secs: R.tempoSecs, b0: R.beat0 }; });
+test('TM06', 'Analyse', 'Batteur peu régulier (±25 ms) à 110 BPM : un seul tempo, grille de temps parfaitement régulière, aucune marque de tempo', async () => {
+  await menu('bAnalyze'); await tmLoad(tmTimes([[110, 40]], { jitter: 0.025 }), 41); await vxRunA('vx-tempo');
+  const g = await tmGrid(), iv = g.beats.slice(1).map((b, i) => b - g.beats[i]);
+  expect(g.secs.length === 1 && Math.abs(g.secs[0].bpm - 110) < 1, 'tronçons : ' + JSON.stringify(g.secs));
+  expect(Math.max(...iv) - Math.min(...iv) < 0.001, `temps irréguliers : ${Math.min(...iv).toFixed(4)} à ${Math.max(...iv).toFixed(4)} s`);
+  expect((await tmView()).includes('Tempo régulier'), 'annoncé régulier');
+  await page.click('#vxApplyTempo');
+  const p = await S(() => ({ bpm: window.kh.S.project.bpm, n: window.kh.S.project.tempos.length }));
+  expect(Math.abs(p.bpm - 110) < 1 && p.n === 0, JSON.stringify(p)); await page.keyboard.press('Escape');
+});
+test('TM07', 'Analyse', 'Changement de tempo joué à la main (120 puis 90 BPM, ±15 ms) : une seule marque de tempo, pas un morcellement', async () => {
+  const beats = tmTimes([[120, 24], [90, 26]], { jitter: 0.015 }); await menu('bAnalyze'); await tmLoad(beats, 51); await vxRunA('vx-tempo');
+  await page.click('#vxApplyTempo');
+  const p = await S(() => ({ bpm: window.kh.S.project.bpm, tempos: window.kh.S.project.tempos }));
+  expect(p.tempos.length === 1 && Math.abs(p.tempos[0].bpm - 90) < 1.5 && Math.abs(p.bpm - 120) < 1.5 && Math.abs(p.tempos[0].s - 192) <= 8, 'marques : ' + JSON.stringify(p));
+  await page.keyboard.press('Escape');
+});
+test('TM08', 'Analyse', 'Notes jouées régulièrement sur un batteur peu régulier : une fois ajoutées, elles restent régulières (pas d\'accélérations ni de ralentis)', async () => {
+  await menu('bAnalyze'); await tmLoad(tmTimes([[100, 30]], { jitter: 0.03 }), 31); await vxRunA('vx-tempo');
+  // un instrument parfaitement régulier (croches à 100 BPM), indépendant des à-coups du batteur
+  await page.evaluate(() => window.kh.analysis.registerAnalyzer({ id: 'qa-reg', order: 99, title: () => 'notes', help: () => '', run: async ctx => { ctx.result.parts = ctx.result.parts.filter(p => p.id !== 'qr'); ctx.result.parts.push({ id: 'qr', kind: 'melody', name: 'Régulier', notes: Array.from({ length: 80 }, (_, k) => ({ t: 0.5 + k * 0.3, d: 0.15, midi: 60 + (k % 5), vel: 0.8 })) }); } }));
+  await vxRunA('qa-reg'); await page.click('#vxApplyTempo'); await page.evaluate(() => window.kh.analysis.addPart('qr'));
+  const st = await S(() => { const p = window.kh.S.project, n = p.tracks[p.tracks.length - 1].clips[0].notes.map(x => x.s).sort((a, b) => a - b); return n.slice(1).map((s, i) => s - n[i]); });
+  const lo = Math.min(...st), hi = Math.max(...st);
+  expect(st.length >= 75 && hi - lo <= 0.26, `écarts entre notes de ${lo} à ${hi} pas (attendu : presque constants)`);
+  await page.keyboard.press('Escape');
+});
+test('TM09', 'Analyse', 'Intro suivie à moitié tempo puis morceau au tempo normal : ramenée à la même pulsation, un seul tempo', async () => {
+  const r = await S(() => {
+    const B = []; let t = 1; for (let k = 0; k < 24; k++) { B.push(t + (k % 3 - 1) * 0.02); t += 60 / 57.5; } for (let k = 0; k < 200; k++) { B.push(t + (k % 5 - 2) * 0.004); t += 60 / 115; }
+    const g = window.kh.analysis.steadyGrid(B); return { n: g.beats.length, secs: g.secs, first: g.beats[1] - g.beats[0] };
+  });
+  expect(r.secs.length === 1 && Math.abs(r.secs[0].bpm - 115) < 0.5 && Math.abs(r.n - 248) <= 2 && Math.abs(r.first - 60 / 115) < 0.01, JSON.stringify(r));
+});
+test('TM10', 'Analyse', 'Ralenti réel de fin de morceau (115 puis 87 BPM) : il est gardé (ce n\'est ni une moitié ni un double)', async () => {
+  const r = await S(() => {
+    const B = []; let t = 1; for (let k = 0; k < 120; k++) { B.push(t); t += 60 / 115; } for (let k = 0; k < 60; k++) { B.push(t); t += 60 / 87; }
+    return window.kh.analysis.steadyGrid(B).secs;
+  });
+  expect(r.length === 2 && Math.abs(r[0].bpm - 115) < 0.5 && Math.abs(r[1].bpm - 87) < 0.5 && Math.abs(r[1].beat - 120) <= 2, JSON.stringify(r));
+});
+
 // ============ V20 — Notes par le modèle Basic Pitch (BP) ============
 /** Son « piano » de test : notes [midi, début, durée] à timbre harmonique amorti. */
 async function bpLoad(notes, dur, name = 'piano.wav') {

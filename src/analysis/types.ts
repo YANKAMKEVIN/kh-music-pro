@@ -24,6 +24,8 @@ export interface Result {
   bpm?: number; beatOffset?: number;
   /** temps suivis un par un (secondes) quand le tempo bouge ; `beat0` = indice du premier temps (celui de `beatOffset`) */
   beats?: number[]; beat0?: number;
+  /** tronçons de tempo constant de `beats` : indice du premier temps de chacun et son tempo */
+  tempoSecs?: { beat: number; bpm: number }[];
   /** tonalité : tonique 0..11 (0 = do), mode */
   key?: { tonic: number; mode: 'major' | 'minor'; score: number };
   /** pistes séparées (voix, batterie, basse, autres), au taux du son source */
