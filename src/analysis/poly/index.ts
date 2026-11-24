@@ -16,7 +16,12 @@ addTexts({
   'po.bass': ['Basse → notes', 'Bass → notes', 'Bajo → notas'],
   'po.bassHelp': ['Retrouve la ligne de basse, une note à la fois (de Mi1 à Sol4). Utilise la piste de basse séparée si elle existe.', 'Finds the bass line, one note at a time (E1 to G4). Uses the separated bass track if there is one.', 'Encuentra la línea de bajo, una nota a la vez (de Mi1 a Sol4). Usa la pista de bajo separada si existe.'],
   'po.piano': ['Piano → notes', 'Piano → notes', 'Piano → notas'],
-  'po.pianoHelp': ['Retrouve les notes et les accords du piano ou des claviers. Utilise la piste « autres instruments » séparée si elle existe.', 'Finds the notes and chords of the piano or keyboards. Uses the separated “other instruments” track if there is one.', 'Encuentra las notas y acordes del piano o teclados. Usa la pista «otros instrumentos» separada si existe.'],
+  'po.pianoHelp': ['Retrouve les notes et les accords du piano ou des claviers. Utilise la piste « piano » séparée si elle existe (sinon « autres instruments »).', 'Finds the notes and chords of the piano or keyboards. Uses the separated “piano” track if there is one (otherwise “other instruments”).', 'Encuentra las notas y acordes del piano o teclados. Usa la pista «piano» separada si existe (si no, «otros instrumentos»).'],
+  'po.guitar': ['Guitare → notes', 'Guitar → notes', 'Guitarra → notas'],
+  'po.guitarHelp': ['Retrouve les notes et les accords de la guitare. Utilise la piste « guitare » séparée si elle existe (sinon « autres instruments »).', 'Finds the notes and chords of the guitar. Uses the separated “guitar” track if there is one (otherwise “other instruments”).', 'Encuentra las notas y acordes de la guitarra. Usa la pista «guitarra» separada si existe (si no, «otros instrumentos»).'],
+  'po.guitarPart': ['Guitare', 'Guitar', 'Guitarra'],
+  'po.emptyStem': ['La piste séparée est presque vide : cet instrument ne joue sans doute pas dans ce morceau.', 'The separated track is almost empty: this instrument probably does not play in this song.', 'La pista separada está casi vacía: este instrumento probablemente no toca en esta canción.'],
+  'po.leak': ['{0} notes retirées : elles doublaient la voix (restes de chant dans la piste).', '{0} notes removed: they doubled the vocals (singing left in the track).', '{0} notas quitadas: doblaban la voz (restos de canto en la pista).'],
   'po.bassPart': ['Basse', 'Bass', 'Bajo'],
   'po.pianoPart': ['Piano', 'Piano', 'Piano'],
   'po.found': ['{0} notes, de {1} à {2}', '{0} notes, from {1} to {2}', '{0} notas, de {1} a {2}'],
@@ -30,11 +35,11 @@ addTexts({
   'po.whole': ['Pas de piste séparée : analyse du son entier (moins précis).', 'No separated track: analysing the whole sound (less accurate).', 'Sin pista separada: análisis del sonido completo (menos preciso).'],
 });
 
-type Kind = 'bass' | 'piano';
+type Kind = 'bass' | 'piano' | 'guitar';
 /** Réglages de chaque analyse, gardés tant que la page est ouverte. */
-export const settings: Record<Kind, PolyParams> = { bass: { ...DEFAULTS }, piano: { ...DEFAULTS } };
+export const settings: Record<Kind, PolyParams> = { bass: { ...DEFAULTS }, piano: { ...DEFAULTS }, guitar: { ...DEFAULTS } };
 /** Dernière analyse : le son venait-il d'une piste séparée, et le calcul a-t-il tourné dans un Worker (QA). */
-export const lastRun: Record<Kind, { stem: boolean; worker: boolean; ms: number; model?: boolean } | null> = { bass: null, piano: null };
+export const lastRun: Record<Kind, { stem: boolean; worker: boolean; ms: number; model?: boolean; empty?: boolean; leak?: number } | null> = { bass: null, piano: null, guitar: null };
 
 /** Son mono au taux voulu (rééchantillonnage du navigateur), passe-bas en option. */
 async function prepare(buf: AudioBuffer, sr: number, lowpass = 0): Promise<Float32Array> {
@@ -71,39 +76,64 @@ function work(job: PolyJob, progress: (f: number) => void, signal: AbortSignal, 
   });
 }
 
-const stemOf = (k: Kind) => k === 'bass' ? 'bass' as const : 'other' as const;
+/** Piste séparée lue par chaque analyse : la sienne si Demucs l'a sortie, sinon « autres instruments ». */
+const stemOf = (k: Kind, ctx: Ctx) => k === 'bass' ? 'bass' as const : ctx.result.stems?.[k] ? k : 'other' as const;
+/** Niveau moyen d'un son (dB), sur un échantillon sur huit. */
+const levelDb = (b: AudioBuffer) => { let e = 0, n = 0; for (let c = 0; c < b.numberOfChannels; c++) { const x = b.getChannelData(c); for (let i = 0; i < x.length; i += 8) { e += x[i] * x[i]; n++; } } return n ? 10 * Math.log10(e / n + 1e-12) : -120; };
+/** Piste séparée presque vide par rapport au morceau (35 dB en dessous) : l'instrument ne joue pas. */
+export const EMPTY_DB = 35;
+/** Fuite de voix : quand la piste est bien plus faible que la voix (12 dB), on retire les notes qui doublent la mélodie chantée
+ *  (même note ou son octave, qui commence avec elle à 120 ms près ou qu'elle recouvre aux deux tiers). */
+export function dropVocalLeak(notes: PolyNote[], melody: { t: number; d: number; midi: number }[]): PolyNote[] {
+  return notes.filter(n => !melody.some(m => (n.midi - m.midi) % 12 === 0 && Math.abs(n.midi - m.midi) <= 12
+    && (Math.abs(n.t - m.t) <= 0.12 || Math.min(n.t + n.d, m.t + m.d) - Math.max(n.t, m.t) >= 0.66 * n.d)));
+}
+const partOf = (kind: Kind, notes: PolyNote[]): Part => kind === 'bass' ? { id: 'bass', kind: 'bass', name: t('po.bassPart'), notes, preset: 'r_ebass' }
+  : kind === 'guitar' ? { id: 'guitar', kind: 'guitar', name: t('po.guitarPart'), notes, preset: 'r_eguitar' }
+    : { id: 'piano', kind: 'piano', name: t('po.pianoPart'), notes, preset: 'r_piano' };
 
 async function run(kind: Kind, ctx: Ctx, progress: (f: number) => void, signal: AbortSignal) {
   const t0 = performance.now();
-  const stem = !!ctx.result.stems?.[stemOf(kind)];
-  const buf = ctx.input(stemOf(kind));
+  const which = stemOf(kind, ctx), stem = !!ctx.result.stems?.[which];
+  const buf = ctx.input(which);
   lastRun[kind] = { stem, worker: true, ms: 0 };
+  const own = stem && which === kind && kind !== 'bass', rel = own ? levelDb(buf) - levelDb(ctx.source!.buffer) : 0;
+  if (own && rel < -EMPTY_DB) {
+    // piste de l'instrument presque vide : pas de partie (les restes des autres instruments donneraient de fausses notes)
+    ctx.result.parts = ctx.result.parts.filter(x => x.id !== kind);
+    lastRun[kind] = { stem, worker: true, ms: Math.round(performance.now() - t0), empty: true };
+    progress(1); return;
+  }
+  /** nettoyage des restes de voix, si la mélodie chantée est connue et la piste bien plus faible que la voix */
+  const clean = (notes: PolyNote[]) => {
+    const mel = ctx.result.parts.find(x => x.kind === 'melody'), vox = ctx.result.stems?.vocals;
+    if (!own || !mel || !vox || levelDb(buf) > levelDb(vox) - 12) return notes;
+    const kept = dropVocalLeak(notes, mel.notes); lastRun[kind]!.leak = notes.length - kept.length;
+    return kept;
+  };
   progress(0.02);
   // d'abord le modèle de notes (bien plus juste sur de la vraie musique) ; sans lui, le calcul maison
   let model: PolyNote[] | null = null;
   try {
     const p = settings[kind], onset = Math.max(0.2, Math.min(0.8, 0.5 - (p.sens - 0.5) * 0.5)), minLen = Math.max(3, Math.round(Math.max(p.minDur, kind === 'bass' ? 0.09 : 0.12) * 86));
-    model = await bpTranscribe(buf, kind === 'bass' ? { mono: true, lo: 28, hi: 60, onset, frame: 0.3, minLen } : { lo: stem ? 33 : 45, hi: 100, onset, frame: 0.3, minLen }, f => progress(0.02 + 0.98 * f), signal) as PolyNote[];
+    model = await bpTranscribe(buf, kind === 'bass' ? { mono: true, lo: 28, hi: 60, onset, frame: 0.3, minLen } : kind === 'guitar' ? { lo: 40, hi: 88, onset, frame: 0.3, minLen } : { lo: stem ? 33 : 45, hi: 100, onset, frame: 0.3, minLen }, f => progress(0.02 + 0.98 * f), signal) as PolyNote[];
   } catch (e) { if (signal.aborted) throw e; }
   if (model) {
-    const part: Part = kind === 'bass'
-      ? { id: 'bass', kind: 'bass', name: t('po.bassPart'), notes: model, preset: 'r_ebass' }
-      : { id: 'piano', kind: 'piano', name: t('po.pianoPart'), notes: model, preset: 'r_piano' };
+    lastRun[kind] = { stem, worker: true, ms: 0, model: true };
+    const part = partOf(kind, clean(model));
     ctx.result.parts = ctx.result.parts.filter(x => x.id !== part.id);
     ctx.result.parts.push(part);
-    lastRun[kind] = { stem, worker: true, ms: Math.round(performance.now() - t0), model: true };
+    lastRun[kind]!.ms = Math.round(performance.now() - t0);
     return;
   }
   const lo = await prepare(buf, SR_LO, kind === 'bass' ? 600 : 2400);
-  const hi = kind === 'piano' ? await prepare(buf, SR_HI) : null;
+  const hi = kind !== 'bass' ? await prepare(buf, SR_HI) : null;
   if (signal.aborted) throw new DOMException('annulé', 'AbortError');
   progress(0.08);
   // sans piste séparée, le grave du mélange appartient à la basse : le piano commence au la 2
-  const job: PolyJob = { kind, lo, hi, params: { ...settings[kind] }, keepFrom: stem ? 33 : 45 };
+  const job: PolyJob = { kind: kind === 'bass' ? 'bass' : 'piano', lo, hi, params: { ...settings[kind] }, keepFrom: kind === 'guitar' ? 40 : stem ? 33 : 45 };
   const notes = await work(job, f => progress(0.08 + 0.92 * f), signal, kind);
-  const part: Part = kind === 'bass'
-    ? { id: 'bass', kind: 'bass', name: t('po.bassPart'), notes, preset: 'r_ebass' }
-    : { id: 'piano', kind: 'piano', name: t('po.pianoPart'), notes, preset: 'r_piano' };
+  const part = partOf(kind, clean(notes));
   ctx.result.parts = ctx.result.parts.filter(p => p.id !== part.id);
   ctx.result.parts.push(part);
   lastRun[kind]!.ms = Math.round(performance.now() - t0);
@@ -128,11 +158,13 @@ function view(kind: Kind, ctx: Ctx): HTMLElement | null {
   const part = ctx.result.parts.find(p => p.id === kind);
   const s = settings[kind];
   const box = h('div', { class: 'po-view', data: { po: kind } });
+  if (!part && lastRun[kind]?.empty) box.append(h('p', { role: 'status', data: { role: 'summary' } }, t('po.emptyStem')));
   if (part) {
     const r = range(part.notes);
     box.append(h('p', { role: 'status', data: { role: 'summary' } }, r ? t('po.found', part.notes.length, noteName(r[0]), noteName(r[1])) : t('po.none')));
     if (lastRun[kind] && !lastRun[kind]!.stem) box.append(h('p', { class: 'tip' }, t('po.whole')));
-    if (kind === 'piano' && part.notes.length) {
+    if (lastRun[kind]?.leak) box.append(h('p', { class: 'tip', data: { role: 'leak' } }, t('po.leak', lastRun[kind]!.leak!)));
+    if (kind !== 'bass' && part.notes.length) {
       const bars = chordsByBar(ctx, part.notes), MAX = 16;
       box.append(h('h4', { style: 'margin:8px 0 4px' }, t('po.chords')),
         h('ol', { class: 'po-chords', 'aria-label': t('po.chords'), style: 'display:flex;flex-wrap:wrap;gap:6px;list-style:none;padding:0;margin:0' },
@@ -151,16 +183,17 @@ function view(kind: Kind, ctx: Ctx): HTMLElement | null {
 
 function make(kind: Kind, order: number) {
   const a: Analyzer = {
-    id: kind === 'bass' ? 'bass-notes' : 'piano-notes', order,
-    title: () => t(kind === 'bass' ? 'po.bass' : 'po.piano'),
-    help: () => t(kind === 'bass' ? 'po.bassHelp' : 'po.pianoHelp'),
+    id: kind + '-notes', order,
+    title: () => t('po.' + kind),
+    help: () => t('po.' + kind + 'Help'),
     run: (ctx, progress, signal) => run(kind, ctx, progress, signal),
     view: ctx => view(kind, ctx),
   };
   /** pour la QA : réglages, dernière analyse, accords par mesure */
-  return Object.assign(a, { kind, po: { settings: settings[kind], lastRun: () => lastRun[kind], chordsByBar, chordName, chordAt } });
+  return Object.assign(a, { kind, po: { settings: settings[kind], lastRun: () => lastRun[kind], chordsByBar, chordName, chordAt, dropVocalLeak } });
 }
 
-export const bassAnalyzer = make('bass', 40), pianoAnalyzer = make('piano', 41);
+export const bassAnalyzer = make('bass', 40), pianoAnalyzer = make('piano', 41), guitarAnalyzer = make('guitar', 42);
 registerAnalyzer(bassAnalyzer);
 registerAnalyzer(pianoAnalyzer);
+registerAnalyzer(guitarAnalyzer);

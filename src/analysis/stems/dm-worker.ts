@@ -6,7 +6,7 @@
 import * as ort from 'onnxruntime-web/webgpu';
 // Moteur WebAssembly d'ONNX Runtime : servi par le site lui-même (Vite le copie dans la version construite).
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
-import { STEMS } from './separate';
+import { STEMS6 } from './separate';
 import { DM, demucsSeparate } from './demucs';
 import { ModelError, loadModel } from './model';
 
@@ -35,7 +35,7 @@ async function open(base: string, want: string) {
     try { session = await ort.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' }); sessionEp = 'webgpu'; return; }
     catch { /* carte graphique refusée : on passe au processeur */ }
   }
-  session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }); sessionEp = 'wasm';
+  session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all'}); sessionEp = 'wasm';
 }
 
 me.onmessage = async (e: MessageEvent<{ l: Float32Array; r: Float32Array; base: string; ep: string; maxSec: number }>) => {
@@ -45,15 +45,15 @@ me.onmessage = async (e: MessageEvent<{ l: Float32Array; r: Float32Array; base: 
     const s = session!, t0 = performance.now();
     const segs = Math.max(1, Math.ceil(Math.max(0, l.length - DM.SEG) / Math.floor(DM.SEG * (1 - DM.OVERLAP))) + 1);
     let seen = 0;
-    const out = await demucsSeparate(l, r, async (mix, mag) => {
-      const res = await s.run({ mix: new ort.Tensor('float32', mix, [1, 2, DM.SEG]), mag: new ort.Tensor('float32', mag, [1, 4, DM.BINS, DM.FRAMES]) });
+    const out = await demucsSeparate(l, r, async mix => {
+      const res = await s.run({ mix: new ort.Tensor('float32', mix, [1, 2, DM.SEG]) });
       const freq = await res.freq.getData() as Float32Array, time = await res.time.getData() as Float32Array;
       res.freq.dispose(); res.time.dispose();
       // Trop lent pour cet appareil : on s'arrête après le premier segment (estimation sur le nombre de segments)
       if (++seen === 1 && segs > 1) { const est = (performance.now() - t0) / 1000 * segs; if (est > maxSec) throw new Slow(est); }
       return { freq, time };
     }, f => me.postMessage({ phase: 'run', f, ep: sessionEp }));
-    me.postMessage({ out, ep: sessionEp, sec: (performance.now() - t0) / 1000 }, STEMS.flatMap(k => out[k].map(a => a.buffer as ArrayBuffer)));
+    me.postMessage({ out, ep: sessionEp, sec: (performance.now() - t0) / 1000 }, STEMS6.flatMap(k => out[k].map(a => a.buffer as ArrayBuffer)));
   } catch (err) {
     if (err instanceof Slow) me.postMessage({ error: 'slow', code: 'slow', est: err.est, ep: sessionEp });
     else if (err instanceof ModelError) me.postMessage({ error: err.message, code: err.code });

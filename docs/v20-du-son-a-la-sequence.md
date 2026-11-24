@@ -177,7 +177,7 @@ Erreurs typiques : un piano ou des cordes sous la batterie ne sont pas entendus 
 **Pour la fusion** : dépendances `@tensorflow/tfjs-core`, `-converter`, `-backend-cpu`, `-backend-wasm` (4.22.0) dans `package.json` ; une ligne `import './instruments';` dans `src/analysis/index.ts`. Préfixe de QA **INF** (« IN » était déjà pris par les cas d'entrée audio IN01-IN03).
 
 Campagne complète (`KH_PORT=5245 npm run qa:all`, 23/11/2026) : 484/491. Les 12 cas INF passent. AR03, LQ01, BN03, CT06, QZ04 et LR05 ont échoué sous la charge (cinq sessions en parallèle) et passent rejoués seuls ; **QZ03** échoue aussi sur la branche `v20` sans ce travail (clic qui n'aboutit pas, à regarder à part). `npm run build` passe.
-## Séparation des pistes (branche `claude/v20-pistes-c1cd63`, préfixe de QA `SEP`)
+## Séparation des pistes (branche `claude/v20-pistes-c1cd63`, préfixe de QA `SEP`) — depuis le 24/11/2026 : six pistes, voir la fin du document
 
 ### Fait
 
@@ -272,3 +272,10 @@ Les temps suivis un par un tremblent de quelques centièmes (davantage quand le 
 3. Les tronçons sont raccordés bout à bout : `Result.beats` est la grille régulière par morceaux, `Result.tempoSecs` la liste des tronçons. « Appliquer le tempo » pose une marque par tronçon ; les parties ajoutées (`warpNotes`) gardent donc exactement leur placement d'origine.
 
 Non vérifié : musique à tempo très libre (rubato), mesures ternaires.
+
+## Six pistes et guitare (24/11/2026, cas PO16-PO20, SEP23)
+
+- Demucs `htdemucs_6s` (cœur du réseau, 177 Mo) remplace le modèle à quatre pistes : `stems` peut contenir `guitar` et `piano` en plus de `vocals`, `drums`, `bass`, `other`. Le mode rapide ne donne que les quatre premières.
+- Le modèle reçoit `mix` [1, 2, 343 980] (son ramené à moyenne nulle et écart-type 1 sur tout le morceau) et rend `freq` [1, 6, 4, 2048, 336] et `time` [1, 6, 2, 343 980], ordre batterie, basse, autres, voix, guitare, piano ; `ispec` (transformée inverse) puis addition, recollage par segments de 7,8 s recouverts de 25 %.
+- `guitar-notes` : nouvelle analyse (Basic Pitch de Mi2 à Mi6, secours par le calcul du piano). `stemOf` : chaque analyse lit sa piste si elle existe, sinon « autres ».
+- `EMPTY_DB` (35 dB) : piste de l'instrument presque vide → pas de partie. `dropVocalLeak` : notes du piano qui doublent la mélodie chantée retirées quand la piste est 12 dB sous la voix.

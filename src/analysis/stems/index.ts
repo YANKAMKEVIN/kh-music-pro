@@ -1,4 +1,5 @@
-/** V20 — Séparation des pistes : voix, batterie, basse, autres (`ctx.result.stems`, au taux du son source).
+/** V20 — Séparation des pistes : voix, batterie, basse, guitare, piano, autres avec Demucs ; quatre pistes en mode rapide
+ *  (`ctx.result.stems`, au taux du son source).
  *  Calcul par traitement du signal (voir `separate.ts`), dans un Worker, morceau par morceau, annulable.
  *  La vue permet d'écouter chaque piste seule et de l'ajouter au morceau comme piste audio. */
 import { engine } from '../../audio/engine';
@@ -8,24 +9,26 @@ import { Clip, newTrack, stepDur, uid } from '../../types';
 import { h, toast } from '../../ui/dom';
 import { registerAnalyzer } from '../registry';
 import type { Analyzer, Ctx } from '../types';
-import { STEMS, StemName, SepOut, memoryNeeded, separate } from './separate';
+import { STEMS6, StemName, SepOut, memoryNeeded, separate } from './separate';
 import { DM } from './demucs';
 import { forgetModel, modelCached } from './model';
 
 addTexts({
   'st.title': ['Séparer les pistes', 'Separate the stems', 'Separar las pistas'],
-  'st.help': ['Sépare le son en quatre pistes : voix, batterie, basse et autres instruments. Écoute chacune seule, ajoute celles qui te servent au morceau. Les autres analyses s\'en servent pour être plus justes.', 'Splits the sound into four stems: vocals, drums, bass and other instruments. Listen to each one alone and add the ones you need to the song. The other analyses use them to be more accurate.', 'Separa el sonido en cuatro pistas: voz, batería, bajo y otros instrumentos. Escucha cada una sola y añade las que te sirvan a la canción. Los demás análisis las usan para ser más precisos.'],
+  'st.help': ['Sépare le son en pistes : voix, batterie, basse, guitare, piano et autres instruments (quatre pistes en mode rapide, sans guitare ni piano). Écoute chacune seule, ajoute celles qui te servent au morceau. Les autres analyses s\'en servent pour être plus justes.', 'Splits the sound into stems: vocals, drums, bass, guitar, piano and other instruments (four stems in fast mode, without guitar or piano). Listen to each one alone and add the ones you need to the song. The other analyses use them to be more accurate.', 'Separa el sonido en pistas: voz, batería, bajo, guitarra, piano y otros instrumentos (cuatro pistas en modo rápido, sin guitarra ni piano). Escucha cada una sola y añade las que te sirvan a la canción. Los demás análisis las usan para ser más precisos.'],
   'st.vocals': ['Voix', 'Vocals', 'Voz'],
   'st.drums': ['Batterie', 'Drums', 'Batería'],
   'st.bass': ['Basse', 'Bass', 'Bajo'],
+  'st.guitar': ['Guitare', 'Guitar', 'Guitarra'],
+  'st.piano': ['Piano', 'Piano', 'Piano'],
   'st.other': ['Autres instruments', 'Other instruments', 'Otros instrumentos'],
   'st.listen': ['Écouter', 'Listen', 'Escuchar'],
   'st.stop': ['Arrêter', 'Stop', 'Detener'],
   'st.listenA': ['Écouter la piste « {0} » seule', 'Listen to the “{0}” stem alone', 'Escuchar la pista «{0}» sola'],
   'st.add': ['Ajouter au morceau', 'Add to song', 'Añadir a la canción'],
   'st.addA': ['Ajouter la piste « {0} » au morceau', 'Add the “{0}” stem to the song', 'Añadir la pista «{0}» a la canción'],
-  'st.addAll': ['Ajouter les quatre pistes', 'Add all four stems', 'Añadir las cuatro pistas'],
-  'st.addedAll': ['Quatre pistes ajoutées au morceau.', 'Four stems added to the song.', 'Cuatro pistas añadidas a la canción.'],
+  'st.addAll': ['Ajouter toutes les pistes', 'Add all stems', 'Añadir todas las pistas'],
+  'st.addedAll': ['{0} pistes ajoutées au morceau.', '{0} stems added to the song.', '{0} pistas añadidas a la canción.'],
   'st.level': ['{0} dB', '{0} dB', '{0} dB'],
   'st.silent': ['presque vide', 'almost empty', 'casi vacía'],
   'st.lowMem': ['Cet appareil n\'a pas assez de mémoire pour séparer les pistes.', 'This device doesn\'t have enough memory to separate stems.', 'Este dispositivo no tiene memoria suficiente para separar las pistas.'],
@@ -35,7 +38,7 @@ addTexts({
   'st.bestTip': ['modèle d\'intelligence artificielle de Meta, le plus juste ; plus lent sans carte graphique.', 'Meta\'s AI model, the most accurate; slower without a graphics card.', 'modelo de inteligencia artificial de Meta, el más preciso; más lento sin tarjeta gráfica.'],
   'st.fast': ['Rapide', 'Fast', 'Rápido'],
   'st.fastTip': ['traitement du signal, quelques secondes, moins net.', 'signal processing, a few seconds, less clean.', 'tratamiento de señal, unos segundos, menos limpio.'],
-  'st.modelInfo': ['Le modèle (174 Mo) se télécharge une seule fois, à la première séparation, puis reste dans l\'appareil, même hors ligne.', 'The model (174 MB) downloads once, at the first separation, then stays on the device, even offline.', 'El modelo (174 MB) se descarga una sola vez, en la primera separación, y luego queda en el dispositivo, incluso sin conexión.'],
+  'st.modelInfo': ['Le modèle (177 Mo) se télécharge une seule fois, à la première séparation, puis reste dans l\'appareil, même hors ligne.', 'The model (177 MB) downloads once, at the first separation, then stays on the device, even offline.', 'El modelo (177 MB) se descarga una sola vez, en la primera separación, y luego queda en el dispositivo, incluso sin conexión.'],
   'st.modelHere': ['Modèle Demucs gardé dans l\'appareil : il marche hors ligne.', 'Demucs model stored on this device: it works offline.', 'Modelo Demucs guardado en el dispositivo: funciona sin conexión.'],
   'st.dl': ['Téléchargement du modèle : {0} Mo sur {1} Mo…', 'Downloading the model: {0} MB of {1} MB…', 'Descargando el modelo: {0} MB de {1} MB…'],
   'st.fromCache': ['Modèle pris dans l\'appareil.', 'Model taken from the device.', 'Modelo tomado del dispositivo.'],
@@ -98,7 +101,7 @@ export function setMode(m: Mode) { try { localStorage.setItem(MODE_KEY, m); } ca
 /** Comment la dernière séparation a été faite (affiché sous les pistes). */
 type Method = { kind: 'demucs'; ep: string; sec: number } | { kind: 'dsp'; why: string | null };
 let method: Method | null = null;
-const MODEL_BASE = () => new URL('models/htdemucs/', document.baseURI).href;
+const MODEL_BASE = () => new URL('models/htdemucs6/', document.baseURI).href;
 const mb = (n: number) => Math.round(n / 1e6);
 
 function phase(text: string) { const el = document.getElementById('stPhase'); if (el) el.textContent = text; }
@@ -164,8 +167,8 @@ async function run(ctx: Ctx, progress: (f: number) => void, signal: AbortSignal)
       const r = await viaDemucs(st[0], st[1], src.duration, progress, signal);
       if (signal.aborted) throw new DOMException('annulé', 'AbortError');
       const back: SepOut = {} as SepOut;
-      for (const s of STEMS) {
-        const x = await resample(r.out[s], DM.SR, sr, src.length);
+      for (const s of STEMS6) {
+        const x = await resample(r.out[s]!, DM.SR, sr, src.length);
         back[s] = nc === 2 ? x : [x[0].map((v, i) => (v + x[1][i]) / 2)];
       }
       out = back; method = { kind: 'demucs', ep: r.ep, sec: r.sec };
@@ -187,9 +190,10 @@ async function run(ctx: Ctx, progress: (f: number) => void, signal: AbortSignal)
   }
   if (signal.aborted) throw new DOMException('annulé', 'AbortError');
   const stems: NonNullable<typeof ctx.result.stems> = {};
-  for (const s of STEMS) {
+  for (const s of STEMS6) {
+    if (!out[s]) continue;
     const b = engine.ctx.createBuffer(nc, src.length, sr);
-    out[s].forEach((a, c) => b.copyToChannel(a as Float32Array<ArrayBuffer>, c));
+    out[s]!.forEach((a, c) => b.copyToChannel(a as Float32Array<ArrayBuffer>, c));
     stems[s] = b;
   }
   ctx.result.stems = stems;
@@ -265,7 +269,7 @@ export function addStems(ctx: Ctx, which: StemName[]) {
   if (!last) return 0;
   S.selTrack = last.tr; S.selClip = last.clip;
   commit();
-  toast(which.length === 1 ? t('an.added', label(which[0])) : t('st.addedAll'));
+  toast(which.length === 1 ? t('an.added', label(which[0])) : t('st.addedAll', which.length));
   return which.length;
 }
 
@@ -280,7 +284,7 @@ function view(ctx: Ctx): HTMLElement | null {
   const stems = ctx.result.stems;
   if (!stems) return null;
   if (playing && stems[playing.stem] !== playing.src.buffer) stopListening();
-  const rows = STEMS.filter(s => stems[s]).map(s => {
+  const rows = STEMS6.filter(s => stems[s]).map(s => {
     const db = dbOf(stems[s]!), on = playing?.stem === s;
     return h('div', { class: 'fxfoot st-row', data: { stem: s } },
       h('span', { class: 'st-name', style: 'min-width:9em;font-weight:600' }, label(s)),
@@ -289,7 +293,7 @@ function view(ctx: Ctx): HTMLElement | null {
       h('button', { class: 'pill', data: { role: 'add' }, 'aria-label': t('st.addA', label(s)), onclick: () => addStems(ctx, [s]) }, t('st.add')));
   });
   return h('div', { class: 'st-view', id: 'stView' }, ...rows,
-    h('div', { class: 'fxfoot' }, h('button', { class: 'pill accent', id: 'stAddAll', onclick: () => addStems(ctx, STEMS.filter(s => stems[s])) }, t('st.addAll'))),
+    h('div', { class: 'fxfoot' }, h('button', { class: 'pill accent', id: 'stAddAll', onclick: () => addStems(ctx, STEMS6.filter(s => stems[s])) }, t('st.addAll'))),
     h('p', { class: 'tip', id: 'stMethod' }, !method ? '' : method.kind === 'demucs'
       ? t('st.byDemucs', t(method.ep === 'webgpu' ? 'st.gpu' : 'st.cpu'), Math.max(1, Math.round(method.sec)))
       : t('st.byFast') + ' ' + t('st.note')));

@@ -9,8 +9,11 @@
  *  Les quatre masques font 1 en chaque case : la somme des pistes redonne exactement le son d'origine.
  *  Code pur, sans DOM : il tourne dans un Worker (voir `worker.ts`) ou, à défaut, sur le fil principal. */
 
+/** Pistes du mode rapide (toujours présentes). */
 export const STEMS = ['vocals', 'drums', 'bass', 'other'] as const;
-export type StemName = typeof STEMS[number];
+/** Pistes de Demucs à six pistes, dans l'ordre d'affichage : guitare et piano en plus. */
+export const STEMS6 = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'] as const;
+export type StemName = typeof STEMS6[number];
 
 export interface SepOptions {
   /** taille de la fenêtre d'analyse (puissance de 2) ; 4096 par défaut à 44,1/48 kHz */
@@ -20,7 +23,7 @@ export interface SepOptions {
 }
 
 /** Résultat : pour chaque piste, un tableau par canal (même nombre de canaux et même longueur que la source). */
-export type SepOut = Record<StemName, Float32Array[]>;
+export type SepOut = Record<typeof STEMS[number], Float32Array[]> & Partial<Record<'guitar' | 'piano', Float32Array[]>>;
 
 // ---------- Transformée de Fourier (radix 2, en place) ----------
 const fftCache = new Map<number, { cos: Float32Array; sin: Float32Array; rev: Uint32Array }>();

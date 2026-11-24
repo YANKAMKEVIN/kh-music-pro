@@ -6335,7 +6335,7 @@ async function poRun(id, settings) {
   return page.evaluate(async ([id, settings]) => {
     const a = window.kh.analysis.analyzers().find(x => x.id === id); Object.assign(a.po.settings, { sens: 0.5, minDur: 0.06 }, settings || {});
     await window.kh.analysis.runAnalyzer(id);
-    const p = window.kh.analysis.AN.result.parts.find(p => p.id === (id === 'bass-notes' ? 'bass' : 'piano')); return p ? p.notes : null;
+    const p = window.kh.analysis.AN.result.parts.find(p => p.id === id.replace('-notes', '')); return p ? p.notes : null;
   }, [id, settings]);
 }
 /** Précision : F-mesure sur les débuts de note (même hauteur, à ±50 ms), et écart moyen des débuts retrouvés. */
@@ -6525,6 +6525,88 @@ test('PO15', 'Analyse', 'Téléphone : les deux analyses se lancent au doigt, r�
     const lay = await pg.evaluate(() => ({ sw: document.getElementById('analyze').scrollWidth, cw: document.getElementById('analyze').clientWidth, sl: [...document.querySelectorAll('#analyze .po-view input[type=range]')].map(i => i.getBoundingClientRect().right) }));
     expect(lay.sw <= lay.cw + 1 && lay.sl.every(r => r <= 390), 'la fenêtre déborde : ' + JSON.stringify(lay));
   } finally { await ctx2.close(); }
+});
+
+// ---- V20 — six pistes : guitare → notes, piano nettoyé (PO16-PO20) ----
+/** Sons de test en pistes séparées : `stems` = { nom: [notes, timbre, niveau] } ; le son chargé est leur somme. */
+async function poStems(stems, dur) {
+  await page.evaluate(([stems, dur]) => {
+    const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, n = Math.ceil(dur * sr), mix = ctx.createBuffer(1, n, sr), M = mix.getChannelData(0), out = {};
+    for (const [name, [notes, kind, gain]] of Object.entries(stems)) {
+      const b = ctx.createBuffer(1, n, sr), x = b.getChannelData(0);
+      for (const [m, t0, d] of notes) {
+        const f0 = 440 * 2 ** ((m - 69) / 12), i0 = Math.round(t0 * sr), i1 = Math.min(n, Math.round((t0 + d) * sr));
+        for (let h = 1; h <= 8; h++) { const f = f0 * h; if (f > sr * 0.45) continue; const dec = kind === 'voice' ? 0 : 0.7 * (1 + 0.3 * h);
+          for (let i = i0; i < i1; i++) { const tt = (i - i0) / sr; x[i] += 0.15 * gain / h * Math.min(1, tt / 0.004) * Math.exp(-dec * tt) * Math.min(1, (i1 - i) / sr / 0.03) * Math.sin(2 * Math.PI * f * tt + h); } }
+      }
+      for (let i = 0; i < n; i++) M[i] += x[i];
+      out[name] = b;
+    }
+    window.kh.analysis.loadSource('pistes.wav', mix); window.kh.analysis.AN.result.stems = out;
+  }, [stems, dur]);
+}
+const poLast = id => page.evaluate(id => window.kh.analysis.analyzers().find(a => a.id === id).po.lastRun(), id);
+const PO_GTR = [[52, 0.5, 0.45], [55, 1, 0.45], [59, 1.5, 0.45], [64, 2, 0.45], [57, 2.5, 0.9]];
+test('PO16', 'Analyse', 'Guitare → notes : lit la piste « guitare » séparée, trouve ses notes (pas celles du piano), s\'ajoute au morceau au son de guitare ; Ctrl+Z la retire', async () => {
+  await menu('bAnalyze');
+  await poStems({ guitar: [PO_GTR, 'piano', 1], piano: [[[72, 0.7, 0.4], [76, 1.7, 0.4]], 'piano', 1], vocals: [[], 'voice', 1] }, 4);
+  expect(await page.$('[data-an="guitar-notes"] [data-role=run]'), 'ligne « Guitare → notes » présente');
+  await S(() => { window.kh.analysis.AN.result.bpm = 120; });
+  const notes = await poRun('guitar-notes'), sc = poScore(PO_GTR, notes); poLog('guitare (piste séparée)', sc);
+  expect(sc.F >= 0.9 && !notes.some(n => n.midi === 72 || n.midi === 76), 'guitare ' + JSON.stringify(sc) + ' ' + notes.map(n => n.midi));
+  expect((await poLast('guitar-notes')).stem, 'la piste guitare séparée doit servir');
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  await page.click('#anParts [data-part="guitar"] button');
+  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.length }; });
+  expect(tr.n === n0 + 1 && tr.name === 'Guitare' && tr.preset === 'r_eguitar' && tr.notes === notes.length, JSON.stringify(tr));
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste');
+});
+test('PO17', 'Analyse', 'Piano → notes lit la piste « piano » quand elle existe : les notes de la guitare n\'y sont plus ; accords par mesure montrés aussi pour la guitare', async () => {
+  await menu('bAnalyze');
+  const pno = [[60, 0.5, 0.9], [64, 0.5, 0.9], [67, 0.5, 0.9], [65, 2, 0.9], [69, 2, 0.9], [72, 2, 0.9]];
+  await poStems({ guitar: [PO_GTR, 'piano', 1], piano: [pno, 'piano', 1] }, 4);
+  const notes = await poRun('piano-notes'), sc = poScore(pno, notes); poLog('piano (piste séparée, guitare à côté)', sc);
+  expect(sc.F >= 0.9, 'piano ' + JSON.stringify(sc));
+  await poRun('guitar-notes');
+  expect(await page.$('[data-po="guitar"] .po-chords li') && await page.$('[data-po="piano"] .po-chords li'), 'accords par mesure pour le piano et la guitare');
+  await page.keyboard.press('Escape');
+});
+test('PO18', 'Analyse', 'Piste piano presque vide (l\'instrument ne joue pas) : pas de fausse partie, message clair ; la guitare, elle, est bien proposée', async () => {
+  await menu('bAnalyze');
+  await poStems({ guitar: [PO_GTR, 'piano', 1], piano: [[[60, 0.5, 0.5], [67, 1.5, 0.5]], 'piano', 0.004] }, 4);
+  const notes = await poRun('piano-notes');
+  expect(notes === null && (await poLast('piano-notes')).empty, 'aucune partie piano attendue : ' + JSON.stringify(notes));
+  expect((await page.textContent('[data-an="piano-notes"] [data-role=summary]')).includes('presque vide'), 'message « presque vide »');
+  expect(!(await page.$('#anParts [data-part="piano"]')), 'pas de bouton d\'ajout pour le piano');
+  expect((await poRun('guitar-notes')).length >= 4, 'la guitare est trouvée');
+  await page.keyboard.press('Escape');
+});
+test('PO19', 'Analyse', 'Restes de voix dans une piste piano faible : les notes qui doublent le chant sont retirées, celles du piano restent ; nombre annoncé', async () => {
+  await menu('bAnalyze');
+  const song = [[67, 0.5, 0.5], [69, 1.1, 0.5], [71, 1.7, 0.5], [72, 2.3, 0.8]], own = [[48, 0.8, 0.6], [55, 2, 0.6]];
+  await poStems({ vocals: [song, 'voice', 1], piano: [[...song, ...own], 'piano', 0.12] }, 4);
+  await page.evaluate(song => window.kh.analysis.registerAnalyzer({ id: 'qa-mel', order: 99, title: () => 'mélodie', help: () => '', run: async ctx => { ctx.result.parts = ctx.result.parts.filter(p => p.id !== 'vx-melody'); ctx.result.parts.push({ id: 'vx-melody', kind: 'melody', name: 'Chant', notes: song.map(([midi, t, d]) => ({ midi, t, d, vel: 0.8 })) }); } }), song);
+  await vxRunA('qa-mel');
+  const notes = await poRun('piano-notes', { sens: 0.7 }), got = [...new Set(notes.map(n => n.midi))].sort((a, b) => a - b), last = await poLast('piano-notes');
+  expect(JSON.stringify(got) === '[48,55]' && last.leak >= 4, `notes gardées ${got}, retirées ${last.leak}`);
+  expect((await page.textContent('[data-an="piano-notes"] [data-role=leak]')).includes('doublaient la voix'), 'nombre de notes retirées annoncé');
+  // sans mélodie connue, rien n'est retiré (on ne devine pas)
+  await poStems({ vocals: [song, 'voice', 1], piano: [[...song, ...own], 'piano', 0.12] }, 4);
+  const all = await poRun('piano-notes', { sens: 0.7 });
+  expect(all.length > notes.length && !(await poLast('piano-notes')).leak, 'sans mélodie : toutes les notes restent');
+  await page.keyboard.press('Escape');
+});
+test('PO20', 'Analyse', 'Guitare → notes sans piste guitare (mode rapide) : lit « autres instruments » ; titre en trois langues ; lancement au clavier', async () => {
+  await menu('bAnalyze'); await poSound(PO_GTR, 4, 'piano', { stem: 'other' });
+  await page.focus('[data-an="guitar-notes"] [data-role=run]'); await page.keyboard.press('Enter');
+  await page.waitForSelector('#anParts [data-part="guitar"]', { timeout: 20000 });
+  expect((await poLast('guitar-notes')).stem, 'piste « autres » utilisée');
+  await page.keyboard.press('Escape');
+  for (const [l, w] of [['en', 'Guitar → notes'], ['es', 'Guitarra → notas'], ['fr', 'Guitare → notes']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await page.evaluate(() => window.kh.analysis.showAnalyze());
+    expect((await page.textContent('[data-an="guitar-notes"]')).includes(w), 'titre en ' + l); await page.keyboard.press('Escape');
+  }
 });
 
 // ============ V20 — Batterie → motif (DR) ============
@@ -7254,7 +7336,9 @@ async function stRun(timeout = 60000) {
 const stScores = () => S(() => {
   const st = window.kh.analysis.AN.result.stems, m = window.__st, out = {};
   for (const s of ['vocals', 'drums', 'bass', 'other']) {
-    const b = st[s], e = Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
+    const b = st[s], e = Array.from({ length: b.numberOfChannels }, (_, c) => Float32Array.from(b.getChannelData(c)));
+    // Demucs à six pistes : les « autres instruments » du mélange de test se répartissent entre autres, guitare et piano
+    if (s === 'other') for (const x of ['guitar', 'piano']) if (st[x]) e.forEach((d, c) => { const g = st[x].getChannelData(c); for (let i = 0; i < d.length; i++) d[i] += g[i]; });
     out[s] = window.__stemScore(m.src[s], e, m.mix, b.sampleRate);
   }
   return out;
@@ -7419,7 +7503,7 @@ test('SEP14', 'Analyse', 'Ajouter les quatre pistes : quatre pistes audio d\'un 
   await page.click('#stAddAll');
   const names = await S(() => window.kh.S.project.tracks.slice(-4).map(t => t.type + ':' + t.name));
   expect(JSON.stringify(names) === JSON.stringify(['audio:Voix', 'audio:Batterie', 'audio:Basse', 'audio:Autres instruments']), 'pistes ' + names.join(', '));
-  expect((await page.textContent('#toast')).includes('Quatre pistes'), 'message');
+  expect((await page.textContent('#toast')).includes('4 pistes ajoutées'), 'message');
   await page.keyboard.press('Escape');
   const st = await S(() => { const p = JSON.parse(JSON.stringify(window.kh.S.project)); p.tracks = p.tracks.slice(-4); return window.qa.stats(p); });
   expect(st.rms > 0.02 && !st.bad, `les pistes ajoutées ne s'entendent pas au rendu (${JSON.stringify(st)})`);
@@ -7516,7 +7600,7 @@ test('SEP20', 'Analyse', 'Au doigt sur un téléphone : séparer, écouter et aj
 });
 test('SEP21', 'Analyse', 'Séparation en anglais et en espagnol : titre, pistes et boutons traduits', async () => {
   await stOpen(); await stLoad({ dur: 2 }); await stRun(); await page.keyboard.press('Escape');
-  for (const [l, title, stem, btn] of [['en', 'Separate the stems', 'Vocals', 'Add all four stems'], ['es', 'Separar las pistas', 'Voz', 'Añadir las cuatro pistas']]) {
+  for (const [l, title, stem, btn] of [['en', 'Separate the stems', 'Vocals', 'Add all stems'], ['es', 'Separar las pistas', 'Voz', 'Añadir todas las pistas']]) {
     await page.evaluate(l => window.kh.setLang(l), l); await stOpen();
     expect((await page.textContent('[data-an="stems"] h3')).includes(title), `titre en ${l}`);
     expect((await page.textContent('[data-stem="vocals"]')).includes(stem), `nom de piste en ${l}`);
@@ -7541,9 +7625,9 @@ test('SEP22', 'Analyse', 'Voix décentrée et voix sans vibrato : la séparation
 // Le navigateur de la QA n'a pas de carte graphique : le modèle tourne sur le processeur (WebAssembly, un seul cœur), environ une
 // à deux minutes par segment de 7,8 s. Les cas gardent donc des sons courts (un ou deux segments). SEP30 lance un navigateur à part
 // la vraie carte graphique (WebGPU ; Chromium complet sans fenêtre, « channel: 'chromium' »). Ordre voulu : SEP23 télécharge le modèle, SEP24 et SEP28 s'en servent depuis le cache, SEP25-26-29 l'effacent.
-const DM_PART = /\/models\/htdemucs\/htdemucs\.onnx\.\d$/;
+const DM_PART = /\/models\/htdemucs6\/htdemucs_6s\.onnx\.\d$/;
 const stDmReset = () => S(async () => { const q = window.kh.analysis.analyzers().find(a => a.id === 'stems').qa; q.killModel(); await q.forgetModel(); });
-const stCached = () => S(async () => { const c = await caches.open('kh-models-v1'); return (await c.keys()).filter(r => /htdemucs\.onnx\.\d$/.test(r.url)).length; });
+const stCached = () => S(async () => { const c = await caches.open('kh-models-v1'); return (await c.keys()).filter(r => /htdemucs_6s\.onnx\.\d$/.test(r.url)).length; });
 /** Compte les demandes de morceaux du modèle pendant `fn`. */
 async function stCountParts(fn) {
   let n = 0; const on = r => { if (DM_PART.test(r.url())) n++; };
@@ -7564,7 +7648,7 @@ test('SEP23', 'Analyse', 'Demucs : premier lancement, le modèle se télécharge
   await stDmReset();
   await stOpen(); await stLoad({ dur: 10, mode: 'best' });
   expect(await page.isChecked('input[name=stMode][value=best]'), 'Qualité maximale cochée');
-  expect((await page.textContent('#stModel')).includes('174 Mo'), 'taille du modèle annoncée');
+  expect((await page.textContent('#stModel')).includes('177 Mo'), 'taille du modèle annoncée');
   await page.evaluate(() => { window.__dl = false; window.__dlo = new MutationObserver(() => { if ((document.getElementById('stPhase')?.textContent || '').includes('Téléchargement du modèle')) window.__dl = true; }); window.__dlo.observe(document.getElementById('analyze'), { subtree: true, childList: true, characterData: true }); });
   const n = await stCountParts(() => stRun(DM_TIMEOUT));
   expect(n === 4, `${n} morceaux du modèle demandés (4 attendus)`);
@@ -7573,6 +7657,9 @@ test('SEP23', 'Analyse', 'Demucs : premier lancement, le modèle se télécharge
   const meth = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
   expect(meth && meth.kind === 'demucs' && meth.ep === 'wasm', 'méthode ' + JSON.stringify(meth));
   expect((await page.textContent('#stMethod')).includes('Demucs (processeur)'), 'méthode annoncée sous les pistes');
+  // six pistes : guitare et piano en plus, nommées dans la vue
+  const rows = await page.$$eval('#stView [data-stem]', e => e.map(x => x.dataset.stem + ':' + x.querySelector('.st-name').textContent));
+  expect(rows.join() === 'vocals:Voix,drums:Batterie,bass:Basse,guitar:Guitare,piano:Piano,other:Autres instruments', 'lignes de la vue : ' + rows);
   const dm = await stScores(), dsp = await stDspScores();
   stLog('gains SEP23 Demucs', dm); stLog('gains SEP23 rapide', dsp); stLog('durée Demucs (s)', Math.round(meth.sec));
   for (const [s, min] of [['vocals', 16], ['drums', 13], ['bass', 16], ['other', 16]]) expect(dm[s].gain >= min, `${s} : gain ${dm[s].gain} dB (seuil ${min})`);
@@ -7582,7 +7669,7 @@ test('SEP23', 'Analyse', 'Demucs : premier lancement, le modèle se télécharge
 test('SEP24', 'Analyse', 'Demucs hors ligne après rechargement : le choix est gardé, le modèle vient de l\'appareil sans réseau ; son mono à 44,1 kHz rendu au taux d\'origine', async () => {
   await S(() => localStorage.setItem('kh-stems-mode', 'best'));
   await page.reload(); await page.waitForSelector('.clip'); await settle(page); await closeWelcome(page);
-  await ctx.route(DM_PART, r => r.abort()); await ctx.route('**/models/htdemucs/manifest.json', r => r.abort()); ignoreErr = /ERR_FAILED|Failed to load resource/;
+  await ctx.route(DM_PART, r => r.abort()); await ctx.route('**/models/htdemucs6/manifest.json', r => r.abort()); ignoreErr = /ERR_FAILED|Failed to load resource/;
   try {
     await stOpen(); await stLoad({ dur: 10, mode: 'best', monoCh: true, sr: 44100 });
     await until(async () => (await page.textContent('#stModel')).includes('gardé dans l\'appareil'), 'modèle annoncé comme gardé dans l\'appareil', 5000);
@@ -7593,7 +7680,7 @@ test('SEP24', 'Analyse', 'Demucs hors ligne après rechargement : le choix est g
     expect(r.ch.every(x => x === '1@44100:true'), 'pistes mono au taux du son : ' + r.ch.join(','));
     const sc = await stScores(); stLog('gains SEP24 (mono, Demucs)', sc);
     expect(sc.drums.gain >= 12 && sc.bass.gain >= 10, 'séparation mono par Demucs ' + JSON.stringify(sc));
-  } finally { await ctx.unroute(DM_PART); await ctx.unroute('**/models/htdemucs/manifest.json'); }
+  } finally { await ctx.unroute(DM_PART); await ctx.unroute('**/models/htdemucs6/manifest.json'); }
   await page.keyboard.press('Escape');
 });
 test('SEP28', 'Analyse', 'Demucs trop lent pour l\'appareil : arrêt après le premier segment, séparation rapide à la place, avec l\'estimation', async () => {
@@ -7609,26 +7696,26 @@ test('SEP28', 'Analyse', 'Demucs trop lent pour l\'appareil : arrêt après le p
 });
 test('SEP25', 'Analyse', 'Pas de réseau et pas de modèle gardé : message clair, séparation rapide à la place, sans panne', async () => {
   await stDmReset();
-  await ctx.route('**/models/htdemucs/**', r => r.abort()); ignoreErr = /ERR_FAILED|Failed to load resource/;
+  await ctx.route('**/models/htdemucs6/**', r => r.abort()); ignoreErr = /ERR_FAILED|Failed to load resource/;
   try {
     await stOpen(); await stLoad({ dur: 3, mode: 'best' }); await stRun(DM_TIMEOUT);
     expect((await page.textContent('#toast')).includes('impossible à télécharger'), 'message hors ligne : ' + await page.textContent('#toast'));
     const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
     expect(m.kind === 'dsp' && m.why === 'offline', JSON.stringify(m));
     const sc = await stScores(); expect(sc.vocals.gain >= 15, 'la séparation rapide a bien tourné');
-  } finally { await ctx.unroute('**/models/htdemucs/**'); }
+  } finally { await ctx.unroute('**/models/htdemucs6/**'); }
   await page.keyboard.press('Escape');
 });
 test('SEP26', 'Analyse', 'Modèle abîmé pendant le téléchargement : empreinte refusée, rien n\'est gardé, séparation rapide à la place', async () => {
   await stDmReset();
-  await ctx.route('**/models/htdemucs/htdemucs.onnx.2', async r => { const res = await r.fetch(); const b = Buffer.from(await res.body()); b[1000] ^= 0xff; await r.fulfill({ response: res, body: b }); });
+  await ctx.route('**/models/htdemucs6/htdemucs_6s.onnx.2', async r => { const res = await r.fetch(); const b = Buffer.from(await res.body()); b[1000] ^= 0xff; await r.fulfill({ response: res, body: b }); });
   try {
     await stOpen(); await stLoad({ dur: 3, mode: 'best' }); await stRun(DM_TIMEOUT);
     expect((await page.textContent('#toast')).includes('abîmé'), 'message modèle abîmé : ' + await page.textContent('#toast'));
     expect(await stCached() === 0, 'le modèle abîmé ne doit pas rester dans l\'appareil');
     const m = await S(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.method);
     expect(m.kind === 'dsp' && m.why === 'corrupt', JSON.stringify(m));
-  } finally { await ctx.unroute('**/models/htdemucs/htdemucs.onnx.2'); }
+  } finally { await ctx.unroute('**/models/htdemucs6/htdemucs_6s.onnx.2'); }
   await page.keyboard.press('Escape');
 });
 test('SEP27', 'Analyse', 'Choix « Rapide » au clic : gardé, aucun téléchargement du modèle ; « Qualité maximale » est le choix par défaut ; en trois langues', async () => {

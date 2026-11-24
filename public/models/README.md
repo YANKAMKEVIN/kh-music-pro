@@ -19,3 +19,9 @@ Tout est servi par le site lui-même : aucun appel réseau vers un tiers ; le se
 - Basic Pitch, Spotify (paquet npm `@spotify/basic-pitch` 1.0.1, dossier `model/`), licence Apache 2.0 (`LICENSE.txt`).
 - Taille : 0,9 Mo. Entrée : son mono à 22 050 Hz par fenêtres de 2 s ; sorties : pour chacune des 88 touches, 86 fois par seconde, « la note sonne » et « la note commence ».
 - Calcul avec le moteur WebAssembly de `tfjs/` ; la création des notes est réécrite dans `src/analysis/bp/core.ts` d'après la méthode publiée avec le modèle.
+
+## `htdemucs6/` — séparation en six pistes (voix, batterie, basse, guitare, piano, autres)
+
+- HTDemucs `htdemucs_6s`, Meta (`facebookresearch/demucs`, licence MIT, `LICENSE.txt`), export ONNX `StemSplitio/htdemucs-6s-onnx` sur Hugging Face (fichier `htdemucs_6s.onnx` fp32, 258 Mo, SHA-256 `48f8e849…ca779a`).
+- Ici : seulement le **cœur** du réseau (177 Mo, en 4 parties de moins de 50 Mo ; empreinte dans `manifest.json`). La transformée inverse du modèle d'origine ne passe pas dans le navigateur (calcul en double précision, et trop de mémoire) : on a gardé les sorties « freq » et « time » juste avant elle, et KHMP fait la transformée inverse (`src/analysis/stems/demucs.ts`). Vérifié : même résultat que le modèle entier à 2e-6 près.
+- Pour refaire le fichier : couper le graphe aux sorties `/Add_3_output_0` (→ `freq`) et `/Add_4_output_0` (→ `time`) avec le paquet Python `onnx`.

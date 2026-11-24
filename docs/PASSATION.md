@@ -998,3 +998,14 @@ Kevin a fourni une vraie chanson (« Tous les jours », 7 min ; jamais mise dans
 - **Doute non levé** : la fin de la chanson (à partir de 4:55) est lue à 87 BPM. D'après les attaques, c'est probablement un passage en ternaire (6/8) à la même pulsation plutôt qu'un vrai ralenti ; KHMP le range à 87 BPM, où les notes tombent sur la grille des doubles-croches. À faire juger par Kevin.
 - **Pistes de progrès** : piano trop chargé (la piste « autres » de Demucs contient guitares, claviers et nappes ; une version allégée a été soumise à l'écoute de Kevin) ; sons d'instruments choisis d'office (flûte pour le chant) ; mesures ternaires (pas de grille en triolets) ; reconnaissance d'instruments incomplète.
 - **Sessions d'agents V20** : archivées le 24/11/2026 à la demande de Kevin (tout leur travail est dans `v20`).
+
+### Suite du 24/11/2026 (après-midi) : séparation en six pistes, partie guitare
+
+Retour de Kevin sur la reconstitution : « le piano essaie de faire la guitare et d'autres instruments ». Cause : à quatre pistes, guitare, piano et claviers étaient mélangés dans « autres ». Un essai hors de KHMP avec Demucs à six pistes (session parallèle) a été validé par Kevin à l'oreille (« basse et batterie nickels », guitare bien, piano « pas mal » mais discret dans ce chant), puis il a demandé le branchement.
+
+- **Modèle** : `htdemucs_6s` remplace le modèle à quatre pistes (`public/models/htdemucs6/`, 177 Mo ; l'ancien dossier `htdemucs/` est retiré). Le fichier d'origine ne tourne pas dans le navigateur (double précision, mémoire) : on n'a gardé que le cœur du réseau, voir `public/models/README.md`. Mesuré sur 30 s de la chanson dans Chromium : 132 s sur le processeur, 188 s sur la carte graphique du Mac (environ 4 à 6 min par minute de son).
+- **Pistes** : voix, batterie, basse, guitare, piano, autres avec Demucs ; quatre pistes (sans guitare ni piano) en mode rapide. « Ajouter toutes les pistes ».
+- **Guitare → notes** (nouvelle analyse, `guitar-notes`, son `r_eguitar`) : lit la piste guitare, sinon « autres ». **Piano → notes** lit la piste piano quand elle existe.
+- **Piano nettoyé** : piste piano presque vide (35 dB sous le morceau) → pas de partie, message ; piste bien plus faible que la voix (12 dB) et mélodie chantée connue → on retire les notes qui doublent le chant (`dropVocalLeak`). Lancer « Chant → notes » avant « Piano → notes » pour en profiter.
+- **QA** : PO16-PO20 (guitare, piano), SEP23 vérifie les six lignes ; cas SEP adaptés au nouveau modèle.
+- **Non vérifié** : piano sur un morceau où il mène ; guitare en accords saturés ; durée de la séparation complète d'une chanson dans le navigateur (seulement 30 s mesurées ; la reconstitution d'essai a utilisé les six pistes calculées hors navigateur, celles que Kevin a écoutées) ; reconnaissance des familles d'instruments pas encore reliée aux pistes guitare et piano ; téléphones, Windows.

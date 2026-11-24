@@ -1,0 +1,13 @@
+{
+  "name": "htdemucs_6s",
+  "source": "https://huggingface.co/StemSplitio/htdemucs-6s-onnx (htdemucs_6s.onnx, fp32, SHA-256 48f8e84945579f8ab340e083339e9221e03785dbe733a52c388200b6d3ca779a), exporté depuis les poids officiels de facebookresearch/demucs. Ici : seulement le cœur du réseau (sorties « freq » et « time », avant la transformée inverse, trop gourmande en mémoire pour le navigateur et en double précision) ; la transformée inverse est faite par KHMP. Résultat identique au modèle entier à 2e-6 près.",
+  "license": "MIT",
+  "size": 177390006,
+  "sha256": "a97535ce8745ba06002d2839fd9000fb3a66b6b2b6bb69f4edc072ddd8202694",
+  "parts": [
+    "htdemucs_6s.onnx.0",
+    "htdemucs_6s.onnx.1",
+    "htdemucs_6s.onnx.2",
+    "htdemucs_6s.onnx.3"
+  ]
+}

@@ -5,10 +5,10 @@
 /** Une note trouvée dans le son, en secondes depuis le début du son. `midi` = hauteur (60 = do central) ; pour la batterie, numéro General MIDI (36 grosse caisse, 38 caisse claire, 42 charleston fermé…). */
 export interface FoundNote { t: number; d: number; midi: number; vel: number }
 
-/** Une partie prête à devenir une piste : mélodie chantée, basse, piano ou batterie. */
+/** Une partie prête à devenir une piste : mélodie chantée, basse, piano, guitare ou batterie. */
 export interface Part {
   id: string;
-  kind: 'melody' | 'bass' | 'piano' | 'drums' | 'other';
+  kind: 'melody' | 'bass' | 'piano' | 'guitar' | 'drums' | 'other';
   /** nom montré à l'utilisateur, déjà traduit */
   name: string;
   notes: FoundNote[];
@@ -28,8 +28,8 @@ export interface Result {
   tempoSecs?: { beat: number; bpm: number }[];
   /** tonalité : tonique 0..11 (0 = do), mode */
   key?: { tonic: number; mode: 'major' | 'minor'; score: number };
-  /** pistes séparées (voix, batterie, basse, autres), au taux du son source */
-  stems?: Partial<Record<'vocals' | 'drums' | 'bass' | 'other', AudioBuffer>>;
+  /** pistes séparées (voix, batterie, basse, autres ; guitare et piano avec Demucs), au taux du son source */
+  stems?: Partial<Record<'vocals' | 'drums' | 'bass' | 'other' | 'guitar' | 'piano', AudioBuffer>>;
   parts: Part[];
   instruments?: FoundInstrument[];
 }
@@ -38,7 +38,7 @@ export interface Ctx {
   source: { name: string; buffer: AudioBuffer } | null;
   result: Result;
   /** Son à analyser pour une partie donnée : la piste séparée si elle existe, sinon le son entier. */
-  input(stem?: 'vocals' | 'drums' | 'bass' | 'other'): AudioBuffer;
+  input(stem?: 'vocals' | 'drums' | 'bass' | 'other' | 'guitar' | 'piano'): AudioBuffer;
 }
 
 export interface Analyzer {
