@@ -169,7 +169,7 @@ async function reset() {
     for (const f of [...k.engine.fxOn]) k.engine.fx(f, false);
     k.engine.closeInput(); Object.assign(k.S, { inputDevice: '', inputGain: 1, inputMonitor: false }); if (k.engine.playAt0) k.engine.playAt = k.engine.playAt0;
     k.S.selTrack = k.S.project.tracks[0].id; k.S.selClip = k.S.project.tracks[0].clips[0].id;
-    k.analysis.reset();
+    k.analysis.reset(); k.analysis.bp.off = true;   // cas PO et VX : calcul maison (repli) ; les cas BP remettent le modèle de notes
     k.resetHistory(); k.commit();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     document.querySelector('main').style.gridTemplateRows = '';
@@ -7797,6 +7797,56 @@ test('TM05', 'Analyse', 'Changements de tempo traduits en anglais et en espagnol
   await page.focus('#vxApplyTempo'); await page.keyboard.press('Enter');
   const p = await S(() => window.kh.S.project.tempos.map(x => Math.round(x.bpm)));
   expect(p.some(b => Math.abs(b - 128) <= 2), 'marque à 128 BPM attendue : ' + JSON.stringify(p)); await page.keyboard.press('Escape');
+});
+
+// ============ V20 — Notes par le modèle Basic Pitch (BP) ============
+/** Son « piano » de test : notes [midi, début, durée] à timbre harmonique amorti. */
+async function bpLoad(notes, dur, name = 'piano.wav') {
+  await page.evaluate(([notes, dur, name]) => {
+    const k = window.kh, ctx = k.engine.ctx, sr = ctx.sampleRate, b = ctx.createBuffer(1, Math.ceil(dur * sr), sr), x = b.getChannelData(0);
+    for (const [m, t0, d] of notes) { const f = 440 * 2 ** ((m - 69) / 12); for (let i = 0; i < d * sr && Math.floor(t0 * sr) + i < x.length; i++) { const u = i / sr; x[Math.floor(t0 * sr) + i] += 0.2 * Math.exp(-u * 3) * Math.min(1, u / 0.005) * (Math.sin(2 * Math.PI * f * u) + 0.5 * Math.sin(4 * Math.PI * f * u) + 0.25 * Math.sin(6 * Math.PI * f * u)); } }
+    k.analysis.bp.off = false; k.analysis.loadSource(name, b);
+  }, [notes, dur, name]);
+}
+const bpPart = id => page.evaluate(id => (window.kh.analysis.AN.result.parts.find(p => p.id === id)?.notes || []).filter(n => n.d >= 0.15), id);
+const bpHit = (ref, got, tol = 0.06) => ref.filter(([m, t]) => got.some(g => g.midi === m && Math.abs(g.t - t) <= tol)).length;
+test('BP01', 'Analyse', 'Piano → notes par le modèle : gamme et accord retrouvés à 60 ms près, sans fausse note tenue', async () => {
+  const ref = [60, 62, 64, 65, 67, 69, 71, 72].map((m, i) => [m, 0.2 + i * 0.5, 0.45]).concat([[60, 4.5, 1.2], [64, 4.5, 1.2], [67, 4.5, 1.2]]);
+  await menu('bAnalyze'); await bpLoad(ref, 6);
+  await page.click('[data-an="piano-notes"] [data-role="run"]'); await page.waitForSelector('[data-an="piano-notes"] [data-role="summary"]', { timeout: 120000 });
+  const got = await bpPart('piano'), used = await S(() => ({ model: window.kh.analysis.analyzers().find(a => a.id === 'piano-notes').po.lastRun().model, backend: window.kh.analysis.bp.backend }));
+  expect(used.model && used.backend, 'le modèle doit avoir servi : ' + JSON.stringify(used));
+  expect(bpHit(ref, got) === ref.length && got.length <= ref.length + 1, `${bpHit(ref, got)}/${ref.length} notes, ${got.length} trouvées : ` + JSON.stringify(got.map(n => [n.midi, +n.t.toFixed(2)])));
+  await page.keyboard.press('Escape');
+});
+test('BP02', 'Analyse', 'Sans le modèle (fichier absent), le piano se replie sur le calcul maison et trouve quand même les notes', async () => {
+  const ref = [[60, 0.3, 0.6], [64, 1.0, 0.6], [67, 1.7, 0.6]];
+  await menu('bAnalyze'); await bpLoad(ref, 3); await S(() => { window.kh.analysis.bp.off = true; });
+  await vxRunA('piano-notes'); const got = await bpPart('piano');
+  expect(!(await S(() => window.kh.analysis.analyzers().find(a => a.id === 'piano-notes').po.lastRun().model)) && bpHit(ref, got, 0.08) === 3, 'repli : ' + JSON.stringify(got));
+  await page.keyboard.press('Escape');
+});
+test('BP03', 'Analyse', 'Chant → notes par le modèle : au moins 85 % des notes d\'une voix avec vibrato, une seule note à la fois', async () => {
+  const song = vxSong(7, 14); await vxLoad({ dur: 16, voice: [song, { vib: 30 }] }); await S(() => { window.kh.analysis.bp.off = false; });
+  await vxRunA('vx-melody'); const r = await vxRes(), got = r.part.notes, sc = vxScore(song, got, 0.12);
+  const over = got.filter((n, i) => got[i + 1] && n.t + n.d > got[i + 1].t + 0.02).length;
+  expect(sc.recall >= 0.85 && over === 0, `rappel ${Math.round(sc.recall * 100)} %, précision ${Math.round(sc.precision * 100)} %, ${over} chevauchements`);
+});
+test('BP04', 'Analyse', 'Basse → notes par le modèle : ligne de basse grave retrouvée, une note à la fois, dans le registre de la basse', async () => {
+  const ref = [40, 40, 43, 45, 40, 47, 45, 43].map((m, i) => [m, 0.25 + i * 0.5, 0.42]);
+  await menu('bAnalyze'); await bpLoad(ref, 5, 'basse.wav'); await vxRunA('bass-notes');
+  const got = await bpPart('bass');
+  expect(bpHit(ref, got, 0.07) >= 7 && got.every(n => n.midi >= 28 && n.midi <= 60), `${bpHit(ref, got, 0.07)}/8 : ` + JSON.stringify(got.map(n => [n.midi, +n.t.toFixed(2)])));
+  await page.keyboard.press('Escape');
+});
+test('BP05', 'Analyse', 'Une transcription par le modèle s\'annule par le bouton, sans message d\'échec, puis se relance', async () => {
+  const ref = Array.from({ length: 80 }, (_, i) => [60 + (i % 12), 0.2 + i * 0.5, 0.4]);
+  await menu('bAnalyze'); await bpLoad(ref, 42);
+  await page.click('[data-an="piano-notes"] [data-role="run"]'); await page.waitForSelector('[data-an="piano-notes"] .xprog');
+  await page.click('[data-an="piano-notes"] button:has-text("Annuler")'); await page.waitForSelector('[data-an="piano-notes"] [data-role="run"]');
+  expect(!(await page.textContent('#toast')).includes('échoué'), 'annulation prise pour une panne');
+  await vxRunA('piano-notes'); expect((await bpPart('piano')).length >= 70, 'relance après annulation');
+  await page.keyboard.press('Escape');
 });
 
 (async () => {

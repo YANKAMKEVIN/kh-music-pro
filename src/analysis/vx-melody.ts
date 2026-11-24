@@ -3,6 +3,7 @@ import { addTexts, t } from '../i18n';
 import { h } from '../ui/dom';
 import { registerAnalyzer } from './registry';
 import type { FoundNote } from './types';
+import { bpTranscribe } from './bp';
 import { vxRun } from './vx-run';
 
 addTexts({
@@ -27,7 +28,11 @@ registerAnalyzer({
   help: () => t('vx.mel.help'),
   async run(ctx, progress, signal) {
     const stem = !!ctx.result.stems?.vocals;
-    const r = await vxRun<{ notes: FoundNote[]; tuning: number }>('melody', ctx.input('vocals'), progress, signal);
+    // d'abord le modèle de notes, une note à la fois dans le registre de la voix ; sans lui, le suivi de hauteur maison
+    let r: { notes: FoundNote[]; tuning: number } | null = null;
+    try { r = { notes: await bpTranscribe(ctx.input('vocals'), { mono: true, lo: 43, hi: 88, onset: 0.5, frame: 0.3, minLen: 11 }, progress, signal), tuning: 0 }; }
+    catch (e) { if (signal.aborted) throw e; }
+    r ??= await vxRun<{ notes: FoundNote[]; tuning: number }>('melody', ctx.input('vocals'), progress, signal);
     info = { tuning: r.tuning, stem };
     const parts = ctx.result.parts.filter(p => p.id !== 'vx-melody');
     if (r.notes.length) parts.push({ id: 'vx-melody', kind: 'melody', name: t('vx.mel.part'), notes: r.notes, preset: 'flute' });

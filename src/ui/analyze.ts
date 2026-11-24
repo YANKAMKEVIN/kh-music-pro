@@ -65,7 +65,7 @@ export async function runAnalyzer(id: string) {
 export function addPart(id: string) {
   const part = AN.result.parts.find(p => p.id === id);
   if (!part) return null;
-  const tr = addPartAsTrack({ ...part, notes: warpNotes(AN.result, part.notes) }, AN.result.bpm || S.project.bpm, { fromSec: AN.result.beatOffset || 0 });
+  const tr = addPartAsTrack({ ...part, notes: warpNotes(AN.result, part.notes) }, AN.result.bpm || S.project.bpm, { fromSec: AN.result.beatOffset || 0, grid: part.kind === 'melody' ? 0.25 : 0.5 });  // grille fine : le phrasé d'origine est gardé
   toast(t('an.added', part.name));
   return tr;
 }

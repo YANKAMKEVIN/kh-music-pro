@@ -13,3 +13,9 @@
 - `@tensorflow/tfjs-backend-wasm` 4.22.0, Apache 2.0, ~0,7 Mo. Sans WebAssembly, TF.js calcule en JavaScript pur (plus lent).
 
 Tout est servi par le site lui-même : aucun appel réseau vers un tiers ; le service worker garde ces fichiers pour le hors-ligne une fois chargés.
+
+## `basic-pitch/` — notes (chant, basse, piano)
+
+- Basic Pitch, Spotify (paquet npm `@spotify/basic-pitch` 1.0.1, dossier `model/`), licence Apache 2.0 (`LICENSE.txt`).
+- Taille : 0,9 Mo. Entrée : son mono à 22 050 Hz par fenêtres de 2 s ; sorties : pour chacune des 88 touches, 86 fois par seconde, « la note sonne » et « la note commence ».
+- Calcul avec le moteur WebAssembly de `tfjs/` ; la création des notes est réécrite dans `src/analysis/bp/core.ts` d'après la méthode publiée avec le modèle.

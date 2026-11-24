@@ -6,6 +6,7 @@ import { S } from '../../store';
 import { h, slider } from '../../ui/dom';
 import { noteName } from '../../ui/editor';
 import { registerAnalyzer } from '../registry';
+import { bpTranscribe } from '../bp';
 import type { Analyzer, Ctx, Part } from '../types';
 import { DEFAULTS, SR_HI, SR_LO, chordAt, range, transcribeBass, transcribePiano, type PolyNote, type PolyParams } from './core';
 import PolyWorker from './worker?worker&inline';
@@ -33,7 +34,7 @@ type Kind = 'bass' | 'piano';
 /** Réglages de chaque analyse, gardés tant que la page est ouverte. */
 export const settings: Record<Kind, PolyParams> = { bass: { ...DEFAULTS }, piano: { ...DEFAULTS } };
 /** Dernière analyse : le son venait-il d'une piste séparée, et le calcul a-t-il tourné dans un Worker (QA). */
-export const lastRun: Record<Kind, { stem: boolean; worker: boolean; ms: number } | null> = { bass: null, piano: null };
+export const lastRun: Record<Kind, { stem: boolean; worker: boolean; ms: number; model?: boolean } | null> = { bass: null, piano: null };
 
 /** Son mono au taux voulu (rééchantillonnage du navigateur), passe-bas en option. */
 async function prepare(buf: AudioBuffer, sr: number, lowpass = 0): Promise<Float32Array> {
@@ -78,6 +79,21 @@ async function run(kind: Kind, ctx: Ctx, progress: (f: number) => void, signal: 
   const buf = ctx.input(stemOf(kind));
   lastRun[kind] = { stem, worker: true, ms: 0 };
   progress(0.02);
+  // d'abord le modèle de notes (bien plus juste sur de la vraie musique) ; sans lui, le calcul maison
+  let model: PolyNote[] | null = null;
+  try {
+    const p = settings[kind], onset = Math.max(0.2, Math.min(0.8, 0.5 - (p.sens - 0.5) * 0.5)), minLen = Math.max(3, Math.round(Math.max(p.minDur, kind === 'bass' ? 0.09 : 0.12) * 86));
+    model = await bpTranscribe(buf, kind === 'bass' ? { mono: true, lo: 28, hi: 60, onset, frame: 0.3, minLen } : { lo: stem ? 33 : 45, hi: 100, onset, frame: 0.3, minLen }, f => progress(0.02 + 0.98 * f), signal) as PolyNote[];
+  } catch (e) { if (signal.aborted) throw e; }
+  if (model) {
+    const part: Part = kind === 'bass'
+      ? { id: 'bass', kind: 'bass', name: t('po.bassPart'), notes: model, preset: 'r_ebass' }
+      : { id: 'piano', kind: 'piano', name: t('po.pianoPart'), notes: model, preset: 'r_piano' };
+    ctx.result.parts = ctx.result.parts.filter(x => x.id !== part.id);
+    ctx.result.parts.push(part);
+    lastRun[kind] = { stem, worker: true, ms: Math.round(performance.now() - t0), model: true };
+    return;
+  }
   const lo = await prepare(buf, SR_LO, kind === 'bass' ? 600 : 2400);
   const hi = kind === 'piano' ? await prepare(buf, SR_HI) : null;
   if (signal.aborted) throw new DOMException('annulé', 'AbortError');
