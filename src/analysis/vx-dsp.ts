@@ -470,7 +470,7 @@ export function tempoSections(beats: number[], tol = 0.04): { beat: number; t: n
  *  rythme est discret) : on les remplace par des tronçons de tempo constant, raccordés bout à bout, en ne coupant que si
  *  cela explique nettement mieux les temps (`pen`, en s²), en tronçons d'au moins `minLen` temps (moitié moins quand le tempo glisse).
  *  `secs` : pour chaque tronçon, l'indice de son premier temps et son tempo. */
-export function steadyBeats(B: number[], minLen = 12, pen = 0.06): { beats: number[]; secs: { beat: number; bpm: number }[] } {
+export function steadyBeats(B: number[], minLen = 12, pen = 0.06, fine = true): { beats: number[]; secs: { beat: number; bpm: number }[] } {
   const n = B.length;
   if (n < 3) return { beats: B.slice(), secs: n === 2 && B[1] > B[0] ? [{ beat: 0, bpm: 60 / (B[1] - B[0]) }] : [] };
   const sk = new Float64Array(n + 1), skk = new Float64Array(n + 1), sy = new Float64Array(n + 1), sky = new Float64Array(n + 1), syy = new Float64Array(n + 1);
@@ -493,18 +493,23 @@ export function steadyBeats(B: number[], minLen = 12, pen = 0.06): { beats: numb
   cuts.reverse();
   // tempo qui glisse (accélération, ralenti progressif) : là où les temps s'écartent durablement de la droite
   // (médiane sur 5 temps, pour ignorer les à-coups isolés), on recoupe le tronçon en deux
-  const starts: number[] = [];
+  let starts: number[] = [];
   const refine = (s: number, e: number) => {
-    // droite robuste (pente et hauteur médianes) : un temps mal placé ne la fait pas pencher
-    const med = (v: number[]) => { v.sort((x, y) => x - y); return v[v.length >> 1]; };
-    const hh = Math.max(1, (e - s + 1) >> 1), sl: number[] = []; for (let k = s; k + hh <= e; k++) sl.push((B[k + hh] - B[k]) / hh);
-    const a = med(sl), hgt: number[] = []; for (let k = s; k <= e; k++) hgt.push(B[k] - a * k);
-    const b = med(hgt), r: number[] = []; for (let k = s; k <= e; k++) r.push(B[k] - (a * k + b));
+    // droite des moindres carrés sans les temps manifestement mal placés (à plus de 80 ms) : ils ne la font pas pencher
+    const line = (keep: (k: number) => boolean) => {
+      let m = 0, a1 = 0, a2 = 0, b1 = 0, b2 = 0;
+      for (let k = s; k <= e; k++) if (keep(k)) { const y = B[k] - B[0]; m++; a1 += k; a2 += k * k; b1 += y; b2 += k * y; }
+      const den = m * a2 - a1 * a1, a = den ? (m * b2 - a1 * b1) / den : 0; return { a, b: m ? (b1 - a * a1) / m : 0, m };
+    };
+    const f0 = line(() => true), f1 = line(k => Math.abs(B[k] - B[0] - (f0.a * k + f0.b)) <= 0.08), f = f1.m >= 6 && f1.a > 0 ? f1 : f0;
+    const r: number[] = []; for (let k = s; k <= e; k++) r.push(B[k] - B[0] - (f.a * k + f.b));
     let worst = 0;
     for (let i = 0; i < r.length; i++) { const w = r.slice(Math.max(0, i - 2), i + 3).sort((u, v) => u - v); worst = Math.max(worst, Math.abs(w[w.length >> 1])); }
     if (e - s + 1 >= 12 && worst > 0.03) { const m = (s + e + 1) >> 1; refine(s, m - 1); refine(m, e); } else starts.push(s);
   };
-  cuts.forEach((s, q) => refine(s, (cuts[q + 1] ?? n) - 1));
+  if (fine) cuts.forEach((s, q) => refine(s, (cuts[q + 1] ?? n) - 1)); else starts = cuts;
+  // tronçons voisins au même tempo (à 0,5 % près) : un seul
+  starts = starts.filter((s, q) => !q || Math.abs(fit(s, (starts[q + 1] ?? n) - 1).a / fit(starts[q - 1], s - 1).a - 1) >= 0.005);
   const lines = starts.map((s, q) => fit(s, (starts[q + 1] ?? n) - 1));
   // nœuds : début, chaque raccord (moyenne des deux droites, pour ne pas dériver), fin
   const kn = [...starts, n - 1], T = [lines[0].b];
@@ -540,10 +545,8 @@ export function foldBeats(R: number[], secs: { beat: number; bpm: number }[], re
 }
 /** Temps suivis → grille régulière par morceaux, à la pulsation principale. */
 export function steadyGrid(raw: number[], ref = 0) {
-  let g = steadyBeats(raw);
-  const f = foldBeats(g.beats, g.secs, ref);
-  if (f) g = steadyBeats(f);
-  return g;
+  const g = steadyBeats(raw, 12, 0.06, false), f = foldBeats(g.beats, g.secs, ref);
+  return steadyBeats(f ?? raw);
 }
 
 // ---------- Tâches complètes ----------
