@@ -96,7 +96,7 @@ export function addPart(id: string) {
   render();
   return tr;
 }
-const fmtDb = (d: number) => (d > 0.05 ? '+' : d < -0.05 ? '−' : '') + Math.abs(d).toFixed(1).replace('.', ',');
+const fmtDb = (d: number) => (d > 0.05 ? '+' : d < -0.05 ? '−' : '') + Math.abs(d).toLocaleString(document.documentElement.lang || 'fr', { maximumFractionDigits: 1 });
 
 const dlg = () => document.getElementById('analyze') as HTMLDialogElement | null;
 

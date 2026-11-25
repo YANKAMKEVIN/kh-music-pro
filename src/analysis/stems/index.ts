@@ -29,6 +29,7 @@ addTexts({
   'st.addA': ['Ajouter la piste « {0} » au morceau', 'Add the “{0}” stem to the song', 'Añadir la pista «{0}» a la canción'],
   'st.addAll': ['Ajouter toutes les pistes', 'Add all stems', 'Añadir todas las pistas'],
   'st.addedAll': ['{0} pistes ajoutées au morceau.', '{0} stems added to the song.', '{0} pistas añadidas a la canción.'],
+  'st.fromBeat': ['Calées sur le premier temps (les {0} s d\'avant sont coupées), comme les parties rejouées.', 'Aligned to the first beat (the {0} s before are trimmed), like the replayed parts.', 'Alineadas al primer tiempo (los {0} s anteriores se recortan), como las partes tocadas.'],
   'st.level': ['{0} dB', '{0} dB', '{0} dB'],
   'st.silent': ['presque vide', 'almost empty', 'casi vacía'],
   'st.lowMem': ['Cet appareil n\'a pas assez de mémoire pour séparer les pistes.', 'This device doesn\'t have enough memory to separate stems.', 'Este dispositivo no tiene memoria suficiente para separar las pistas.'],
@@ -262,14 +263,17 @@ export function addStems(ctx: Ctx, which: StemName[]) {
     const id = uid(); addBuffer(id, buf);
     const tr = newTrack('audio', S.project.tracks.filter(x => x.type === 'audio').length + 1);
     tr.name = label(s);
-    const clip: Clip = { id: uid(), name: name ? `${name} · ${label(s)}` : label(s), start: 0, offset: 0, bufferId: id, gain: 1, len: Math.max(1, Math.ceil(buf.duration / stepDur(S.project.bpm))) };
+    // tempo trouvé : le son commence à son premier temps, comme les parties rejouées et la batterie (sinon tout serait décalé)
+    const off = Math.min(Math.max(0, ctx.result.bpm ? ctx.result.beatOffset || 0 : 0), buf.duration * 0.5);
+    const clip: Clip = { id: uid(), name: name ? `${name} · ${label(s)}` : label(s), start: 0, offset: off, bufferId: id, gain: 1, len: Math.max(1, Math.ceil((buf.duration - off) / stepDur(S.project.bpm))) };
     tr.clips.push(clip); S.project.tracks.push(tr);
     last = { tr: tr.id, clip: clip.id };
   }
   if (!last) return 0;
   S.selTrack = last.tr; S.selClip = last.clip;
   commit();
-  toast(which.length === 1 ? t('an.added', label(which[0])) : t('st.addedAll', which.length));
+  const off = ctx.result.bpm ? ctx.result.beatOffset || 0 : 0;
+  toast((which.length === 1 ? t('an.added', label(which[0])) : t('st.addedAll', which.length)) + (off >= 0.01 ? ' ' + t('st.fromBeat', off.toLocaleString(document.documentElement.lang || 'fr', { maximumFractionDigits: 1 })) : ''));
   return which.length;
 }
 
