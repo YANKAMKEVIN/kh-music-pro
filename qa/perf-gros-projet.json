@@ -1,36 +1,36 @@
 {
- "date": "2026-11-24",
- "machine": "Apple M3 (8 cœurs)",
+ "date": "2026-11-25",
+ "machine": "Intel(R) Xeon(R) Processor @ 2.10GHz (4 cœurs)",
  "full": {
   "load": {
-   "ratio": 1.2930249999910592,
-   "ms": 5172.099999964237,
+   "ratio": 1.8577999999999883,
+   "ms": 7431.199999999953,
    "sec": 4,
    "tracks": 40,
    "inserts": 120
   },
-  "redraw": 20.69999998807907,
-  "mixer": 28.900000035762787,
+  "redraw": 27.100000000093132,
+  "mixer": 62.699999999953434,
   "export": {
-   "ms": 19648.100000023842,
+   "ms": 29716.699999999953,
    "sec": 18.5
   },
   "play": {
-   "steps": 42,
+   "steps": 29,
    "late": 0,
-   "underruns": 5724,
+   "underruns": 5047,
    "longest": 0,
    "longTasks": 0
   }
  },
  "frozen": {
-  "before": 1.1401499999910594,
-  "after": 0.4104750000089407,
+  "before": 1.772524999999965,
+  "after": 0.8890249999999651,
   "play": {
    "steps": 33,
    "late": 0,
-   "underruns": 8856,
-   "lvl": 0.8934175393497958
+   "underruns": 12069,
+   "lvl": 0.9497556207747533
   }
  }
 }

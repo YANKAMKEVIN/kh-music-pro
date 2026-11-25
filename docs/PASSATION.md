@@ -1019,3 +1019,17 @@ Retour de Kevin sur la reconstitution : « le piano essaie de faire la guitare e
 - Pour refaire une reconstitution : `npx vite build --outDir <dossier>` puis `npx vite preview --outDir <dossier> --port 5261` (copie figée : le serveur de dev recharge la page pendant les longs calculs), copier les pistes dans `<dossier>/_stems6/`, puis `node _essai-local/recon.cjs "$PWD" x <sortie> http://localhost:5261/ bp` (environ 20 min).
 - Questions ouvertes pour Kevin : la fin de la chanson (4:55) est-elle un ralenti ou un passage en ternaire ? le piano est-il trop présent (piste très faible mais 1 250 notes jouées à volume normal) ?
 - Pistes de travail : volume des parties d'après le niveau de leur piste ; relier la reconnaissance d'instruments aux pistes guitare et piano ; séparer une chanson entière dans KHMP (seulement 30 s mesurées) ; préférer le processeur à la carte graphique quand il est plus rapide ; grille ternaire.
+
+### Suite du 25-26/11/2026 : rendu fidèle (branche `v20`)
+
+Essai mixte du 25/11 (vraie voix et vraie batterie, basse, guitare et piano rejoués) jugé « pas encore ça ». Cause principale trouvée par le calcul : **les parties rejouées étaient 2,2 s en avance** sur les vraies pistes (elles commencent au premier temps trouvé, les vraies pistes au début du son ; mesuré par corrélation des attaques). Le même décalage existait dans KHMP quand on ajoutait au morceau les pistes séparées et les parties.
+
+- **Pistes séparées calées sur le premier temps** : « Ajouter » / « Ajouter toutes les pistes » ouvre chaque piste à son premier temps quand le tempo a été trouvé (ce qui précède est coupé, c'est dit dans le message).
+- **Nuances de la vraie piste** : à l'ajout d'une partie (chant, basse, guitare, piano), chaque note prend la force mesurée sur sa vraie piste ; les notes posées là où la vraie piste est muette sont retirées (sur la chanson : 497 notes de piano sur 1 256, 73 de basse, 19 de chant, 9 de guitare).
+- **Six cordes** : la guitare joue six notes au plus en même temps (23 notes étouffées sur la chanson) ; le piano dix.
+- **Volume calé** : juste après l'ajout, KHMP règle le volume de la piste pour qu'elle sonne au niveau de sa vraie piste. Sur la chanson : basse +1,0 dB, guitare −7,9 dB, piano −12,2 dB (proches des corrections faites à la main le 25/11 : +1,7, −8,1, −12,9). Mesuré ensuite sur les 7 minutes : chaque partie à 1 dB près de sa vraie piste, calage à 30 ms près.
+- Un seul Ctrl+Z retire la partie et son réglage. Sans pistes séparées, rien ne change.
+- Détail : `docs/v20-du-son-a-la-sequence.md`, section « Rendu fidèle ». Cas RF01-RF10.
+- **Livré à l'écoute** : `~/Downloads/Tous les jours - essai mixte v2 (calé et nuancé par KHMP).m4a`, fabriqué par KHMP lui-même (boutons d'ajout, volumes réglés par l'application, aucune retouche à la main ; seul le limiteur final est ajouté). **En attente : l'avis de Kevin.**
+- Non vérifié : l'écoute ; le rendu audio d'une chanson de 7 minutes est lent (environ 17 minutes pour les quatre parties rejouées sur le Mac) ; Windows, téléphone.
+- Fichiers d'essai hors git : `/private/tmp/khmp-fidele*` sur le Mac (copie de travail détachée, peut être supprimée : `git worktree remove /private/tmp/khmp-fidele`).

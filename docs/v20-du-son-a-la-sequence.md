@@ -279,3 +279,14 @@ Non vérifié : musique à tempo très libre (rubato), mesures ternaires.
 - Le modèle reçoit `mix` [1, 2, 343 980] (son ramené à moyenne nulle et écart-type 1 sur tout le morceau) et rend `freq` [1, 6, 4, 2048, 336] et `time` [1, 6, 2, 343 980], ordre batterie, basse, autres, voix, guitare, piano ; `ispec` (transformée inverse) puis addition, recollage par segments de 7,8 s recouverts de 25 %.
 - `guitar-notes` : nouvelle analyse (Basic Pitch de Mi2 à Mi6, secours par le calcul du piano). `stemOf` : chaque analyse lit sa piste si elle existe, sinon « autres ».
 - `EMPTY_DB` (35 dB) : piste de l'instrument presque vide → pas de partie. `dropVocalLeak` : notes du piano qui doublent la mélodie chantée retirées quand la piste est 12 dB sous la voix.
+
+## Rendu fidèle (25-26/11/2026, préfixe QA RF)
+
+Fichier : `src/analysis/fidelity.ts`. Branché dans `addPart` (`src/ui/analyze.ts`) et `addStems` (`src/analysis/stems/index.ts`) ; `partTrack` ajouté à `build.ts` (piste construite sans être ajoutée) ; `amend` ajouté à `store.ts`.
+
+- **Décalage trouvé dans l'essai mixte du 25/11** : les parties rejouées commencent au premier temps (`beatOffset`, 2,2 s sur « Tous les jours »), les vraies pistes au début du son ; basse, guitare et piano étaient donc 2,2 s en avance (mesuré par corrélation des attaques). `addStems` ouvre maintenant chaque piste séparée à son premier temps (`clip.offset = beatOffset` quand le tempo est trouvé ; ce qui précède est coupé, annoncé dans le message).
+- **Nuances** (`stemDynamics`) : force de chaque note = niveau de la vraie piste sur ses 80 premières ms, rapporté au 9e décile des notes de la partie, en amplitude resserrée (exposant 0,75, minimum 0,12). Note posée sur une piste muette (40 dB sous ce niveau) : retirée.
+- **Voix** (`capVoices`) : guitare 6, piano 10 ; une note de trop étouffe la plus faible qui sonne (ou n'est pas jouée si c'est elle la plus faible).
+- **Volume** (`fitVolume`) : 20 s de la partie (la portion où la vraie piste est la plus forte) rendues seules à 22 050 Hz, sans effets ni général, comparées à la vraie piste au volume 0,8 d'une piste audio. Volume de piste borné à 0,02–1,25. Réglé juste après l'ajout et fondu dans la même action (`amend`) : un seul Ctrl+Z retire tout ; si la piste a déjà été retirée, rien n'est fait.
+- Seulement quand la piste séparée existe (chant → voix, basse, guitare → guitare sinon autres, piano → piano sinon autres). Sans pistes séparées, rien ne change. La batterie (séquenceur) n'est pas concernée.
+- Cas RF01-RF10. Mesure RF04 : partie à 0,3 dB de sa vraie piste, forte comme faible.
