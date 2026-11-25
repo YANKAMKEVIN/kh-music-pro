@@ -6609,6 +6609,157 @@ test('PO20', 'Analyse', 'Guitare → notes sans piste guitare (mode rapide) : li
   }
 });
 
+// ---- V20 — rendu fidèle : nuances et volume de la vraie piste, six cordes (RF01-RF10) ----
+/** Pistes séparées fabriquées : `stems` = { nom: [[midi, début, durée, niveau], …] } (son de corde, niveau en amplitude) ;
+ *  le son chargé est leur somme. `parts` = parties données telles quelles (id, kind, notes [midi, t, d]) ; `bpm` facultatif. */
+async function rfSetup(stems, parts, opts = {}) {
+  await page.evaluate(([stems, parts, opts]) => {
+    const ctx = window.kh.engine.ctx, sr = ctx.sampleRate, n = Math.ceil((opts.dur || 6) * sr), A = window.kh.analysis;
+    const mix = ctx.createBuffer(1, n, sr), M = mix.getChannelData(0), out = {};
+    for (const [name, notes] of Object.entries(stems)) {
+      const b = ctx.createBuffer(1, n, sr), x = b.getChannelData(0);
+      for (const [m, t0, d, g] of notes) {
+        const f0 = 440 * 2 ** ((m - 69) / 12), i0 = Math.round(t0 * sr), i1 = Math.min(n, Math.round((t0 + d) * sr));
+        for (let h = 1; h <= 6; h++) for (let i = i0; i < i1; i++) { const tt = (i - i0) / sr; x[i] += 0.2 * g / h * Math.min(1, tt / 0.004) * Math.exp(-1.2 * tt) * Math.min(1, (i1 - i) / sr / 0.03) * Math.sin(2 * Math.PI * f0 * h * tt); }
+      }
+      for (let i = 0; i < n; i++) M[i] += x[i];
+      out[name] = b;
+    }
+    if (opts.noStems) { A.loadSource('son.wav', mix); } else { A.loadSource('pistes.wav', mix); A.AN.result.stems = out; }
+    const L = A.analyzers(), old = L.findIndex(a => a.id === 'qa-rf'); if (old >= 0) L.splice(old, 1);   // une seule analyse factice, celle de cet appel
+    A.registerAnalyzer({ id: 'qa-rf', order: 0, title: () => 'Parties factices', help: () => '', run: async c => {
+      if (opts.bpm) { c.result.bpm = opts.bpm; c.result.beatOffset = opts.off || 0; }
+      for (const p of parts) { c.result.parts = c.result.parts.filter(x => x.id !== p.id); c.result.parts.push({ id: p.id, kind: p.kind, name: p.name || p.id, preset: p.preset, notes: p.notes.map(([midi, t, d, vel]) => ({ midi, t, d, vel: vel ?? 0.8 })) }); }
+    } });
+  }, [stems, parts, opts]);
+  await page.evaluate(() => window.kh.analysis.runAnalyzer('qa-rf'));
+}
+/** Ajoute une partie par son bouton et attend la fin du réglage de volume ; renvoie la piste ajoutée et le réglage. */
+async function rfAdd(id) {
+  await page.click(`#anParts [data-part="${id}"] button`);
+  return page.evaluate(async id => {
+    const A = window.kh.analysis, f = A.fits.get(id); await f.done;
+    const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1];
+    return { fit: { stem: f.stem, dropped: f.dropped, cut: f.cut, db: f.db, vol: f.vol }, tr: { id: tr.id, name: tr.name, vol: tr.vol, notes: tr.clips[0].notes.map(n => ({ p: n.p, s: n.s, l: n.l, v: n.v })) } };
+  }, id);
+}
+/** Niveau (dB) d'une piste rendue seule (sans le général), et d'une piste séparée sur la même portion (au volume 0,8 d'une piste audio). */
+async function rfLevels(trackId, stem, a, b) {
+  return page.evaluate(async ([trackId, stem, a, b]) => {
+    const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project));
+    p.tracks = p.tracks.filter(t => t.id === trackId); p.buses = []; p.tempos = []; p.loop = false;
+    const out = await k.renderOffline(p, false, { stem: true }), sb = k.analysis.AN.result.stems[stem];
+    const pow = (buf, g) => { let s = 0, n = 0; const i0 = Math.floor(a * buf.sampleRate), i1 = Math.min(buf.length, Math.floor(b * buf.sampleRate)); for (let c = 0; c < buf.numberOfChannels; c++) { const x = buf.getChannelData(c); for (let i = i0; i < i1; i++) s += (g * x[i]) ** 2; n += i1 - i0; } return 10 * Math.log10(s / n + 1e-12); };
+    return { part: pow(out, 1), stem: pow(sb, 0.8) };
+  }, [trackId, stem, a, b]);
+}
+const RF_GTR = [[52, 0.5, 0.45], [55, 1, 0.45], [59, 1.5, 0.45], [64, 2, 0.45], [57, 2.5, 0.45], [60, 3, 0.45], [62, 3.5, 0.45], [64, 4, 0.9]];
+test('RF01', 'Analyse', 'Nuances reprises de la vraie piste : une note jouée fort sur la piste guitare est rejouée fort, une note douce (−14 dB) rejouée doucement', async () => {
+  await menu('bAnalyze');
+  const lv = [1, 0.2, 1, 0.2, 1, 0.2, 1, 1];
+  await rfSetup({ guitar: RF_GTR.map(([m, t, d], i) => [m, t, d, lv[i]]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_eguitar', notes: RF_GTR.map(([m, t, d]) => [m, t, d, 0.8]) }], { bpm: 120 });
+  const r = await rfAdd('guitar'), v = r.tr.notes.map(n => n.v);
+  expect(r.fit.stem === 'guitar' && v.length === 8, JSON.stringify(r.fit) + ' ' + v.length);
+  const loud = v.filter((_, i) => lv[i] === 1), soft = v.filter((_, i) => lv[i] < 1);
+  expect(Math.min(...loud) > 0.9 && Math.max(...soft) < 0.45 && Math.min(...soft) > 0.2, 'forces ' + v.map(x => x.toFixed(2)).join(' '));
+  await page.keyboard.press('Escape');
+});
+test('RF02', 'Analyse', 'Notes posées là où la vraie piste est muette (restes d\'un autre instrument) : retirées à l\'ajout, nombre annoncé sous la partie', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ piano: [[60, 0.5, 0.8, 1], [64, 1.5, 0.8, 1], [67, 2.5, 0.8, 1]] }, [{ id: 'piano', kind: 'piano', preset: 'r_piano', notes: [[60, 0.5, 0.8], [64, 1.5, 0.8], [67, 2.5, 0.8], [72, 4, 0.5], [76, 4.8, 0.5]] }], { bpm: 120 });
+  const r = await rfAdd('piano');
+  expect(r.fit.dropped === 2 && r.tr.notes.length === 3 && !r.tr.notes.some(n => n.p >= 72), JSON.stringify(r.fit) + ' ' + r.tr.notes.map(n => n.p));
+  expect((await page.textContent('#anParts [data-part="piano"] [data-role=fit]')).includes('2 notes retirées'), 'nombre annoncé');
+  await page.keyboard.press('Escape');
+});
+test('RF03', 'Analyse', 'Guitare : six notes au plus en même temps (six cordes) ; une septième étouffe la plus faible ; nombre annoncé', async () => {
+  await menu('bAnalyze');
+  const chord = [40, 45, 50, 55, 59, 64, 67, 71, 76];   // neuf notes trouvées d'un coup (accord + harmoniques)
+  await rfSetup({ guitar: chord.map(m => [m, 0.5, 1.5, 1]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_eguitar', notes: chord.map((m, i) => [m, 0.5 + i * 0.01, 1.5, i < 6 ? 0.9 : 0.3]) }], { bpm: 120, noStems: true });
+  const r = await rfAdd('guitar'), ns = r.tr.notes;
+  let max = 0; for (const a of ns) max = Math.max(max, ns.filter(b => b.s <= a.s && b.s + b.l > a.s).length);
+  expect(max <= 6 && r.fit.cut === 3, `au plus ${max} notes ensemble, ${r.fit.cut} étouffées`);
+  expect([40, 45, 50, 55, 59, 64].every(p => ns.some(n => n.p === p)), 'les six notes fortes restent : ' + ns.map(n => n.p));
+  expect((await page.textContent('#anParts [data-part="guitar"] [data-role=fit]')).includes('3 notes étouffées'), 'nombre annoncé');
+  // le piano garde ses dix doigts : un accord de neuf notes reste entier
+  await rfSetup({}, [{ id: 'piano', kind: 'piano', preset: 'r_piano', notes: chord.map(m => [m + 12, 0.5, 1.5]) }], { bpm: 120, noStems: true });
+  expect((await rfAdd('piano')).tr.notes.length === 9, 'piano : neuf notes gardées');
+  await page.keyboard.press('Escape');
+});
+test('RF04', 'Analyse', 'Volume calé : la partie rejouée sonne au niveau de sa vraie piste (à 2 dB près), pour une piste forte comme pour une piste faible', async () => {
+  for (const [g, label] of [[1, 'forte'], [0.18, 'faible']]) {
+    await menu('bAnalyze');
+    await rfSetup({ bass: RF_GTR.map(([m, t, d]) => [m - 12, t, d, g]) }, [{ id: 'bass', kind: 'bass', preset: 'r_ebass', notes: RF_GTR.map(([m, t, d]) => [m - 12, t, d]) }], { bpm: 120 });
+    const r = await rfAdd('bass');
+    expect(r.fit.db !== null && Math.abs(r.tr.vol - r.fit.vol) < 1e-9, 'volume réglé ' + JSON.stringify(r.fit));
+    const L = await rfLevels(r.tr.id, 'bass', 0.4, 5);
+    console.log(`        mesure niveau piste ${label} : partie ${L.part.toFixed(1)} dB, vraie piste ${L.stem.toFixed(1)} dB, volume ${r.tr.vol.toFixed(2)}`);
+    expect(Math.abs(L.part - L.stem) <= 2, `piste ${label} : partie ${L.part.toFixed(1)} dB, vraie piste ${L.stem.toFixed(1)} dB (volume ${r.tr.vol.toFixed(2)})`);
+    expect((await page.textContent('#anParts [data-part="bass"] [data-role=fit]')).includes('Calée sur la vraie piste'), 'réglage annoncé');
+    await page.keyboard.press('Escape');
+  }
+});
+test('RF05', 'Analyse', 'Un seul Ctrl+Z retire la partie ajoutée avec son volume calé ; Ctrl+Y la rend avec le volume calé', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ guitar: RF_GTR.map(([m, t, d]) => [m, t, d, 0.15]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_eguitar', notes: RF_GTR.map(([m, t, d]) => [m, t, d]) }], { bpm: 120 });
+  const n0 = await S(() => window.kh.S.project.tracks.length), r = await rfAdd('guitar');
+  expect(r.tr.vol < 0.7, 'volume baissé pour une piste faible : ' + r.tr.vol);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'un seul Ctrl+Z retire la piste');
+  await page.keyboard.press('Control+y');
+  const back = await page.evaluate(id => { const t = window.kh.S.project.tracks.find(t => t.id === id); return t && t.vol; }, r.tr.id);
+  expect(back !== undefined && Math.abs(back - r.tr.vol) < 1e-9, 'rétablie avec le volume calé : ' + back);
+});
+test('RF06', 'Analyse', 'Ctrl+Z avant la fin du réglage de volume : la piste reste retirée, rien d\'autre n\'est modifié, Ctrl+Y la rend', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ bass: RF_GTR.map(([m, t, d]) => [m - 12, t, d, 1]) }, [{ id: 'bass', kind: 'bass', preset: 'r_ebass', notes: RF_GTR.map(([m, t, d]) => [m - 12, t, d]) }], { bpm: 120 });
+  const n0 = await S(() => window.kh.S.project.tracks.length);
+  const ok = await page.evaluate(async () => { const A = window.kh.analysis; document.getElementById('analyze').close(); A.addPart('bass'); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await A.fits.get('bass').done; return window.kh.S.project.tracks.length; });
+  expect(ok === n0, 'piste retirée et pas remise par le réglage : ' + ok + ' / ' + n0);
+  await page.keyboard.press('Control+y');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0 + 1, 'Ctrl+Y rend la piste (l\'historique n\'a pas été cassé)');
+});
+test('RF07', 'Analyse', 'Sans piste séparée (son entier) : forces trouvées gardées, volume par défaut, aucun message de réglage', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ guitar: RF_GTR.map(([m, t, d]) => [m, t, d, 1]) }, [{ id: 'piano', kind: 'piano', preset: 'r_piano', notes: RF_GTR.map(([m, t, d], i) => [m, t, d, i % 2 ? 0.5 : 0.9]) }], { bpm: 120, noStems: true });
+  const r = await rfAdd('piano');
+  expect(r.fit.stem === null && r.fit.db === null && r.tr.vol === 0.8, JSON.stringify(r.fit) + ' vol ' + r.tr.vol);
+  expect(r.tr.notes.map(n => n.v).join() === RF_GTR.map((_, i) => i % 2 ? 0.5 : 0.9).join(), 'forces inchangées : ' + r.tr.notes.map(n => n.v));
+  expect(!(await page.$('#anParts [data-part="piano"] [data-role=fit]')), 'pas de message de réglage');
+  await page.keyboard.press('Escape');
+});
+test('RF08', 'Analyse', 'Pistes séparées ajoutées après le tempo : elles commencent à leur premier temps, comme les parties rejouées (sinon tout est décalé) ; annoncé', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ vocals: [[60, 1.3, 1, 1]], drums: [[36, 1.3, 0.2, 1]] }, [], { bpm: 120, off: 1.3 });
+  await page.evaluate(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.addStems(window.kh.analysis.AN, ['vocals', 'drums']));
+  const cl = await S(() => window.kh.S.project.tracks.slice(-2).map(t => ({ off: t.clips[0].offset, start: t.clips[0].start })));
+  expect(cl.every(c => Math.abs(c.off - 1.3) < 1e-6 && c.start === 0), 'début au premier temps : ' + JSON.stringify(cl));
+  expect((await page.textContent('#toasts, .toasts, body')).includes('premier temps'), 'calage annoncé');
+  // sans tempo trouvé : le son commence au début, comme avant
+  await rfSetup({ vocals: [[60, 1.3, 1, 1]] }, []);
+  await page.evaluate(() => window.kh.analysis.analyzers().find(a => a.id === 'stems').qa.addStems(window.kh.analysis.AN, ['vocals']));
+  expect(await S(() => window.kh.S.project.tracks.slice(-1)[0].clips[0].offset) === 0, 'sans tempo : pas de coupe');
+  await page.keyboard.press('Escape');
+});
+test('RF09', 'Analyse', 'Le chant rejoué reprend les nuances de la vraie voix ; une seule note à la fois', async () => {
+  await menu('bAnalyze');
+  const mel = [[67, 0.5, 0.5], [69, 1.1, 0.5], [71, 1.7, 0.5], [72, 2.3, 0.8]];
+  await rfSetup({ vocals: mel.map(([m, t, d], i) => [m, t, d, i === 2 ? 0.15 : 1]) }, [{ id: 'vx-melody', kind: 'melody', preset: 'flute', notes: mel.map(([m, t, d]) => [m, t, d, 0.8]) }], { bpm: 120 });
+  const r = await rfAdd('vx-melody'), v = r.tr.notes.map(n => n.v);
+  expect(r.fit.stem === 'vocals' && v[2] < 0.5 && Math.min(v[0], v[1], v[3]) > 0.9, 'forces ' + v.map(x => x.toFixed(2)).join(' '));
+  await page.keyboard.press('Escape');
+});
+test('RF10', 'Analyse', 'Messages du réglage en anglais et en espagnol ; ligne d\'information lue par les lecteurs d\'écran (role=status)', async () => {
+  for (const [l, w] of [['en', 'Matched to the real stem'], ['es', 'Ajustada a la pista real'], ['fr', 'Calée sur la vraie piste']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await menu('bAnalyze');
+    await rfSetup({ bass: RF_GTR.map(([m, t, d]) => [m - 12, t, d, 1]) }, [{ id: 'bass', kind: 'bass', preset: 'r_ebass', notes: RF_GTR.map(([m, t, d]) => [m - 12, t, d]) }], { bpm: 120 });
+    await rfAdd('bass');
+    const el = await page.$('#anParts [data-part="bass"] [data-role=fit]');
+    expect(el && (await el.textContent()).includes(w) && (await el.getAttribute('role')) === 'status', 'message en ' + l);
+    await page.keyboard.press('Escape');
+  }
+});
+
 // ============ V20 — Batterie → motif (DR) ============
 /** Rend hors ligne un motif connu avec les sons de batterie de l'appli, le charge comme son à analyser, lance l'analyse
  *  « Batterie → motif » et compare : coups retrouvés par instrument (à 35 ms près) et cases du motif retrouvé.
