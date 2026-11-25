@@ -17,15 +17,21 @@ export function toNotes(notes: FoundNote[], bpm: number, fromSec = 0, grid = 1):
   return out.sort((a, b) => a.s - b.s || a.p - b.p);
 }
 
-/** Ajoute une partie au morceau : une piste d'instrument avec un clip qui couvre toutes ses notes. Renvoie la piste. */
-export function addPartAsTrack(part: Part, bpm: number, opts: { fromSec?: number; grid?: number; at?: number } = {}): Track {
+/** Piste d'instrument (pas encore dans le morceau) avec un clip qui couvre toutes les notes de la partie. */
+export function partTrack(part: Part, bpm: number, opts: { fromSec?: number; grid?: number; at?: number; index?: number } = {}): Track {
   const notes = toNotes(part.notes, bpm, opts.fromSec ?? 0, opts.grid ?? 1);
   const end = notes.reduce((e, n) => Math.max(e, n.s + n.l), 0);
   const len = Math.max(BAR, Math.ceil(end / BAR) * BAR);
-  const n = S.project.tracks.filter(x => x.type === 'synth').length + 1;
-  const tr = newTrack('synth', n, part.preset || 'lead');
+  const tr = newTrack('synth', opts.index ?? 1, part.preset || 'lead');
   tr.name = part.name;
   tr.clips.push({ id: uid(), name: part.name, start: opts.at ?? 0, len, offset: 0, patLen: len, notes });
+  return tr;
+}
+
+/** Ajoute une partie au morceau : une piste d'instrument avec un clip qui couvre toutes ses notes. Renvoie la piste. */
+export function addPartAsTrack(part: Part, bpm: number, opts: { fromSec?: number; grid?: number; at?: number; vol?: number } = {}): Track {
+  const tr = partTrack(part, bpm, { ...opts, index: S.project.tracks.filter(x => x.type === 'synth').length + 1 });
+  if (opts.vol !== undefined) tr.vol = opts.vol;
   S.project.tracks.push(tr); S.selTrack = tr.id; S.selClip = tr.clips[0].id;
   commit();
   return tr;

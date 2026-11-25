@@ -78,6 +78,14 @@ function travel(d: number) {
   hi += d; S.project = JSON.parse(hist[hi]); autosave(); emit();
 }
 export const undo = () => travel(-1);
+/** Retouche qui complète la dernière action (réglage calculé juste après un ajout) : si rien n'a changé depuis cette action,
+ *  elle est fondue dedans (un seul Ctrl+Z annule les deux) ; sinon elle devient une action à part. */
+export function amend(fn: () => void) {
+  const same = hi === hist.length - 1 && JSON.stringify(S.project) === hist[hi];
+  fn();
+  if (!same) { commit(); return; }
+  hist[hi] = JSON.stringify(S.project); autosave(); emit();
+}
 /** Abandonne les modifications en cours non validées (glissé annulé par le système) : retour au dernier état enregistré dans l'historique. */
 export function revert() { if (hi >= 0 && JSON.stringify(S.project) !== hist[hi]) { S.project = JSON.parse(hist[hi]); emit(); } }
 export const redo = () => travel(1);
