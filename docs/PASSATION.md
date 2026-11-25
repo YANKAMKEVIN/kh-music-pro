@@ -1010,3 +1010,12 @@ Retour de Kevin sur la reconstitution : « le piano essaie de faire la guitare e
 - **QA** : PO16-PO20 (guitare, piano), SEP23 vérifie les six lignes ; cas SEP adaptés au nouveau modèle.
 - **Non vérifié** : piano sur un morceau où il mène ; guitare en accords saturés ; durée de la séparation complète d'une chanson dans le navigateur (seulement 30 s mesurées ; la reconstitution d'essai a utilisé les six pistes calculées hors navigateur, celles que Kevin a écoutées) ; reconnaissance des familles d'instruments pas encore reliée aux pistes guitare et piano ; téléphones, Windows.
 - **Campagne complète du 24/11/2026 (six pistes)** : 583/586, puis les trois restants verts — TH02 et SEP20 passent relancés seuls (sensibles à la charge), PO01 attendait l'ancien texte d'aide du piano (test corrigé). `npm run build` passe. HawkScan toujours pas lancé (`HAWK_API_KEY` absente).
+
+### Reprise (état au 24/11/2026 au soir)
+
+- Branche `v20`, worktree `.claude/worktrees/v20`, tout poussé. Rien dans `main` ; V19 (`v19`) à réconcilier avant toute fusion ; numéro de version non changé.
+- **En attente : le verdict de Kevin à l'écoute** de `~/Downloads/Tous les jours - reconstitution v4 six pistes.m4a` (guitare et piano séparés, tempo stabilisé).
+- Fichiers d'essai hors git, dans le worktree : `public/_essai/chanson.mp3` (la chanson) et `_essai-local/` (les six pistes validées par Kevin en WAV, le modèle d'origine `htdemucs_6s.onnx`, `recon.cjs` qui refait la reconstitution, `sep6.cjs` qui essaie la séparation dans le navigateur). Ne jamais les committer.
+- Pour refaire une reconstitution : `npx vite build --outDir <dossier>` puis `npx vite preview --outDir <dossier> --port 5261` (copie figée : le serveur de dev recharge la page pendant les longs calculs), copier les pistes dans `<dossier>/_stems6/`, puis `node _essai-local/recon.cjs "$PWD" x <sortie> http://localhost:5261/ bp` (environ 20 min).
+- Questions ouvertes pour Kevin : la fin de la chanson (4:55) est-elle un ralenti ou un passage en ternaire ? le piano est-il trop présent (piste très faible mais 1 250 notes jouées à volume normal) ?
+- Pistes de travail : volume des parties d'après le niveau de leur piste ; relier la reconnaissance d'instruments aux pistes guitare et piano ; séparer une chanson entière dans KHMP (seulement 30 s mesurées) ; préférer le processeur à la carte graphique quand il est plus rapide ; grille ternaire.
