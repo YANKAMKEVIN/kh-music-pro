@@ -41,7 +41,7 @@ const path = require('path');
     const soundCount = await win.$$eval('#sounds [data-sound]', es => es.length);
     await win.fill('[data-role=sound-search]', 'drawbar'); await win.click('[data-sound="r_drawbar"] [data-act=sound-preview]');
     await win.waitForTimeout(350);
-    const soundBrowser = soundCount === 56 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
+    const soundBrowser = soundCount === 57 && await win.evaluate(() => { const k = window.kh, a = k.engine.mix.analyser, d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); return !k.engine.playing && d.some(x => Math.abs(x) > 0.001); });
     await win.keyboard.press('Escape'); await win.waitForSelector('#sounds', { state: 'detached' });
     const returnFocus = await win.$eval('[data-act=sound-browser]', b => document.activeElement === b);
     await win.click('#bPlay'); await win.waitForTimeout(600);

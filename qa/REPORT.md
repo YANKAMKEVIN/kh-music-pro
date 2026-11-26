@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-589 cas réussis sur 596.
+589 cas réussis sur 598.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -151,7 +151,7 @@
 | TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
-| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : } / Command failed: xvfb-run -a /opt/node22/bin/node qa/desktop-smoke.cjs |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : Version bureau : ÉCHEC / Command failed: xvfb-run -a /opt/node22/bin/node qa/desktop-smoke.cjs |
 | CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
 | CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
@@ -166,7 +166,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | OK |
+| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | ÉCHEC : instruments : r_piano,r_nylon,r_eguitar,r_ebass,r_abass,r_strings,r_cello,r_brass,r_sax,r_flute,r_choir,r_honky,r_epiano,r_clavinet,r_drawbar,r_church,r_steel,r_overdrive,r_slap,r_violin,r_contrabass,r_trumpet,r_trombone,r_marimba,r_vibes,r_steelpan,r_air,r_cinema,r_synthchoir,r_wurli,r_fashionbass,r_salamander,r_fsbsguitar |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -234,14 +234,14 @@
 | GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
 | GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
 | GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
-| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
+| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | ÉCHEC : sons (attendu ≈ 56, obtenu 57) |
 | SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
 | SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
 | SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
 | SB05 | Navigateur de sons | Choisir un instrument est annulable et conserve les sons personnels du sampler | OK |
 | SB06 | Navigateur de sons | La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste | OK |
 | SB07 | Navigateur de sons | Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt | OK |
-| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | OK |
+| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | ÉCHEC : favoris corrompus (attendu ≈ 56, obtenu 57) |
 | SB09 | Navigateur de sons | Une préécoute indisponible signale l’échec puis fonctionne après réessai | OK |
 | SB10 | Navigateur de sons | Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste | OK |
 | NU01 | Nuances | Une note jouée doucement est plus sombre qu’une note jouée fort sur cinq instruments enregistrés | OK |
@@ -275,6 +275,8 @@
 | BX01 | Nouvelles banques | Wurlitzer, basse et kit de percussions se choisissent dans les trois langues | OK |
 | BX02 | Nouvelles banques | Le Wurlitzer couvre toutes les notes et nuances malgré ses zones irrégulières | OK |
 | BX03 | Nouvelles banques | La basse dispose de cinq nuances et de deux prises alternées, et reste juste | OK |
+| GT01 | Nouvelles banques | Guitare électrique FreePats (domaine public) : deux nuances au timbre différent, deux prises alternées, juste du mi grave au mi aigu | OK |
+| GT02 | Nouvelles banques | Guitare FreePats : jouée doucement, elle sonne moins fort et plus sombre que jouée fort ; nom traduit en trois langues ; crédits | OK |
 | BX04 | Nouvelles banques | Les seize percussions sont audibles, sans silence dans les nuances hautes des pads à peu de couches | OK |
 | BX05 | Nouvelles banques | Un son importé reste prioritaire sur un pad de percussions et sa réinitialisation rend le bon instrument | OK |
 | BX06 | Nouvelles banques | Les trois choix survivent au fichier projet, au rechargement et à un rendu complet | OK |
@@ -494,7 +496,7 @@
 | PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | OK |
 | PO10 | Analyse | Sans pistes séparées, basse et accords mélangés : chaque analyse garde sa partie (mesuré) et prévient que le son entier est analysé | OK |
 | PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | OK |
-| PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | ÉCHEC : l'interface se fige pendant l'analyse (6 images en 0,5 s) |
+| PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | ÉCHEC : l'interface se fige pendant l'analyse (8 images en 0,5 s) |
 | PO13 | Analyse | Réglages au clavier : plus de sensibilité → la note jouée doucement apparaît ; note la plus courte 200 ms → les notes brèves disparaissent | OK |
 | PO14 | Analyse | Trois minutes de piano : analyse en moins de 60 s, toutes les notes justes | OK |
 | PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | OK |
@@ -572,7 +574,7 @@
 | SEP17 | Analyse | Calcul hors du fil principal : la page reste réactive ; sans Worker, le calcul de repli donne le même résultat | OK |
 | SEP18 | Analyse | Mémoire : appareil trop petit → séparation indisponible avec la raison ; son trop long → message clair avec la durée maximale | OK |
 | SEP19 | Analyse | Parcours réel : un fichier WAV stéréo choisi dans la fenêtre, séparé, écouté puis ajouté au morceau | OK |
-| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | ÉCHEC : page.waitForSelector: Timeout 60000ms exceeded. |
+| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | OK |
 | SEP21 | Analyse | Séparation en anglais et en espagnol : titre, pistes et boutons traduits | OK |
 | SEP22 | Analyse | Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés) | OK |
 | SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | ÉCHEC : other : gain 15.18 dB (seuil 16) |
