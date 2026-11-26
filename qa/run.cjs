@@ -6591,10 +6591,11 @@ test('PO16', 'Analyse', 'Guitare → notes : lit la piste « guitare » séparé
   expect((await poLast('guitar-notes')).stem, 'la piste guitare séparée doit servir');
   const n0 = await S(() => window.kh.S.project.tracks.length);
   await page.click('#anParts [data-part="guitar"] button');
-  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.length }; });
-  expect(tr.n === n0 + 1 && tr.name === 'Guitare' && tr.preset === 'r_fsbsguitar' && tr.notes === notes.length, JSON.stringify(tr));
+  // la guitare a sa piste séparée : celle-ci est ajoutée au-dessus, la partie rejouée en sourdine (RF12)
+  const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1], st = p.tracks[p.tracks.length - 2]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.length, mute: tr.mute, real: st.type }; });
+  expect(tr.n === n0 + 2 && tr.name === 'Guitare' && tr.preset === 'r_fsbsguitar' && tr.notes === notes.length && tr.mute && tr.real === 'audio', JSON.stringify(tr));
   await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
-  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste');
+  expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire les deux pistes');
 });
 test('PO17', 'Analyse', 'Piano → notes lit la piste « piano » quand elle existe : les notes de la guitare n\'y sont plus ; accords par mesure montrés aussi pour la guitare', async () => {
   await menu('bAnalyze');
@@ -6681,7 +6682,7 @@ async function rfAdd(id) {
 async function rfLevels(trackId, stem, a, b) {
   return page.evaluate(async ([trackId, stem, a, b]) => {
     const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project));
-    p.tracks = p.tracks.filter(t => t.id === trackId); p.buses = []; p.tempos = []; p.loop = false;
+    p.tracks = p.tracks.filter(t => t.id === trackId).map(t => ({ ...t, mute: false })); p.buses = []; p.tempos = []; p.loop = false;   // une guitare ou un piano s'ajoute en sourdine (RF12) : mesuré réactivé
     const out = await k.renderOffline(p, false, { stem: true }), sb = k.analysis.AN.result.stems[stem];
     const pow = (buf, g) => { let s = 0, n = 0; const i0 = Math.floor(a * buf.sampleRate), i1 = Math.min(buf.length, Math.floor(b * buf.sampleRate)); for (let c = 0; c < buf.numberOfChannels; c++) { const x = buf.getChannelData(c); for (let i = i0; i < i1; i++) s += (g * x[i]) ** 2; n += i1 - i0; } return 10 * Math.log10(s / n + 1e-12); };
     return { part: pow(out, 1), stem: pow(sb, 0.8) };
@@ -6822,6 +6823,68 @@ test('RF11', 'Analyse', 'Les sons choisis pour la basse, le piano et la guitare 
   const fb = await heard('r_fashionbass', REPLAY.bass[1]);
   console.log(`        témoin r_fashionbass : ${fb.map(([m, h]) => m === h ? m : `${m}→${h}`).join(' ')}`);
   expect(fb.filter(([m, h]) => m !== h).length >= 3, 'la mesure ne repère pas la basse qui sonne trop haut');
+});
+// Décision de Kevin (26/11) : la guitare et le piano rejoués ne sonnent pas juste (notes d'accords approximatives, restes de tam-tam
+// dans la piste séparée). Quand l'instrument a sa propre piste séparée, c'est elle qu'on entend ; la partie rejouée reste en sourdine.
+const rfTracks = () => S(() => window.kh.S.project.tracks.map(t => ({ id: t.id, type: t.type, name: t.name, mute: !!t.mute, offset: t.clips[0] && t.clips[0].offset, buf: t.clips[0] && t.clips[0].bufferId })));
+test('RF12', 'Analyse', 'Guitare avec sa piste séparée : la vraie piste est ajoutée juste au-dessus (calée sur le premier temps), la partie rejouée en sourdine ; un seul Ctrl+Z retire les deux', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ guitar: RF_GTR.map(([m, t, d]) => [m, t, d, 1]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_fsbsguitar', notes: RF_GTR.map(([m, t, d]) => [m, t, d, 0.8]) }], { bpm: 120, off: 0.5 });
+  const n0 = (await rfTracks()).length, r = await rfAdd('guitar'), all = await rfTracks();
+  const part = all[all.length - 1], real = all[all.length - 2];
+  expect(all.length === n0 + 2 && part.mute && part.name === r.tr.name, 'partie : ' + JSON.stringify(part));
+  expect(real.type === 'audio' && !real.mute && Math.abs(real.offset - 0.5) < 1e-6, 'vraie piste : ' + JSON.stringify(real));
+  expect(await S(() => { const A = window.kh.analysis, b = window.kh.S.project.tracks.at(-2).clips[0].bufferId; return window.kh.buffers ? window.kh.buffers.get(b) === A.AN.result.stems.guitar : true; }), 'la piste ajoutée est la guitare séparée');
+  expect(r.fit.db !== null, 'volume calé quand même (pour réentendre la partie) ' + JSON.stringify(r.fit));
+  await page.keyboard.press('Escape'); await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })));
+  near((await rfTracks()).length, n0, 0, 'un Ctrl+Z retire la vraie piste et la partie');
+});
+test('RF13', 'Analyse', 'Piano avec sa piste séparée : même traitement ; basse et chant restent rejoués et audibles, sans piste ajoutée', async () => {
+  await menu('bAnalyze');
+  const PN = [[60, 0.5, 0.8], [64, 0.5, 0.8], [67, 0.5, 0.8], [62, 1.5, 0.8], [65, 1.5, 0.8], [69, 1.5, 0.8]], BS = [[40, 0.5, 0.4], [43, 1, 0.4], [45, 1.5, 0.4], [40, 2, 0.4]];
+  await rfSetup({ piano: PN.map(([m, t, d]) => [m, t, d, 1]), bass: BS.map(([m, t, d]) => [m, t, d, 1]), vocals: BS.map(([m, t, d]) => [m + 24, t, d, 1]) },
+    [{ id: 'piano', kind: 'piano', preset: 'r_salamander', notes: PN }, { id: 'bass', kind: 'bass', preset: 'r_ebass', notes: BS }, { id: 'melody', kind: 'melody', preset: 'flute', notes: BS.map(([m, t, d]) => [m + 24, t, d]) }], { bpm: 120 });
+  const n0 = (await rfTracks()).length;
+  await rfAdd('piano'); let all = await rfTracks();
+  expect(all.length === n0 + 2 && all.at(-1).mute && all.at(-2).type === 'audio', 'piano : ' + JSON.stringify(all.slice(n0)));
+  await rfAdd('bass'); await rfAdd('melody'); all = await rfTracks();
+  expect(all.length === n0 + 4 && !all.at(-1).mute && !all.at(-2).mute && all.at(-1).type === 'synth' && all.at(-2).type === 'synth', 'basse et chant : ' + JSON.stringify(all.slice(n0)));
+  await page.keyboard.press('Escape');
+});
+test('RF14', 'Analyse', 'Guitare sans piste à elle (lue dans « autres instruments ») : rejouée et audible, rien d\'autre n\'est ajouté', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ other: RF_GTR.map(([m, t, d]) => [m, t, d, 1]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_fsbsguitar', notes: RF_GTR.map(([m, t, d]) => [m, t, d, 0.8]) }], { bpm: 120 });
+  const n0 = (await rfTracks()).length, r = await rfAdd('guitar'), all = await rfTracks();
+  expect(r.fit.stem === 'other' && all.length === n0 + 1 && !all.at(-1).mute, JSON.stringify({ fit: r.fit, t: all.slice(n0) }));
+  expect(!(await page.innerText('#anParts [data-part="guitar"]')).includes('sourdine'), 'pas de message de sourdine');
+  await page.keyboard.press('Escape');
+});
+test('RF15', 'Analyse', 'Vraie guitare déjà ajoutée par « Pistes séparées » : pas ajoutée une deuxième fois, la partie reste en sourdine', async () => {
+  await menu('bAnalyze');
+  await rfSetup({ guitar: RF_GTR.map(([m, t, d]) => [m, t, d, 1]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_fsbsguitar', notes: RF_GTR.map(([m, t, d]) => [m, t, d, 0.8]) }], { bpm: 120 });
+  await S(() => { const A = window.kh.analysis; A.analyzers().find(a => a.id === 'stems').qa.addStems(A.AN, ['guitar']); });
+  const n0 = (await rfTracks()).length; await rfAdd('guitar'); const all = await rfTracks();
+  expect(all.length === n0 + 1 && all.at(-1).mute && all.filter(t => t.type === 'audio' && t.name === all.at(-2).name).length === 1, JSON.stringify(all.slice(n0 - 1)));
+  await page.keyboard.press('Escape');
+});
+test('RF16', 'Analyse', 'Sourdine expliquée sous la partie (lue par les lecteurs d\'écran) et annoncée, dans les trois langues ; réactiver la piste de notes la fait entendre', async () => {
+  const want = { fr: 'sourdine', en: 'muted', es: 'silencio' };
+  for (const lang of ['fr', 'en', 'es']) {
+    await page.evaluate(l => window.kh.setLang(l), lang); await menu('bAnalyze');
+    await rfSetup({ guitar: RF_GTR.map(([m, t, d]) => [m, t, d, 1]) }, [{ id: 'guitar', kind: 'guitar', preset: 'r_fsbsguitar', notes: RF_GTR.map(([m, t, d]) => [m, t, d, 0.8]) }], { bpm: 120 });
+    const r = await rfAdd('guitar');
+    const line = await page.innerText('#anParts [data-part="guitar"] [data-role=fit]');
+    expect(line.toLowerCase().includes(want[lang]) && !/an\./.test(line), `${lang} : ${line}`);
+    expect(await page.$eval('#anParts [data-part="guitar"] [data-role=fit]', e => e.getAttribute('role')) === 'status', 'role=status');
+    if (lang === 'fr') {
+      const lv = await page.evaluate(async id => { const k = window.kh, p = JSON.parse(JSON.stringify(k.S.project)); p.tracks = p.tracks.filter(t => t.id === id); p.buses = []; p.loop = false;
+        const e = async () => { const b = await k.renderOffline(p, false, { stem: true }), x = b.getChannelData(0); let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i]; return Math.sqrt(s / x.length); };
+        const off = await e(); p.tracks[0].mute = false; return { off, on: await e() }; }, r.tr.id);
+      expect(lv.off < 1e-4 && lv.on > 0.003, 'en sourdine muette, réactivée audible ' + JSON.stringify(lv));
+    }
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.kh.setLang('fr'));
 });
 
 // ============ V20 — Batterie → motif (DR) ============

@@ -5,6 +5,7 @@ import type { Ctx, Result } from '../analysis/types';
 import { addTexts, t } from '../i18n';
 import { S, amend } from '../store';
 import { fitVolume, shapePart, stemFor } from '../analysis/fidelity';
+import { stemInProject, stemTrack } from '../analysis/stems';
 import { h, toast } from './dom';
 import { clock } from './library';
 
@@ -29,6 +30,8 @@ addTexts({
   'an.fitInfo': ['Calée sur la vraie piste : volume {0} dB', 'Matched to the real stem: volume {0} dB', 'Ajustada a la pista real: volumen {0} dB'],
   'an.fitting': ['Réglage du volume sur la vraie piste…', 'Matching the volume to the real stem…', 'Ajustando el volumen a la pista real…'],
   'an.dropped': ['{0} notes retirées : la vraie piste est muette à cet endroit', '{0} notes removed: the real stem is silent there', '{0} notas quitadas: la pista real está en silencio ahí'],
+  'an.realAdded': ['« {0} » ajoutée en sourdine : sa vraie piste séparée, plus juste, joue à sa place.', '“{0}” added muted: its real separated stem, more accurate, plays instead.', '«{0}» añadida en silencio: su pista separada real, más fiel, suena en su lugar.'],
+  'an.realInfo': ['Notes en sourdine : la vraie piste séparée sonne à leur place (réactivez la piste de notes pour les entendre)', 'Notes muted: the real separated stem plays instead (unmute the notes track to hear them)', 'Notas en silencio: suena la pista separada real (active la pista de notas para oírlas)'],
   'an.voices': ['{0} notes étouffées : {1} notes au plus en même temps', '{0} notes muted: {1} notes at most at once', '{0} notas apagadas: {1} notas como máximo a la vez'],
   'an.personal': ['Pour un usage personnel : publier une reprise demande les droits du morceau.', 'For personal use: publishing a cover requires the song\'s rights.', 'Para uso personal: publicar una versión requiere los derechos de la canción.'],
 });
@@ -70,7 +73,9 @@ export async function runAnalyzer(id: string) {
 
 /** Ajout d'une partie, pour l'affichage et la QA : piste séparée lue, notes retirées ou étouffées, volume calé (dB, null tant
  *  que le calcul tourne ou s'il est impossible). `done` se résout quand le volume est réglé. */
-export interface Fit { stem: string | null; dropped: number; cut: number; voices: number; db: number | null; vol: number | null; pending: boolean; done: Promise<void> }
+export interface Fit {
+  /** partie ajoutée en sourdine, sa vraie piste séparée sonnant à sa place (guitare, piano) */
+  real?: boolean; realAdded?: boolean; stem: string | null; dropped: number; cut: number; voices: number; db: number | null; vol: number | null; pending: boolean; done: Promise<void> }
 export const fits = new Map<string, Fit>();
 
 /** Ajoute une partie au morceau. Si sa vraie piste séparée existe, la partie en reprend les nuances (force de chaque note) et,
@@ -81,9 +86,20 @@ export function addPart(id: string) {
   const stemName = part.kind === 'drums' ? null : stemFor(part, AN.result), stem = stemName ? AN.result.stems![stemName]! : null;
   const shaped = part.kind === 'drums' ? { notes: part.notes, dropped: 0, cut: 0 } : shapePart(part, stem);
   const tr = addPartAsTrack({ ...part, notes: warpNotes(AN.result, shaped.notes) }, AN.result.bpm || S.project.bpm, { fromSec: AN.result.beatOffset || 0, grid: part.kind === 'melody' ? 0.25 : 0.5 });  // grille fine : le phrasé d'origine est gardé
-  const fit: Fit = { stem: stemName, dropped: shaped.dropped, cut: shaped.cut, voices: part.kind === 'guitar' ? 6 : 10, db: null, vol: null, pending: !!stem, done: Promise.resolve() };
+  // Guitare et piano : les notes trouvées dans des accords restent approximatives (notes en trop, restes de percussions dans la
+  // piste séparée). Quand l'instrument a sa propre piste séparée, c'est elle qu'on entend : elle est ajoutée au-dessus de la
+  // partie, et la partie rejouée est ajoutée en sourdine (notes à modifier, à réentendre en la réactivant). Même pas d'annulation.
+  const real = (part.kind === 'guitar' || part.kind === 'piano') && stemName === part.kind ? stemName : null;
+  let realAdded = false;
+  if (real) amend(() => {
+    tr.mute = true;
+    if (stemInProject(AN as Ctx, real)) return;
+    const st = stemTrack(AN as Ctx, real, S.project.tracks.filter(x => x.type === 'audio').length + 1);
+    if (st) { S.project.tracks.splice(S.project.tracks.indexOf(tr), 0, st); realAdded = true; }
+  });
+  const fit: Fit = { stem: stemName, dropped: shaped.dropped, cut: shaped.cut, voices: part.kind === 'guitar' ? 6 : 10, db: null, vol: null, pending: !!stem, done: Promise.resolve(), real: !!real, realAdded };
   fits.set(id, fit);
-  toast(t('an.added', part.name));
+  toast(real ? t('an.realAdded', part.name) : t('an.added', part.name));
   if (stem) fit.done = fitVolume(part, shaped.notes, stem, tr.vol).then(r => {
     fit.pending = false;
     if (r) {
@@ -141,7 +157,7 @@ function render() {
       ...parts.map(p => {
         const f = fits.get(p.id), info = !f ? [] : [
           f.pending ? t('an.fitting') : f.db !== null ? t('an.fitInfo', fmtDb(f.db)) : '',
-          f.dropped ? t('an.dropped', f.dropped) : '', f.cut ? t('an.voices', f.cut, f.voices) : ''].filter(Boolean);
+          f.dropped ? t('an.dropped', f.dropped) : '', f.cut ? t('an.voices', f.cut, f.voices) : '', f.real ? t('an.realInfo') : ''].filter(Boolean);
         return h('div', { class: 'an-part', data: { part: p.id } },
           h('div', { class: 'fxfoot' },
             h('span', {}, `${p.name} · ${t('an.partInfo', p.notes.length)}`),

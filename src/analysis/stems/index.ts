@@ -4,8 +4,8 @@
  *  La vue permet d'écouter chaque piste seule et de l'ajouter au morceau comme piste audio. */
 import { engine } from '../../audio/engine';
 import { addTexts, t } from '../../i18n';
-import { S, addBuffer, commit } from '../../store';
-import { Clip, newTrack, stepDur, uid } from '../../types';
+import { S, addBuffer, buffers, commit } from '../../store';
+import { Clip, Track, newTrack, stepDur, uid } from '../../types';
 import { h, toast } from '../../ui/dom';
 import { registerAnalyzer } from '../registry';
 import type { Analyzer, Ctx } from '../types';
@@ -253,21 +253,33 @@ function listen(ctx: Ctx, stem: StemName) {
 }
 
 // ---------- Ajout au morceau ----------
+/** Piste audio d'une piste séparée, calée sur le premier temps quand le tempo est connu (non ajoutée au morceau). */
+export function stemTrack(ctx: Ctx, s: StemName, index: number): Track | null {
+  const buf = ctx.result.stems?.[s];
+  if (!buf) return null;
+  const name = (ctx.source?.name || '').replace(/\.[^.]+$/, '');
+  const id = uid(); addBuffer(id, buf);
+  const tr = newTrack('audio', index);
+  tr.name = label(s);
+  // tempo trouvé : le son commence à son premier temps, comme les parties rejouées et la batterie (sinon tout serait décalé)
+  const off = Math.min(Math.max(0, ctx.result.bpm ? ctx.result.beatOffset || 0 : 0), buf.duration * 0.5);
+  tr.clips.push({ id: uid(), name: name ? `${name} · ${label(s)}` : label(s), start: 0, offset: off, bufferId: id, gain: 1, len: Math.max(1, Math.ceil((buf.duration - off) / stepDur(S.project.bpm))) } as Clip);
+  return tr;
+}
+/** La piste séparée `s` est-elle déjà dans le morceau (même son) ? */
+export const stemInProject = (ctx: Ctx, s: StemName) => {
+  const buf = ctx.result.stems?.[s];
+  return !!buf && S.project.tracks.some(tr => tr.type === 'audio' && tr.clips.some(c => c.bufferId && buffers.get(c.bufferId) === buf));
+};
+
 /** Ajoute des pistes séparées au morceau : une piste audio par piste séparée, au début du morceau. Un seul pas d'annulation. */
 export function addStems(ctx: Ctx, which: StemName[]) {
-  const name = (ctx.source?.name || '').replace(/\.[^.]+$/, '');
   let last = null as null | { tr: string; clip: string };
   for (const s of which) {
-    const buf = ctx.result.stems?.[s];
-    if (!buf) continue;
-    const id = uid(); addBuffer(id, buf);
-    const tr = newTrack('audio', S.project.tracks.filter(x => x.type === 'audio').length + 1);
-    tr.name = label(s);
-    // tempo trouvé : le son commence à son premier temps, comme les parties rejouées et la batterie (sinon tout serait décalé)
-    const off = Math.min(Math.max(0, ctx.result.bpm ? ctx.result.beatOffset || 0 : 0), buf.duration * 0.5);
-    const clip: Clip = { id: uid(), name: name ? `${name} · ${label(s)}` : label(s), start: 0, offset: off, bufferId: id, gain: 1, len: Math.max(1, Math.ceil((buf.duration - off) / stepDur(S.project.bpm))) };
-    tr.clips.push(clip); S.project.tracks.push(tr);
-    last = { tr: tr.id, clip: clip.id };
+    const tr = stemTrack(ctx, s, S.project.tracks.filter(x => x.type === 'audio').length + 1);
+    if (!tr) continue;
+    S.project.tracks.push(tr);
+    last = { tr: tr.id, clip: tr.clips[0].id };
   }
   if (!last) return 0;
   S.selTrack = last.tr; S.selClip = last.clip;
