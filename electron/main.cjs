@@ -18,9 +18,11 @@ const NATIVE = !!MODULE;
 // KH_RT=1 : calcul audio de Chromium en priorité temps réel (option d'essai, effet non démontré).
 if (NATIVE) app.commandLine.appendSwitch('enable-features', process.env.KH_RT === '1' ? 'SharedArrayBuffer,AudioWorkletRealtimeThread' : 'SharedArrayBuffer');
 
+const ICON = path.join(__dirname, '..', 'dist', 'icon-512.png');
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1500, height: 920, minWidth: 900, minHeight: 600, backgroundColor: '#060914', title: 'KH Music Pro', autoHideMenuBar: true,
+    icon: ICON, width: 1500, height: 920, minWidth: 900, minHeight: 600, backgroundColor: '#060914', title: 'KH Music Pro', autoHideMenuBar: true,
     webPreferences: NATIVE
       ? { contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false, preload: path.join(__dirname, 'native-preload.cjs'), additionalArguments: ['--kh-native=' + MODULE] }
       : { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
@@ -33,6 +35,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin') app.dock?.setIcon(ICON);
   // L'application n'a besoin que du micro et du MIDI ; tout le reste est refusé.
   const allowed = new Set(['media', 'midi', 'midiSysex']);
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));

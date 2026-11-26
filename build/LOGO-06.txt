@@ -1,0 +1,7 @@
+KH Music Pro — identité visuelle retenue par le propriétaire
+
+Source : proposition 06, monogramme KH et onde sonore violet/rose.
+Emblème préparé avec le générateur intégré imagegen, puis décliné en tailles PNG par sips. Conteneurs ICNS et ICO : images PNG, sans modification du dessin.
+
+Prompt final :
+Edit the supplied approved KH logo proposal 06 into the final desktop app icon asset. Preserve exactly the existing central KH monogram with the flowing violet and pink audio wave shapes, colors and design identity. Remove ALL text, including 06 and KH MUSIC PRO. Center only the existing emblem in a square composition, occupying 86 percent of width, with balanced margins vertically. Solid uniform deep plum background #16051f edge to edge, no vignette, no new symbols. Crisp clean edges. No other design changes. This is the approved mark adapted for app icon use.

@@ -1,6 +1,6 @@
 // Service worker de KH Music Pro : garde l'application disponible hors-ligne.
-const CACHE = 'kh-music-pro-v3';
-self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'manifest.webmanifest', 'icon.svg']))); });
+const CACHE = 'kh-music-pro-v4-logo06';
+self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'icon-maskable-512.png']))); });
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 // La page transmet la liste de ses fichiers une fois chargée.

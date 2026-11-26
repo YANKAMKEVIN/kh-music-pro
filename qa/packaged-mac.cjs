@@ -21,6 +21,8 @@ const exe = path.join(appDir, 'Contents', 'MacOS', 'KH Music Pro');
     const win = await app.firstWindow();
     win.on('pageerror', e => errors.push(e.message));
     await win.waitForSelector('.clip', { timeout: 30000 });
+    check(await win.locator('.brand img.logo').evaluate(async img => { await img.decode(); return img.naturalWidth === 192; }), 'logo 06 chargé depuis les fichiers de l’application');
+    check(fs.existsSync(path.join(appDir, 'Contents', 'Resources', 'icon.icns')), 'icône Mac fournie dans le paquet');
     if (await win.$eval('#help', d => d.open)) await win.click('#help form button.accent');
     const r = await win.evaluate(async () => {
       const k = window.kh, br = k.auBridge(), sr = 48000;

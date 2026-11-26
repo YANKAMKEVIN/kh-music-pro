@@ -1,9 +1,11 @@
 # Rapport de QA — KH Music Pro
 
-478 cas réussis sur 478.
+480 cas réussis sur 480.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
+| LG01 | Identité | Le logo choisi apparaît dans la barre, l’aide et les icônes installables | OK |
+| LG02 | Identité | Le logo reste visible dans l’aide sur téléphone sans déborder | OK |
 | T01 | Transport | Espace lance la lecture : le son sort et la position avance | OK |
 | T02 | Transport | Stop revient au point de départ, un second Stop revient au début | OK |
 | T03 | Transport | La boucle revient au début de la zone bouclée | OK |
