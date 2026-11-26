@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-589 cas réussis sur 598.
+596 cas réussis sur 604.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -151,7 +151,7 @@
 | TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
-| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : Version bureau : ÉCHEC / Command failed: xvfb-run -a /opt/node22/bin/node qa/desktop-smoke.cjs |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
 | CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
 | CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
@@ -166,7 +166,7 @@
 | GR05 | Grille fine | Enregistrement : les notes jouées se calent sur la grille choisie, les pads sur la résolution du motif | OK |
 | GR06 | Grille fine | MIDI : triolets et triples-croches survivent à l'export puis à l'import | OK |
 | GR07 | Grille fine | Mode Live, scission et copier/coller fonctionnent avec des notes hors de la double-croche | OK |
-| RI01 | Vrais instruments | Les 32 instruments enregistrés se chargent et produisent un signal propre | ÉCHEC : instruments : r_piano,r_nylon,r_eguitar,r_ebass,r_abass,r_strings,r_cello,r_brass,r_sax,r_flute,r_choir,r_honky,r_epiano,r_clavinet,r_drawbar,r_church,r_steel,r_overdrive,r_slap,r_violin,r_contrabass,r_trumpet,r_trombone,r_marimba,r_vibes,r_steelpan,r_air,r_cinema,r_synthchoir,r_wurli,r_fashionbass,r_salamander,r_fsbsguitar |
+| RI01 | Vrais instruments | Les 33 instruments enregistrés se chargent et produisent un signal propre | OK |
 | RI02 | Vrais instruments | Les notes sont justes, y compris celles obtenues par transposition | OK |
 | RI03 | Vrais instruments | Les notes partent à l'heure (pas de retard dû au fichier son) et s'arrêtent quand on les relâche | OK |
 | RI04 | Vrais instruments | Choisir un vrai instrument dans la liste, le jouer au clavier, le retrouver après rechargement | OK |
@@ -214,7 +214,7 @@
 | BN01 | Banque généraliste | Les 18 nouveaux sons sont classés par famille et nommés dans les trois langues | OK |
 | BN02 | Banque généraliste | Chaque nouveau son se choisit et se joue au clavier en direct | OK |
 | BN03 | Banque généraliste | Les banques sont chargées uniquement au choix du son et réutilisées ensuite | OK |
-| BN04 | Banque généraliste | Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement | OK |
+| BN04 | Banque généraliste | Un projet avec les 18 nouveaux sons survit au fichier .khm et au rechargement | ÉCHEC : projet rouvert (attendu 9i9ds2d2) : {"pid":"9i9ds2d2","presets":["r_honky","r_epiano","r_clavinet","r_drawbar","r_church","r_steel","r_overdrive","r_slap","r_violin","r_contrabass","r_trumpet","r_trombone","r_marimba","r_vibes","r_steelpan","r_air","r_cinema","r_synthchoir"],"clips":6} |
 | BN05 | Banque généraliste | Un nouveau son indisponible signale l’échec puis peut être rechargé | OK |
 | BN06 | Banque généraliste | Sur téléphone, le sélecteur de sons et ses familles restent accessibles au doigt | OK |
 | LH01 | Notes longues | Les dix instruments à maintien restent audibles dans trois registres après huit secondes | OK |
@@ -234,14 +234,14 @@
 | GE04 | Gestes réels | Pad au clavier avec répétition de notes : la répétition s’arrête au relâchement de la touche ; un autre doigt levé ne coupe pas un pad tenu | OK |
 | GE05 | Gestes réels | La première touche d’un instrument pas encore chargé sonne dès la fin du chargement si elle est toujours tenue | OK |
 | GE06 | Gestes réels | Au clavier seul : un curseur du mixeur garde le focus d’un cran à l’autre, et un bouton actionné reste sélectionné | OK |
-| SB01 | Navigateur de sons | Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | ÉCHEC : sons (attendu ≈ 56, obtenu 57) |
+| SB01 | Navigateur de sons | Les 57 sons, les familles et les commandes du navigateur sont nommés dans les trois langues | OK |
 | SB02 | Navigateur de sons | Recherche sans accents, filtres combinés et favoris conservés après rechargement | OK |
 | SB03 | Navigateur de sons | La préécoute et les favoris ne changent ni le projet ni le transport | OK |
 | SB04 | Navigateur de sons | Fermer pendant le chargement empêche une préécoute tardive | OK |
 | SB05 | Navigateur de sons | Choisir un instrument est annulable et conserve les sons personnels du sampler | OK |
 | SB06 | Navigateur de sons | La recherche bloque les raccourcis musicaux et Échap rend le focus à la piste | OK |
 | SB07 | Navigateur de sons | Sur téléphone et en paysage, les filtres et les boutons restent atteignables au doigt | OK |
-| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | ÉCHEC : favoris corrompus (attendu ≈ 56, obtenu 57) |
+| SB08 | Navigateur de sons | Des favoris invalides sont ignorés et le sampler vide explique comment être préécouté | OK |
 | SB09 | Navigateur de sons | Une préécoute indisponible signale l’échec puis fonctionne après réessai | OK |
 | SB10 | Navigateur de sons | Changer de projet pendant l’ouverture ne permet pas de modifier une ancienne piste | OK |
 | NU01 | Nuances | Une note jouée doucement est plus sombre qu’une note jouée fort sur cinq instruments enregistrés | OK |
@@ -393,7 +393,7 @@
 | CF01 | Fondus enchaînés | Réglé au curseur sur le second clip : le premier continue en s’effaçant pendant que le second monte | OK |
 | CF02 | Fondus enchaînés | Fondu à puissance constante : pas de creux de volume à la jonction | OK |
 | CF03 | Fondus enchaînés | Le réglage n’apparaît que pour deux clips qui se touchent ; le X se dessine ; textes traduits ; annulable | OK |
-| CF04 | Fondus enchaînés | Export parallèle d’un gros projet, scission et rechargement gardent le fondu enchaîné | OK |
+| CF04 | Fondus enchaînés | Export parallèle d’un gros projet, scission et rechargement gardent le fondu enchaîné | ÉCHEC : fondu perdu au rechargement |
 | SC01 | Sidechain | Un kick audio importé fait pomper la basse : choix de la source et du réglage dans le mixeur | OK |
 | SC02 | Sidechain | Une voix fait baisser la musique tant qu’elle chante, et la musique remonte après ; réglage à 50 % | OK |
 | SC03 | Sidechain | Le kick du séquenceur reste la source par défaut ; une piste qui suit une autre source ne pompe plus sur lui | OK |
@@ -515,6 +515,12 @@
 | RF08 | Analyse | Pistes séparées ajoutées après le tempo : elles commencent à leur premier temps, comme les parties rejouées (sinon tout est décalé) ; annoncé | OK |
 | RF09 | Analyse | Le chant rejoué reprend les nuances de la vraie voix ; une seule note à la fois | OK |
 | RF10 | Analyse | Messages du réglage en anglais et en espagnol ; ligne d'information lue par les lecteurs d'écran (role=status) | OK |
+| RF11 | Analyse | Les sons choisis pour la basse, le piano et la guitare rejoués font entendre la note jouée (ni octave au-dessus, ni quinte) ; une basse qui sonne une octave trop haut est repérée | OK |
+| RF12 | Analyse | Guitare avec sa piste séparée : la vraie piste est ajoutée juste au-dessus (calée sur le premier temps), la partie rejouée en sourdine ; un seul Ctrl+Z retire les deux | OK |
+| RF13 | Analyse | Piano avec sa piste séparée : même traitement ; basse et chant restent rejoués et audibles, sans piste ajoutée | OK |
+| RF14 | Analyse | Guitare sans piste à elle (lue dans « autres instruments ») : rejouée et audible, rien d'autre n'est ajouté | OK |
+| RF15 | Analyse | Vraie guitare déjà ajoutée par « Pistes séparées » : pas ajoutée une deuxième fois, la partie reste en sourdine | OK |
+| RF16 | Analyse | Sourdine expliquée sous la partie (lue par les lecteurs d'écran) et annoncée, dans les trois langues ; réactiver la piste de notes la fait entendre | OK |
 | DR00 | Batterie → motif | Mesure de précision (affichée) sur dix rythmes fabriqués | OK |
 | DR01 | Batterie → motif | Rock à 120 (kit électro) : grosse caisse, caisse claire et charleston en croches retrouvés, motif identique case par case | OK |
 | DR02 | Batterie → motif | Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 % | ÉCHEC : acoustique s : F=0.41 (k 12/12 · s 8/8 +23 · c 32/32 +9 · cases 82 %) |
@@ -574,7 +580,7 @@
 | SEP17 | Analyse | Calcul hors du fil principal : la page reste réactive ; sans Worker, le calcul de repli donne le même résultat | OK |
 | SEP18 | Analyse | Mémoire : appareil trop petit → séparation indisponible avec la raison ; son trop long → message clair avec la durée maximale | OK |
 | SEP19 | Analyse | Parcours réel : un fichier WAV stéréo choisi dans la fenêtre, séparé, écouté puis ajouté au morceau | OK |
-| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | OK |
+| SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | ÉCHEC : page.waitForSelector: Timeout 60000ms exceeded. |
 | SEP21 | Analyse | Séparation en anglais et en espagnol : titre, pistes et boutons traduits | OK |
 | SEP22 | Analyse | Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés) | OK |
 | SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | ÉCHEC : other : gain 15.18 dB (seuil 16) |

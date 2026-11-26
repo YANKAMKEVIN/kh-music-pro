@@ -1,36 +1,36 @@
 {
  "date": "2026-11-26",
- "machine": "Intel(R) Xeon(R) Processor @ 2.10GHz (4 cœurs)",
+ "machine": "Intel(R) Xeon(R) Processor @ 2.30GHz (4 cœurs)",
  "full": {
   "load": {
-   "ratio": 1.7018500000000931,
-   "ms": 6807.4000000003725,
+   "ratio": 1.445100000000035,
+   "ms": 5780.40000000014,
    "sec": 4,
    "tracks": 40,
    "inserts": 120
   },
-  "redraw": 27.700000000186265,
-  "mixer": 68,
+  "redraw": 27.399999999906868,
+  "mixer": 47.4000000001397,
   "export": {
-   "ms": 28708.60000000056,
+   "ms": 21242.399999999907,
    "sec": 18.5
   },
   "play": {
-   "steps": 31,
+   "steps": 33,
    "late": 0,
-   "underruns": 4834,
+   "underruns": 3879,
    "longest": 0,
    "longTasks": 0
   }
  },
  "frozen": {
-  "before": 1.5829749999998604,
-  "after": 0.9290250000001397,
+  "before": 1.1899500000000116,
+  "after": 0.5907999999999883,
   "play": {
    "steps": 33,
    "late": 0,
-   "underruns": 11191,
-   "lvl": 0.8638581053579387
+   "underruns": 7533,
+   "lvl": 0.8740169415656726
   }
  }
 }
