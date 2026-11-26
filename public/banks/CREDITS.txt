@@ -74,3 +74,12 @@ nuances et jusqu’à deux variantes selon le son ; prise micro unique,
 conversion MP3 mono 44,1 kHz / 128 kbit/s, maximum 6 secondes avec fondu final.
 Toutes les adaptations utilisent les enregistrements originaux, pas des sons
 tirés de banques propriétaires d’Ableton, Logic Pro ou FL Studio.
+
+Guitare électrique claire : « FSBS Electric Guitar Clean » (version 2026-08-07), FreePats.
+Licence CC0 1.0 : https://creativecommons.org/publicdomain/zero/1.0/
+Source : https://freepats.zenvoid.org/ElectricGuitar/clean-electric-guitar.html
+Archive : https://github.com/freepats/electric-guitar-FSBS-clean/releases/download/2026-08-07/EGuitarFSBS-clean-SFZ+FLAC-20260807.7z
+(SHA256 a929a3cbfc8289e325be56dab49f5fd560bbc3995c40b69f8f05caee380e8be3)
+Adaptation KH Music Pro : micro chevalet, deux nuances (douce et normale),
+deux des quatre prises de chaque note, zones de notes de la source ;
+MP3 mono 44,1 kHz / 160 kbit/s, maximum 6 secondes avec fondu final.

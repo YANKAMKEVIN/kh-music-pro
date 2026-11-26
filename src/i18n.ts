@@ -607,6 +607,7 @@ const D: Record<string, [string, string, string]> = {
   'ins.r_sax': ['Saxophone ténor', 'Tenor sax', 'Saxofón tenor'], 'ins.r_flute': ['Flûte traversière', 'Concert flute', 'Flauta travesera'], 'ins.r_choir': ['Chœur', 'Choir', 'Coro'],
   'toast.bankExportFail': ['Export annulé : un instrument n’a pas pu être chargé. Réessayez une fois les sons disponibles.', 'Export cancelled: an instrument could not be loaded. Retry when the sounds are available.', 'Exportación cancelada: no se pudo cargar un instrumento. Reintenta cuando los sonidos estén disponibles.'],
   'ins.r_wurli': ['Piano électrique expressif · Wurlitzer EP200', 'Expressive electric piano · Wurlitzer EP200', 'Piano eléctrico expresivo · Wurlitzer EP200'],
+  'ins.r_fsbsguitar': ['Guitare électrique expressive · FSBS', 'Expressive electric guitar · FSBS', 'Guitarra eléctrica expresiva · FSBS'],
   'ins.r_fashionbass': ['Basse électrique expressive · Fashionbass', 'Expressive electric bass · Fashionbass', 'Bajo eléctrico expresivo · Fashionbass'],
   'kit.percussion': ['Percussions acoustiques · VCSL', 'Acoustic percussion · VCSL', 'Percusión acústica · VCSL'],
   'syn.recordedDynamics': ['Nuances réellement enregistrées', 'Genuinely recorded dynamics', 'Matices realmente grabados'],

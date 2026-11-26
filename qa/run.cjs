@@ -2307,7 +2307,7 @@ test('BN01', 'Banque généraliste', 'Les 18 nouveaux sons sont classés par fam
     await page.evaluate(l => window.kh.setLang(l), lang);
     const groups = await page.$$eval('[data-role=preset] optgroup', gs => gs.map(g => ({ label: g.label, ids: [...g.children].map(o => o.value), names: [...g.children].map(o => o.textContent) })));
     expect(groups.length === 15 && groups.every(g => g.label && !g.label.startsWith('cat.')), `familles manquantes en ${lang}`);
-    const all = groups.flatMap(g => g.ids); expect(all.length === 56 && new Set(all).size === 56, `catalogue : ${all.length} en ${lang}`);
+    const all = groups.flatMap(g => g.ids); expect(all.length === 57 && new Set(all).size === 57, `catalogue : ${all.length} en ${lang}`);   // 57 avec la guitare FreePats (V20)
     for (const id of NEW_BANK_PRESETS) {
       const g = groups.find(g => g.ids.includes(id));
       expect(g && g.names[g.ids.indexOf(id)] && !g.names[g.ids.indexOf(id)].startsWith('ins.'), `${id} non traduit en ${lang}`);
@@ -3019,6 +3019,40 @@ test('BX03', 'Nouvelles banques', 'La basse dispose de cinq nuances et de deux p
     const hz=await page.evaluate(async p=>{ const k=window.kh,b=await k.renderOffline(p,false),s=Math.floor(b.sampleRate*0.2);return k.detectPitch(b.getChannelData(0).slice(s,s+16384),b.sampleRate); },p);
     near(1200*Math.log2(hz/(440*2**((midi-69)/12))),0,40,'justesse basse '+midi);
   }
+});
+test('GT01', 'Nouvelles banques', 'Guitare électrique FreePats (domaine public) : deux nuances au timbre différent, deux prises alternées, juste du mi grave au mi aigu', async () => {
+  const r = await S(async () => {
+    const b = window.kh.banks; await b.loadBank('fsbs_guitar');
+    const at = (m, v, t = 0) => b.sampleFor('fsbs_guitar', m, v, t).s.buf;
+    return { layers: at(52, 0.4) !== at(52, 0.9), repeats: at(52, 0.9, 0) !== at(52, 0.9, 1), high: !!b.sampleFor('fsbs_guitar', 84, 0.3) };
+  });
+  expect(r.layers && r.repeats && r.high, JSON.stringify(r));
+  for (const midi of [40, 52, 64, 76]) {
+    const p = await realProj('r_fsbsguitar', [{ p: midi, s: 0, l: 8, v: 0.8 }]);
+    const hz = await page.evaluate(async p => { const k = window.kh, b = await k.renderOffline(p, false), s = Math.floor(b.sampleRate * 0.15); return k.detectPitch(b.getChannelData(0).slice(s, s + 16384), b.sampleRate); }, p);
+    near(1200 * Math.log2(hz / (440 * 2 ** ((midi - 69) / 12))), 0, 40, 'justesse guitare ' + midi);
+  }
+});
+test('GT02', 'Nouvelles banques', 'Guitare FreePats : jouée doucement, elle sonne moins fort et plus sombre que jouée fort ; nom traduit en trois langues ; crédits', async () => {
+  const lv = await page.evaluate(async () => {
+    const k = window.kh, out = {};
+    for (const v of [0.4, 1]) {
+      const p = await window.qa.only(1, (p, t) => { p.bpm = 120; t.rev = 0; t.synth = k.makeSynth('r_fsbsguitar'); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = [{ p: 57, s: 0, l: 8, v }]; });
+      const b = await k.renderOffline(p, false), x = b.getChannelData(0), n = Math.floor(b.sampleRate * 0.5);
+      let e = 0, d = 0; for (let i = 1; i < n; i++) { e += x[i] * x[i]; d += (x[i] - x[i - 1]) ** 2; }
+      out[v] = { db: 10 * Math.log10(e / n), bright: d / e };
+    }
+    return out;
+  });
+  expect(lv[1].db - lv[0.4].db > 4 && lv[1].bright > lv[0.4].bright, JSON.stringify(lv));
+  await page.click(await headSel(1));
+  for (const [l, w] of [['en', 'Expressive electric guitar'], ['es', 'Guitarra eléctrica expresiva'], ['fr', 'Guitare électrique expressive']]) {
+    await page.evaluate(l => window.kh.setLang(l), l); await page.click(await headSel(1));
+    await page.selectOption('[data-role=preset]', 'r_fsbsguitar');
+    expect((await page.textContent('[data-role=preset] option:checked')).includes(w), 'nom en ' + l);
+  }
+  expect(await S(() => window.kh.engine.prepare()), 'guitare chargée');
+  expect(/FreePats FSBS/.test(require('fs').readFileSync(require('path').join(__dirname, '../src/ui/top.ts'), 'utf8')) && /FSBS Electric Guitar Clean/.test(require('fs').readFileSync(require('path').join(__dirname, '../public/banks/CREDITS.txt'), 'utf8')), 'crédits FreePats');
 });
 test('BX04', 'Nouvelles banques', 'Les seize percussions sont audibles, sans silence dans les nuances hautes des pads à peu de couches', async () => {
   const r=await S(async()=>{
@@ -6558,7 +6592,7 @@ test('PO16', 'Analyse', 'Guitare → notes : lit la piste « guitare » séparé
   const n0 = await S(() => window.kh.S.project.tracks.length);
   await page.click('#anParts [data-part="guitar"] button');
   const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.length }; });
-  expect(tr.n === n0 + 1 && tr.name === 'Guitare' && tr.preset === 'r_eguitar' && tr.notes === notes.length, JSON.stringify(tr));
+  expect(tr.n === n0 + 1 && tr.name === 'Guitare' && tr.preset === 'r_fsbsguitar' && tr.notes === notes.length, JSON.stringify(tr));
   await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
   expect(await S(() => window.kh.S.project.tracks.length) === n0, 'Ctrl+Z retire la piste');
 });

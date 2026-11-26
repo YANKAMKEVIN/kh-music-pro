@@ -4911,5 +4911,774 @@ export const EXPRESSIVE: Record<string, { kind: 'instrument' | 'drums'; velocity
         "gain": 1.3163488
       }
     ]
+  },
+  "fsbs_guitar": {
+    "kind": "instrument",
+    "samples": [
+      {
+        "key": 36,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/36_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.193562,
+        "lo": 35,
+        "hi": 38
+      },
+      {
+        "key": 36,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/36_0_1.mp3",
+        "off": 0.0146485,
+        "gain": 0.1662155,
+        "lo": 35,
+        "hi": 38
+      },
+      {
+        "key": 36,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/36_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.2282926,
+        "lo": 35,
+        "hi": 38
+      },
+      {
+        "key": 36,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/36_1_1.mp3",
+        "off": 0.004263,
+        "gain": 0.1638094,
+        "lo": 35,
+        "hi": 38
+      },
+      {
+        "key": 40,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/40_0_0.mp3",
+        "off": 0.0155556,
+        "gain": 0.2305223,
+        "lo": 39,
+        "hi": 40
+      },
+      {
+        "key": 40,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/40_0_1.mp3",
+        "off": 0.0056916,
+        "gain": 0.2244673,
+        "lo": 39,
+        "hi": 40
+      },
+      {
+        "key": 40,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/40_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.268924,
+        "lo": 39,
+        "hi": 40
+      },
+      {
+        "key": 40,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/40_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.2793712,
+        "lo": 39,
+        "hi": 40
+      },
+      {
+        "key": 41,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/41_0_0.mp3",
+        "off": 0.0121315,
+        "gain": 0.2568819,
+        "lo": 41,
+        "hi": 42
+      },
+      {
+        "key": 41,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/41_0_1.mp3",
+        "off": 0.0015646,
+        "gain": 0.2689762,
+        "lo": 41,
+        "hi": 42
+      },
+      {
+        "key": 41,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/41_1_0.mp3",
+        "off": 0.0045578,
+        "gain": 0.278295,
+        "lo": 41,
+        "hi": 42
+      },
+      {
+        "key": 41,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/41_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.2679288,
+        "lo": 41,
+        "hi": 42
+      },
+      {
+        "key": 45,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/45_0_0.mp3",
+        "off": 0.0363719,
+        "gain": 0.1714932,
+        "lo": 43,
+        "hi": 46
+      },
+      {
+        "key": 45,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/45_0_1.mp3",
+        "off": 0.008254,
+        "gain": 0.1939242,
+        "lo": 43,
+        "hi": 46
+      },
+      {
+        "key": 45,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/45_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.309354,
+        "lo": 43,
+        "hi": 46
+      },
+      {
+        "key": 45,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/45_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3585099,
+        "lo": 43,
+        "hi": 46
+      },
+      {
+        "key": 48,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/48_0_0.mp3",
+        "off": 0.0123129,
+        "gain": 0.1829367,
+        "lo": 47,
+        "hi": 49
+      },
+      {
+        "key": 48,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/48_0_1.mp3",
+        "off": 0.014263,
+        "gain": 0.1785492,
+        "lo": 47,
+        "hi": 49
+      },
+      {
+        "key": 48,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/48_1_0.mp3",
+        "off": 2.27e-05,
+        "gain": 0.2468596,
+        "lo": 47,
+        "hi": 49
+      },
+      {
+        "key": 48,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/48_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.2131224,
+        "lo": 47,
+        "hi": 49
+      },
+      {
+        "key": 50,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/50_0_0.mp3",
+        "off": 0.0149887,
+        "gain": 0.2456628,
+        "lo": 50,
+        "hi": 51
+      },
+      {
+        "key": 50,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/50_0_1.mp3",
+        "off": 0.0080272,
+        "gain": 0.3018592,
+        "lo": 50,
+        "hi": 51
+      },
+      {
+        "key": 50,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/50_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3273874,
+        "lo": 50,
+        "hi": 51
+      },
+      {
+        "key": 50,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/50_1_1.mp3",
+        "off": 0.005805,
+        "gain": 0.3354266,
+        "lo": 50,
+        "hi": 51
+      },
+      {
+        "key": 52,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/52_0_0.mp3",
+        "off": 0.0036961,
+        "gain": 0.2769224,
+        "lo": 52,
+        "hi": 53
+      },
+      {
+        "key": 52,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/52_0_1.mp3",
+        "off": 0.0057823,
+        "gain": 0.3019559,
+        "lo": 52,
+        "hi": 53
+      },
+      {
+        "key": 52,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/52_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3242462,
+        "lo": 52,
+        "hi": 53
+      },
+      {
+        "key": 52,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/52_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3544372,
+        "lo": 52,
+        "hi": 53
+      },
+      {
+        "key": 55,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/55_0_0.mp3",
+        "off": 0.0257143,
+        "gain": 0.2151102,
+        "lo": 54,
+        "hi": 56
+      },
+      {
+        "key": 55,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/55_0_1.mp3",
+        "off": 0.0030385,
+        "gain": 0.2681846,
+        "lo": 54,
+        "hi": 56
+      },
+      {
+        "key": 55,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/55_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.4040554,
+        "lo": 54,
+        "hi": 56
+      },
+      {
+        "key": 55,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/55_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.343059,
+        "lo": 54,
+        "hi": 56
+      },
+      {
+        "key": 59,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/59_0_0.mp3",
+        "off": 0.0011338,
+        "gain": 0.2753628,
+        "lo": 57,
+        "hi": 59
+      },
+      {
+        "key": 59,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/59_0_1.mp3",
+        "off": 0.0034694,
+        "gain": 0.3245763,
+        "lo": 57,
+        "hi": 59
+      },
+      {
+        "key": 59,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/59_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.4917306,
+        "lo": 57,
+        "hi": 59
+      },
+      {
+        "key": 59,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/59_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.5396607,
+        "lo": 57,
+        "hi": 59
+      },
+      {
+        "key": 61,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/61_0_0.mp3",
+        "off": 0.0006803,
+        "gain": 0.4430504,
+        "lo": 60,
+        "hi": 62
+      },
+      {
+        "key": 61,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/61_0_1.mp3",
+        "off": 0.0052834,
+        "gain": 0.2803738,
+        "lo": 60,
+        "hi": 62
+      },
+      {
+        "key": 61,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/61_1_0.mp3",
+        "off": 0.0036961,
+        "gain": 0.619369,
+        "lo": 60,
+        "hi": 62
+      },
+      {
+        "key": 61,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/61_1_1.mp3",
+        "off": 6.8e-05,
+        "gain": 0.4452166,
+        "lo": 60,
+        "hi": 62
+      },
+      {
+        "key": 64,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/64_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.352617,
+        "lo": 63,
+        "hi": 65
+      },
+      {
+        "key": 64,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/64_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.3854027,
+        "lo": 63,
+        "hi": 65
+      },
+      {
+        "key": 64,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/64_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3869352,
+        "lo": 63,
+        "hi": 65
+      },
+      {
+        "key": 64,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/64_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3538638,
+        "lo": 63,
+        "hi": 65
+      },
+      {
+        "key": 67,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/67_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.3528428,
+        "lo": 66,
+        "hi": 69
+      },
+      {
+        "key": 67,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/67_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3528428,
+        "lo": 66,
+        "hi": 69
+      },
+      {
+        "key": 67,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/67_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.3813785,
+        "lo": 66,
+        "hi": 69
+      },
+      {
+        "key": 67,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/67_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3813785,
+        "lo": 66,
+        "hi": 69
+      },
+      {
+        "key": 71,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/71_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.4735383,
+        "lo": 70,
+        "hi": 71
+      },
+      {
+        "key": 71,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/71_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.4735383,
+        "lo": 70,
+        "hi": 71
+      },
+      {
+        "key": 71,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/71_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.4078781,
+        "lo": 70,
+        "hi": 71
+      },
+      {
+        "key": 71,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/71_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.4078781,
+        "lo": 70,
+        "hi": 71
+      },
+      {
+        "key": 72,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/72_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.429506,
+        "lo": 72,
+        "hi": 72
+      },
+      {
+        "key": 72,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/72_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.429506,
+        "lo": 72,
+        "hi": 72
+      },
+      {
+        "key": 72,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/72_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.4554677,
+        "lo": 72,
+        "hi": 72
+      },
+      {
+        "key": 72,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/72_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.4554677,
+        "lo": 72,
+        "hi": 72
+      },
+      {
+        "key": 74,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/74_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.368048,
+        "lo": 73,
+        "hi": 75
+      },
+      {
+        "key": 74,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/74_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.368048,
+        "lo": 73,
+        "hi": 75
+      },
+      {
+        "key": 74,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/74_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.3332524,
+        "lo": 73,
+        "hi": 75
+      },
+      {
+        "key": 74,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/74_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3332524,
+        "lo": 73,
+        "hi": 75
+      },
+      {
+        "key": 77,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/77_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.329103,
+        "lo": 76,
+        "hi": 78
+      },
+      {
+        "key": 77,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/77_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.329103,
+        "lo": 76,
+        "hi": 78
+      },
+      {
+        "key": 77,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/77_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.3621935,
+        "lo": 76,
+        "hi": 78
+      },
+      {
+        "key": 77,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/77_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3621935,
+        "lo": 76,
+        "hi": 78
+      },
+      {
+        "key": 80,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/80_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.3533965,
+        "lo": 79,
+        "hi": 81
+      },
+      {
+        "key": 80,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/80_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3533965,
+        "lo": 79,
+        "hi": 81
+      },
+      {
+        "key": 80,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/80_0_1.mp3",
+        "off": 0.0002268,
+        "gain": 0.2522205,
+        "lo": 79,
+        "hi": 81
+      },
+      {
+        "key": 80,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/80_1_1.mp3",
+        "off": 0.0002268,
+        "gain": 0.2522205,
+        "lo": 79,
+        "hi": 81
+      },
+      {
+        "key": 82,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/82_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.3509463,
+        "lo": 82,
+        "hi": 83
+      },
+      {
+        "key": 82,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/82_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3509463,
+        "lo": 82,
+        "hi": 83
+      },
+      {
+        "key": 82,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/82_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.325099,
+        "lo": 82,
+        "hi": 83
+      },
+      {
+        "key": 82,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/82_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.325099,
+        "lo": 82,
+        "hi": 83
+      },
+      {
+        "key": 85,
+        "layer": 0,
+        "rr": 0,
+        "file": "fsbs_guitar/85_0_0.mp3",
+        "off": 0.0,
+        "gain": 0.3658377,
+        "lo": 84,
+        "hi": 86
+      },
+      {
+        "key": 85,
+        "layer": 1,
+        "rr": 0,
+        "file": "fsbs_guitar/85_1_0.mp3",
+        "off": 0.0,
+        "gain": 0.3658377,
+        "lo": 84,
+        "hi": 86
+      },
+      {
+        "key": 85,
+        "layer": 0,
+        "rr": 1,
+        "file": "fsbs_guitar/85_0_1.mp3",
+        "off": 0.0,
+        "gain": 0.3446627,
+        "lo": 84,
+        "hi": 86
+      },
+      {
+        "key": 85,
+        "layer": 1,
+        "rr": 1,
+        "file": "fsbs_guitar/85_1_1.mp3",
+        "off": 0.0,
+        "gain": 0.3446627,
+        "lo": 84,
+        "hi": 86
+      }
+    ],
+    "velocityEnds": [
+      0.7244094488188977,
+      1
+    ]
   }
 };

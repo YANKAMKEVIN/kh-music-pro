@@ -378,6 +378,7 @@ const DEFS: [string, string, P][] = [
   ['r_wurli', 'realKeys', { ...real('wurli', 0.002, 0.4), touch: 0 }],
   ['r_fashionbass', 'realBass', { ...real('fashionbass', 0.002, 0.18), touch: 0 }],
   ['r_salamander', 'realKeys', { ...real('salamander', 0.002, 0.45), touch: 0 }],
+  ['r_fsbsguitar', 'realGuitar', { ...real('fsbs_guitar', 0.002, 0.3), touch: 0 }],
   ['epiano', 'keys', { engine: 'fm', ratio: 1, fmAmt: 1.6, fmDecay: 0.35, cutoff: 7000, reso: 0.5, envAmt: 0, a: 0.003, d: 1.2, s: 0.25, r: 0.35 }],
   ['keys', 'keys', { wave: 'triangle', wave2: 'sine', detune: 3, mix2: 0.6, cutoff: 3200, reso: 0.5, envAmt: 0.2, a: 0.004, d: 0.5, s: 0.3, r: 0.3 }],
   ['organ', 'keys', { wave: 'sine', wave2: 'sine', detune: 1200, mix2: 0.6, cutoff: 6000, reso: 0.5, envAmt: 0, a: 0.01, d: 0.1, s: 1, r: 0.08 }],
