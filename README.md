@@ -16,6 +16,10 @@ Puis ouvrir http://localhost:5173 (Chrome ou Edge conseillés ; Firefox fonction
 
 `npm run build` produit une version statique dans `dist/`, prête à être hébergée ou empaquetée (Electron / Tauri).
 
+## Version 0.19.3 (25/11/2026)
+
+Rassemble tout ce qui a été fait depuis la 0.19.1 : chaînes d'effets à la place de la tranche fixe (ajouter, retirer, réordonner les étages, automation, préréglages) ; mesures en 6/8, 9/8, 12/8, 5/8 et 7/8 ; clips enregistrés à la volée en mode Live (avec pitch bend, molette, arpégiateur) ; interface retravaillée (icônes dessinées, fenêtres maison, niveau de chaque piste, zoom à la molette et au pincement, menu sur un clip, accueil par modèle, prise visible en rouge, export annulable) ; ajout de pistes dans la barre d'arrangement ; signature reprise à l'import MIDI ; moteur natif activé par défaut sur Mac ; la règle s'allonge pendant un enregistrement au-delà de 48 mesures.
+
 ## Jeu expressif et production (v0.19)
 
 - **Pitch bend, molette de modulation et aftertouch** du clavier MIDI (le DGX-670 envoie les deux premiers) : joués en direct sur la piste choisie, enregistrés dans le clip, gardés dans le projet, rendus à l'export audio et écrits dans l'export MIDI (relus à l'import). Plage du bend réglable (± 2 demi-tons par défaut, jusqu'à ± 12) dans les réglages de l'instrument. La molette ajoute du vibrato ; l'aftertouch gonfle le son et ajoute un léger vibrato.
