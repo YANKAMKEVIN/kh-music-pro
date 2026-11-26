@@ -1692,11 +1692,11 @@ test('GR07', 'Grille fine', 'Mode Live, scission et copier/coller fonctionnent a
 });
 
 // ============ V10 : vrais instruments ============
-const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir', 'r_honky', 'r_epiano', 'r_clavinet', 'r_drawbar', 'r_church', 'r_steel', 'r_overdrive', 'r_slap', 'r_violin', 'r_contrabass', 'r_trumpet', 'r_trombone', 'r_marimba', 'r_vibes', 'r_steelpan', 'r_air', 'r_cinema', 'r_synthchoir', 'r_wurli', 'r_fashionbass', 'r_salamander'];
+const REAL = ['r_piano', 'r_nylon', 'r_eguitar', 'r_ebass', 'r_abass', 'r_strings', 'r_cello', 'r_brass', 'r_sax', 'r_flute', 'r_choir', 'r_honky', 'r_epiano', 'r_clavinet', 'r_drawbar', 'r_church', 'r_steel', 'r_overdrive', 'r_slap', 'r_violin', 'r_contrabass', 'r_trumpet', 'r_trombone', 'r_marimba', 'r_vibes', 'r_steelpan', 'r_air', 'r_cinema', 'r_synthchoir', 'r_wurli', 'r_fashionbass', 'r_salamander', 'r_fsbsguitar'];
 /** Piste instrument seule jouant un vrai instrument, sans réverb. */
 const realProj = (id, notes, len = 16) => page.evaluate(([id, notes, len]) => { const k = window.kh; return window.qa.only(1, (p, t) => { p.bpm = 120; t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = len; c.patLen = len; c.notes = notes; }); }, [id, notes, len]);
 
-test('RI01', 'Vrais instruments', 'Les 32 instruments enregistrés se chargent et produisent un signal propre', async () => {
+test('RI01', 'Vrais instruments', 'Les 33 instruments enregistrés se chargent et produisent un signal propre', async () => {
   const r = await S(async () => { const k = window.kh, out = {}; for (const id of Object.keys(k.PRESETS).filter(x => k.PRESETS[x].p.engine === 'multi')) { const p = window.qa.only(1, (p, t) => { t.rev = 0; t.synth = k.makeSynth(id); const c = t.clips[0]; c.len = 16; c.patLen = 16; c.notes = [48, 60, 64, 67].map((n, i) => ({ p: n, s: i * 4, l: 4, v: 0.8 })); }); out[id] = await window.qa.stats(p); } return out; });
   expect(Object.keys(r).join() === REAL.join(), `instruments : ${Object.keys(r)}`);
   for (const [id, s] of Object.entries(r)) { expect(s.bad === 0, `${id} : valeurs invalides`); expect(s.rms > 0.01, `${id} : inaudible (rms ${s.rms.toFixed(5)})`); expect(s.peak <= 0.97, `${id} : saturation (${s.peak})`); }
@@ -2569,10 +2569,10 @@ test('GE06', 'Gestes réels', 'Au clavier seul : un curseur du mixeur garde le f
   const still = await page.evaluate(m => document.activeElement === document.querySelector(m), m); await page.keyboard.press('Enter'); await sleep(100);
   expect(still && !(await proj()).tracks[0].mute, `bouton : focus gardé ${still}, piste rétablie au second appui`);
 });
-test('SB01', 'Navigateur de sons', 'Les 56 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
+test('SB01', 'Navigateur de sons', 'Les 57 sons, les familles et les commandes du navigateur sont nommés dans les trois langues', async () => {
   for (const lang of ['fr', 'en', 'es']) {
     await page.evaluate(l => window.kh.setLang(l), lang); await soundsOpen();
-    near(await page.$$eval('#sounds [data-sound]', es => es.length), 56, 0, 'sons');
+    near(await page.$$eval('#sounds [data-sound]', es => es.length), 57, 0, 'sons');
     near(await page.$$eval('[data-role=sound-family] option', es => es.length), 16, 0, 'familles');
     expect(await page.$eval('[data-role=sound-search]', e => document.activeElement === e), 'recherche non focalisée');
     const bad = await page.$$eval('#sounds button, #sounds input, #sounds select', es => es.filter(e => !(e.getAttribute('aria-label') || e.textContent.trim())).length); near(bad, 0, 0, 'commandes sans nom');
@@ -2649,7 +2649,7 @@ test('SB08', 'Navigateur de sons', 'Des favoris invalides sont ignorés et le sa
   near(await page.$$eval('#sounds [data-sound]', es => es.length), 1, 0, 'favoris valides'); expect(await page.$(soundRow('r_air')), 'favori valide absent');
   await page.click('[data-act=sound-favorites]'); await page.fill('[data-role=sound-search]', 'sampler');
   await page.click(soundRow('sampler') + ' [data-act=sound-preview]'); expect((await page.textContent('.sound-status')).includes('Chargez'), 'sampler vide non expliqué'); await closeSounds();
-  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 56, 0, 'favoris corrompus'); await closeSounds();
+  await S(() => localStorage.setItem('kh-sound-favorites', '{')); await soundsOpen(); near(await page.$$eval('#sounds [data-sound]', es => es.length), 57, 0, 'favoris corrompus'); await closeSounds();
 });
 test('SB09', 'Navigateur de sons', 'Une préécoute indisponible signale l’échec puis fonctionne après réessai', async () => {
   await reset(); await sleep(750); await page.reload(); await page.waitForSelector('.clip'); await reset();
