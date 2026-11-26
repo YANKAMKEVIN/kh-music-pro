@@ -88,9 +88,9 @@ export function dropVocalLeak(notes: PolyNote[], melody: { t: number; d: number;
   return notes.filter(n => !melody.some(m => (n.midi - m.midi) % 12 === 0 && Math.abs(n.midi - m.midi) <= 12
     && (Math.abs(n.t - m.t) <= 0.12 || Math.min(n.t + n.d, m.t + m.d) - Math.max(n.t, m.t) >= 0.66 * n.d)));
 }
-const partOf = (kind: Kind, notes: PolyNote[]): Part => kind === 'bass' ? { id: 'bass', kind: 'bass', name: t('po.bassPart'), notes, preset: 'r_ebass' }
+const partOf = (kind: Kind, notes: PolyNote[]): Part => kind === 'bass' ? { id: 'bass', kind: 'bass', name: t('po.bassPart'), notes, preset: 'r_fashionbass' }
   : kind === 'guitar' ? { id: 'guitar', kind: 'guitar', name: t('po.guitarPart'), notes, preset: 'r_eguitar' }
-    : { id: 'piano', kind: 'piano', name: t('po.pianoPart'), notes, preset: 'r_piano' };
+    : { id: 'piano', kind: 'piano', name: t('po.pianoPart'), notes, preset: 'r_salamander' };
 
 async function run(kind: Kind, ctx: Ctx, progress: (f: number) => void, signal: AbortSignal) {
   const t0 = performance.now();

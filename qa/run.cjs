@@ -6463,7 +6463,7 @@ test('PO11', 'Analyse', 'La basse trouvée s\'ajoute au morceau : piste au son d
   const n0 = await S(() => window.kh.S.project.tracks.length);
   await page.click('#anParts [data-part="bass"] button');
   const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.map(n => [n.p, n.s]) }; });
-  expect(tr.n === n0 + 1 && tr.name === 'Basse' && tr.preset === 'r_ebass', JSON.stringify(tr).slice(0, 200));
+  expect(tr.n === n0 + 1 && tr.name === 'Basse' && tr.preset === 'r_fashionbass', JSON.stringify(tr).slice(0, 200));
   // grille d'ajout au demi-pas (V20) : chaque note à un demi-pas au plus de sa place
   expect(tr.notes.length === 4 && tr.notes.every(([p, st], i) => p === [40, 43, 45, 47][i] && Math.abs(st - [4, 8, 12, 16][i]) <= 0.5), 'notes calées à 120 : ' + JSON.stringify(tr.notes));
   await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');

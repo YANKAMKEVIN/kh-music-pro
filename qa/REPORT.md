@@ -1,6 +1,6 @@
 # Rapport de QA — KH Music Pro
 
-583 cas réussis sur 586.
+589 cas réussis sur 596.
 
 | Cas | Domaine | Cas d'usage | Résultat |
 |---|---|---|---|
@@ -151,7 +151,7 @@
 | TU02 | Accordeur | Avec l'entrée active, l'accordeur affiche la note reçue ; il disparaît à la fermeture | OK |
 | TR01 | Visite guidée | La visite se lance depuis l'aide, éclaire 8 zones, se parcourt au clic ou au clavier et bloque les raccourcis | OK |
 | TR02 | Visite guidée | Sur téléphone, chaque bulle de la visite tient à l'écran | OK |
-| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | OK |
+| DK01 | Version bureau | L'application de bureau démarre, charge le projet, joue et produit du son, sans accès système depuis la page | ÉCHEC : échec : } / Command failed: xvfb-run -a /opt/node22/bin/node qa/desktop-smoke.cjs |
 | CL01 | Arrangement | Rogner un clip par son bord gauche : le contenu reste à sa place, sans pouvoir dépasser le début du son | OK |
 | CL02 | Arrangement | Sélectionner plusieurs clips (Maj+clic), les déplacer, les dupliquer et les supprimer ensemble | OK |
 | CL03 | Arrangement | Tracer la boucle dans la règle (Maj+glisser) ; un clic simple déplace toujours la tête de lecture | OK |
@@ -192,7 +192,7 @@
 | WAM01 | Plugins web | Charger le plugin web fourni, le régler par sa propre interface, l'entendre en direct et à l'export, le retrouver dans le projet | OK |
 | WAM02 | Plugins web | Plugin introuvable : message clair, le son passe quand même, l'export le signale | OK |
 | WAM03 | Plugins web | Un plugin venu d'un autre site demande un accord explicite ; une adresse dangereuse est refusée | OK |
-| LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | OK |
+| LAT01 | Latence | Réglages audio : latence affichée, choix de la sortie, mesure qui échoue proprement sans haut-parleur | ÉCHEC : erreur console : CONSOLE Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED |
 | LAT02 | Latence | Le décalage d'enregistrement recale réellement les prises | OK |
 | LAT03 | Latence | Sans le module natif (version web), le son entre et sort toujours par le navigateur | OK |
 | NAT01 | Moteur natif | Sans module natif (site web, Windows, Linux) : ni réglage « moteur audio natif » ni plugins du Mac | OK |
@@ -357,7 +357,7 @@
 | AD07 | Correctifs audit | Export d’un gros projet en parallèle (un rendu par groupe de pistes) : même son à l’échantillon près que le rendu d’un seul tenant, et plus rapide | OK |
 | AD08 | Correctifs audit | Export parallèle : les kicks restent avec les pistes qu’ils font pomper ; rien n’est découpé avec un plugin du Mac, une piste en solo ou un petit projet | OK |
 | TH01 | Têtes de piste | Ordinateur : les noms des pistes de la démo sont entiers ; seuls nom, ⋯, M, S, A et volume sont visibles | OK |
-| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | ÉCHEC : le menu est caché par la zone des pistes |
+| TH02 | Têtes de piste | Menu ⋯ à la souris sur une piste non sélectionnée : il s’ouvre entier à côté du bouton, sélectionne la piste, un choix le referme | OK |
 | TH03 | Têtes de piste | Menu ⋯ au clavier : Entrée ouvre, Tab parcourt les actions, Entrée agit, Échap referme et rend le focus | OK |
 | TH04 | Têtes de piste | Faire défiler les pistes referme un menu ⋯ ouvert ; une piste gelée montre ❄ à côté de son nom | OK |
 | TH07 | Têtes de piste | Le menu ⋯ reste ouvert quand l’écran se redessine (lecture, note jouée en prise) ; seuls un clic dehors, Échap ou un choix le referment | OK |
@@ -483,7 +483,7 @@
 | AN02 | Analyse | Un son chargé s'affiche avec sa durée ; une analyse trouve une partie qu'on ajoute au morceau, calée sur le tempo | OK |
 | AN03 | Analyse | Une analyse qui échoue affiche un message ; une analyse longue s'annule | OK |
 | AN04 | Analyse | Un fichier qui n'est pas un son est refusé avec un message clair, en trois langues | OK |
-| PO01 | Analyse | Basse → notes et Piano → notes ont leur ligne dans la fenêtre, inactives sans son, traduites en trois langues | ÉCHEC : textes en en |
+| PO01 | Analyse | Basse → notes et Piano → notes ont leur ligne dans la fenêtre, inactives sans son, traduites en trois langues | OK |
 | PO02 | Analyse | Basse à la fondamentale faible : lancée à la souris, avancement visible, notes justes (F ≥ 0,9 à ±50 ms), registre affiché | OK |
 | PO03 | Analyse | Basse rapide : notes répétées en doubles croches et sauts d'octave (F ≥ 0,9) | OK |
 | PO04 | Analyse | Basse jouée liée (la hauteur change sans nouvelle attaque) et basse en sons purs (F ≥ 0,9) | OK |
@@ -494,7 +494,7 @@
 | PO09 | Analyse | Bruit de fond : notes toujours justes ; un silence ne donne aucune note et un message clair | OK |
 | PO10 | Analyse | Sans pistes séparées, basse et accords mélangés : chaque analyse garde sa partie (mesuré) et prévient que le son entier est analysé | OK |
 | PO11 | Analyse | La basse trouvée s'ajoute au morceau : piste au son de basse, notes calées sur le tempo ; Ctrl+Z la retire | OK |
-| PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | OK |
+| PO12 | Analyse | Une longue analyse s'annule par le bouton, sans message d'échec ; l'interface reste fluide pendant le calcul | ÉCHEC : l'interface se fige pendant l'analyse (6 images en 0,5 s) |
 | PO13 | Analyse | Réglages au clavier : plus de sensibilité → la note jouée doucement apparaît ; note la plus courte 200 ms → les notes brèves disparaissent | OK |
 | PO14 | Analyse | Trois minutes de piano : analyse en moins de 60 s, toutes les notes justes | OK |
 | PO15 | Analyse | Téléphone : les deux analyses se lancent au doigt, résumé et réglages tiennent dans l'écran | OK |
@@ -503,9 +503,19 @@
 | PO18 | Analyse | Piste piano presque vide (l'instrument ne joue pas) : pas de fausse partie, message clair ; la guitare, elle, est bien proposée | OK |
 | PO19 | Analyse | Restes de voix dans une piste piano faible : les notes qui doublent le chant sont retirées, celles du piano restent ; nombre annoncé | OK |
 | PO20 | Analyse | Guitare → notes sans piste guitare (mode rapide) : lit « autres instruments » ; titre en trois langues ; lancement au clavier | OK |
+| RF01 | Analyse | Nuances reprises de la vraie piste : une note jouée fort sur la piste guitare est rejouée fort, une note douce (−14 dB) rejouée doucement | OK |
+| RF02 | Analyse | Notes posées là où la vraie piste est muette (restes d'un autre instrument) : retirées à l'ajout, nombre annoncé sous la partie | OK |
+| RF03 | Analyse | Guitare : six notes au plus en même temps (six cordes) ; une septième étouffe la plus faible ; nombre annoncé | OK |
+| RF04 | Analyse | Volume calé : la partie rejouée sonne au niveau de sa vraie piste (à 2 dB près), pour une piste forte comme pour une piste faible | OK |
+| RF05 | Analyse | Un seul Ctrl+Z retire la partie ajoutée avec son volume calé ; Ctrl+Y la rend avec le volume calé | OK |
+| RF06 | Analyse | Ctrl+Z avant la fin du réglage de volume : la piste reste retirée, rien d'autre n'est modifié, Ctrl+Y la rend | OK |
+| RF07 | Analyse | Sans piste séparée (son entier) : forces trouvées gardées, volume par défaut, aucun message de réglage | OK |
+| RF08 | Analyse | Pistes séparées ajoutées après le tempo : elles commencent à leur premier temps, comme les parties rejouées (sinon tout est décalé) ; annoncé | OK |
+| RF09 | Analyse | Le chant rejoué reprend les nuances de la vraie voix ; une seule note à la fois | OK |
+| RF10 | Analyse | Messages du réglage en anglais et en espagnol ; ligne d'information lue par les lecteurs d'écran (role=status) | OK |
 | DR00 | Batterie → motif | Mesure de précision (affichée) sur dix rythmes fabriqués | OK |
 | DR01 | Batterie → motif | Rock à 120 (kit électro) : grosse caisse, caisse claire et charleston en croches retrouvés, motif identique case par case | OK |
-| DR02 | Batterie → motif | Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 % | OK |
+| DR02 | Batterie → motif | Batterie acoustique enregistrée (100 BPM) et kit studio (120 BPM) : chaque instrument au moins à 90 % | ÉCHEC : acoustique s : F=0.41 (k 12/12 · s 8/8 +23 · c 32/32 +9 · cases 82 %) |
 | DR03 | Batterie → motif | Hip-hop à 90 : charleston en doubles-croches, grosse caisse syncopée | OK |
 | DR04 | Batterie → motif | Ghost notes : les caisses claires douces sont retrouvées, avec une force plus faible que les coups appuyés | OK |
 | DR05 | Batterie → motif | Charleston ouvert reconnu (fin de mesure) à côté des charlestons fermés | OK |
@@ -565,7 +575,7 @@
 | SEP20 | Analyse | Au doigt sur un téléphone : séparer, écouter et ajouter une piste en touchant l'écran | ÉCHEC : page.waitForSelector: Timeout 60000ms exceeded. |
 | SEP21 | Analyse | Séparation en anglais et en espagnol : titre, pistes et boutons traduits | OK |
 | SEP22 | Analyse | Voix décentrée et voix sans vibrato : la séparation tient encore (gains mesurés) | OK |
-| SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | OK |
+| SEP23 | Analyse | Demucs : premier lancement, le modèle se télécharge depuis le site (avancement affiché), se garde dans l'appareil, et sépare bien mieux que le mode rapide | ÉCHEC : other : gain 15.18 dB (seuil 16) |
 | SEP24 | Analyse | Demucs hors ligne après rechargement : le choix est gardé, le modèle vient de l'appareil sans réseau ; son mono à 44,1 kHz rendu au taux d'origine | OK |
 | SEP28 | Analyse | Demucs trop lent pour l'appareil : arrêt après le premier segment, séparation rapide à la place, avec l'estimation | OK |
 | SEP25 | Analyse | Pas de réseau et pas de modèle gardé : message clair, séparation rapide à la place, sans panne | OK |
@@ -574,7 +584,7 @@
 | SEP29 | Analyse | Annuler pendant le téléchargement du modèle : arrêt net, pas de pistes, pas de message d'erreur | OK |
 | SEP31 | Analyse | Appareil à moins de 4 Go : Demucs n'est pas tenté (rien n'est téléchargé), séparation rapide avec la raison | OK |
 | SEP32 | Analyse | Appareil qui refuse de garder le modèle (espace plein) : Demucs sépare quand même, rien n'est gardé, pas de message d'erreur | OK |
-| SEP30 | Analyse | Demucs sur carte graphique (WebGPU, navigateur à part) : même séparation que sur le processeur, temps mesuré | OK |
+| SEP30 | Analyse | Demucs sur carte graphique (WebGPU, navigateur à part) : même séparation que sur le processeur, temps mesuré | ÉCHEC : séparation sur carte graphique {"vocals":27.31,"drums":23.19,"bass":20.77,"other":14.7} |
 | TM01 | Analyse | Tempo qui change (120 puis 90 BPM) : changement montré à la bonne place, appliqué au morceau en marques de tempo, Ctrl+Z revient | OK |
 | TM02 | Analyse | Tempo régulier joué à la main (±8 ms) : « Tempo régulier », appliqué sans marque de tempo | OK |
 | TM03 | Analyse | Jeu en demi-temps (grosse caisse un temps sur deux) au milieu du morceau : pas de faux changement de tempo | OK |
