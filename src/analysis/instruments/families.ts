@@ -12,7 +12,7 @@ export const FAMILIES: Family[] = [
   { id: 'organ', classes: { 150: 'r_drawbar', 151: 'r_drawbar', 152: 'r_drawbar', 204: 'r_drawbar' } },
   { id: 'aguitar', classes: { 138: 'r_steel', 141: 'r_steel', 134: 'r_nylon', 142: 'r_steel', 143: 'r_steel', 144: 'r_steel', 145: 'r_nylon', 146: 'r_nylon' } },
   { id: 'eguitar', classes: { 136: 'r_fsbsguitar', 139: 'r_eguitar', 140: 'r_eguitar' } },
-  { id: 'bass', classes: { 137: 'r_fashionbass', 189: 'r_contrabass' } },
+  { id: 'bass', classes: { 137: 'r_ebass', 189: 'r_contrabass' } },
   { id: 'drums', classes: { 157: 'drums:studio', 158: 'drums:electro', 159: 'drums:studio', 160: 'drums:studio', 161: 'drums:studio', 162: 'drums:studio', 163: 'drums:studio', 166: 'drums:studio', 167: 'drums:studio', 156: 'drums:percussion', 165: 'drums:percussion', 169: 'drums:percussion', 170: 'drums:percussion', 171: 'drums:percussion' } },
   { id: 'strings', classes: { 184: 'r_strings', 185: 'r_strings', 186: 'r_violin', 187: 'r_strings', 188: 'r_cello', 179: 'r_strings', 194: 'harp' } },
   { id: 'brass', classes: { 180: 'r_brass', 181: 'r_brass', 182: 'r_trumpet', 183: 'r_trombone' } },

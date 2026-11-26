@@ -6497,7 +6497,7 @@ test('PO11', 'Analyse', 'La basse trouvée s\'ajoute au morceau : piste au son d
   const n0 = await S(() => window.kh.S.project.tracks.length);
   await page.click('#anParts [data-part="bass"] button');
   const tr = await S(() => { const p = window.kh.S.project, tr = p.tracks[p.tracks.length - 1]; return { n: p.tracks.length, name: tr.name, preset: tr.synth && tr.synth.preset, notes: tr.clips[0].notes.map(n => [n.p, n.s]) }; });
-  expect(tr.n === n0 + 1 && tr.name === 'Basse' && tr.preset === 'r_fashionbass', JSON.stringify(tr).slice(0, 200));
+  expect(tr.n === n0 + 1 && tr.name === 'Basse' && tr.preset === 'r_ebass', JSON.stringify(tr).slice(0, 200));
   // grille d'ajout au demi-pas (V20) : chaque note à un demi-pas au plus de sa place
   expect(tr.notes.length === 4 && tr.notes.every(([p, st], i) => p === [40, 43, 45, 47][i] && Math.abs(st - [4, 8, 12, 16][i]) <= 0.5), 'notes calées à 120 : ' + JSON.stringify(tr.notes));
   await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
@@ -6792,6 +6792,36 @@ test('RF10', 'Analyse', 'Messages du réglage en anglais et en espagnol ; ligne 
     expect(el && (await el.textContent()).includes(w) && (await el.getAttribute('role')) === 'status', 'message en ' + l);
     await page.keyboard.press('Escape');
   }
+});
+// Hauteur entendue d'une note rendue : somme des harmoniques (1 à 6, poids décroissant, pic cherché à ±2 % près pour les cordes un peu inharmoniques) pour les candidats note-12, note-7, note, note+7, note+12, note+19.
+// Un son dont le fondamental et les harmoniques impaires manquent (comme la Fashion bass) est entendu une octave plus haut : c'est ce qui rendait la basse de l'essai v3 incompréhensible.
+const heardPitch = (d, sr, midi) => {
+  const a = Math.floor(sr * 0.08), x = d.slice(a, a + Math.floor(sr * 0.9));
+  const pow = f => { if (f >= sr / 2) return 0; const w = 2 * Math.cos(2 * Math.PI * f / sr); let s1 = 0, s2 = 0; for (let i = 0; i < x.length; i++) { const h = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (x.length - 1)); const s = x[i] * h + w * s1 - s2; s2 = s1; s1 = s; } return s1 * s1 + s2 * s2 - w * s1 * s2; };
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12), cache = new Map(), P = f => { const k = Math.round(f * 10); if (!cache.has(k)) cache.set(k, pow(f)); return cache.get(k); };
+  let best = midi, bs = -1;
+  for (const c of [midi - 12, midi - 7, midi, midi + 7, midi + 12, midi + 19]) { let s = 0; for (let h = 1; h <= 6; h++) { let e = 0; for (let k = -3; k <= 3; k++) e = Math.max(e, P(hz(c) * h * (1 + k * 0.006))); s += e * Math.pow(0.84, h - 1); } if (s > bs) { bs = s; best = c; } }
+  return best;
+};
+const REPLAY = { bass: ['r_ebass', [28, 33, 36, 40, 43, 45, 48]], piano: ['r_salamander', [43, 48, 55, 60, 64, 67, 72]], guitar: ['r_fsbsguitar', [40, 45, 50, 55, 59, 64, 69]] };
+async function heard(id, notes) {
+  const out = [];
+  for (const m of notes) { const p = await realProj(id, [{ p: m, s: 0, l: 8, v: 0.8 }]); const r = await page.evaluate(async p => { const b = await window.kh.renderOffline(p, false); return { sr: b.sampleRate, d: Array.from(b.getChannelData(0).slice(0, Math.floor(b.sampleRate * 1.1))) }; }, p); out.push([m, heardPitch(Float32Array.from(r.d), r.sr, m)]); }
+  return out;
+}
+test('RF11', 'Analyse', 'Les sons choisis pour la basse, le piano et la guitare rejoués font entendre la note jouée (ni octave au-dessus, ni quinte) ; une basse qui sonne une octave trop haut est repérée', async () => {
+  for (const [kind, [id, notes]] of Object.entries(REPLAY)) {
+    const r = await heard(id, notes), wrong = r.filter(([m, h]) => m !== h);
+    console.log(`        ${kind} ${id} : ${r.map(([m, h]) => m === h ? m : `${m}→${h}`).join(' ')}`);
+    // basse : toutes les notes ; piano et guitare : un timbre naturel peut avoir un 2e harmonique dominant sur une ou deux notes
+    // (do du piano Salamander, ancienne guitare FluidR3 : mesuré), sans que l'oreille entende une autre note
+    expect(wrong.length <= (kind === 'bass' ? 0 : 2), `${kind} (${id}) : notes entendues ailleurs ${JSON.stringify(wrong)}`);
+  }
+  // (le son choisi d'office pour la basse et la guitare rejouées est vérifié par PO11 et PO16)
+  // témoin : la Fashion bass, entendue une octave trop haut dans l'essai v3, doit être repérée
+  const fb = await heard('r_fashionbass', REPLAY.bass[1]);
+  console.log(`        témoin r_fashionbass : ${fb.map(([m, h]) => m === h ? m : `${m}→${h}`).join(' ')}`);
+  expect(fb.filter(([m, h]) => m !== h).length >= 3, 'la mesure ne repère pas la basse qui sonne trop haut');
 });
 
 // ============ V20 — Batterie → motif (DR) ============
