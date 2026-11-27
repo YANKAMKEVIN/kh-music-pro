@@ -227,6 +227,7 @@ const D: Record<string, [string, string, string]> = {
   'toast.saved': ['Projet enregistré', 'Project saved', 'Proyecto guardado'],
   'toast.opened': ['Projet ouvert', 'Project opened', 'Proyecto abierto'],
   'toast.badProject': ['Fichier projet invalide', 'Invalid project file', 'Archivo de proyecto no válido'],
+  'toast.newerProject': ['Ce projet a été créé avec une version plus récente de KH Music Pro : mettez l’application à jour pour l’ouvrir', 'This project was made with a newer version of KH Music Pro: update the app to open it', 'Este proyecto se creó con una versión más reciente de KH Music Pro: actualice la aplicación para abrirlo'],
   'toast.octave': ['Octave {0}', 'Octave {0}', 'Octava {0}'],
   'midi.unsupported': ['Ce navigateur ne gère pas le MIDI (essayez Chrome ou Edge)', 'This browser does not support MIDI (try Chrome or Edge)', 'Este navegador no admite MIDI (prueba Chrome o Edge)'],
   'midi.denied': ['Accès MIDI refusé', 'MIDI access denied', 'Acceso MIDI denegado'],

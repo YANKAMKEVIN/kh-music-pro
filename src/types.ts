@@ -236,6 +236,8 @@ export interface Track {
 export interface Send { id: string; bus: string; amt: number; pre: boolean }
 
 export interface Project {
+  /** Numéro de schéma du projet enregistré (voir src/persist.ts) ; absent = projet antérieur à la numérotation. */
+  schema?: number;
   name: string; bpm: number; swing: number;
   loop: boolean; loopStart: number; loopLen: number;
   metronome: boolean; countIn: boolean;
@@ -441,9 +443,12 @@ export function contentEnd(p: Project): number {
   return e;
 }
 
+/** Schéma courant des projets (src/persist.ts : étapes de migration d'un schéma au suivant). */
+export const PROJECT_SCHEMA = 1;
+
 export function blankProject(): Project {
   return {
-    name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, den: 4, liveQ: 0, liveLen: 2, exp: defaultExport(),
+    schema: PROJECT_SCHEMA, name: t('proj.new'), bpm: 120, swing: 0, loop: false, loopStart: 0, loopLen: 4, metronome: false, countIn: true, master: 0.9, filter: 0, revSize: 2.4, dlySteps: 3, dlyFb: 0.38, key: 0, scale: 'off', markers: [], mLow: 0, mMid: 0, mHigh: 0, width: 1, target: 0, notes: '', punch: false, buses: [], tempos: [], sig: 4, den: 4, liveQ: 0, liveLen: 2, exp: defaultExport(),
     tracks: [newTrack('drums', 1), newTrack('synth', 1), newTrack('audio', 1)],
   };
 }

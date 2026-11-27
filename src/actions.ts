@@ -2,6 +2,7 @@ import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderO
 import { liveWams, wamKey, wamUrl } from './audio/wam';
 import { t } from './i18n';
 import { allNotesOff } from './input';
+import { ProjectError } from './persist';
 import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty, undo } from './store';
 import { stretchBuffer } from './audio/stretch';
 import { tuneBuffer } from './audio/tune';
@@ -785,6 +786,8 @@ export async function saveFileAs(): Promise<void> {
     linkFile(f); setDirty(false); toast(t('file.saved', f.name));
   } catch { toast(t('file.saveFail'), 'error'); }
 }
+/** Fichier projet refusé : créé par une version plus récente, ou illisible. */
+const badProject = (e: unknown) => toast(t(e instanceof ProjectError && e.code === 'newer' ? 'toast.newerProject' : 'toast.badProject'), 'error');
 function openText(f: DeskFile) {
   engine.stop(); loadProjectFile(f.text ?? '', pidOfFile(f.path)); linkFile(f); setDirty(false);
   toast(t('file.opened', f.name)); engine.prepare();
@@ -794,22 +797,22 @@ export async function openProjectFile() {
   const d = deskFiles();
   if (!d) { document.getElementById('fProj')?.click(); return; }
   try { const f = await d.open(); if (f) openText(f); }
-  catch { toast(t('toast.badProject'), 'error'); }
+  catch (e) { badProject(e); }
 }
 export async function openRecentFile(path: string, name: string) {
   const d = deskFiles(); if (!d) return;
   let f: DeskFile;
   try { f = await d.openRecent(path); } catch { toast(t('file.missing', name), 'error'); return; }
-  try { openText(f); } catch { toast(t('toast.badProject'), 'error'); }
+  try { openText(f); } catch (e) { badProject(e); }
 }
 /** Fichier .khm ouvert depuis le Finder (double-clic, glisser sur le Dock). */
 export function listenSystemOpen() {
-  deskFiles()?.onOpen(f => { try { openText(f); } catch { toast(t('toast.badProject'), 'error'); } });
+  deskFiles()?.onOpen(f => { try { openText(f); } catch (e) { badProject(e); } });
 }
 
 export async function openFile(f: File) {
   try { engine.stop(); loadProjectFile(await f.text()); toast(t('toast.opened')); engine.prepare(); }
-  catch { toast(t('toast.badProject'), 'error'); }
+  catch (e) { badProject(e); }
 }
 
 export function setLoopToClip() {

@@ -1,4 +1,5 @@
-import { Clip, Project, Track, contentEnd, demoProject, migrate, timeOf, uid } from './types';
+import { Clip, Project, Track, contentEnd, demoProject, timeOf, uid } from './types';
+import { fileEnvelope, parseProject, parseProjectFile, type FileBuffer } from './persist';
 
 export const S = {
   project: demoProject() as Project,
@@ -206,8 +207,8 @@ export async function markRecovered(): Promise<void> {
 export async function restoreVersion(t: number): Promise<void> {
   const json = await idbGet<string>(`ver:${S.pid}:${t}`);
   if (!json) throw new Error('missing');
+  const p = parseProject(json);   // relue avant de toucher à quoi que ce soit : une version abîmée ne remplace pas le projet
   await snapshot('restore');
-  const p: Project = migrate(JSON.parse(json));
   await loadBuffers(p);
   S.project = p;
   if (!findTrack(S.selTrack)) { S.selTrack = p.tracks[0]?.id ?? ''; S.selClip = p.tracks[0]?.clips[0]?.id ?? ''; }
@@ -268,11 +269,11 @@ export async function loadAutosave(): Promise<boolean> {
     S.pid = id || uid(); S.file = fileOf(S.pid);
     if (!json) return false;
     let p: Project;
-    try { p = migrate(JSON.parse(json)); }
+    try { p = parseProject(json); }
     catch {
       // Sauvegarde illisible : on repart de la version précédente la plus récente qui se relit.
       const list = await listVersions(S.pid); let ok: Project | null = null;
-      for (let i = list.length - 1; i >= 0 && !ok; i--) { try { ok = migrate(JSON.parse((await idbGet<string>(`ver:${S.pid}:${list[i].t}`)) ?? '')); } catch { /* suivante */ } }
+      for (let i = list.length - 1; i >= 0 && !ok; i--) { try { ok = parseProject(await idbGet<string>(`ver:${S.pid}:${list[i].t}`)); } catch { /* suivante */ } }
       if (!ok) return false;
       p = ok; crash.found = true;
     }
@@ -299,7 +300,7 @@ export async function openProject(id: string) {
   await saveNow().catch(() => { });
   const json = await idbGet<string>('proj:' + id);
   if (!json) throw new Error('missing');
-  const p: Project = migrate(JSON.parse(json));
+  const p = parseProject(json);
   await loadBuffers(p); install(p, id);
   await snapshot('open').catch(() => { });
 }
@@ -334,7 +335,7 @@ export async function libraryInfo(id: string): Promise<ProjInfo | null> {
   try {
     const json = await idbGet<string>('proj:' + id);
     if (!json) return null;
-    const info = projectInfo(migrate(JSON.parse(json)));
+    const info = projectInfo(parseProject(json));
     if (e) infoCache.set(id, { updated: e.updated, info });
     return info;
   } catch { return null; }
@@ -363,20 +364,19 @@ function unb64(s: string): Float32Array {
 
 export function serializeProject(): string {
   const used = usedBuffers(S.project);
-  const bufs: Record<string, { sr: number; ch: string[] }> = {};
+  const bufs: Record<string, FileBuffer> = {};
   for (const id of used) { const b = buffers.get(id); if (b) { const r = toRaw(b); bufs[id] = { sr: r.sr, ch: r.ch.map(b64) }; } }
-  return JSON.stringify({ format: 'kh-music-pro', version: 1, project: S.project, buffers: bufs });
+  return fileEnvelope(S.project, bufs);
 }
 
 /** Charge un fichier .khm ; `pid` : projet de la bibliothèque à réutiliser (même fichier rouvert). */
 export function loadProjectFile(text: string, pid = '') {
-  const data = JSON.parse(text);
-  if (data.format !== 'kh-music-pro' || !data.project?.tracks) throw new Error('invalid');
-  for (const [id, r] of Object.entries<{ sr: number; ch: string[] }>(data.buffers ?? {})) {
-    addBuffer(id, fromRaw({ sr: r.sr, ch: r.ch.map(unb64) }));
+  const { project, buffers: bufs } = parseProjectFile(text);   // ProjectError si le fichier est illisible : rien n'est changé
+  for (const [id, r] of Object.entries(bufs)) {
+    try { addBuffer(id, fromRaw({ sr: r.sr, ch: r.ch.map(unb64) })); } catch { /* son abîmé : le clip restera muet */ }
   }
   saveNow().catch(() => { });
   if (pid && !library.some(x => x.id === pid)) pid = '';
-  install(migrate(data.project), pid || uid());
+  install(project, pid || uid());
   snapshot('open').catch(() => { });
 }
