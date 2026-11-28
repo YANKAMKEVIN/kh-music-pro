@@ -14,7 +14,8 @@
     "native": "bash scripts/build-native.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "node qa/smoke-build.cjs"
   },
   "devDependencies": {
     "electron": "^45.3.0",

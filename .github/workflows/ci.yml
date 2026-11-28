@@ -1,0 +1,38 @@
+# Vérification rapide à chaque envoi et à chaque pull request : types, tests unitaires, intégrité des banques,
+# construction, puis test de fumée de la version construite dans un vrai navigateur.
+# Un échec fait échouer le contrôle « CI » : à rendre obligatoire dans Settings > Branches > main (Require status checks).
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verifier:
+    name: Types, tests, construction
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Vérification des types
+        run: npm run typecheck
+      - name: Tests unitaires
+        run: npm test
+      - name: Intégrité des banques expressives
+        run: python3 tools/check-expressive-banks.py
+      - name: Construction
+        run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Test de fumée de la version construite
+        run: npm run smoke

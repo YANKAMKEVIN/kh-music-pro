@@ -181,6 +181,19 @@ Les sons ont une seule couche de vélocité. Les orgues à tirettes et d’égli
 - **Charge** (mixeur) : mesure la puissance de calcul que demande le mixage, avec les notes en retard et les décrochages de la dernière lecture.
 - **Fenêtre des plugins du Mac** (version bureau) : bouton « Fenêtre du plugin » dans la chaîne d'effets ; ce qu'on y règle est enregistré dans le projet.
 
+## Tests unitaires et vérifications rapides
+
+La logique sans interface (modèle de projet, temps et tempo, signatures, comping, automation, gammes et accords, MIDI, sauvegarde et migration des projets, chaînes d'effets, annuler / rétablir…) est couverte par des tests unitaires (`tests/unit/`, Vitest) :
+
+```bash
+npm run typecheck   # vérification des types
+npm test            # tests unitaires (quelques secondes)
+npm run build && npm run smoke   # test de fumée de la version construite dans un vrai navigateur
+```
+
+Le test de fumée (`qa/smoke-build.cjs`) vérifie que la version construite (avec sa règle de contenu) se charge sans erreur sur ordinateur et téléphone, que les trois onglets s'affichent, et qu'une sauvegarde abîmée n'empêche pas l'application de démarrer.
+L'action **CI** lance tout cela à chaque envoi et à chaque pull request.
+
 ## QA
 
 Chaque cas d'usage est couvert par un test de bout en bout dans un vrai navigateur (`qa/run.cjs`, 459 cas).
@@ -221,7 +234,7 @@ Vérifications natives (sur un Mac) : `node qa/au-bridge.cjs 60`, `node qa/nativ
 
 ## QA automatique
 
-L'action **QA** relance toute la campagne à chaque mise à jour du dépôt et joint le rapport à l'exécution.
+L'action **QA** relance toute la campagne à chaque mise à jour du dépôt et joint le rapport à l'exécution. L'action **CI** (types, tests unitaires, banques, construction, test de fumée) tourne aussi sur chaque pull request ; la mise en ligne ne se fait que si les tests unitaires passent.
 
 ## Mise en ligne
 
@@ -246,13 +259,14 @@ L'hôte de plugins web utilise `@webaudiomodules/sdk` (licence MIT). Le reste de
 
 ## Structure
 
-- `src/types.ts` — modèle de données, catalogue des sons, migration des anciens projets
+- `src/types.ts` — types du modèle de données ; il réexporte `src/model/` : `project.ts` (pistes, projets, migration, démo, modèles), `presets.ts` (catalogue des sons), `timing.ts` (tempo, signatures, grilles), `automation.ts` (courbes, effets), `comp.ts` (comping), `music.ts` (gammes, accords, kits)
+- `src/persist.ts` — relecture sûre des projets enregistrés : numéro de schéma, étapes de migration, sauvegarde abîmée
 - `src/i18n.ts` — textes en trois langues
-- `src/audio/graph.ts` — graphe de mixage, instruments, batterie, séquenceur (partagé entre temps réel et export)
+- `src/audio/graph.ts` — graphe de mixage (partagé entre temps réel et export) ; `src/audio/voices.ts` — batterie, pads et instruments ; `src/audio/schedule.ts` — séquenceur, clips au tempo, comping
 - `src/audio/engine.ts` — transport, mode Live, enregistrement, rendu hors-ligne, WAV
 - `src/audio/wam.ts` — hôte de plugins web ; `public/wam/kh-tape` — plugin d'exemple
 - `src/audio/au.ts`, `src/audio/native-io.ts`, `src/ui/native.ts` — plugins du Mac et moteur audio natif ; `native/kh-au-bridge` — module natif ; `electron/native-preload.cjs` — pont isolé vers la page
-- `src/audio/banks.ts` — chargement des instruments enregistrés
+- `src/audio/banks.ts` — chargement des instruments enregistrés ; `src/audio/expressive/` — manifeste des banques expressives, un fichier par banque (généré)
 - `src/audio/tune.ts` — correction de justesse
 - `src/audio/stretch.ts` — étirement temporel et transposition des sons
 - `src/audio/loudness.ts` — mesure LUFS et limiteur d'export
@@ -262,3 +276,4 @@ L'hôte de plugins web utilise `@webaudiomodules/sdk` (licence MIT). Le reste de
 - `public/` — manifeste, icône et service worker (hors-ligne)
 - `src/store.ts` — état, historique, persistance
 - `src/ui/` — arrangement, éditeurs, mixeur, Live, barre supérieure
+- `tests/unit/` — tests unitaires (Vitest) ; `qa/` — campagne de bout en bout et test de fumée
