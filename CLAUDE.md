@@ -6,7 +6,7 @@ Station de travail audio (DAW) dans le navigateur, en TypeScript sans framework.
 
 - **Répondre en français.** Le propriétaire est musicien, pas développeur : parler de ce que fait l'application, pas du code.
 - **QA obligatoire** : toute évolution web doit être couverte par des cas d'usage dans `qa/run.cjs` (un cas d'usage = un test de bout en bout dans un vrai navigateur). Imaginer beaucoup de cas, les ajouter, puis faire passer toute la campagne avant de livrer.
-- **Trois langues** : tout texte d'interface va dans `src/i18n.ts` en français, anglais et espagnol.
+- **Trois langues** : tout texte d'interface va dans `src/i18n/fr.ts`, `en.ts` et `es.ts` (mêmes clés, même ordre ; la vérification des types et `tests/unit/i18n.test.ts` refusent une clé manquante).
 - **Interface** : accessible, intuitive, futuriste ; utilisable au clavier et au doigt.
 - **Franchise** : dire ce qui a été vérifié et ce qui ne l'a pas été (micro et MIDI réels, écoute à l'oreille, Windows).
 

@@ -28,7 +28,7 @@ Tout tourne dans le navigateur, y compris dans la version bureau (Electron n'est
 | `src/input.ts` | Jeu en direct : clavier, MIDI, accords, arpégiateur, répétition de notes, assignation MIDI |
 | `src/actions.ts` | Toutes les actions de l'utilisateur |
 | `src/ui/*` | Arrangement, éditeurs, mixeur, Live, rack d'effets, fenêtres |
-| `src/i18n.ts` | Textes en français, anglais, espagnol |
+| `src/i18n.ts`, `src/i18n/{fr,en,es}.ts` | Textes en français, anglais, espagnol (un fichier par langue) |
 | `electron/main.cjs`, `electron/native-preload.cjs` | Fenêtre de la version bureau ; pont isolé vers le module natif (macOS) |
 | `src/audio/au.ts`, `src/audio/native-io.ts`, `src/ui/native.ts` | Plugins Audio Unit du Mac, moteur audio natif et son réglage ; module dans `native/kh-au-bridge` (`npm run native`) |
 | `qa/run.cjs` | Campagne de QA ; `qa/desktop-smoke.cjs` pour la version bureau |

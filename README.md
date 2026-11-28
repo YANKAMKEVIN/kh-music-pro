@@ -261,7 +261,7 @@ L'hôte de plugins web utilise `@webaudiomodules/sdk` (licence MIT). Le reste de
 
 - `src/types.ts` — types du modèle de données ; il réexporte `src/model/` : `project.ts` (pistes, projets, migration, démo, modèles), `presets.ts` (catalogue des sons), `timing.ts` (tempo, signatures, grilles), `automation.ts` (courbes, effets), `comp.ts` (comping), `music.ts` (gammes, accords, kits)
 - `src/persist.ts` — relecture sûre des projets enregistrés : numéro de schéma, étapes de migration, sauvegarde abîmée
-- `src/i18n.ts` — textes en trois langues
+- `src/i18n.ts` et `src/i18n/` — textes en trois langues (un fichier par langue)
 - `src/audio/graph.ts` — graphe de mixage (partagé entre temps réel et export) ; `src/audio/voices.ts` — batterie, pads et instruments ; `src/audio/schedule.ts` — séquenceur, clips au tempo, comping
 - `src/audio/engine.ts` — transport, mode Live, enregistrement, rendu hors-ligne, WAV
 - `src/audio/wam.ts` — hôte de plugins web ; `public/wam/kh-tape` — plugin d'exemple
