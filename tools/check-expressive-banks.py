@@ -4,11 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 
+from expressive_manifest import read_manifest
+
 root = Path(__file__).resolve().parents[1]
 base = root / 'public/banks'
 provenance = json.loads((base / 'expressive-provenance.json').read_text())
-text = (root / 'src/audio/expressive-manifest.ts').read_text()
-manifest = json.loads(text.split(' = ', 1)[1].rstrip().removesuffix(';'))
+manifest = read_manifest()
 seen = set()
 for row in provenance['samples']:
     file = base / row['file']

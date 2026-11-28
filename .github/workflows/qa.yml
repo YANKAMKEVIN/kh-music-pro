@@ -18,6 +18,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx tsc --noEmit
+      - run: npm test
       - run: python3 tools/check-expressive-banks.py
       - run: bash qa/all.sh
         env:

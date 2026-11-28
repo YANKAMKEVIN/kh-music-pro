@@ -1,23 +1,15 @@
-import { RenderRange, analyze, encodeMp3, encodeWav, engine, lastRender, renderOffline, renderProgress } from './audio/engine';
-import { liveWams, wamKey, wamUrl } from './audio/wam';
+import { engine, renderOffline } from './audio/engine';
 import { t } from './i18n';
 import { allNotesOff } from './input';
-import { S, addBuffer, buffers, commit, emit, findClip, findTrack, linkFile, loadProjectFile, pidOfFile, serializeProject, setDirty, undo } from './store';
-import { stretchBuffer } from './audio/stretch';
-import { tuneBuffer } from './audio/tune';
-import { exportMidi, importMidi, zip } from './files';
-import { STRIP_MAP, StripField, addStripFx, chainToStrip, stripSet, stripToChain } from './chain';
-import { BAR, Clip, MIX_PRESETS, fxCount, isStripFx, compSet, compSlice, NPADS, Track, TrackType, bpmAt, durAt, emptyDrums, inScale, newBus, newInsert, snapTo, blankProject, contentEnd, newTrack, srcStep, stepDur, timeOf, uid } from './types';
-import { ask, confirmBox, toast } from './ui/dom';
-
-function download(blob: Blob, name: string) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name; a.hidden = true;
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-}
-const ascii = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_-]+/g, '_') || 'x';
-const safeName = () => (S.project.name || 'project').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_-]+/g, '_') || 'project';
+import { addBuffer, commit, emit, findClip, findTrack, S, undo } from './store';
+import { BAR, bpmAt, durAt, newTrack, stepDur, timeOf, Track, TrackType, uid } from './types';
+import { ask, toast } from './ui/dom';
+import { addAudioClip, clearZone } from './actions/clips';
+export * from './actions/export';
+export * from './actions/notes';
+export * from './actions/fx';
+export * from './actions/clips';
+export * from './actions/project-files';
 
 export function addTrack(type: TrackType) {
   const n = S.project.tracks.filter(x => x.type === type).length + 1;
@@ -26,7 +18,6 @@ export function addTrack(type: TrackType) {
   commit();
   return tr;
 }
-
 export function deleteTrack(id: string) {
   const tr = findTrack(id);
   if (!tr) return;
@@ -37,7 +28,6 @@ export function deleteTrack(id: string) {
   const after = JSON.stringify(S.project);
   toast(t('toast.trackDeleted', tr.name), 'info', { action: { label: t('dlg.undo'), fn: () => { if (JSON.stringify(S.project) === after) undo(); else toast(t('toast.undoLate')); } } });
 }
-
 /**
  * Geler une piste (V17) : son rendu (instrument, égaliseur, effets, automation) devient un clip audio sur une nouvelle piste
  * juste en dessous, qui reprend le volume, le panoramique, les envois et la sortie ; la piste d'origine est coupée et gardée.
@@ -78,7 +68,6 @@ export function unfreezeTrack(id: string) {
   tr.frozen = false; tr.mute = false; S.selTrack = tr.id; S.selClip = tr.clips[0]?.id ?? '';
   commit(); toast(t('frz.undone', tr.name));
 }
-
 export function duplicateTrack(id: string) {
   const tr = findTrack(id), ts = S.project.tracks;
   if (!tr) return;
@@ -88,360 +77,11 @@ export function duplicateTrack(id: string) {
   ts.splice(ts.indexOf(tr) + 1, 0, copy); S.selTrack = copy.id; S.selClip = '';
   commit();
 }
-
 export function moveTrack(id: string, dir: -1 | 1) {
   const ts = S.project.tracks, i = ts.findIndex(x => x.id === id), j = i + dir;
   if (i < 0 || j < 0 || j >= ts.length) return;
   [ts[i], ts[j]] = [ts[j], ts[i]]; commit();
 }
-
-/** Remplace le son d'un clip audio par une version transformée (l'original reste disponible pour l'annulation). */
-function rewriteClip(fn: (src: Float32Array, dst: Float32Array) => void, after?: (clip: Clip, buf: AudioBuffer) => void) {
-  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
-  if (!f || !buf) return;
-  const out = new AudioBuffer({ length: buf.length, numberOfChannels: buf.numberOfChannels, sampleRate: buf.sampleRate });
-  for (let c = 0; c < buf.numberOfChannels; c++) fn(buf.getChannelData(c), out.getChannelData(c));
-  const id = uid(); addBuffer(id, out); f.clip.bufferId = id;
-  after?.(f.clip, out); commit();
-}
-
-export function reverseClip() {
-  rewriteClip((a, b) => { for (let i = 0, n = a.length; i < n; i++) b[i] = a[n - 1 - i]; }, (clip, buf) => {
-    const lenSec = clip.len * srcStep(S.project, clip);
-    clip.offset = Math.max(0, buf.duration - clip.offset - lenSec); delete clip.takes; delete clip.take; delete clip.comp;
-    [clip.fadeIn, clip.fadeOut] = [clip.fadeOut ?? 0, clip.fadeIn ?? 0];
-  });
-}
-
-/** Amène la crête du son à -0,3 dB. */
-export function normalizeClip() {
-  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
-  if (!f || !buf) return;
-  let pk = 0;
-  for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) pk = Math.max(pk, Math.abs(d[i])); }
-  if (pk < 1e-5) return toast(t('toast.silent'), 'error');
-  const k = 0.966 / pk;
-  rewriteClip((a, b) => { for (let i = 0; i < a.length; i++) b[i] = a[i] * k; }, clip => { clip.gain = 1; });
-  toast(t('toast.normalized', (20 * Math.log10(k)).toFixed(1)));
-}
-
-/**
- * Le clip audio suit le tempo du morceau (V17) : en l'activant, on considère qu'il tombe juste au tempo actuel
- * (à l'endroit du clip). Sa longueur en mesures ne change pas.
- */
-export function toggleWarp() {
-  const f = findClip(S.selClip);
-  if (!f || f.track.type !== 'audio') return;
-  const c = f.clip;
-  if (c.warp) c.warp = false;
-  else { c.warp = true; c.srcBpm ??= bpmAt(S.project, c.start); }
-  commit(); toast(t(c.warp ? 'warp.on' : 'warp.off', Math.round(c.srcBpm ?? S.project.bpm)));
-}
-/** Tempo d'origine du son (une boucle à 90 BPM dans un morceau à 120) : la longueur en pas suit, bornée à la fin du son. */
-export function setWarpBpm(v: number) {
-  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
-  if (!f || !buf || !(v >= 20 && v <= 400)) return;
-  const c = f.clip, old = c.srcBpm ?? bpmAt(S.project, c.start);
-  c.warp = true; c.srcBpm = Math.round(v * 100) / 100;
-  c.len = Math.max(1, Math.min(Math.round(c.len * c.srcBpm / old), Math.ceil((buf.duration - c.offset) / (15 / c.srcBpm) - 1e-6)));
-  c.fadeIn = Math.min(c.fadeIn ?? 0, c.len); c.fadeOut = Math.min(c.fadeOut ?? 0, c.len);
-  commit();
-}
-
-/** Étire le son du clip (`pct` % de sa durée) et le transpose de `semis` demi-tons, l'un sans toucher à l'autre. */
-export function stretchClip(pct: number, semis: number) {
-  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
-  if (!f || !buf || (pct === 100 && !semis)) return;
-  const r = pct / 100, clip = f.clip, id = uid(), out = stretchBuffer(buf, r, semis);
-  addBuffer(id, out); clip.bufferId = id;
-  clip.offset *= r; if (clip.takes) clip.takes = clip.takes.map(x => x * r); clip.len = Math.max(1, Math.min(Math.round(clip.len * r), Math.ceil((out.duration - clip.offset) / stepDur(S.project.bpm))));
-  clip.fadeIn = Math.round((clip.fadeIn ?? 0) * r); clip.fadeOut = Math.round((clip.fadeOut ?? 0) * r);
-  if (clip.comp) { clip.comp = clip.comp.map(x => ({ s: Math.round(x.s * r), take: x.take })); compSlice(clip, 0, clip.len); }
-  if (clip.xfade) clip.xfade = Math.round(clip.xfade * r);
-  S.stretch = { clip: '', pct: 100, semis: 0 };
-  commit(); toast(t('toast.stretched'));
-}
-
-/**
- * Découpe le son du clip en tranches, les charge sur les pads d'une nouvelle piste batterie
- * et écrit le motif qui rejoue la boucle d'origine. `mode` : nombre de tranches égales, ou 0 pour suivre les attaques.
- */
-export function chopClip(mode: number) {
-  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
-  if (!f || !buf) return;
-  const clip = f.clip, sr = buf.sampleRate, dur = stepDur(S.project.bpm);
-  const a = Math.floor(clip.offset * sr), b = Math.min(buf.length, Math.floor((clip.offset + clip.len * dur) * sr)), n = b - a;
-  if (n < sr * 0.05) return toast(t('toast.tooShort'), 'error');
-  let cuts: number[];
-  if (mode > 0) cuts = Array.from({ length: mode }, (_, i) => Math.round(i * n / mode));
-  else {
-    // Attaques : hausses brusques d'énergie, au moins 60 ms entre deux, les plus fortes d'abord.
-    const hop = 256, d = buf.getChannelData(0), env: number[] = [];
-    for (let i = a; i + hop <= b; i += hop) { let e = 0; for (let j = 0; j < hop; j++) e += d[i + j] * d[i + j]; env.push(Math.sqrt(e / hop)); }
-    const max = Math.max(...env, 1e-9), cand: { i: number; r: number }[] = [];
-    for (let i = 2; i < env.length; i++) { const r = env[i] - Math.max(env[i - 1], env[i - 2]); if (r > max * 0.12) cand.push({ i, r }); }
-    cand.sort((x, y) => y.r - x.r);
-    const gap = Math.ceil(0.06 * sr / hop), picked: number[] = [0];
-    for (const c of cand) { if (picked.length >= NPADS) break; if (picked.every(p => Math.abs(p - c.i) >= gap)) picked.push(c.i); }
-    cuts = picked.sort((x, y) => x - y).map(i => Math.max(0, i * hop - 64));
-  }
-  const tr = newTrack('drums', S.project.tracks.filter(x => x.type === 'drums').length + 1);
-  tr.name = (clip.name + ' ' + t('chop.suffix')).slice(0, 40);
-  const patLen = Math.max(1, Math.min(128, clip.len)), pat: Clip = { id: uid(), name: clip.name, start: clip.start, len: clip.len, offset: 0, patLen, drums: emptyDrums(patLen) };
-  cuts.forEach((c0, i) => {
-    const c1 = cuts[i + 1] ?? n, len = Math.max(1, c1 - c0), id = uid(), fade = Math.min(96, len >> 1);
-    const out = new AudioBuffer({ length: len, numberOfChannels: buf.numberOfChannels, sampleRate: sr });
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-      const o = out.getChannelData(ch); o.set(buf.getChannelData(ch).subarray(a + c0, a + c0 + len));
-      for (let k = 0; k < fade; k++) { o[k] *= k / fade; o[len - 1 - k] *= k / fade; }
-    }
-    addBuffer(id, out); tr.pads![i] = { bufferId: id, name: `${t('chop.slice')} ${i + 1}` };
-    const step = Math.min(patLen - 1, Math.round(c0 / sr / dur));
-    if (!pat.drums![i][step]) pat.drums![i][step] = 1;
-  });
-  tr.clips.push(pat); S.project.tracks.push(tr); f.track.mute = true;
-  S.selTrack = tr.id; S.selClip = pat.id; S.drumView = 'pads';
-  commit(); toast(t('toast.chopped', cuts.length));
-}
-
-// Copier / coller de clips dans l'arrangement
-let clipCopy: { clip: Clip; type: TrackType } | null = null;
-export function copyClip(): boolean {
-  const f = findClip(S.selClip);
-  if (!f) return false;
-  clipCopy = { clip: JSON.parse(JSON.stringify(f.clip)), type: f.track.type }; toast(t('toast.clipCopied'));
-  return true;
-}
-export function pasteClip(): boolean {
-  if (!clipCopy) return false;
-  const sel = findTrack(S.selTrack), tr = sel?.type === clipCopy.type ? sel : S.project.tracks.find(x => x.type === clipCopy!.type);
-  if (!tr) { toast(t('toast.noTrackFor'), 'error'); return true; }
-  const c: Clip = JSON.parse(JSON.stringify(clipCopy.clip));
-  c.id = uid(); c.start = Math.round(engine.currentStep() / S.snap) * S.snap;
-  tr.clips.push(c); S.selTrack = tr.id; S.selClip = c.id; commit();
-  return true;
-}
-
-/** Plage et fréquence de l'export choisies dans les options (V19). Le MIDI exporte toujours tout le morceau. */
-export function exportRange(p = S.project): RenderRange {
-  const e = p.exp, r: RenderRange = { tail: e.tail, rate: e.rate };
-  if (e.range === 'loop') { r.from = p.loopStart * BAR; r.to = (p.loopStart + p.loopLen) * BAR; }
-  else if (e.range === 'bars') { const a = Math.max(1, Math.round(e.from)), b = Math.max(a, Math.round(e.to)); r.from = (a - 1) * BAR; r.to = b * BAR; }
-  return r;
-}
-/** Suffixe du nom de fichier : la plage exportée, pour ne pas confondre un extrait avec le morceau entier. */
-function rangeName(): string {
-  const e = S.project.exp, p = S.project;
-  return e.range === 'loop' ? `_m${p.loopStart + 1}-${p.loopStart + p.loopLen}` : e.range === 'bars' ? `_m${Math.round(e.from)}-${Math.max(Math.round(e.from), Math.round(e.to))}` : '';
-}
-// ---------- Export : avancement et annulation ----------
-/** Export en cours : part faite (0..1), texte court (« Piste 3 sur 12 », « Encodage… ») ; la barre du haut s'abonne par `onChange`. */
-export const exportJob = { busy: false, pct: 0, label: '', onChange: () => { /* branché par ui/top.ts */ } };
-let cancelJob: (() => void) | null = null;
-/** Abandonne l'export en cours : rien n'est téléchargé. Le calcul déjà lancé se termine en arrière-plan et son résultat est jeté. */
-export function cancelExport() { cancelJob?.(); }
-/** Part faite d'un export en plusieurs rendus : `i` rendus finis sur `n`, plus la part `cur` (0..1) du rendu en cours. */
-export const jobPct = (i: number, n: number, cur: number) => Math.max(0, Math.min(1, (i + Math.max(0, Math.min(1, cur))) / Math.max(1, n)));
-/**
- * Mène un export : un seul à la fois, avancement suivi pendant le calcul, annulation possible à tout moment.
- * `work` reçoit `step(i, n, label)` pour annoncer le rendu qu'il commence, et `guard(promesse)` qui rend la main dès l'annulation.
- */
-async function runExport(work: (step: (i: number, n: number, label?: string) => void, guard: <T>(p: Promise<T>) => Promise<T>) => Promise<void>, fail: (e: Error) => string) {
-  if (exportJob.busy) return toast(t('exp.busy'));
-  let i = 0, n = 1, half = false, stop!: (e: Error) => void;
-  const cancelled = new Promise<never>((_, rej) => { stop = rej; }); cancelled.catch(() => { });
-  cancelJob = () => stop(new Error('cancel'));
-  const say = (m: string) => toast(m, 'info', { sticky: true, action: { label: t('exp.cancel'), fn: cancelExport } });
-  Object.assign(exportJob, { busy: true, pct: 0, label: '' }); exportJob.onChange(); say(t('toast.rendering'));
-  const timer = window.setInterval(() => {
-    exportJob.pct = jobPct(i, n, renderProgress() ?? (exportJob.pct * n - i)); exportJob.onChange();
-    // Une seule annonce en cours de route (mi-parcours) : la zone de statut ne doit pas parler sans arrêt.
-    if (!half && n === 1 && exportJob.pct >= 0.5 && exportJob.pct < 0.95) { half = true; say(t('exp.half')); }
-  }, 150);
-  try {
-    await work((a, b, label = '') => { i = a; n = b; exportJob.label = label; exportJob.pct = jobPct(a, b, 0); exportJob.onChange(); if (label) say(label); }, p => Promise.race([p, cancelled]));
-  } catch (e) {
-    if ((e as Error).message === 'cancel') toast(t('exp.cancelled')); else toast(fail(e as Error), 'error');
-  } finally { clearInterval(timer); cancelJob = null; Object.assign(exportJob, { busy: false, pct: 0, label: '' }); exportJob.onChange(); }
-}
-const exportError = (e: Error) => e.message === 'empty' ? t('toast.emptyProject') : e.message === 'bank' ? t('toast.bankExportFail') : t('toast.exportFail');
-
-export function exportMp3() {
-  return runExport(async (step, guard) => {
-    const buf = await guard(renderOffline(S.project, true, exportRange()));
-    step(1, 1, t('exp.encoding'));
-    download(await guard(encodeMp3(buf)), safeName() + rangeName() + '.mp3');
-    toast(t('toast.mp3Exported'));
-  }, exportError);
-}
-
-/**
- * Recale les notes sélectionnées (ou toutes) sur la grille du piano roll. V19 : `str` = force (1 = sur la grille, 0,5 = à
- * mi-chemin, pour garder un peu du jeu), `swing` = les points pairs de la grille gardent leur place, les impairs sont retardés de
- * `swing` × une demi-division (même règle que le swing du séquenceur : 0,66 ≈ croches ternaires). À 100 % sans swing, la durée
- * est aussi recalée, comme avant ; sinon seul le début bouge et la durée est gardée.
- */
-export function quantizeNotes(notes: { s: number; l: number }[], g: number, patLen: number, o: { str?: number; swing?: number } = {}) {
-  const str = Math.max(0, Math.min(1, o.str ?? 1)), sw = Math.max(0, Math.min(1, o.swing ?? 0)), last = snapTo(Math.floor((patLen - 1e-6) / g) * g, g);
-  for (const n of notes) {
-    const k = Math.round(Math.min(snapTo(n.s, g), last) / g), target = k * g + (k % 2 ? sw * g * 0.5 : 0);
-    if (str === 1 && !sw) { n.s = Math.min(snapTo(n.s, g), last); n.l = Math.max(g, Math.min(snapTo(n.l, g), patLen - n.s)); continue; }
-    n.s = Math.round(Math.max(0, Math.min(patLen - 1 / 24, n.s + (target - n.s) * str)) * 1e4) / 1e4;
-    n.l = Math.max(1 / 24, Math.min(n.l, patLen - n.s));
-  }
-  commit(); toast(t('toast.quantized', notes.length));
-}
-/** Humanise (V19) : décale chaque début d'au plus ± 0,12 pas (± 15 ms à 120 BPM) et chaque force d'au plus ± 12 %, selon `amt` (0..1). */
-export function humanizeNotes(notes: { s: number; l: number; v: number }[], amt: number, patLen: number) {
-  const a = Math.max(0, Math.min(1, amt)), r = () => Math.random() * 2 - 1;
-  for (const n of notes) {
-    n.s = Math.round(Math.max(0, Math.min(patLen - 1 / 24, n.s + r() * 0.12 * a)) * 1e4) / 1e4;
-    n.l = Math.max(1 / 24, Math.min(n.l, patLen - n.s));
-    n.v = Math.round(Math.max(0.05, Math.min(1, n.v * (1 + r() * 0.12 * a))) * 100) / 100;
-  }
-  commit(); toast(t('toast.humanized', notes.length));
-}
-/** Légato (V19) : chaque note dure jusqu'au début de la note suivante du clip (les notes d'un accord gardent la même fin). */
-export function legatoNotes(notes: { s: number; l: number }[], all: { s: number }[], patLen: number) {
-  const starts = [...new Set(all.map(n => n.s))].sort((a, b) => a - b);
-  for (const n of notes) { const next = starts.find(x => x > n.s + 1e-6) ?? patLen; n.l = Math.max(1 / 24, next - n.s); }
-  commit(); toast(t('toast.legato', notes.length));
-}
-
-// ---------- Chaîne d'effets ----------
-const strip = (id: string) => [...S.project.tracks, ...S.project.buses].find(x => x.id === id);
-export function addInsert(trackId: string, type: string) {
-  const tr = strip(trackId);
-  if (!tr) return;
-  // Étages de tranche (filtre, saturation…) : hors de la limite de huit, un de chaque au plus ; ils se placent dans l'ordre du son.
-  if (isStripFx(type)) {
-    if (tr.inserts.some(i => i.type === type)) return toast(t('fx.oneStrip', t('fxn.' + type)), 'error');
-    addStripFx(tr, type); commit(); return;
-  }
-  if (fxCount(tr) >= 8) return toast(t('fx.max'), 'error');
-  tr.inserts.push(newInsert(type)); commit();
-}
-export function removeInsert(trackId: string, id: string) {
-  const tr = strip(trackId); if (!tr) return;
-  tr.inserts = tr.inserts.filter(i => i.id !== id);
-  // Ses courbes d'automation partent avec lui (Annuler les ramène).
-  for (const k of Object.keys(tr.auto ?? {})) if (k.startsWith(`ins:${id}:`)) delete tr.auto![k];
-  if (tr.autoShow?.startsWith(`ins:${id}:`)) tr.autoShow = 'vol';
-  commit();
-}
-/** Déplace un effet à la place `to` de la chaîne (glisser-déposer). */
-export function moveInsertTo(trackId: string, id: string, to: number) {
-  const l = strip(trackId)?.inserts, i = l?.findIndex(x => x.id === id) ?? -1;
-  if (!l || i < 0) return;
-  const j = Math.max(0, Math.min(l.length - 1, to));
-  if (i === j) return;
-  const [x] = l.splice(i, 1); l.splice(j, 0, x); commit();
-}
-export function moveInsert(trackId: string, id: string, dir: -1 | 1) {
-  const l = strip(trackId)?.inserts, i = l?.findIndex(x => x.id === id) ?? -1, j = i + dir;
-  if (!l || i < 0 || j < 0 || j >= l.length) return;
-  [l[i], l[j]] = [l[j], l[i]]; commit();
-}
-/** Ajoute un plugin Audio Unit du Mac (version bureau macOS) : `id` = « type:sous-type:fabricant » (« aufx:dely:appl »). */
-export function addAu(trackId: string, id: string, name: string) {
-  const tr = strip(trackId);
-  if (!tr) return;
-  if (fxCount(tr) >= 8) return toast(t('fx.max'), 'error');
-  if (!/^\w{4}:[^:]{4}:[^:]{4}$/.test(id)) return;
-  const ins = newInsert('au'); ins.url = id; ins.name = name;
-  tr.inserts.push(ins); commit();
-}
-/** Origines dont les plugins web ont été acceptés par l'utilisateur. */
-const trusted = (): string[] => { try { return JSON.parse(localStorage.getItem('kh-wam-trust') || '[]'); } catch { return []; } };
-/**
- * Ajoute un plugin web. Un plugin est du code exécuté dans l'application : s'il vient d'un autre site,
- * l'utilisateur doit l'accepter explicitement (une fois par site).
- */
-export async function addWam(trackId: string, url: string | null, name?: string) {
-  if (!strip(trackId)) return;
-  if (fxCount(strip(trackId)!) >= 8) return toast(t('fx.max'), 'error');
-  const raw = url ?? (await ask(t('wam.ask'), 'https://', { mode: 'url' }))?.trim();
-  if (!raw) return;
-  let full: URL;
-  try { full = new URL(wamUrl(raw)); } catch { return toast(t('wam.badUrl'), 'error'); }
-  if (!/^(https?|file):$/.test(full.protocol)) return toast(t('wam.badUrl'), 'error');
-  if (full.origin !== location.origin) {
-    const list = trusted();
-    if (!list.includes(full.origin)) {
-      if (!await confirmBox(t('wam.trust', full.host), t('wam.accept'), { danger: true })) return;
-      try { localStorage.setItem('kh-wam-trust', JSON.stringify([...list, full.origin])); } catch { /* stockage désactivé */ }
-    }
-  }
-  // La question a pu rester ouverte un moment : la piste est relue (elle a pu être supprimée, ou remplie entre-temps).
-  const tr = strip(trackId);
-  if (!tr) return;
-  if (fxCount(tr) >= 8) return toast(t('fx.max'), 'error');
-  const ins = newInsert('wam'); ins.url = raw; ins.name = name ?? (full.pathname.split('/').filter(Boolean).slice(-2, -1)[0] || full.host);
-  tr.inserts.push(ins); commit();
-}
-/** Recopie dans le projet les réglages internes des plugins web, pour qu'ils soient enregistrés avec lui. */
-export async function saveWamStates() {
-  let changed = false;
-  for (const tr of [...S.project.tracks, ...S.project.buses]) for (const ins of tr.inserts) {
-    const inst = ins.type === 'wam' ? liveWams.get(wamKey(tr.id, ins.id)) : undefined;
-    if (!inst?.audioNode.getState) continue;
-    try { const st = await inst.audioNode.getState(); if (JSON.stringify(st) !== JSON.stringify(ins.state)) { ins.state = st; changed = true; } } catch { /* plugin sans état */ }
-  }
-  if (changed) commit();
-}
-
-export function addBus() {
-  const p = S.project, b = newBus(p.buses.length + 1);
-  while (p.buses.some(x => x.name === b.name)) b.name += '′';
-  p.buses.push(b); commit();
-  return b;
-}
-export function deleteBus(id: string) {
-  const p = S.project;
-  p.buses = p.buses.filter(b => b.id !== id);
-  for (const tr of p.tracks) { if (tr.out === id) tr.out = ''; if (tr.sends) tr.sends = tr.sends.filter(sd => sd.bus !== id); } // les pistes qui y sortaient reviennent au général ; leurs envois vers ce bus disparaissent
-  commit();
-}
-
-/** Envoi libre (V19) : nouvel envoi de la piste vers le premier bus (créé s'il n'en existe aucun), après le volume. */
-export function addSend(tr: Track) {
-  let bus = S.project.buses[0];
-  if (!bus) { bus = newBus(1); S.project.buses.push(bus); }
-  (tr.sends ??= []).push({ id: uid(), bus: bus.id, amt: 0.5, pre: false }); commit();
-}
-export function removeSend(tr: Track, id: string) { tr.sends = (tr.sends ?? []).filter(sd => sd.id !== id); if (!tr.sends.length) delete tr.sends; commit(); }
-
-export function applyMixPreset(tr: Track, key: string) {
-  const p = MIX_PRESETS[key];
-  if (!p) return;
-  // Tranche en chaîne : les réglages de tranche du préréglage vont aux effets de la chaîne (créés au besoin) ; réverb et écho restent des envois.
-  if (tr.strip === 'chaine') {
-    for (const [k, v] of Object.entries(p)) if (k in STRIP_MAP) stripSet(tr, k as StripField, v as number | boolean, true); else (tr as unknown as Record<string, unknown>)[k] = v;
-  } else Object.assign(tr, p);
-  commit(); toast(t('toast.presetApplied', t('mp.' + key), tr.name));
-}
-
-// ---------- Chaînes d'effets qui remplacent la tranche fixe (21/11/2026) ----------
-/** Convertit la tranche fixe d'une piste (ou d'un bus) en effets en tête de chaîne : même son, une seule entrée d'annulation. */
-export function convertStrip(trackId: string) {
-  const tr = strip(trackId);
-  if (!tr || !stripToChain(tr)) return;
-  commit(); toast(t('chain.done', tr.name));
-}
-/** Convertit toutes les tranches du projet (pistes et bus). */
-export function convertAllStrips() {
-  const n = [...S.project.tracks, ...S.project.buses].filter(tr => stripToChain(tr)).length;
-  if (!n) return toast(t('chain.none'));
-  commit(); toast(t('chain.doneAll', n));
-}
-/** Revient à la tranche fixe, quand la tête de chaîne le permet sans changer le son. */
-export function revertStrip(trackId: string) {
-  const tr = strip(trackId);
-  if (!tr) return;
-  if (!chainToStrip(tr)) return toast(t('chain.cantRevert'), 'error');
-  commit(); toast(t('chain.reverted', tr.name));
-}
-
 /** Demande un tempo (40 à 240) ; renvoie null si la saisie est annulée ou invalide. */
 async function askTempo(current: number): Promise<number | null> {
   const v = Math.round(parseFloat(((await ask(t('tempo.ask'), String(current), { mode: 'decimal' })) ?? '').replace(',', '.')) * 100) / 100;
@@ -475,13 +115,11 @@ export async function renameProject() {
   if (n) { S.project.name = n; commit(); }
 }
 export function removeTempo(s: number) { S.project.tempos = S.project.tempos.filter(m => m.s !== s); commit(); }
-
 export function addMarker() {
   const p = S.project, s = Math.round(engine.currentStep() / BAR) * BAR;
   if (p.markers.some(m => m.s === s)) return toast(t('toast.markerExists'));
   p.markers.push({ s, name: t('mark.name', p.markers.length + 1) }); p.markers.sort((a, b) => a.s - b.s); commit();
 }
-
 /** Ouvre (ou ferme) l'entrée audio pour régler le niveau et s'écouter avant d'enregistrer. */
 export async function toggleInput(on: boolean) {
   if (!on) { engine.closeInput(); emit(); return; }
@@ -498,169 +136,6 @@ export async function chooseInput(id: string) {
   S.inputDevice = id;
   if (engine.inp) await toggleInput(true); else emit();
 }
-
-export function transposeClip(semis: number) {
-  const f = findClip(S.selClip);
-  if (!f?.clip.notes?.length) return;
-  if (f.clip.notes.some(n => n.p + semis < 24 || n.p + semis > 96)) return toast(t('toast.range'), 'error');
-  for (const n of f.clip.notes) n.p += semis;
-  commit();
-}
-
-/** Clips sélectionnés : le clip courant et ceux ajoutés par Maj+clic. */
-export function selectedClips(): { track: Track; clip: Clip }[] {
-  const ids = new Set([S.selClip, ...S.selMore]);
-  return S.project.tracks.flatMap(track => track.clips.filter(c => ids.has(c.id)).map(clip => ({ track, clip })));
-}
-
-export function deleteClip() {
-  const sel = selectedClips();
-  if (!sel.length) return;
-  for (const { track, clip } of sel) track.clips = track.clips.filter(c => c !== clip);
-  S.selClip = ''; S.selMore.clear(); commit();
-}
-
-export function duplicateClip() {
-  const sel = selectedClips();
-  if (!sel.length) return;
-  // Les copies se placent juste après la fin du groupe sélectionné.
-  const shift = Math.max(...sel.map(x => x.clip.start + x.clip.len)) - Math.min(...sel.map(x => x.clip.start));
-  S.selMore.clear();
-  for (const { track, clip } of sel) {
-    const c: Clip = JSON.parse(JSON.stringify(clip));
-    c.id = uid(); c.start = clip.start + shift; track.clips.push(c);
-    if (clip.id === S.selClip) S.selClip = c.id; else S.selMore.add(c.id);
-  }
-  commit();
-}
-
-/** Décale le motif de batterie d'un pas (il boucle sur lui-même). */
-export function shiftPattern(d: -1 | 1) {
-  const c = findClip(S.selClip)?.clip;
-  if (!c?.drums) return;
-  c.drums = c.drums.map(row => { const n = row.length; return row.map((_, i) => row[((i - d) % n + n) % n]); }); commit();
-}
-/** Double la longueur du motif en le recopiant, pour pouvoir varier la seconde moitié. */
-export function doublePattern() {
-  const c = findClip(S.selClip)?.clip;
-  if (!c?.drums) return;
-  if (c.patLen! * 2 > 128) return toast(t('toast.patMax'), 'error');
-  c.drums = c.drums.map(row => [...row, ...row]); c.patLen = c.patLen! * 2; c.len = Math.max(c.len, c.patLen);
-  commit();
-}
-
-/** Décale le point de lecture d'un clip audio dans son son (toutes ses prises suivent). */
-function shiftAudio(c: Clip, sec: number) { c.offset += sec; if (c.takes) c.takes = c.takes.map(x => x + sec); }
-
-/** Libère la zone [a, b[ d'une piste audio : les clips qui la recouvrent sont rognés, coupés en deux ou supprimés. */
-function clearZone(tr: Track, a: number, b: number) {
-  const dur = stepDur(S.project.bpm), out: Clip[] = [];
-  for (const c of tr.clips) {
-    const end = c.start + c.len;
-    if (end <= a || c.start >= b) { out.push(c); continue; }
-    if (c.start < a) { const left: Clip = JSON.parse(JSON.stringify(c)); left.id = c.id; left.len = a - c.start; left.fadeOut = 0; compSlice(left, 0, left.len); out.push(left); }
-    if (end > b) { const right: Clip = JSON.parse(JSON.stringify(c)); right.id = c.start < a ? uid() : c.id; shiftAudio(right, (b - c.start) * dur); right.start = b; right.len = end - b; right.fadeIn = 0; delete right.xfade; compSlice(right, b - c.start, c.len); out.push(right); }
-  }
-  tr.clips = out;
-}
-
-/** Choisit la prise jouée par un clip enregistré en boucle. */
-export function chooseTake(i: number) {
-  const c = findClip(S.selClip)?.clip;
-  if (!c?.takes || i < 0 || i >= c.takes.length) return;
-  c.take = i; c.offset = c.takes[i]; delete c.comp; commit();
-}
-/** Comping (V19) : la prise `i` est jouée sur la portion [a, b[ du clip ouvert (en pas depuis son début). */
-export function compTake(i: number, a: number, b: number) {
-  const c = findClip(S.selClip)?.clip;
-  if (!c?.takes || i < 0 || i >= c.takes.length) return;
-  compSet(c, Math.max(0, a), Math.min(c.len, b), i); commit();
-}
-/** Fondu enchaîné (V19) entre le clip ouvert et le clip audio qui finit juste où il commence, en pas (0 = aucun). */
-export function setXfade(steps: number) {
-  const c = findClip(S.selClip)?.clip;
-  if (!c) return;
-  if (steps > 0) c.xfade = steps; else delete c.xfade;
-}
-/** Clip audio de la même piste qui se termine exactement là où commence le clip `c`. */
-export function leftNeighbour(tr: Track, c: Clip) { return tr.clips.find(x => x !== c && Math.abs(x.start + x.len - c.start) < 1e-6); }
-
-/** Ramène le son du clip vers les notes de la gamme du projet (toutes les notes si la gamme est libre). */
-export function tuneClip(amount: number) {
-  const f = findClip(S.selClip), buf = f?.clip.bufferId ? buffers.get(f.clip.bufferId) : undefined;
-  if (!f || !buf || amount <= 0) return;
-  const p = S.project, r = tuneBuffer(buf, amount, m => inScale(p, m));
-  if (r.voiced < 0.02) return toast(t('toast.noPitch'), 'error');
-  const id = uid(); addBuffer(id, r.out); f.clip.bufferId = id;
-  commit(); toast(t('toast.tuned', Math.round(r.meanCents)));
-}
-
-export function splitClip() { splitClipAt(Math.round(engine.currentStep())); }
-/** Scinde le clip sélectionné au pas `at` (la tête de lecture pour Ctrl+E, l'endroit visé pour « Scinder ici »). */
-export function splitClipAt(at: number) {
-  const f = findClip(S.selClip);
-  if (!f) return toast(t('toast.selectClip'));
-  const { clip, track } = f;
-  if (at <= clip.start || at >= clip.start + clip.len) return toast(t('toast.playheadInside'));
-  const right: Clip = JSON.parse(JSON.stringify(clip));
-  right.id = uid(); right.start = at; right.len = clip.start + clip.len - at;
-  if (track.type === 'audio') shiftAudio(right, (at - clip.start) * srcStep(S.project, clip));
-  else right.offset = (clip.offset + at - clip.start) % clip.patLen!;
-  // Comping : chaque moitié garde les portions qui la concernent ; la moitié droite n'a pas de fondu enchaîné à elle.
-  delete right.xfade; compSlice(right, at - clip.start, clip.len);
-  clip.len = at - clip.start; compSlice(clip, 0, clip.len);
-  track.clips.push(right); commit();
-}
-
-export function addAudioClip(buf: AudioBuffer, name: string, trackId?: string, start?: number, offset = 0, extra: Partial<Clip> = {}, prepare?: (tr: Track) => void) {
-  const id = uid(); addBuffer(id, buf);
-  let tr = trackId ? findTrack(trackId) : findTrack(S.selTrack);
-  if (!tr || tr.type !== 'audio') tr = S.project.tracks.find(x => x.type === 'audio' && !x.clips.length);
-  if (!tr) { tr = newTrack('audio', S.project.tracks.filter(x => x.type === 'audio').length + 1); S.project.tracks.push(tr); }
-  const st = start ?? Math.round(engine.currentStep());
-  const clip: Clip = {
-    id: uid(), name, start: st, offset, bufferId: id, gain: 1,
-    len: Math.max(1, Math.ceil((buf.duration - offset) / stepDur(S.project.bpm))), ...extra,
-  };
-  prepare?.(tr);
-  tr.clips.push(clip); S.selTrack = tr.id; S.selClip = clip.id;
-  commit();
-}
-
-const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(wav|mp3|ogg|flac|m4a|aac|aiff?)$/i.test(f.name);
-export const audioFiles = (list?: FileList | null) => [...(list ?? [])].filter(isAudio);
-const baseName = (f: File) => f.name.replace(/\.[^.]+$/, '');
-
-export async function importFiles(files: Iterable<File>, trackId?: string, start?: number) {
-  for (const f of files) {
-    try {
-      addAudioClip(await engine.decode(await f.arrayBuffer()), baseName(f), trackId, start);
-      toast(t('toast.imported', f.name));
-    } catch { toast(t('toast.badAudio', f.name), 'error'); }
-  }
-}
-
-/** Charge un fichier comme sample (pad ou sampler) et renvoie son identifiant. */
-export async function loadSample(f: File): Promise<{ id: string; name: string } | null> {
-  try {
-    const id = uid(); addBuffer(id, await engine.decode(await f.arrayBuffer()));
-    return { id, name: baseName(f) };
-  } catch { toast(t('toast.badAudio', f.name), 'error'); return null; }
-}
-
-// Sélecteurs de fichiers partagés
-let onAudio: ((files: File[]) => void) | null = null;
-export function pickFiles(cb: (files: File[]) => void, multiple = false) {
-  const inp = document.getElementById('fAudio') as HTMLInputElement;
-  onAudio = cb; inp.multiple = multiple; inp.click();
-}
-export function filesPicked(inp: HTMLInputElement) {
-  const files = [...(inp.files ?? [])]; inp.value = '';
-  if (files.length) onAudio?.(files);
-  onAudio = null;
-}
-export const pickAudio = (trackId?: string, start?: number) => pickFiles(fs => importFiles(fs, trackId, start), true);
-
 export async function toggleRecord() {
   if (engine.recording) { engine.stop(); return; }
   const sel = findTrack(S.selTrack), p = S.project;
@@ -698,120 +173,6 @@ export async function toggleRecord() {
   } catch { toast(t('toast.noMic'), 'error'); }
 }
 engine.onRecEnd = kind => { allNotesOff(); if (kind === 'midi') setTimeout(commit, 350); };
-
-export function exportWav() {
-  return runExport(async (_step, guard) => {
-    download(encodeWav(await guard(renderOffline(S.project, true, exportRange())), S.project.exp.bits), safeName() + rangeName() + '.wav');
-    toast(lastRender.wamFailed ? t('toast.exportedNoWam', lastRender.wamFailed) : t('toast.exported'), lastRender.wamFailed ? 'error' : 'info');
-  }, exportError);
-}
-
-/** Une piste = un fichier WAV, tous de la même durée, réunis dans une archive ZIP. */
-export async function exportStems() {
-  const p = S.project;
-  if (!contentEnd(p)) return toast(t('toast.emptyProject'), 'error');
-  return runExport(async (step, guard) => {
-    const files: { name: string; data: Uint8Array }[] = [];
-    const list = p.tracks.filter(tr => tr.clips.length && !tr.mute);
-    for (const [i, tr] of list.entries()) {
-      step(i, list.length, t('toast.stem', i + 1, list.length));
-      const solo: typeof p = { ...p, tracks: p.tracks.map(x => ({ ...x, solo: false, mute: x.id !== tr.id })) };
-      const wav = encodeWav(await guard(renderOffline(solo, false, exportRange())), p.exp.bits);
-      files.push({ name: `${String(i + 1).padStart(2, '0')}_${ascii(tr.name)}.wav`, data: new Uint8Array(await wav.arrayBuffer()) });
-    }
-    download(zip(files), safeName() + rangeName() + '_stems.zip');
-    toast(t('toast.stemsDone', files.length));
-  }, () => t('toast.exportFail'));
-}
-
-export function exportMidiFile() {
-  const p = S.project;
-  if (!p.tracks.some(tr => tr.type !== 'audio' && tr.clips.length)) return toast(t('toast.noNotes'), 'error');
-  download(new Blob([exportMidi(p) as BlobPart], { type: 'audio/midi' }), safeName() + '.mid');
-  toast(t('toast.midiExported'));
-}
-
-export async function importMidiFile(f: File) {
-  try {
-    const p = S.project, empty = !contentEnd(p), r = importMidi(await f.arrayBuffer(), empty);
-    if (r.bpm && empty) { p.bpm = r.bpm; p.tempos = r.tempos; }
-    // Projet vide : il prend aussi la signature du fichier (6/8, 3/4…), comme le tempo.
-    if (r.sig && empty) { p.sig = r.sig.sig; p.den = r.sig.den; }
-    p.tracks.push(...r.tracks); S.selTrack = r.tracks[0].id; S.selClip = r.tracks[0].clips[0].id;
-    commit(); toast(t('toast.midiImported', r.tracks.length));
-  } catch { toast(t('toast.badMidi'), 'error'); }
-}
-
-/** Mesure le volume perçu et la crête du morceau tel qu'il sera exporté. */
-export async function analyzeMix(): Promise<string> {
-  try {
-    toast(t('toast.rendering'));
-    const r = await analyze(S.project), txt = t('mix.result', Number.isFinite(r.lufs) ? r.lufs.toFixed(1) : '−∞', r.peakDb.toFixed(1));
-    toast(txt); return txt;
-  } catch { toast(t('toast.emptyProject'), 'error'); return ''; }
-}
-
-/** Version bureau (electron/preload.cjs) : fichiers de projet sur le disque. Absent dans le navigateur. */
-export interface DeskFile { path: string; name: string; text?: string }
-export interface DeskFiles {
-  open(): Promise<DeskFile | null>; openRecent(path: string): Promise<DeskFile>;
-  save(path: string, text: string): Promise<DeskFile>; saveAs(name: string, text: string): Promise<DeskFile | null>;
-  recent(): Promise<DeskFile[]>; clearRecent(): Promise<boolean>; onOpen(fn: (f: DeskFile) => void): void; edited(on: boolean): void;
-}
-export const deskFiles = (): DeskFiles | null => (window as unknown as { khFiles?: DeskFiles }).khFiles ?? null;
-
-/** Enregistrer : dans la version bureau, réécrit le fichier du projet (ou demande où l'enregistrer la première fois) ; dans le navigateur, télécharge le .khm. */
-export async function saveFile(): Promise<void> {
-  const d = deskFiles();
-  if (d && S.file.path) {
-    await saveWamStates();
-    try { linkFile(await d.save(S.file.path, serializeProject())); setDirty(false); toast(t('file.saved', S.file.name)); }
-    catch { toast(t('file.saveFail'), 'error'); }
-    return;
-  }
-  if (d) return saveFileAs();
-  await saveWamStates();
-  download(new Blob([serializeProject()], { type: 'application/json' }), safeName() + '.khm');
-  toast(t('toast.saved'));
-}
-/** Enregistrer sous : fenêtre du système, dossier et nom au choix (version bureau). Dans le navigateur : comme Enregistrer. */
-export async function saveFileAs(): Promise<void> {
-  const d = deskFiles();
-  if (!d) return saveFile();
-  await saveWamStates();
-  try {
-    const f = await d.saveAs(S.project.name || 'Projet', serializeProject());
-    if (!f) return;
-    linkFile(f); setDirty(false); toast(t('file.saved', f.name));
-  } catch { toast(t('file.saveFail'), 'error'); }
-}
-function openText(f: DeskFile) {
-  engine.stop(); loadProjectFile(f.text ?? '', pidOfFile(f.path)); linkFile(f); setDirty(false);
-  toast(t('file.opened', f.name)); engine.prepare();
-}
-/** Ouvrir : fenêtre du système dans la version bureau, sélecteur de fichier dans le navigateur. */
-export async function openProjectFile() {
-  const d = deskFiles();
-  if (!d) { document.getElementById('fProj')?.click(); return; }
-  try { const f = await d.open(); if (f) openText(f); }
-  catch { toast(t('toast.badProject'), 'error'); }
-}
-export async function openRecentFile(path: string, name: string) {
-  const d = deskFiles(); if (!d) return;
-  let f: DeskFile;
-  try { f = await d.openRecent(path); } catch { toast(t('file.missing', name), 'error'); return; }
-  try { openText(f); } catch { toast(t('toast.badProject'), 'error'); }
-}
-/** Fichier .khm ouvert depuis le Finder (double-clic, glisser sur le Dock). */
-export function listenSystemOpen() {
-  deskFiles()?.onOpen(f => { try { openText(f); } catch { toast(t('toast.badProject'), 'error'); } });
-}
-
-export async function openFile(f: File) {
-  try { engine.stop(); loadProjectFile(await f.text()); toast(t('toast.opened')); engine.prepare(); }
-  catch { toast(t('toast.badProject'), 'error'); }
-}
-
 export function setLoopToClip() {
   const f = findClip(S.selClip);
   if (!f) return;
@@ -820,7 +181,6 @@ export function setLoopToClip() {
   S.project.loopLen = Math.max(1, Math.ceil((f.clip.start + f.clip.len) / BAR) - S.project.loopStart);
   commit();
 }
-
 const taps: number[] = [];
 export function tapTempo() {
   const now = performance.now();
