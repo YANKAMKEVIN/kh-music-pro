@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const PORT = 4179, URL = `http://localhost:${PORT}/`;
+const PORT = Number(process.env.SMOKE_PORT) || 4179, URL = `http://localhost:${PORT}/`;
 const root = path.join(__dirname, '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failed = 0;
