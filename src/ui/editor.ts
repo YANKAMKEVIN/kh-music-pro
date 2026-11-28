@@ -1,51 +1,36 @@
-import { SUSTAIN_BANKS } from '../audio/sustain';
-import { drumBank, recordedDynamics } from '../audio/banks';
-import { chooseSound, showSounds } from './sounds';
-import { audioFiles, humanizeNotes, legatoNotes, compTake, leftNeighbour, setXfade, chooseTake, chopClip, chooseInput, tuneClip, deleteClip, doublePattern, duplicateClip, quantizeNotes, shiftPattern, inputs, loadSample, normalizeClip, pickFiles, reverseClip, setLoopToClip, splitClip, stretchClip, toggleInput, transposeClip, toggleWarp, setWarpBpm } from '../actions';
+import { deleteClip, duplicateClip, humanizeNotes, legatoNotes, quantizeNotes, setLoopToClip, splitClip, transposeClip } from '../actions';
 import { engine } from '../audio/engine';
-import { auBridge, auInstruments, auName } from '../audio/au';
+import { auName } from '../audio/au';
 import { noteOf } from '../audio/pitch';
-import { hasKey, lang, t } from '../i18n';
-import { ctlIn, kb, noteOff, noteOn, padHit, padRelease } from '../input';
-import { S, commit, emit, findClip, findTrack, revert } from '../store';
-import { BAR, BEAT, CATS, CTL_REST, Clip, CtlKind, GRIDS, KITS, NPADS, Note, PRESETS, SCALES, Track, inScale, makeSynth, resOf, setRes, snapTo, snapToScale, srcStep, stepDur } from '../types';
-import { drawAudio, drawFades, drawWave, wheelFactor, zoomAt } from './arr';
+import { lang, t } from '../i18n';
+import { kb, noteOff, noteOn } from '../input';
+import { commit, emit, findClip, findTrack, revert, S } from '../store';
+import { BAR, BEAT, Clip, GRIDS, inScale, Note, resOf, SCALES, snapTo, snapToScale, Track } from '../types';
+import { wheelFactor, zoomAt } from './arr';
 import { icon, typeIcon } from './icons';
 import { clamp, followDrag, h, pct, slider, toast } from './dom';
+import { isBlack, keyLabel, noteName, SOLF } from './editor/names';
+import { ctlLane, screenKeys } from './editor/controls';
+import { synthPanel } from './editor/synth';
+import { drumEditor } from './editor/drums';
+import { audioEditor, inputPanel } from './editor/audio';
+export * from './editor/names';
+export * from './editor/drums';
+export * from './editor/synth';
+export * from './editor/controls';
+export * from './editor/audio';
 
 /** Doigts posés sur le clavier à l'écran (identifiant de pointeur → note), conservés d'un redessin à l'autre. */
-const okbDown = new Map<number, number>();
-
+export const okbDown = new Map<number, number>();
 const RH = 16, PMAX = 96, PMIN = 24, CELL = 34, LABEL_W = 150, KEYS_W = 62;
 /** Largeur d'un pas dans le piano roll : suit le zoom (`S.epx`), relue à chaque dessin. */
-let SW = 28;
-const SOLF = { fr: ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], es: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'], en: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] };
-const isBlack = (p: number) => [1, 3, 6, 8, 10].includes(p % 12);
-export const noteName = (p: number) => SOLF[lang()][p % 12] + (Math.floor(p / 12) - 1);
-/** Disposition réelle du clavier, quand le navigateur la donne (Chromium, version bureau) : code physique → lettre imprimée. */
-let layout: Map<string, string> | null = null;
-export function readKeyboardLayout(done: () => void) {
-  const kbd = (navigator as unknown as { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }).keyboard;
-  kbd?.getLayoutMap?.().then(m => { const before = layout && [...layout].join(); layout = m; if (before !== [...m].join()) done(); }).catch(() => { });
-}
-export const setKeyboardLayout = (m: Map<string, string> | null) => { layout = m; };
-/** Étiquette d'une touche physique (code « KeyA », écrit ici « A ») : la lettre réellement imprimée sur le clavier quand on la connaît,
- *  sinon la disposition la plus probable selon la langue (AZERTY en français). */
-export const keyLabel = (k: string) => {
-  const real = /^[A-Z]$/.test(k) ? layout?.get('Key' + k) : undefined;
-  if (real && /^\p{L}$/u.test(real)) return real.toUpperCase();
-  return lang() === 'fr' ? ({ A: 'Q', Q: 'A', W: 'Z', Z: 'W' } as Record<string, string>)[k] ?? k : k;
-};
-export const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
-export const padName = (tr: Track, r: number) => tr.pads?.[r]?.name ?? t(tr.kit === 'percussion' ? 'perc.' + r : drumBank(tr.kit) && hasKey('da' + r) ? 'da' + r : 'd' + r);
-
+export let SW = 28;
 let lastLen = 2;
 let scrollKey = '', scrollPos = { x: 0, y: 0 };
 let edStepW = 0, edRes = 1;
-/** Case du séquenceur qui reçoit le focus au clavier (une seule est atteignable par Tab). */
-let gridPos = { r: 0, s: 0 };
-
-function lengthSelect(c: Clip, opts: number[]) {
+/** Largeur d'un pas et résolution de la grille de batterie affichée, pour placer la tête de lecture. */
+export const setEdGrid = (w: number, res: number) => { edStepW = w; edRes = res; };
+export function lengthSelect(c: Clip, opts: number[]) {
   const sel = h('select', { 'aria-label': t('ed.length'), title: t('ed.length'), data: { role: 'length' } });
   for (const b of opts) sel.append(h('option', { value: String(b * BAR), selected: c.patLen === b * BAR }, t(b > 1 ? 'ed.bars' : 'ed.bar', b)));
   sel.onchange = () => {
@@ -57,373 +42,14 @@ function lengthSelect(c: Clip, opts: number[]) {
   };
   return h('label', { class: 'fld' }, t('ed.length'), sel);
 }
-
-function clipTools(c: Clip) {
+export function clipTools(c: Clip) {
   const name = h('input', { class: 'cname-in', value: c.name, 'aria-label': t('clip.name'), spellcheck: false });
   name.onchange = () => { c.name = name.value.trim() || c.name; commit(); };
   const b = (key: string, ico: string | Node, fn: () => void, cls = '') => h('button', { class: cls, title: t('tip.' + key), data: { act: key }, onclick: fn }, ico, ' ' + t('act.' + key));
   return h('div', { class: 'tools' }, name, b('dup', '⧉', duplicateClip), b('split', '✂', splitClip), b('loop', '⟲', setLoopToClip), b('del', icon('trash', 15), deleteClip, 'danger'));
 }
-
-// ---------- Batterie : séquenceur et pads ----------
-function drumBar(tr: Track, c: Clip | null) {
-  const kit = h('select', { 'aria-label': t('drum.kit'), data: { role: 'kit' } });
-  for (const k of Object.keys(KITS)) kit.append(h('option', { value: k, selected: tr.kit === k }, t('kit.' + k)));
-  kit.onchange = async () => {
-    const selected = kit.value; tr.kit = selected; commit();
-    const bank = drumBank(selected);
-    if (bank && !await engine.loadBank(bank)) return;
-    if (findTrack(tr.id) === tr && tr.kit === selected) engine.pad(tr, 0);
-  };
-  const view = (v: 'seq' | 'pads', label: string) => h('button', {
-    class: 'seg' + (S.drumView === v || (!c && v === 'pads') ? ' on' : ''), disabled: !c && v === 'seq', data: { view: v },
-    onclick: () => { S.drumView = v; emit(); },
-  }, label);
-  return h('div', { class: 'ebar' }, h('strong', {}, typeIcon('drums'), ' ' + tr.name),
-    h('div', { class: 'segs', role: 'group' }, view('seq', t('drum.seq')), view('pads', t('drum.pads'))),
-    c && clipTools(c), c && lengthSelect(c, [1, 2, 4]), c && resSelect(c),
-    h('label', { class: 'fld' }, t('drum.kit'), kit),
-    slider(t('drum.swing'), 0, 0.6, 0.01, S.project.swing, v => S.project.swing = v, pct, '', false, 0),
-    c && h('button', { title: t('tip.clear'), data: { act: 'clear' }, onclick: () => { c.drums = c.drums!.map(r => r.map(() => 0)); commit(); } }, t('act.clear')),
-    c && h('div', { class: 'segs', role: 'group', 'aria-label': t('pat.tools') },
-      h('button', { class: 'seg', data: { act: 'patleft' }, title: t('pat.left'), 'aria-label': t('pat.left'), onclick: () => shiftPattern(-1) }, '◀'),
-      h('button', { class: 'seg', data: { act: 'patright' }, title: t('pat.right'), 'aria-label': t('pat.right'), onclick: () => shiftPattern(1) }, '▶'),
-      h('button', { class: 'seg', data: { act: 'patdouble' }, title: t('pat.double'), 'aria-label': t('pat.double'), onclick: doublePattern }, '×2')),
-    c && S.drumView === 'seq' && h('span', { class: 'tip' }, t('hint.accent')));
-}
-
-/** Résolution du motif de batterie : doubles-croches, triples-croches ou triolets. */
-function resSelect(c: Clip) {
-  const sel = h('select', { 'aria-label': t('ed.res'), title: t('ed.resTip'), data: { role: 'res' } },
-    ...[[1, '1/16'], [2, '1/32'], [0.75, t('grid.8t')], [1.5, t('grid.16t')]].map(([v, l]) => h('option', { value: String(v), selected: resOf(c) === v }, String(l))));
-  sel.onchange = () => { setRes(c, +sel.value); commit(); };
-  return h('label', { class: 'fld' }, t('ed.res'), sel);
-}
-
-function padsView(tr: Track) {
-  const grid = h('div', { class: 'pads' });
-  for (let r = 0; r < NPADS; r++) {
-    const custom = tr.pads?.[r];
-    const setSample = async (f: File) => { const s = await loadSample(f); if (s) { tr.pads![r] = { bufferId: s.id, name: s.name }; commit(); engine.pad(tr, r); } };
-    const pad = h('div', { class: 'pad' + (custom ? ' custom' : '') + (S.padEdit === r ? ' editing' : '') + (tr.padFx?.[r] ? ' tuned' : ''), data: { pad: String(r) }, role: 'button', tabIndex: 0, 'aria-label': padName(tr, r) },
-      h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', { class: 'pad-name' }, padName(tr, r)),
-      h('span', { class: 'pact' },
-        h('button', { title: t('pad.settings'), 'aria-label': `${t('pad.settings')} – ${padName(tr, r)}`, data: { act: 'padfx' }, onclick: (e: Event) => { e.stopPropagation(); S.padEdit = S.padEdit === r ? -1 : r; emit(); } }, icon('gear', 14)),
-        h('button', { title: t('pad.load'), 'aria-label': t('pad.load'), data: { act: 'padload' }, onclick: (e: Event) => { e.stopPropagation(); pickFiles(fs => setSample(fs[0])); } }, icon('folder', 14)),
-        custom && h('button', { title: t('pad.reset'), 'aria-label': t('pad.reset'), data: { act: 'padreset' }, onclick: (e: Event) => { e.stopPropagation(); tr.pads![r] = null; commit(); } }, '↺')));
-    pad.onpointerdown = e => {
-      if ((e.target as HTMLElement).closest('.pact')) return;
-      e.preventDefault(); padHit(r, 1, tr); flashPad(r); const id = e.pointerId;
-      // Seul le doigt qui a frappé ce pad arrête sa répétition : lever un autre doigt ne coupe pas les autres pads.
-      const up = (u: PointerEvent) => { if (u.pointerId !== id) return; padRelease(r); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
-      addEventListener('pointerup', up); addEventListener('pointercancel', up);
-    };
-    // Au clavier : une frappe par appui (pas d'auto-répétition), et le relâchement arrête la répétition de notes.
-    pad.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) { padHit(r, 1, tr); flashPad(r); } } };
-    pad.onkeyup = e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); padRelease(r); } };
-    pad.ondragover = e => { e.preventDefault(); pad.classList.add('over'); };
-    pad.ondragleave = () => pad.classList.remove('over');
-    pad.ondrop = e => { e.preventDefault(); e.stopPropagation(); pad.classList.remove('over'); const f = audioFiles(e.dataTransfer?.files)[0]; if (f) setSample(f); };
-    grid.append(pad);
-  }
-  const rep = h('select', { 'aria-label': t('pad.repeat'), title: t('pad.repeatTip'), data: { role: 'repeat' } }, ...[[0, t('chord.1')], [1, '1/16'], [2, '1/8'], [4, '1/4']].map(([v, l]) => h('option', { value: String(v), selected: kb.repeat === v }, String(l))));
-  rep.onchange = () => { kb.repeat = +rep.value; rep.blur(); };
-  // Réglages du pad choisi avec ⚙ : volume, hauteur, panoramique.
-  let fxBox: HTMLElement | false = false;
-  if (S.padEdit >= 0 && S.padEdit < NPADS) {
-    const r = S.padEdit, cur = tr.padFx?.[r] ?? { vol: 1, tune: 0, pan: 0 };
-    const set = (k: 'vol' | 'tune' | 'pan', v: number) => { tr.padFx ??= {}; const f = tr.padFx[r] ??= { vol: 1, tune: 0, pan: 0 }; f[k] = v; if (f.vol === 1 && !f.tune && !f.pan) delete tr.padFx[r]; };
-    fxBox = h('div', { class: 'padfx' }, h('strong', {}, icon('gear', 16), ` ${padName(tr, r)}`),
-      slider(t('mix.volume'), 0, 1.5, 0.01, cur.vol, v => set('vol', v), pct, '', false, 1),
-      slider(t('st.pitch'), -12, 12, 1, cur.tune, v => set('tune', v), v => (v > 0 ? '+' : '') + v + ' st', '', false, 0),
-      slider(t('mix.pan'), -1, 1, 0.01, cur.pan, v => set('pan', Math.abs(v) < 0.04 ? 0 : v), v => String(Math.round(v * 100)), '', false, 0),
-      h('div', { class: 'tools' },
-        h('button', { class: 'pill', data: { act: 'padtest' }, onclick: () => { padHit(r, 1, tr); flashPad(r); } }, '▶ ' + t('pad.test')),
-        h('button', { class: 'pill', data: { act: 'padfxload' }, onclick: () => pickFiles(async fs => { const smp = await loadSample(fs[0]); if (smp) { tr.pads![r] = { bufferId: smp.id, name: smp.name }; commit(); } }) }, icon('folder', 15), ' ' + t('smp.load')),
-        h('button', { class: 'pill', data: { act: 'padfxreset' }, onclick: () => { if (tr.padFx) delete tr.padFx[r]; commit(); } }, '↺ ' + t('pad.fxReset'))));
-  }
-  // Choix du pad à régler par une liste : indispensable au doigt, où les petits boutons des pads sont masqués.
-  const pick = h('select', { 'aria-label': t('pad.settings'), title: t('pad.settings'), data: { role: 'padpick' } }, h('option', { value: '-1' }, '—'), ...Array.from({ length: NPADS }, (_, r) => h('option', { value: String(r), selected: S.padEdit === r }, `${r + 1} · ${padName(tr, r)}`)));
-  pick.onchange = () => { S.padEdit = +pick.value; emit(); };
-  return h('div', { class: 'escroll padwrap' }, grid, h('div', { class: 'padside' }, h('label', { class: 'fld' }, t('pad.settings'), pick), fxBox, h('label', { class: 'fld' }, t('pad.repeat'), rep), h('p', { class: 'tip' }, t('pad.help'))));
-}
-
-export function flashPad(r: number) {
-  const el = document.querySelector<HTMLElement>(`.pad[data-pad="${r}"]`);
-  if (!el) return;
-  el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
-}
-
-function drumEditor(tr: Track, c: Clip | null) {
-  if (!c || S.drumView === 'pads') return h('div', { class: 'editor' }, drumBar(tr, c), padsView(tr));
-  const res = resOf(c), cw = res > 1 ? 20 : 30;
-  const grid = h('div', { class: 'dgrid ed-grid', style: `--cw:${cw}px` });
-  // Regroupement visuel par temps : le pas d'une case vaut 1/res double-croche.
-  const beat = (s: number) => Math.floor(s / res / BEAT + 1e-6), isBar = (s: number) => s > 0 && Math.abs(s / res / BAR - Math.round(s / res / BAR)) < 1e-6;
-  // Une seule case atteignable par Tab (la dernière visitée) ; les flèches passent d'une case à l'autre.
-  const rows = c.drums!.length, cols = c.drums![0]?.length ?? 0;
-  gridPos = { r: clamp(gridPos.r, 0, rows - 1), s: clamp(gridPos.s, 0, cols - 1) };
-  grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', t('drum.grid'));
-  c.drums!.forEach((row, r) => {
-    const line = h('div', { class: 'drow' },
-      h('button', { class: 'dlabel', title: t('drum.listen', padName(tr, r)), onclick: () => engine.pad(tr, r) }, h('kbd', {}, keyLabel(PAD_KEYS[r])), h('span', {}, padName(tr, r))));
-    row.forEach((v, s) => line.append(h('button', {
-      class: `cell${v ? ' on' : ''}${v && v < 1 ? ' soft' : ''}${beat(s) % 2 ? ' alt' : ''}${isBar(s) ? ' barstart' : ''}${s % 8 === 0 ? ' page' : ''}`,   // page : arrêt du glissé par 8 pas sur téléphone
-      data: { r: String(r), s: String(s) }, 'aria-label': `${padName(tr, r)} ${s + 1}`, 'aria-pressed': String(!!v),
-      tabindex: r === gridPos.r && s === gridPos.s ? '0' : '-1',
-    })));
-    grid.append(line);
-  });
-  const setCell = (el: HTMLElement, v: number) => {
-    const r = +el.dataset.r!, s = +el.dataset.s!;
-    if (c.drums![r][s] === v) return;
-    c.drums![r][s] = v; el.classList.toggle('on', !!v); el.classList.toggle('soft', v > 0 && v < 1); el.setAttribute('aria-pressed', String(!!v));
-    if (v && !engine.playing) engine.pad(tr, r, v);
-  };
-  grid.onpointerdown = e => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('.cell');
-    if (!el) return;
-    e.preventDefault();
-    // Maj+clic ou clic droit : note douce (accent faible) ; clic simple : note pleine ou effacement.
-    const cur = c.drums![+el.dataset.r!][+el.dataset.s!];
-    const v = e.shiftKey || e.button === 2 ? (cur === 0.5 ? 1 : 0.5) : cur ? 0 : 1;
-    setCell(el, v);
-    const mv = (ev: PointerEvent) => { const x = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.cell'); if (x && grid.contains(x)) setCell(x, v); };
-    followDrag(e, mv, () => commit());
-  };
-  grid.oncontextmenu = e => e.preventDefault();
-  const moveTo = (r: number, s: number) => {
-    const x = grid.querySelector<HTMLElement>(`.cell[data-r="${clamp(r, 0, rows - 1)}"][data-s="${clamp(s, 0, cols - 1)}"]`);
-    if (x) x.focus();
-  };
-  grid.addEventListener('focusin', e => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('.cell');
-    if (!el) return;
-    gridPos = { r: +el.dataset.r!, s: +el.dataset.s! };
-    grid.querySelectorAll<HTMLElement>('.cell[tabindex="0"]').forEach(x => { if (x !== el) x.tabIndex = -1; });
-    el.tabIndex = 0;
-  });
-  grid.onkeydown = e => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('.cell');
-    if (!el) return;
-    const r = +el.dataset.r!, s = +el.dataset.s!;
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setCell(el, c.drums![r][s] ? 0 : 1); commit(); return; }
-    const to = ({ ArrowRight: [r, s + 1], ArrowLeft: [r, s - 1], ArrowDown: [r + 1, s], ArrowUp: [r - 1, s], Home: [r, 0], End: [r, cols - 1] } as Record<string, number[]>)[e.key];
-    if (to && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); moveTo(to[0], to[1]); }
-  };
-  grid.append(h('div', { class: 'ed-ph' }));
-  edStepW = cw + 4; edRes = res;
-  return h('div', { class: 'editor' }, drumBar(tr, c), h('div', { class: 'escroll' }, grid));
-}
-
-// ---------- Instrument : réglages ----------
-function synthPanel(tr: Track, collapsible = false) {
-  const sp = tr.synth!;
-  const preset = h('select', { 'aria-label': t('syn.sound'), title: t('syn.sound'), data: { role: 'preset' } });
-  for (const cat of CATS) {
-    const grp = h('optgroup', { label: t('cat.' + cat) });
-    for (const [id, def] of Object.entries(PRESETS)) if (def.cat === cat) grp.append(h('option', { value: id, selected: sp.preset === id }, t('ins.' + id)));
-    preset.append(grp);
-  }
-  if (sp.engine === 'au') preset.prepend(h('option', { value: '', selected: true }, '🍎 ' + auName(sp.auName ?? sp.auUrl ?? '')));
-  preset.onchange = () => { if (preset.value) chooseSound(tr.id, preset.value); };
-  const wave = (key: 'wave' | 'wave2', label: string) => {
-    const s = h('select', { 'aria-label': label });
-    for (const v of ['sine', 'triangle', 'sawtooth', 'square']) s.append(h('option', { value: v, selected: sp[key] === v }, t('wave.' + v)));
-    s.onchange = () => { sp[key] = s.value as OscillatorType; commit(); };
-    return h('label', { class: 'fld' }, label, s);
-  };
-  const ms = (v: number) => Math.round(v * 1000) + ' ms';
-  const sl = (key: string, min: number, max: number, step: number, prop: keyof typeof sp, fmt?: (v: number) => string) =>
-    slider(t('syn.' + key), min, max, step, clamp(sp[prop] as number, min, max), v => { (sp as any)[prop] = v; }, fmt);
-  const specific: (HTMLElement | false)[] =
-    sp.engine === 'au' ? [] : sp.engine === 'fm' ? [sl('ratio', 0.5, 8, 0.5, 'ratio', v => '×' + v), sl('fmAmt', 0, 6, 0.05, 'fmAmt', v => v.toFixed(1)), sl('fmDecay', 0.02, 2, 0.01, 'fmDecay', ms)]
-      : sp.engine === 'pluck' ? [sl('damp', 0, 1, 0.01, 'damp', pct)]
-        : sp.engine === 'sampler' ? [samplerBox(tr)]
-          : sp.engine === 'multi' ? [h('span', { class: 'tip real' }, '🎻 ' + t(sp.bank === 'salamander' ? 'syn.recordedLayers' : recordedDynamics(sp.bank) ? 'syn.recordedDynamics' : 'syn.real')), !recordedDynamics(sp.bank) && sl('touch', 0, 1, 0.05, 'touch', pct)]
-          : [wave('wave', t('syn.wave1')), wave('wave2', t('syn.wave2')), sl('mix2', 0, 1, 0.01, 'mix2', pct), sl('detune', 0, 50, 1, 'detune', v => v + ' ct'), sl('pitchEnv', 0, 24, 1, 'pitchEnv', v => v + ' st')];
-  // Avec un clip ouvert, les réglages détaillés sont repliés pour laisser la place au piano roll.
-  const open = !collapsible || S.synthOpen;
-  const head: (HTMLElement | false)[] = [h('label', { class: 'fld big' }, t('syn.sound'), preset),
-    h('button', { class: 'pill', 'aria-label': t('sounds.browse'), title: t('sounds.browse'), data: { act: 'sound-browser' }, onclick: () => showSounds(tr.id) }, t('sounds.browse')),
-    sp.engine === 'multi' && !!sp.bank && SUSTAIN_BANKS.has(sp.bank) && h('button', {
-      class: 'pill' + (sp.hold ? ' on' : ''), 'aria-pressed': String(!!sp.hold), title: t('syn.holdTip'), data: { act: 'sustain' },
-      onclick: () => { sp.hold = !sp.hold; commit(); },
-    }, '∞ ' + t('syn.hold')),
-    macInstruments(tr),
-    sp.engine === 'au' && h('button', { class: 'pill', data: { act: 'auiwindow' }, title: t('aui.windowTip'), disabled: !engine.mix.instOf(tr.id) || !auBridge()?.uiOpen, onclick: () => openInstWindow(tr) }, '🪟 ' + t('aui.window')),
-    sp.engine === 'au' && engine.mix.instOf(tr.id) === undefined && h('span', { class: 'tip', role: 'status', data: { aui: 'state' } }, t(auBridge() ? 'aui.loading' : 'aui.missing')),
-    collapsible && h('button', { class: 'pill' + (open ? ' on' : ''), data: { act: 'synthopen' }, 'aria-expanded': String(open), title: t('syn.settingsTip'), onclick: () => { S.synthOpen = !S.synthOpen; emit(); } }, `🎚 ${t('syn.settings')} ${open ? '▴' : '▾'}`),
-    h('button', { class: 'pill' + (S.kbShow ? ' on' : ''), data: { act: 'okb' }, 'aria-pressed': String(S.kbShow), title: t('okb.tip'), onclick: () => { S.kbShow = !S.kbShow; emit(); } }, '🎹 ' + t('okb.title')),
-    collapsible && h('span', { class: 'tip' }, t('hint.pianoRoll'))];
-  if (!open) return h('div', { class: 'synth' }, ...head);
-  // Instrument du Mac : ses réglages sont dans sa propre fenêtre ; ici, seulement l'octave et la plage du pitch bend.
-  if (sp.engine === 'au') return h('div', { class: 'synth' }, ...head,
-    sl('octave', -2, 2, 1, 'octave', v => (v > 0 ? '+' : '') + v), slider(t('syn.bend'), 1, 12, 1, sp.bend ?? 2, v => { sp.bend = v; }, v => '± ' + v + ' st'));
-  return h('div', { class: 'synth' },
-    ...head, ...specific,
-    sl('octave', -2, 2, 1, 'octave', v => (v > 0 ? '+' : '') + v),
-    slider(t('syn.bend'), 1, 12, 1, sp.bend ?? 2, v => { sp.bend = v; }, v => '± ' + v + ' st'),
-    sl('cutoff', 80, 12000, 10, 'cutoff', v => Math.round(v) + ' Hz'), sl('reso', 0, 18, 0.1, 'reso', v => v.toFixed(1)),
-    sl('envAmt', 0, 1, 0.01, 'envAmt', pct),
-    sl('a', 0.002, 1.5, 0.001, 'a', ms), sl('d', 0.01, 3, 0.01, 'd', ms), sl('s', 0, 1, 0.01, 's', pct), sl('r', 0.01, 3, 0.01, 'r', ms));
-}
-
-// ---------- Instruments du Mac (V19, version bureau macOS) ----------
-/** Liste des instruments Audio Unit installés ; le choix d'un instrument remplace le son de la piste. */
-function macInstruments(tr: Track) {
-  const list = auInstruments(), sp = tr.synth!;
-  if (!list.length) return false;
-  const sel = h('select', { 'aria-label': t('aui.pick'), title: t('aui.pickTip'), data: { role: 'auinst' } },
-    h('option', { value: '' }, '🍎 ' + t('aui.pick') + '…'),
-    ...list.map(d => { const url = `${d.type}:${d.subtype}:${d.manufacturer}`; return h('option', { value: url, selected: sp.engine === 'au' && sp.auUrl === url }, auName(d.name)); }));
-  sel.onchange = () => {
-    const d = list.find(x => `${x.type}:${x.subtype}:${x.manufacturer}` === sel.value);
-    if (!d) return;
-    Object.assign(sp, { engine: 'au', auUrl: sel.value, auName: d.name, preset: 'au' }); delete sp.auState; delete sp.bank;
-    commit();
-  };
-  return h('label', { class: 'fld' }, t('aui.label'), sel);
-}
-/** Fenêtre de l'instrument : distribue les évènements du Mac, et recopie l'état du plugin dans le projet (chaque seconde et à la fermeture). */
-const instFollow = new Map<string, number>();
-function openInstWindow(tr: Track) {
-  const br = auBridge(), au = engine.mix.instOf(tr.id);
-  if (!br?.uiOpen || !au) return;
-  try { br.uiOpen(au.auId); } catch { toast(t('au.uiFail'), 'error'); return; }
-  if (instFollow.has(tr.id)) return;
-  let n = 0;
-  const keep = () => { const st = au.getState(); if (st && tr.synth && tr.synth.engine === 'au' && tr.synth.auState !== st) { tr.synth.auState = st; commit(); } };
-  const timer = window.setInterval(() => {
-    if (!br.uiIsOpen?.(au.auId) || engine.mix.instOf(tr.id) !== au) { clearInterval(timer); instFollow.delete(tr.id); if (engine.mix.instOf(tr.id) === au) keep(); return; }
-    br.uiPump?.();
-    if (++n % 33 === 0) keep();
-  }, 30);
-  instFollow.set(tr.id, timer);
-}
-
-function samplerBox(tr: Track) {
-  const sp = tr.synth!;
-  const set = async (f: File) => { const s = await loadSample(f); if (s) { sp.bufferId = s.id; sp.sampleName = s.name; commit(); engine.previewNote(tr, sp.root); } };
-  const root = h('select', { 'aria-label': t('smp.root'), title: t('smp.rootTip') });
-  for (let p = 36; p <= 84; p++) root.append(h('option', { value: String(p), selected: sp.root === p }, noteName(p)));
-  root.onchange = () => { sp.root = +root.value; commit(); };
-  const box = h('div', { class: 'smp' },
-    h('button', { data: { act: 'smpload' }, onclick: () => pickFiles(fs => set(fs[0])) }, icon('folder', 15), ' ' + t('smp.load')),
-    h('span', { class: 'sname2' + (sp.bufferId ? '' : ' none') }, sp.sampleName ?? t('smp.none')),
-    h('label', { class: 'fld' }, t('smp.root'), root));
-  box.ondragover = e => { e.preventDefault(); box.classList.add('over'); };
-  box.ondragleave = () => box.classList.remove('over');
-  box.ondrop = e => { e.preventDefault(); e.stopPropagation(); box.classList.remove('over'); const f = audioFiles(e.dataTransfer?.files)[0]; if (f) set(f); };
-  return box;
-}
-
-// ---------- Clavier à l'écran ----------
-function screenKeys() {
-  // Deux octaves sur grand écran, une seule sur téléphone pour garder des touches assez larges pour le doigt.
-  const base = 48 + kb.octave * 12, N = innerWidth < 760 ? 13 : 25, whites: number[] = [];
-  for (let m = base; m < base + N; m++) if (!isBlack(m)) whites.push(m);
-  const el = h('div', { class: 'okb-keys', style: `--nw:${N === 13 ? 8 : 15}` });
-  whites.forEach(m => el.append(h('div', { class: 'wk', data: { m: String(m) } }, m % 12 === 0 ? noteName(m) : '')));
-  for (let m = base; m < base + N; m++) if (isBlack(m)) {
-    const i = whites.findIndex(w => w > m);
-    el.append(h('div', { class: 'bk', data: { m: String(m) }, style: `left:calc(${i} * 100% / ${whites.length} - 100% / ${whites.length} * .3)` }));
-  }
-  // Plusieurs doigts, et glissé d'une touche à l'autre. Les doigts posés sont gardés hors de l'élément,
-  // et suivis sur la fenêtre : un redessin pendant l'appui (enregistrement, bouton MIDI…) ne bloque plus de note.
-  const at = (e: PointerEvent) => { const k = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('.okb [data-m]'); return k ? +k.dataset.m! : null; };
-  const mark = (m: number, on: boolean) => document.querySelector(`.okb [data-m="${m}"]`)?.classList.toggle('on', on);
-  const set = (id: number, m: number | null) => {
-    const cur = okbDown.get(id);
-    if (cur === m || (cur === undefined && m === null)) return;
-    if (cur !== undefined) { noteOff(cur); mark(cur, false); okbDown.delete(id); }
-    if (m !== null && ![...okbDown.values()].includes(m)) { noteOn(m, 0.8); mark(m, true); okbDown.set(id, m); }
-  };
-  for (const m of okbDown.values()) el.querySelector(`[data-m="${m}"]`)?.classList.add('on');
-  el.onpointerdown = e => {
-    e.preventDefault(); const id = e.pointerId; set(id, at(e));
-    const move = (u: PointerEvent) => { if (u.pointerId === id && okbDown.has(id)) set(id, at(u)); };
-    const up = (u: PointerEvent) => { if (u.pointerId !== id) return; set(id, null); removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
-    addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
-  };
-  const oct = (d: number, label: string) => h('button', { class: 'pill', data: { act: d < 0 ? 'octdown' : 'octup' }, 'aria-label': t('help.k.octave') + ' ' + label, title: t('help.k.octave'), onclick: () => { kb.octave = clamp(kb.octave + d, -3, 3); emit(); } }, label);
-  return h('div', { class: 'okb', role: 'group', 'aria-label': t('okb.title') }, h('div', { class: 'wheels' }, wheel('pb'), wheel('mod')), oct(-1, '−'), el, oct(1, '+'));
-}
-
-// ---------- Molettes à l'écran (V19) : pitch bend (revient au centre au relâchement) et modulation (reste où on la laisse) ----------
-let bendHeld = 0;
-const ctlFmt = (k: CtlKind, v: number) => k === 'pb' ? (v > 0 ? '+' : '') + Math.round(v * 100) + ' %' : Math.round(v * 100) + ' %';
-function wheel(k: 'pb' | 'mod') {
-  // Sur téléphone, les molettes sont couchées au-dessus du clavier, pour laisser aux touches toute la largeur.
-  const lo = k === 'pb' ? -1 : 0, v0 = k === 'pb' ? bendHeld : engine.ctlNow.get(S.selTrack)?.mod ?? 0, flat = innerWidth < 760;
-  const el = h('div', { class: 'wheel ' + k + (flat ? ' flat' : ''), role: 'slider', tabIndex: 0, 'aria-label': t('ctl.' + k), title: t('ctl.' + k + 'Tip'), 'aria-orientation': flat ? 'horizontal' : 'vertical',
-    'aria-valuemin': String(lo), 'aria-valuemax': '1', 'aria-valuenow': v0.toFixed(2), 'aria-valuetext': ctlFmt(k, v0), data: { ctl: k }, style: `--v:${(v0 - lo) / (1 - lo)}` },
-    h('i', {}), h('span', { class: 'wl', 'aria-hidden': 'true' }, k === 'pb' ? '↕' : '〰'));
-  // Le glissé est suivi sur la fenêtre et l'affichage retrouvé par sélecteur : un redessin pendant le geste ne l'interrompt pas.
-  const set = (v: number) => {
-    v = Math.round(clamp(v, lo, 1) * 100) / 100;
-    if (k === 'pb') bendHeld = v;
-    ctlIn(k, v);
-    for (const w of document.querySelectorAll<HTMLElement>(`.wheel[data-ctl=${k}]`)) { w.style.setProperty('--v', String((v - lo) / (1 - lo))); w.setAttribute('aria-valuenow', v.toFixed(2)); w.setAttribute('aria-valuetext', ctlFmt(k, v)); }
-  };
-  const back = () => { if (k === 'pb') set(0); };
-  el.onpointerdown = e => {
-    e.preventDefault(); el.focus();
-    const r = el.getBoundingClientRect(), at = (ev: PointerEvent) => lo + (1 - lo) * (flat ? (ev.clientX - r.left) / r.width : (r.bottom - ev.clientY) / r.height);
-    set(at(e)); followDrag(e, ev => set(at(ev)), back, back);
-  };
-  const cur = () => +(document.querySelector(`.wheel[data-ctl=${k}]`)?.getAttribute('aria-valuenow') ?? 0);
-  el.onkeydown = e => {
-    const d = { ArrowUp: 0.1, ArrowRight: 0.1, ArrowDown: -0.1, ArrowLeft: -0.1 }[e.key];
-    if (d !== undefined) set(cur() + d); else if (e.key === 'Home') set(lo); else if (e.key === 'End') set(1); else return;
-    e.preventDefault(); e.stopPropagation();
-  };
-  // Pitch bend au clavier : comme une vraie molette, il revient au centre quand on lâche la touche.
-  el.onkeyup = e => { if (/^Arrow|Home|End/.test(e.key)) back(); };
-  el.onblur = back;
-  return el;
-}
-
-// ---------- Ligne des contrôles joués sous le piano roll (V19) ----------
-/** Hauteur (0 en haut, 1 en bas) d'une valeur de contrôle dans la ligne. */
-const ctlY = (k: CtlKind, v: number) => k === 'pb' ? (1 - v) / 2 : 1 - v;
-function ctlLane(c: Clip, W: number) {
-  const k = S.ctlKind, H = 48, pts = () => c.ctl?.[k] ?? [];
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('width', String(W)); svg.setAttribute('height', String(H)); svg.setAttribute('class', 'ctl-svg');
-  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); svg.append(line);
-  const draw = () => {
-    const list = pts(), rest = CTL_REST[k], xy: string[] = [`0,${ctlY(k, rest) * H}`];
-    for (const p of list) { if (!xy.length || xy.length === 1) xy.push(`${p.s * SW},${ctlY(k, rest) * H}`); xy.push(`${p.s * SW},${ctlY(k, p.v) * H}`); }
-    xy.push(`${W},${ctlY(k, list.length ? list[list.length - 1].v : rest) * H}`);
-    line.setAttribute('points', xy.join(' '));
-  };
-  draw();
-  const lane = h('div', { class: 'vel ctl-lane', style: `width:${W}px;--sw:${SW}px`, role: 'img', 'aria-label': `${t('ctl.' + k)} : ${t('ctl.points', pts().length)}`, data: { kind: k } });
-  lane.append(svg);
-  // Dessin à main levée : la courbe tracée remplace l'ancienne sur la zone parcourue.
-  lane.onpointerdown = e => {
-    e.preventDefault();
-    const r = lane.getBoundingClientRect(); let last = -1, changed = false;
-    const apply = (ev: PointerEvent) => {
-      const s = clamp(Math.round((ev.clientX - r.left) / SW * 8) / 8, 0, c.patLen! - 1 / 8), y = clamp((ev.clientY - r.top) / r.height, 0, 1);
-      const v = Math.round((k === 'pb' ? 1 - 2 * y : 1 - y) * 100) / 100;
-      const a = last < 0 ? s : Math.min(last, s), b = last < 0 ? s : Math.max(last, s);
-      const ctl = c.ctl ??= {}, list = (ctl[k] ?? []).filter(p => p.s < a - 1e-6 || p.s > b + 1e-6 || (p.s === last && last !== s));
-      list.push({ s, v }); list.sort((x, y2) => x.s - y2.s); ctl[k] = list; last = s; changed = true; draw();
-    };
-    apply(e);
-    followDrag(e, apply, () => { if (changed) commit(); }, revert);
-  };
-  const sel = h('select', { 'aria-label': t('ctl.kind'), title: t('ctl.kind'), data: { role: 'ctlkind' } }, ...(['pb', 'mod', 'at'] as const).map(x => h('option', { value: x, selected: x === k }, t('ctl.short.' + x))));
-  sel.onchange = () => { S.ctlKind = sel.value as CtlKind; emit(); };
-  const clear = h('button', { class: 'mini', data: { act: 'ctlclear' }, title: t('ctl.clear'), 'aria-label': t('ctl.clear'), disabled: !pts().length, onclick: () => { if (c.ctl) { delete c.ctl[k]; if (!Object.keys(c.ctl).length) delete c.ctl; } commit(); } }, '✕');
-  return h('div', { class: 'vel-row ctl-row' }, h('div', { class: 'vel-lbl ctl-lbl' }, sel, clear), lane);
-}
-
 // ---------- Sélection de notes ----------
 let selNotes = new Set<Note>(), selOwner = '', clipboard: Note[] = [];
-
 /** Raccourcis du piano roll (sélection, copier/coller, flèches). Renvoie vrai si la touche a été traitée. */
 export function notesKey(e: KeyboardEvent): boolean {
   const f = S.tab === 'editor' ? findClip(S.selClip) : null, c = f?.clip;
@@ -449,7 +75,6 @@ export function notesKey(e: KeyboardEvent): boolean {
   for (const n of sel) { n.p += P; n.s = Math.max(0, snapTo(n.s + ds, 1 / 24)); }
   commit(); return true;
 }
-
 // ---------- Grille des notes ----------
 function gridTools(c: Clip) {
   const target = () => { const sel2 = c.notes!.filter(n => selNotes.has(n)); return sel2.length ? sel2 : c.notes!; };
@@ -477,7 +102,6 @@ function quantMenu(c: Clip, target: () => Note[]) {
     btn('legato', '⟿', () => legatoNotes(target(), c.notes!, c.patLen!))));
   return d;
 }
-
 // ---------- Gamme et accords ----------
 function scaleTools() {
   const P = S.project;
@@ -493,7 +117,6 @@ function scaleTools() {
   rate.onchange = () => { kb.arpRate = +rate.value; rate.blur(); };
   return h('div', { class: 'tools' }, h('label', { class: 'fld' }, t('ed.scale'), key, scale), h('label', { class: 'fld' }, t('ed.chord'), chord), h('label', { class: 'fld' }, t('ed.arp'), arp, rate));
 }
-
 // ---------- Piano roll ----------
 function pianoRoll(tr: Track, c: Clip) {
   SW = S.epx;
@@ -632,112 +255,6 @@ function pianoRoll(tr: Track, c: Clip) {
       gridTools(c), scaleTools()),
     synthPanel(tr, true), S.kbShow && screenKeys(), scroll);
 }
-
-// ---------- Entrée audio ----------
-function inputPanel() {
-  const on = !!engine.inp;
-  const dev = h('select', { 'aria-label': t('in.device'), title: t('in.device'), data: { role: 'indev' } },
-    h('option', { value: '' }, t('in.default')), ...inputs.map(d => h('option', { value: d.id, selected: S.inputDevice === d.id }, d.label)));
-  dev.onchange = () => chooseInput(dev.value);
-  return h('div', { class: 'ebar inbar' }, h('span', { class: 'sect' }, t('in.title')), h('label', { class: 'fld' }, t('in.device'), dev),
-    h('button', { class: 'pill' + (on ? ' on' : ''), data: { act: 'inopen' }, 'aria-pressed': String(on), title: t('in.openTip'), onclick: () => toggleInput(!on) }, icon('audio', 15), ' ' + t(on ? 'in.on' : 'in.open')),
-    h('div', { class: 'meter', title: t('in.level') }, h('div', { class: 'mfill', data: { id: 'input' } })),
-    on && h('div', { class: 'tuner', role: 'status', title: t('tuner.tip'), 'aria-label': t('tuner.title') }, h('span', { class: 'tnote' }, '—'), h('span', { class: 'tbar' }, h('i', {})), h('span', { class: 'tcents' }, '')),
-    slider(t('in.gain'), 0, 4, 0.01, S.inputGain, v => { S.inputGain = v; engine.setInput(v, S.inputMonitor); }, pct, '', true, 1),
-    h('button', { class: 'pill' + (S.inputMonitor ? ' on' : ''), data: { act: 'inmon' }, disabled: !on, 'aria-pressed': String(S.inputMonitor), title: t('in.monTip'), onclick: () => { S.inputMonitor = !S.inputMonitor; engine.setInput(S.inputGain, S.inputMonitor); emit(); } }, icon('headphones', 15), ' ' + t('in.monitor')));
-}
-
-// ---------- Clip audio ----------
-function audioEditor(tr: Track, c: Clip) {
-  const cv = h('canvas', { class: 'bigwave' });
-  queueMicrotask(() => {
-    const w = cv.clientWidth || 800, hgt = cv.clientHeight || 120;
-    cv.width = w; cv.height = hgt;
-    const g = cv.getContext('2d')!; g.fillStyle = tr.color;
-    if (c.bufferId) { drawAudio(g, c, w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
-  });
-  const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
-  const act = (key: string, icon: string, fn: () => void) => h('button', { title: t('tip.' + key), data: { act: key }, onclick: fn }, `${icon} ${t('act.' + key)}`);
-  const chopMode = h('select', { 'aria-label': t('chop.mode'), title: t('chop.mode'), data: { role: 'chopmode' } }, ...[[16, t('chop.n', 16)], [8, t('chop.n', 8)], [0, t('chop.auto')]].map(([v, l]) => h('option', { value: String(v) }, String(l))));
-  if (S.stretch.clip !== c.id) S.stretch = { clip: c.id, pct: 100, semis: 0 };
-  const st = S.stretch;
-  const bpm = h('input', { type: 'number', min: '40', max: '240', placeholder: '—', 'aria-label': t('st.bpm'), title: t('st.bpmTip'), data: { role: 'srcbpm' } });
-  bpm.onchange = () => { const v = +bpm.value; if (v >= 20 && v <= 400) { st.pct = clamp(Math.round(v / S.project.bpm * 100), 50, 200); emit(); } };
-  return h('div', { class: 'editor' },
-    h('div', { class: 'ebar' }, h('strong', {}, typeIcon('audio'), ' ' + tr.name), clipTools(c),
-      slider(t('clip.gain'), 0, 2, 0.01, c.gain ?? 1, v => c.gain = v, pct, '', false, 1),
-      slider(t('clip.fadeIn'), 0, half, 1, Math.min(c.fadeIn ?? 0, half), v => c.fadeIn = v, sec, '', false, 0),
-      slider(t('clip.fadeOut'), 0, half, 1, Math.min(c.fadeOut ?? 0, half), v => c.fadeOut = v, sec, '', false, 0),
-      act('reverse', '⇄', reverseClip), act('normalize', '📈', normalizeClip),
-      // V17 : le clip suit le tempo du morceau (étirement sans changer la hauteur), à partir de son tempo d'origine.
-      h('button', { class: 'pill switch' + (c.warp ? ' on' : ''), role: 'switch', 'aria-checked': String(!!c.warp), title: t('warp.tip'), data: { act: 'warp' }, onclick: toggleWarp }, '🎚 ' + t('warp.label')),
-      c.warp && h('label', { class: 'fld mini-in' }, t('warp.ref'), (() => {
-        const i = h('input', { type: 'number', min: '20', max: '400', step: '0.01', value: String(c.srcBpm ?? S.project.bpm), 'aria-label': t('warp.ref'), title: t('warp.refTip'), data: { role: 'warpbpm' } });
-        i.onchange = () => setWarpBpm(+i.value); return i;
-      })()),
-      (c.takes?.length ?? 0) > 1 && h('div', { class: 'segs', role: 'group', 'aria-label': t('take.title'), title: t('take.tip') },
-        ...c.takes!.map((_, i) => h('button', { class: 'seg' + (c.take === i && !c.comp ? ' on' : ''), data: { take: String(i) }, 'aria-pressed': String(c.take === i && !c.comp), onclick: () => chooseTake(i) }, `${t('clip.take')} ${i + 1}`))),
-      // Fondu enchaîné (V19) : seulement quand un autre clip audio finit juste où celui-ci commence.
-      leftNeighbour(tr, c) && slider(t('xf.label'), 0, Math.max(1, Math.min(8, c.len)), 0.25, Math.min(c.xfade ?? 0, 8), v => setXfade(v), v => v ? sec(v) : t('xf.none'), 'xf')),
-    (c.takes?.length ?? 0) > 1 && compPanel(c),
-    h('div', { class: 'ebar' }, h('span', { class: 'sect' }, t('st.title')),
-      slider(t('st.length'), 50, 200, 1, st.pct, v => { st.pct = v; }, v => v + ' %', '', true, 100),
-      h('label', { class: 'fld mini-in' }, t('st.bpm'), bpm),
-      slider(t('st.pitch'), -12, 12, 1, st.semis, v => { st.semis = v; }, v => (v > 0 ? '+' : '') + v + ' st', '', true, 0),
-      act('stretch', '⏱', () => stretchClip(st.pct, st.semis)),
-      h('span', { class: 'sect' }, t('tune.title')),
-      slider(t('tune.amount'), 0.1, 1, 0.05, S.tuneAmt, v => { S.tuneAmt = v; }, pct, '', true),
-      act('tune', '🎤', () => tuneClip(S.tuneAmt)),
-      h('span', { class: 'sect' }, t('chop.title')), chopMode,
-      act('chop', '🔪', () => chopClip(+chopMode.value))),
-    inputPanel(), cv, h('p', { class: 'tip pad-x' }, t('hint.audioClip')));
-}
-
-// ---------- Comping (V19) : la meilleure prise, portion par portion ----------
-/** Position du curseur clavier dans les lignes de prises (pas depuis le début du clip). */
-let compCur = 0;
-function compPanel(c: Clip) {
-  const g = Math.max(1, S.snap), st = srcStep(S.project, c), n = c.takes!.length;
-  if (compCur >= c.len) compCur = 0;
-  const row = (k: number) => {
-    const cv = h('canvas', { class: 'cwave' });
-    const lane = h('div', { class: 'ctake', tabIndex: 0, role: 'group', data: { lane: String(k) }, 'aria-label': t('comp.row', k + 1), title: t('comp.rowTip') }, cv);
-    // Portions où cette prise est jouée, et curseur clavier.
-    const segs = c.comp ?? [{ s: 0, take: c.take ?? 0 }];
-    segs.forEach((sg, i) => { if (sg.take !== k) return; const b = i + 1 < segs.length ? segs[i + 1].s : c.len; lane.append(h('i', { class: 'cused', style: `left:${sg.s / c.len * 100}%;width:${(b - sg.s) / c.len * 100}%` })); });
-    lane.append(h('b', { class: 'ccur', style: `left:${compCur / c.len * 100}%;width:${Math.min(g, c.len - compCur) / c.len * 100}%` }));
-    queueMicrotask(() => {
-      const w = cv.clientWidth || 600, hh = cv.clientHeight || 40; cv.width = w; cv.height = hh;
-      const x = cv.getContext('2d')!; x.fillStyle = 'rgba(220,230,255,.55)';
-      if (c.bufferId) drawWave(x, c.bufferId, c.takes![k], c.takes![k] + c.len * st, w, hh);
-    });
-    const cell = (ev: PointerEvent) => { const r = lane.getBoundingClientRect(); return clamp(Math.floor((ev.clientX - r.left) / r.width * c.len / g) * g, 0, Math.max(0, c.len - 1e-9)); };
-    lane.onpointerdown = e => {
-      e.preventDefault(); lane.focus();
-      const s0 = cell(e); let s1 = s0;
-      const box = h('i', { class: 'csel' }); lane.append(box);
-      const show = () => { const lo = Math.min(s0, s1), hi = Math.min(c.len, Math.max(s0, s1) + g); box.style.cssText = `left:${lo / c.len * 100}%;width:${(hi - lo) / c.len * 100}%`; };
-      show();
-      followDrag(e, ev => { s1 = cell(ev); show(); }, () => { box.remove(); compCur = Math.min(s0, s1); compTake(k, Math.min(s0, s1), Math.max(s0, s1) + g); refocus(k); }, () => box.remove());
-    };
-    lane.onkeydown = e => {
-      const move = (d: number) => { compCur = clamp(compCur + d, 0, Math.max(0, Math.ceil(c.len / g) - 1) * g); lane.querySelector<HTMLElement>('.ccur')!.style.left = compCur / c.len * 100 + '%'; };
-      if (e.key === 'ArrowRight') move(g); else if (e.key === 'ArrowLeft') move(-g);
-      else if (e.key === 'Home') move(-c.len); else if (e.key === 'End') move(c.len);
-      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') document.querySelector<HTMLElement>(`.ctake[data-lane="${clamp(k + (e.key === 'ArrowDown' ? 1 : -1), 0, n - 1)}"]`)?.focus();
-      else if (e.key === 'Enter' || e.key === ' ') { compTake(k, compCur, compCur + g); refocus(k); }
-      else return;
-      e.preventDefault(); e.stopPropagation();
-    };
-    return h('div', { class: 'crow' }, h('span', { class: 'ctk' + (c.comp ? '' : c.take === k ? ' on' : ''), 'aria-hidden': 'true' }, `${t('clip.take')} ${k + 1}`), lane);
-  };
-  const refocus = (k: number) => queueMicrotask(() => document.querySelector<HTMLElement>(`.ctake[data-lane="${k}"]`)?.focus());
-  return h('div', { class: 'comp', role: 'group', 'aria-label': t('comp.title') },
-    h('div', { class: 'chead' }, h('span', { class: 'sect' }, t('comp.title')), h('span', { class: 'tip' }, t('comp.tip')),
-      h('span', { class: 'cstat', role: 'status' }, c.comp ? t('comp.state', c.comp.length) : t('comp.single', (c.take ?? 0) + 1))),
-    ...c.takes!.map((_, k) => row(k)));
-}
-
 function emptyState(tr?: Track) {
   if (tr?.type === 'drums') return drumEditor(tr, null);
   if (tr?.type === 'synth') return h('div', { class: 'editor' },
@@ -747,7 +264,6 @@ function emptyState(tr?: Track) {
     h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.audioEmpty'))));
   return h('div', { class: 'editor center' }, h('p', { class: 'bigtip' }, t('hint.nothing')));
 }
-
 export function renderEditor(): HTMLElement {
   edStepW = 0;
   const f = findClip(S.selClip);
@@ -755,7 +271,6 @@ export function renderEditor(): HTMLElement {
   const { track, clip } = f;
   return track.type === 'drums' ? drumEditor(track, clip) : track.type === 'synth' ? pianoRoll(track, clip) : audioEditor(track, clip);
 }
-
 /** Accordeur : affiche la note reçue et son écart (lissé pour rester lisible). */
 let tunerHz = 0, tunerMiss = 0, tunerShown = false;
 /** Dernières mesures brutes : une note ne s'affiche qu'une fois confirmée par 3 mesures concordantes (à 3 % près),
@@ -784,7 +299,6 @@ export function updateTuner() {
   note.textContent = noteName(n.midi); cents.textContent = (n.cents > 0 ? '+' : '') + n.cents;
   el.classList.toggle('ok', Math.abs(n.cents) <= 5); (bar.firstChild as HTMLElement).style.left = 50 + n.cents + '%';
 }
-
 /** Tête de lecture dans l'éditeur de motif. */
 export function updateEditorPlayhead(step: number) {
   const ph = document.querySelector<HTMLElement>('#panel .ed-ph');
@@ -798,7 +312,6 @@ export function updateEditorPlayhead(step: number) {
   ph.style.left = (drums ? LABEL_W + Math.floor(local * edRes + 1e-6) * edStepW : local * edStepW) + 'px';
   ph.style.width = drums ? edStepW + 'px' : '2px';
 }
-
 /** Instrument du Mac prêt (le bouton de sa fenêtre s'active) ou en échec (message). */
 engine.mix.onInst = (tid, ok) => {
   const tr = findTrack(tid);
