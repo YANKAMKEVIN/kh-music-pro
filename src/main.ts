@@ -1,4 +1,5 @@
 import { canRevert, chainToStrip, stripGet, stripSet, stripToChain } from './chain';
+import { PIANO, padOf, pianoNote } from './keymap';
 import './style.css';
 import './ui/savealert.css';
 import { watchSaveHealth } from './ui/savealert';
@@ -80,8 +81,6 @@ $('split').onpointerdown = e => {
 };
 
 // ---------- Clavier ----------
-const PIANO: Record<string, number> = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14 };
-const PADS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK'];
 const down = new Map<string, number>();
 
 /** Le focus vient-il de la touche Tab (navigation au clavier) plutôt que d'un clic ou d'un doigt ? */
@@ -115,20 +114,20 @@ addEventListener('keydown', e => {
   const tr = findTrack(S.selTrack);
   if (tr?.type === 'synth') {
     if (e.code in PIANO) {
-      if (!e.repeat && !down.has(e.code)) { const m = 60 + PIANO[e.code] + kb.octave * 12; down.set(e.code, m); noteOn(m); }
+      if (!e.repeat && !down.has(e.code)) { const m = pianoNote(e.code, kb.octave)!; down.set(e.code, m); noteOn(m); }
       return;
     }
     if (e.code === 'KeyZ' || e.code === 'KeyX') { kb.octave = clamp(kb.octave + (e.code === 'KeyZ' ? -1 : 1), -3, 3); toast(t('toast.octave', (kb.octave > 0 ? '+' : '') + kb.octave)); return; }
   }
   if (tr?.type === 'drums') {
-    const i = PADS.indexOf(e.code);
+    const i = padOf(e.code);
     if (i >= 0) { if (!e.repeat) { padHit(i, 1, tr); flashPad(i); } return; }
   }
   if (e.code === 'KeyR') toggleRecord();
   else if (k === 'l') $('bLoop').click();
   else if (k === 'm') $('bMetro').click();
 });
-addEventListener('keyup', e => { const pi = PADS.indexOf(e.code); if (pi >= 0) padRelease(pi); const m = down.get(e.code); if (m !== undefined) { down.delete(e.code); noteOff(m); } });
+addEventListener('keyup', e => { const pi = padOf(e.code); if (pi >= 0) padRelease(pi); const m = down.get(e.code); if (m !== undefined) { down.delete(e.code); noteOff(m); } });
 addEventListener('blur', () => { down.clear(); allNotesOff(); });
 
 // ---------- Boucle d'affichage ----------
