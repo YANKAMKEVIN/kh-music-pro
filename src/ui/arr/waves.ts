@@ -1,4 +1,5 @@
 // Formes d'onde des clips audio (crêtes en cache), fondus et aperçu des clips.
+import { fitCanvas } from '../canvas';
 import { buffers, S } from '../../store';
 import { Clip, srcStep, Track } from '../../types';
 
@@ -29,8 +30,7 @@ export function drawWave(g: CanvasRenderingContext2D, id: string, from: number, 
 }
 export function drawPreview(cv: HTMLCanvasElement, tr: Track, c: Clip, wCss: number, hgt: number) {
   const w = Math.min(Math.max(1, Math.round(wCss)), 6000);
-  cv.width = w; cv.height = hgt;
-  const g = cv.getContext('2d')!;
+  const g = fitCanvas(cv, w, hgt);
   g.fillStyle = 'rgba(4,8,20,.72)';
   const sw = w / c.len;
   if (tr.type === 'drums') {

@@ -3906,6 +3906,39 @@ test('PF02', 'Performance', 'Indicateur de charge du mixeur : un clic mesure et 
   for (const [l, w] of [['en', 'Load'], ['es', 'Carga']]) { await page.evaluate(l => window.kh.setLang(l), l); expect((await page.textContent('[data-act=load]')).includes(w), `bouton en ${l}`); }
 });
 
+test('PF04', 'Performance', 'Écran très dense (téléphone 3×) : les aperçus des clips sont nets à 2× au plus, à la même taille affichée, et toujours dessinés', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3, locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message));
+    await pg.goto(BASE); await pg.waitForSelector('.clip canvas'); await settle(pg); await closeWelcome(pg);
+    const cv = await pg.$eval('.clip canvas', c => { const r = c.getBoundingClientRect(), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return { w: c.width, h: c.height, cw: r.width, ch: r.height, n }; });
+    const ratio = cv.w / cv.cw;
+    expect(ratio > 1.9 && ratio < 2.1, `densité du canvas : ${ratio.toFixed(2)} (attendu 2, plafond)`);
+    // Hauteur dessinée : 50 px CSS (TRACK_H - 34 dans arr.ts), à la même densité que la largeur.
+    expect(Math.abs(cv.h / 50 - ratio) < 0.1, `hauteur et largeur à la même densité (${JSON.stringify(cv)})`);
+    expect(cv.n > 0, 'aperçu du clip vide');
+    expect(!errs.length, 'erreur : ' + errs[0]);
+  } finally { await ctx2.close(); }
+});
+test('PF05', 'Performance', 'Onglet caché : une lecture continue ; sans rien qui joue, le moteur audio se met en veille puis se réveille au retour', async () => {
+  const ctx2 = await browser.newContext({ locale: 'fr-FR' });
+  try {
+    const pg = await ctx2.newPage(); await pg.goto(BASE); await pg.waitForSelector('.clip'); await settle(pg); await closeWelcome(pg);
+    // Simule le passage en arrière-plan (Playwright garde la page visible).
+    const hide = v => pg.evaluate(v => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v }); document.dispatchEvent(new Event('visibilitychange')); }, v);
+    await pg.evaluate(async () => { await window.kh.engine.ctx.resume(); window.kh.engine.play(); });
+    await hide('hidden'); await pg.waitForTimeout(31500);
+    const st = await pg.evaluate(() => ({ playing: window.kh.engine.playing, state: window.kh.engine.ctx.state }));
+    expect(st.playing && st.state === 'running', `la lecture volontaire doit continuer onglet caché (${JSON.stringify(st)})`);
+    await pg.evaluate(() => window.kh.engine.stop());
+    await hide('visible'); await hide('hidden'); await pg.waitForTimeout(31500);
+    const idle = await pg.evaluate(() => window.kh.engine.ctx.state);
+    expect(idle === 'suspended', `onglet caché sans lecture : moteur en veille attendu (${idle})`);
+    await hide('visible'); await pg.waitForTimeout(300);
+    expect(await pg.evaluate(() => window.kh.engine.ctx.state) === 'running', 'le moteur doit se réveiller au retour sur l’onglet');
+  } finally { await ctx2.close(); }
+});
+
 // ============ Fenêtre graphique des plugins du Mac (V17) ============
 async function auRack(opts = {}) {
   await page.evaluate(o => { window.qa.fakeNative(o); }, opts);

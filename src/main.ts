@@ -31,6 +31,7 @@ import { beatsToLaunch, loopPart, refreshLive, renderLive, updateLive } from './
 import { renderMixer, sectOpen, stripActive, updateMeters } from './ui/mixer';
 import { CLIP_AT, clipped, peakHold } from './ui/meters';
 import { buildTop, initFileInputs, renderTop } from './ui/top';
+import { initPowerSaving } from './audio/power';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const help = $<HTMLDialogElement>('help');
@@ -207,6 +208,8 @@ function crashNotice() {
   engine.prepare().then(() => emit()); // instruments réels du projet rouvert
   // Version bureau macOS : moteur audio natif, activé par défaut (sauf s'il a été désactivé dans les Réglages audio).
   initNative();
+  // Onglet caché sans rien qui joue : le moteur audio se met en veille (une lecture volontaire n'est jamais coupée).
+  initPowerSaving(engine);
   requestAnimationFrame(frame);
   // Version d'ouverture : on peut toujours revenir au morceau tel qu'il était au démarrage.
   snapshot(crash.found ? 'crash' : 'open').catch(() => { });

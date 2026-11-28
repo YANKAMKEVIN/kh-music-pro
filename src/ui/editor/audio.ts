@@ -1,4 +1,5 @@
 // Entrée audio, éditeur de clip audio et comping.
+import { fitCanvas } from '../canvas';
 import { chooseInput, chooseTake, chopClip, compTake, inputs, leftNeighbour, normalizeClip, reverseClip, setWarpBpm, setXfade, stretchClip, toggleInput, toggleWarp, tuneClip } from '../../actions';
 import { engine } from '../../audio/engine';
 import { t } from '../../i18n';
@@ -27,8 +28,7 @@ export function audioEditor(tr: Track, c: Clip) {
   const cv = h('canvas', { class: 'bigwave' });
   queueMicrotask(() => {
     const w = cv.clientWidth || 800, hgt = cv.clientHeight || 120;
-    cv.width = w; cv.height = hgt;
-    const g = cv.getContext('2d')!; g.fillStyle = tr.color;
+    const g = fitCanvas(cv, w, hgt); g.fillStyle = tr.color;
     if (c.bufferId) { drawAudio(g, c, w, hgt); g.fillStyle = '#fff'; drawFades(g, c, w, hgt); }
   });
   const sec = (v: number) => (v * stepDur(S.project.bpm)).toFixed(2) + ' s', half = Math.max(1, Math.floor(c.len / 2));
