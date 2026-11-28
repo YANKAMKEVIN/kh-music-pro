@@ -20,14 +20,14 @@ Tout tourne dans le navigateur, y compris dans la version bureau (Electron n'est
 |---|---|
 | `src/types.ts` | Modèle de données (projet, pistes, clips, notes), catalogue des sons, gammes, tempo, migration des anciens projets |
 | `src/store.ts` | État de l'application, annuler/rétablir, bibliothèque de projets (IndexedDB), fichiers `.khm` |
-| `src/audio/graph.ts` | Graphe de mixage (`Mix`), instruments, batterie, effets, séquenceur. Le même code sert au temps réel et à l'export |
-| `src/audio/engine.ts` | Transport, mode Live, enregistrement, latence, rendu hors-ligne, WAV et MP3 |
+| `src/audio/graph.ts` | Graphe de mixage (`Mix`), en trois couches : `mix-nodes.ts` (construction des nœuds et des effets), `mix-chains.ts` (chaînes, plugins, latence), `graph.ts` (synchronisation, automation, contrôles joués) ; voix dans `voices.ts`, séquenceur dans `schedule.ts`. Le même code sert au temps réel et à l'export |
+| `src/audio/engine.ts` | Moteur : `engine-core.ts` (contexte, transport, mode Live), `engine.ts` (jeu en direct, enregistrement, latence, vumètres), `render.ts` (rendu hors-ligne, WAV et MP3), `power.ts` (veille quand l'onglet est caché) |
 | `src/audio/banks.ts` | Instruments enregistrés (`public/banks`, chargés à la demande) |
 | `src/audio/wam.ts` | Hôte de plugins web (Web Audio Modules) |
 | `src/audio/stretch.ts`, `tune.ts`, `pitch.ts`, `loudness.ts` | Étirement, justesse, détection de hauteur, LUFS et limiteur |
-| `src/input.ts` | Jeu en direct : clavier, MIDI, accords, arpégiateur, répétition de notes, assignation MIDI |
-| `src/actions.ts` | Toutes les actions de l'utilisateur |
-| `src/ui/*` | Arrangement, éditeurs, mixeur, Live, rack d'effets, fenêtres |
+| `src/input.ts`, `src/keymap.ts` | Jeu en direct : clavier, MIDI, accords, arpégiateur, répétition de notes, assignation MIDI ; disposition des touches du clavier d'ordinateur |
+| `src/actions.ts`, `src/actions/*` | Toutes les actions de l'utilisateur (pistes, tempo, enregistrement ; par thème dans `actions/` : export, notes, effets, clips, fichiers) |
+| `src/ui/*` | Arrangement (`arr.ts` + `arr/`), éditeurs (`editor.ts` + `editor/`), mixeur, Live, rack d'effets, fenêtres ; `canvas.ts` plafonne la densité des canvas |
 | `src/i18n.ts`, `src/i18n/{fr,en,es}.ts` | Textes en français, anglais, espagnol (un fichier par langue) |
 | `electron/main.cjs`, `electron/native-preload.cjs` | Fenêtre de la version bureau ; pont isolé vers le module natif (macOS) |
 | `src/audio/au.ts`, `src/audio/native-io.ts`, `src/ui/native.ts` | Plugins Audio Unit du Mac, moteur audio natif et son réglage ; module dans `native/kh-au-bridge` (`npm run native`) |
@@ -39,6 +39,8 @@ Principes à respecter :
 - **Temps réel et export partagent le graphe** : toute nouveauté audio doit marcher dans un `OfflineAudioContext`, sinon l'export diverge de l'écoute.
 - **Compatibilité** : tout nouveau champ du projet reçoit une valeur par défaut dans `migrate()` ; un cas de QA (P06) le vérifie.
 - **Point d'accès de test** : `window.kh` expose l'état et le moteur pour la QA.
+- **Fichiers courts** : un module dépasse rarement 400 lignes ; les anciens gros fichiers (`actions.ts`, `editor.ts`, `engine.ts`, `graph.ts`, `arr.ts`) ré-exportent leurs parties, les imports n'ont pas changé.
+- **Tests unitaires** (`npm test`, `tests/unit/`) : logique pure, plus le moteur et l'entrée clavier/MIDI sur un faux Web Audio (`tests/unit/fake-audio.ts`). La CI (`.github/workflows/ci.yml`) les lance à chaque envoi avec les types, la construction et un test de fumée.
 
 ## 3. Ce qui n'a jamais été vérifié
 
